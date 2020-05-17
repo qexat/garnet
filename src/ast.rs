@@ -1,13 +1,16 @@
 //! Abstract syntax tree.
 
+#[derive(Debug, Clone)]
 pub enum Literal {
     Integer(i64),
     Bool(bool),
 }
 
-pub struct Symbol(String);
+#[derive(Debug, Clone)]
+pub struct Symbol(pub String);
 
 /// Binary operation
+#[derive(Debug, Clone)]
 pub enum BOp {
     Add,
     Sub,
@@ -17,27 +20,36 @@ pub enum BOp {
 }
 
 /// Unary operation
+#[derive(Debug, Clone)]
 pub enum UOp {
     Neg,
     Deref,
 }
 
+#[derive(Debug, Clone)]
 pub struct IfCase {
     pub condition: Box<Expr>,
     pub body: Vec<Expr>,
 }
 
+#[derive(Debug, Clone)]
 pub enum Type {
     Name(Symbol),
 }
 
 /// A function type signature
+#[derive(Debug, Clone)]
 pub struct Signature {
     pub params: Vec<(Symbol, Type)>,
     pub rettype: Type,
 }
 
+/// Any expression.
+#[derive(Debug, Clone)]
 pub enum Expr {
+    Lit {
+        val: Literal,
+    },
     BinOp {
         op: BOp,
         lhs: Box<Expr>,
@@ -63,6 +75,20 @@ pub enum Expr {
         body: Vec<Expr>,
     },
     Lambda {
+        signature: Signature,
+        body: Vec<Expr>,
+    },
+    Funcall {
+        func: Box<Expr>,
+        params: Vec<Expr>,
+    },
+}
+
+/// A top-level declaration in the source file.
+#[derive(Debug, Clone)]
+pub enum Decl {
+    Function {
+        name: Symbol,
         signature: Signature,
         body: Vec<Expr>,
     },
