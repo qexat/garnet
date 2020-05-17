@@ -1,7 +1,10 @@
-//! Intermediate representation, basically what you get after
-//! all the typechecking and other kinds of checking happen.
-//! Slightly simplified over the AST -- basically the result of
-//! a lowering pass.  This might give us a nice place to do
-//! simple things like constant folding, dead code detection, etc.
+//! Intermediate representation, basically what you get after all the typechecking and other kinds
+//! of checking happen.  Slightly simplified over the AST -- basically the result of a
+//! lowering/desugaring pass.  This might give us a nice place to do other simple
+//! lowering/optimization-like things like constant folding, dead code detection, etc.
 //!
-//! Is always a valid program.
+//! An IR is always assumed to be a valid program, since it has passed all the checking stuff.
+//!
+//! So... do we want it to be an expression tree like AST is, or SSA form, or a control-
+//! flow graph, or what?  Ponder this, since different things are easy to do on different
+//! representations.
