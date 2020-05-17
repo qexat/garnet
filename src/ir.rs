@@ -7,4 +7,5 @@
 //!
 //! So... do we want it to be an expression tree like AST is, or SSA form, or a control-
 //! flow graph, or what?  Ponder this, since different things are easy to do on different
-//! representations.
+//! representations. ...well, the FIRST thing we need to do is type checking and related
+//! junk anyway, so, this should just be a slightly-lowered syntax tree.

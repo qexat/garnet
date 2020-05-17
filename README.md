@@ -34,6 +34,13 @@ change with time.
  * Simplicity of compiler -- I'd rather have a GOOD compiler in 50k
    lines than a FANTASTIC compiler in 500k lines; investigate
    [qbe](https://c9x.me/compile/) for example.
+ * I feel like these two things together should combine to (eventually)
+   make compiler-as-library more of a thing, which seems like an
+   overlooked field of study.  It can be useful to aid JIT,
+   metaprogramming, powerful dynamic linking, etc.  It seems very silly
+   that this remains Dark Magic outside of anything that isn't Lisp or
+   Erlang.  (That said, when you don't want this, you REALLY don't want
+   it.)
  * No undefined behavior -- This may be hard to do, but it would be
    really nice to eliminate this scourge from existence, or at least
    demonstrate that it can be eliminated in a reasonable way.
