@@ -9,7 +9,9 @@ fn main() {
         name: ast::Symbol(mainsym),
         signature: ast::Signature {
             params: vec![],
-            rettype: ast::Type::Name(ast::Symbol(i32sym)),
+            rettype: ast::Type {
+                name: ast::Symbol(i32sym),
+            },
         },
         body: vec![ast::Expr::Lit {
             val: ast::Literal::Integer(42),
