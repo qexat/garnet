@@ -1,13 +1,16 @@
 //! Abstract syntax tree.
 
+use crate::intern::Sym;
+
 #[derive(Debug, Clone)]
 pub enum Literal {
     Integer(i64),
     Bool(bool),
+    Unit,
 }
 
 #[derive(Debug, Clone)]
-pub struct Symbol(pub String);
+pub struct Symbol(pub Sym);
 
 /// Binary operation
 #[derive(Debug, Clone)]
@@ -82,6 +85,8 @@ pub enum Expr {
         func: Box<Expr>,
         params: Vec<Expr>,
     },
+    Break,
+    Return(Box<Expr>),
 }
 
 /// A top-level declaration in the source file.

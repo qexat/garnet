@@ -56,6 +56,13 @@ change with time.
  * custom parser (recursive descent)
  * cranelift (tentatively)
 
+Things to consider:
+
+ * structopt (for arg parsing)
+ * rustyline (for repl)
+ * codespan (for error reporting)
+ * lasso or `string-interner` (for string interning)
+
 # License
 
 MIT
