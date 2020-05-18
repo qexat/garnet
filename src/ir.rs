@@ -17,7 +17,7 @@ use crate::intern::Sym;
 
 use crate::ast::{self, BOp, Literal, Signature, Type, UOp};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Symbol(pub Sym);
 
 impl From<&ast::Symbol> for Symbol {
@@ -27,7 +27,7 @@ impl From<&ast::Symbol> for Symbol {
 }
 
 /// Any expression.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Expr {
     Lit {
         val: Literal,
@@ -74,8 +74,29 @@ pub enum Expr {
     },
 }
 
+impl Expr {
+    /// Shortcut function for making literal bools
+    pub const fn bool(b: bool) -> Expr {
+        Expr::Lit {
+            val: Literal::Bool(b),
+        }
+    }
+
+    /// Shortcut function for making literal integers
+    pub const fn int(i: i64) -> Expr {
+        Expr::Lit {
+            val: Literal::Integer(i),
+        }
+    }
+
+    /// Shortcut function for making literal unit
+    pub const fn unit() -> Expr {
+        Expr::Lit { val: Literal::Unit }
+    }
+}
+
 /// A top-level declaration in the source file.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Decl {
     Function {
         name: Symbol,
@@ -251,4 +272,93 @@ fn lower_decls(decls: &[ast::Decl]) -> Vec<Decl> {
 }
 
 #[cfg(test)]
-mod tests {}
+mod tests {
+    use super::*;
+    use crate::ast::Expr as A;
+    use crate::ir::Expr as I;
+
+    /// Does `return;` turn into `return ();`?
+    #[test]
+    fn test_return_none() {
+        let input = A::Return { retval: None };
+        let output = I::Return {
+            retval: Box::new(I::unit()),
+        };
+        let res = lower_expr(&input);
+        assert_eq!(&res, &output);
+    }
+
+    /// Does `return ();` also turn into `return ();`?
+    #[test]
+    fn test_return_unit() {
+        let input = A::Return {
+            retval: Some(Box::new(A::unit())),
+        };
+        let output = I::Return {
+            retval: Box::new(I::unit()),
+        };
+        let res = lower_expr(&input);
+        assert_eq!(&res, &output);
+    }
+
+    /// Do we turn chained if's properly into nested ones?
+    /// Single if.
+    #[test]
+    fn test_if_lowering_single() {
+        let input = A::If {
+            cases: vec![ast::IfCase {
+                condition: Box::new(A::bool(false)),
+                body: vec![A::int(1)],
+            }],
+            falseblock: vec![A::int(2)],
+        };
+        let output = I::If {
+            condition: Box::new(I::bool(false)),
+            trueblock: vec![I::int(1)],
+            falseblock: vec![I::int(2)],
+        };
+        let res = lower_expr(&input);
+        assert_eq!(&res, &output);
+    }
+
+    /// Do we turn chained if's properly into nested ones?
+    /// Chained if/else's
+    #[test]
+    fn test_if_lowering_chained() {
+        let input = A::If {
+            cases: vec![
+                ast::IfCase {
+                    condition: Box::new(A::bool(false)),
+                    body: vec![A::int(1)],
+                },
+                ast::IfCase {
+                    condition: Box::new(A::bool(true)),
+                    body: vec![A::int(2)],
+                },
+            ],
+            falseblock: vec![A::int(3)],
+        };
+        let output = I::If {
+            condition: Box::new(I::bool(false)),
+            trueblock: vec![I::int(1)],
+            falseblock: vec![I::If {
+                condition: Box::new(I::bool(true)),
+                trueblock: vec![I::int(2)],
+                falseblock: vec![I::int(3)],
+            }],
+        };
+        let res = lower_expr(&input);
+        assert_eq!(&res, &output);
+    }
+
+    /// Do we panic if we get an impossible if with no cases?
+    #[test]
+    #[should_panic]
+    fn test_if_nothing() {
+        let input = A::If {
+            cases: vec![],
+            falseblock: vec![],
+        };
+        let _ = lower_expr(&input);
+    }
+}
