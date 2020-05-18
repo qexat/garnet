@@ -7,18 +7,18 @@
 
 use crate::intern::Sym;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Literal {
     Integer(i64),
     Bool(bool),
     Unit,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Symbol(pub Sym);
 
 /// Binary operation
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum BOp {
     Add,
     Sub,
@@ -28,32 +28,32 @@ pub enum BOp {
 }
 
 /// Unary operation
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum UOp {
     Neg,
     Deref,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct IfCase {
     pub condition: Box<Expr>,
     pub body: Vec<Expr>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Type {
     pub name: Symbol,
 }
 
 /// A function type signature
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Signature {
     pub params: Vec<(Symbol, Type)>,
     pub rettype: Type,
 }
 
 /// Any expression.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Expr {
     Lit {
         val: Literal,
@@ -99,8 +99,29 @@ pub enum Expr {
     },
 }
 
+impl Expr {
+    /// Shortcut function for making literal bools
+    pub const fn bool(b: bool) -> Expr {
+        Expr::Lit {
+            val: Literal::Bool(b),
+        }
+    }
+
+    /// Shortcut function for making literal integers
+    pub const fn int(i: i64) -> Expr {
+        Expr::Lit {
+            val: Literal::Integer(i),
+        }
+    }
+
+    /// Shortcut function for making literal unit
+    pub const fn unit() -> Expr {
+        Expr::Lit { val: Literal::Unit }
+    }
+}
+
 /// A top-level declaration in the source file.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Decl {
     Function {
         name: Symbol,
