@@ -1,4 +1,9 @@
 //! Abstract syntax tree.
+//!
+//! Should be a *pretty exact* representation of the source code,
+//! including things like parentheses and comments.  That way we can
+//! eventually use the same structure for a code formatter and not
+//! have it nuke anything.
 
 use crate::intern::Sym;
 
@@ -36,8 +41,8 @@ pub struct IfCase {
 }
 
 #[derive(Debug, Clone)]
-pub enum Type {
-    Name(Symbol),
+pub struct Type {
+    pub name: Symbol,
 }
 
 /// A function type signature
@@ -52,6 +57,9 @@ pub struct Signature {
 pub enum Expr {
     Lit {
         val: Literal,
+    },
+    Var {
+        name: Symbol,
     },
     BinOp {
         op: BOp,
@@ -86,7 +94,9 @@ pub enum Expr {
         params: Vec<Expr>,
     },
     Break,
-    Return(Box<Expr>),
+    Return {
+        retval: Option<Box<Expr>>,
+    },
 }
 
 /// A top-level declaration in the source file.
@@ -97,4 +107,12 @@ pub enum Decl {
         signature: Signature,
         body: Vec<Expr>,
     },
+}
+
+/// A compilable chunk of AST.
+///
+/// Currently, basically a compilation unit.
+#[derive(Debug, Clone, Default)]
+pub struct Ast {
+    pub decls: Vec<Decl>,
 }
