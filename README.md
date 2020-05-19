@@ -1,5 +1,7 @@
 # Garnet
 
+[![builds.sr.ht status](https://builds.sr.ht/~icefox/garnet.svg)](https://builds.sr.ht/~icefox/garnet?)
+
 An experiment in a systems programming language along the lines of Rust
 but more minimal.  Where Rust is a C++ that doesn't suck, it'd be nice
 for this to be a C that doesn't suck.
