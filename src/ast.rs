@@ -39,7 +39,14 @@ impl BOp {
 #[derive(Debug, Clone, PartialEq)]
 pub enum UOp {
     Neg,
-    Deref,
+}
+
+impl UOp {
+    /// Returns the type that the unary op operates on.
+    /// Currently, only numbers.
+    pub fn type_of(&self, cx: &mut crate::Cx) -> Sym {
+        cx.intern("i32")
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
