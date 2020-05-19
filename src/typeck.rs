@@ -118,10 +118,7 @@ pub fn typecheck_decl(cx: &mut Cx, symtbl: &mut Symtbl, decl: &ir::Decl) -> Resu
             //
             // Oh gods, what in the name of Eris do we do if there's
             // a return statement here?
-            let mut last_expr_type = cx.get_typename("unit").unwrap();
-            for expr in body {
-                last_expr_type = typecheck_expr(cx, symtbl, expr)?;
-            }
+            let last_expr_type = typecheck_exprs(cx, symtbl, body)?;
 
             if !type_matches(signature.rettype, last_expr_type) {
                 let msg = format!(
@@ -139,11 +136,25 @@ pub fn typecheck_decl(cx: &mut Cx, symtbl: &mut Symtbl, decl: &ir::Decl) -> Resu
     Ok(())
 }
 
+/// Typecheck a vec of expr's and return the type of the last one.
+/// If the vec is empty, return unit.
+fn typecheck_exprs(
+    cx: &mut Cx,
+    symtbl: &mut Symtbl,
+    exprs: &[ir::Expr],
+) -> Result<TypeSym, TypeError> {
+    let mut last_expr_type = cx.get_typename("unit").unwrap();
+    for expr in exprs {
+        last_expr_type = typecheck_expr(cx, symtbl, expr)?;
+    }
+    Ok(last_expr_type)
+}
+
 /// Returns a symbol representing the type of this expression, if it's ok, or an error if not.
 fn typecheck_expr(cx: &mut Cx, symtbl: &mut Symtbl, expr: &ir::Expr) -> Result<TypeSym, TypeError> {
     use ir::Expr::*;
     let unitsym = cx.get_typename("()").unwrap();
-    let unit = Ok(unitsym);
+    let boolsym = cx.get_typename("bool").unwrap();
     let ok = Ok(unitsym);
     match expr {
         Lit { val } => typecheck_literal(cx, val),
@@ -182,21 +193,64 @@ fn typecheck_expr(cx: &mut Cx, symtbl: &mut Symtbl, expr: &ir::Expr) -> Result<T
                 Err(TypeError::TypeMismatch(msg))
             }
         }
-        Block { body } => ok,
+        Block { body } => typecheck_exprs(cx, symtbl, body),
         Let {
             varname,
             typename,
             init,
-        } => ok,
+        } => {
+            let init_type = typecheck_expr(cx, symtbl, init)?;
+            if type_matches(init_type, *typename) {
+                // Add var to symbol table, proceed
+                symtbl.add_var(*varname, *typename);
+                Ok(unitsym)
+            } else {
+                let msg = format!(
+                    "initializer for variable {}: expected {}, got {}",
+                    cx.unintern(varname.0),
+                    cx.unintern(typename.0),
+                    cx.unintern(init_type.0)
+                );
+                Err(TypeError::TypeMismatch(msg))
+            }
+        }
         If {
             condition,
             trueblock,
             falseblock,
-        } => ok,
-        Loop { body } => ok,
+        } => {
+            let cond_type = typecheck_expr(cx, symtbl, condition)?;
+            if type_matches(cond_type, boolsym) {
+                // Proceed to typecheck arms
+                let if_type = typecheck_exprs(cx, symtbl, trueblock)?;
+                let else_type = typecheck_exprs(cx, symtbl, falseblock)?;
+                if type_matches(if_type, else_type) {
+                    Ok(if_type)
+                } else {
+                    let msg = format!(
+                        "If block return type is {}, but else block returns {}",
+                        cx.unintern(if_type.0),
+                        cx.unintern(else_type.0),
+                    );
+                    Err(TypeError::TypeMismatch(msg))
+                }
+            } else {
+                let msg = format!(
+                    "If expr condition is {}, not bool",
+                    cx.unintern(cond_type.0),
+                );
+                Err(TypeError::TypeMismatch(msg))
+            }
+        }
+        Loop { body } => typecheck_exprs(cx, symtbl, body),
         Lambda { signature, body } => ok,
-        Funcall { func, params } => ok,
-        Break => unit,
+        Funcall { func, params } => {
+            // First, look up function
+            // Then, verify params are correct
+            // Then, if all is well, return function's ret type
+            ok
+        }
+        Break => Ok(unitsym),
         Return { .. } => panic!("oh gods oh gods oh gods oh gods whyyyyyy"),
     }
 }
@@ -360,4 +414,32 @@ mod tests {
             assert!(typecheck_expr(cx, tbl, &bad_ir).is_err());
         }
     }
+
+    /// TODO
+    #[test]
+    fn test_block() {}
+
+    /// TODO
+    #[test]
+    fn test_let() {}
+
+    /// TODO
+    #[test]
+    fn test_if() {}
+
+    /// TODO
+    #[test]
+    fn test_loop() {}
+
+    /// TODO
+    #[test]
+    fn test_break() {}
+
+    /// TODO
+    #[test]
+    fn test_funcall() {}
+
+    /// TODO
+    #[test]
+    fn test_return() {}
 }
