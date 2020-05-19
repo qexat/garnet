@@ -1,9 +1,14 @@
 image: debian/buster
 packages:
- - cargo
+    # - cargo
 sources:
  - hg+https://hg.sr.ht/~icefox/garnet
 tasks:
+ - setup: |
+     curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs > rustup.sh
+     sh rustup.sh -y -q
+     source .cargo/env
+     cargo install cargo-tarpaulin
  - build: |
     cd garnet
     cargo build
