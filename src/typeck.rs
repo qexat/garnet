@@ -9,7 +9,6 @@ use crate::Cx;
 
 pub enum TypeError {
     UnknownType(String),
-    Misc(String),
 }
 
 /// A variable binding
@@ -100,29 +99,46 @@ pub fn typecheck_decl(cx: &mut Cx, symtbl: &mut Symtbl, decl: &ir::Decl) -> Resu
     Ok(())
 }
 
-fn typecheck_expr(cx: &mut Cx, symtbl: &mut Symtbl, expr: &ir::Expr) -> Result<(), TypeError> {
+/// Returns a symbol representing the type of this expression, if it's ok, or an error if not.
+fn typecheck_expr(cx: &mut Cx, symtbl: &mut Symtbl, expr: &ir::Expr) -> Result<Sym, TypeError> {
     use ir::Expr::*;
+    let unit = cx.intern("()");
+    assert!(type_exists(cx, unit));
+    let ok = Ok(unit);
     match expr {
-        Lit { val } => (),
-        Var { name } => (),
-        BinOp { op, lhs, rhs } => (),
-        UniOp { op, rhs } => (),
-        Block { body } => (),
+        Lit { val } => typecheck_literal(cx, val),
+        Var { name } => ok,
+        BinOp { op, lhs, rhs } => ok,
+        UniOp { op, rhs } => ok,
+        Block { body } => ok,
         Let {
             varname,
             typename,
             init,
-        } => (),
+        } => ok,
         If {
             condition,
             trueblock,
             falseblock,
-        } => (),
-        Loop { body } => (),
-        Lambda { signature, body } => (),
-        Funcall { func, params } => (),
-        Break => (),
-        Return { retval } => (),
+        } => ok,
+        Loop { body } => ok,
+        Lambda { signature, body } => ok,
+        Funcall { func, params } => ok,
+        Break => ok,
+        Return { retval } => ok,
     }
-    Ok(())
+}
+
+fn typecheck_literal(cx: &mut Cx, lit: &ir::Literal) -> Result<Sym, TypeError> {
+    let t_i32 = cx.intern("i32");
+    let t_bool = cx.intern("bool");
+    let t_unit = cx.intern("()");
+    assert!(type_exists(cx, t_i32));
+    assert!(type_exists(cx, t_bool));
+    assert!(type_exists(cx, t_unit));
+    match lit {
+        ir::Literal::Integer(_) => Ok(t_i32),
+        ir::Literal::Bool(_) => Ok(t_bool),
+        ir::Literal::Unit => Ok(t_unit),
+    }
 }

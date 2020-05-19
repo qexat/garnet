@@ -15,7 +15,8 @@
 
 use crate::intern::Sym;
 
-use crate::ast::{self, BOp, Literal, Signature, Type, UOp};
+use crate::ast::{self};
+pub use crate::ast::{BOp, Literal, Signature, Type, UOp};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Symbol(pub Sym);
