@@ -4,15 +4,13 @@ use garnet::ast;
 fn main() {
     let mut cx = garnet::Cx::new();
     let mainsym = cx.intern("main");
-    let i32sym = cx.intern("i32");
+    let i32sym = cx.get_typename("i32").unwrap();
     let ast = ast::Ast {
         decls: vec![ast::Decl::Function {
-            name: ast::Symbol(mainsym),
+            name: ast::VarSym(mainsym),
             signature: ast::Signature {
                 params: vec![],
-                rettype: ast::Type {
-                    name: ast::Symbol(i32sym),
-                },
+                rettype: i32sym,
             },
             body: vec![ast::Expr::int(42)],
         }],

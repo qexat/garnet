@@ -14,8 +14,25 @@ pub enum Literal {
     Unit,
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct Symbol(pub Sym);
+/// The interned name of a type
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+pub struct TypeSym(pub Sym);
+
+impl TypeSym {
+    pub fn new(cx: &mut crate::Cx, name: &str) -> Self {
+        TypeSym(cx.intern(name))
+    }
+}
+
+/// The interned name of a variable/value
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+pub struct VarSym(pub Sym);
+
+impl VarSym {
+    pub fn new(cx: &mut crate::Cx, name: &str) -> Self {
+        VarSym(cx.intern(name))
+    }
+}
 
 /// Binary operation
 #[derive(Debug, Clone, PartialEq)]
@@ -30,8 +47,8 @@ pub enum BOp {
 impl BOp {
     /// Returns the type that the bin op operates on.
     /// Currently, only numbers.
-    pub fn type_of(&self, cx: &mut crate::Cx) -> Sym {
-        cx.intern("i32")
+    pub fn type_of(&self, cx: &mut crate::Cx) -> TypeSym {
+        TypeSym::new(cx, "i32")
     }
 }
 
@@ -44,8 +61,8 @@ pub enum UOp {
 impl UOp {
     /// Returns the type that the unary op operates on.
     /// Currently, only numbers.
-    pub fn type_of(&self, cx: &mut crate::Cx) -> Sym {
-        cx.intern("i32")
+    pub fn type_of(&self, cx: &mut crate::Cx) -> TypeSym {
+        TypeSym::new(cx, "i32")
     }
 }
 
@@ -57,14 +74,14 @@ pub struct IfCase {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Type {
-    pub name: Symbol,
+    pub name: TypeSym,
 }
 
 /// A function type signature
 #[derive(Debug, Clone, PartialEq)]
 pub struct Signature {
-    pub params: Vec<(Symbol, Type)>,
-    pub rettype: Type,
+    pub params: Vec<(VarSym, TypeSym)>,
+    pub rettype: TypeSym,
 }
 
 /// Any expression.
@@ -74,7 +91,7 @@ pub enum Expr {
         val: Literal,
     },
     Var {
-        name: Symbol,
+        name: VarSym,
     },
     BinOp {
         op: BOp,
@@ -89,8 +106,8 @@ pub enum Expr {
         body: Vec<Expr>,
     },
     Let {
-        varname: Symbol,
-        typename: Type,
+        varname: VarSym,
+        typename: TypeSym,
         init: Box<Expr>,
     },
     If {
@@ -139,7 +156,7 @@ impl Expr {
 #[derive(Debug, Clone, PartialEq)]
 pub enum Decl {
     Function {
-        name: Symbol,
+        name: VarSym,
         signature: Signature,
         body: Vec<Expr>,
     },

@@ -1,6 +1,7 @@
 image: debian/buster
 packages:
     - curl
+    - libssl-dev
     # - cargo
 sources:
  - hg+https://hg.sr.ht/~icefox/garnet
