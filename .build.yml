@@ -6,6 +6,8 @@ packages:
     # - cargo
 sources:
  - hg+https://hg.sr.ht/~icefox/garnet
+secrets:
+ - f217b06a-9ade-4b5f-825a-cc377a9188ee
 tasks:
  - setup: |
     curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs > rustup.sh
@@ -20,4 +22,9 @@ tasks:
     source .cargo/env
     cd garnet
     cargo test
+ - coverage: |
+    source .cargo/env
+    cd garnet
+    cargo tarpaulin
+    scp tarpaulin-report.html icefox@roc.alopex.li:htdocs/temp/
 
