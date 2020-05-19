@@ -16,6 +16,7 @@ pub enum TypeDef {
     SInt(usize),
     Bool,
     Tuple(Vec<TypeDef>),
+    Lambda(Vec<TypeDef>, Box<TypeDef>),
 }
 
 /// Compilation context.  Contains things like symbol tables.

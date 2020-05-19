@@ -8,14 +8,16 @@ sources:
  - hg+https://hg.sr.ht/~icefox/garnet
 tasks:
  - setup: |
-     curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs > rustup.sh
-     sh rustup.sh -y -q
-     source .cargo/env
-     cargo install cargo-tarpaulin
+    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs > rustup.sh
+    sh rustup.sh -y -q
+    source .cargo/env
+    cargo install cargo-tarpaulin
  - build: |
+    source .cargo/env
     cd garnet
     cargo build
  - test: |
+    source .cargo/env
     cd garnet
     cargo test
 
