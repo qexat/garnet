@@ -25,7 +25,7 @@ pub struct Cx {
     /// Interned symbols
     syms: intern::Interner,
     /// Known types
-    types: HashMap<intern::Sym, TypeDef>,
+    types: HashMap<ir::TypeSym, TypeDef>,
 }
 
 impl Cx {
@@ -49,7 +49,7 @@ impl Cx {
 
     /// Fill type table with whatever builtin types we have.
     fn populate_builtin_types(&mut self) {
-        let types: HashMap<intern::Sym, TypeDef> = [
+        let types: HashMap<ir::TypeSym, TypeDef> = [
             (self.intern("i32"), TypeDef::SInt(4)),
             (self.intern("bool"), TypeDef::Bool),
             // TODO: Not sure I like naming tuples like this.
@@ -57,7 +57,19 @@ impl Cx {
         ]
         .iter()
         .cloned()
+        .map(|(n, t)| (ir::TypeSym(n), t))
         .collect();
         self.types = types;
+    }
+
+    /// Returns the symbol naming the given type, or none if it's
+    /// not defined.
+    pub fn get_typename(&mut self, name: &str) -> Option<ir::TypeSym> {
+        let s = ir::TypeSym(self.syms.intern(name));
+        if self.types.contains_key(&s) {
+            Some(s)
+        } else {
+            None
+        }
     }
 }

@@ -4,7 +4,7 @@
 use std::collections::HashMap;
 
 use crate::intern::Sym;
-use crate::ir;
+use crate::ir::{self, TypeSym, VarSym};
 use crate::Cx;
 
 #[derive(Debug, Clone)]
@@ -17,13 +17,13 @@ pub enum TypeError {
 /// A variable binding
 #[derive(Debug, Clone)]
 pub struct VarBinding {
-    name: Sym,
-    typename: Sym,
+    name: ir::VarSym,
+    typename: ir::TypeSym,
 }
 
 /// Symbol table.  Stores the scope stack and variable bindings.
 pub struct Symtbl {
-    syms: Vec<HashMap<Sym, VarBinding>>,
+    syms: Vec<HashMap<VarSym, VarBinding>>,
 }
 
 impl Symtbl {
@@ -45,7 +45,7 @@ impl Symtbl {
 
     /// Add a variable to the top level of the scope.
     /// Allows shadowing.
-    fn add_var(&mut self, name: Sym, typename: Sym) {
+    fn add_var(&mut self, name: VarSym, typename: TypeSym) {
         let tbl = self
             .syms
             .last_mut()
@@ -57,19 +57,19 @@ impl Symtbl {
     /// Get the type of the given variable, or an error
     ///
     /// TODO: cx is only for error message, can we fix?
-    fn get_var(&self, cx: &Cx, name: Sym) -> Result<Sym, TypeError> {
+    fn get_var(&self, cx: &Cx, name: VarSym) -> Result<TypeSym, TypeError> {
         for scope in self.syms.iter().rev() {
             if let Some(binding) = scope.get(&name) {
                 return Ok(binding.typename);
             }
         }
-        let msg = format!("Unknown var: {}", cx.unintern(name));
+        let msg = format!("Unknown var: {}", cx.unintern(name.0));
         Err(TypeError::UnknownVar(msg))
     }
 }
 
 /// Does this type exist in the type table?
-fn type_exists(cx: &Cx, t: Sym) -> bool {
+fn type_exists(cx: &Cx, t: TypeSym) -> bool {
     cx.types.contains_key(&t)
 }
 
@@ -77,7 +77,7 @@ fn type_exists(cx: &Cx, t: Sym) -> bool {
 ///
 /// Currently we have no covariance or contravariance, so this is pretty simple.
 /// Currently it's just, if the names match, the types match.
-fn type_matches(t1: Sym, t2: Sym) -> bool {
+fn type_matches(t1: TypeSym, t2: TypeSym) -> bool {
     t1 == t2
 }
 
@@ -102,15 +102,15 @@ pub fn typecheck_decl(cx: &mut Cx, symtbl: &mut Symtbl, decl: &ir::Decl) -> Resu
             // TODO: Add the function itself!
             // TODO: How to handle return statements, hm?
             for (pname, ptype) in signature.params.iter() {
-                if !type_exists(cx, ptype.name.0) {
+                if !type_exists(cx, *ptype) {
                     let msg = format!(
                         "Unknown type {} in function param {}",
-                        cx.unintern(ptype.name.0),
+                        cx.unintern(ptype.0),
                         cx.unintern(pname.0)
                     );
                     return Err(TypeError::UnknownType(msg));
                 }
-                symtbl.add_var(pname.0, ptype.name.0);
+                symtbl.add_var(*pname, *ptype);
             }
             // This is squirrelly; basically, we want to return unit
             // if the function has no body, otherwise return the
@@ -118,17 +118,17 @@ pub fn typecheck_decl(cx: &mut Cx, symtbl: &mut Symtbl, decl: &ir::Decl) -> Resu
             //
             // Oh gods, what in the name of Eris do we do if there's
             // a return statement here?
-            let mut last_expr_type = cx.intern("unit");
+            let mut last_expr_type = cx.get_typename("unit").unwrap();
             for expr in body {
                 last_expr_type = typecheck_expr(cx, symtbl, expr)?;
             }
 
-            if !type_matches(signature.rettype.name.0, last_expr_type) {
+            if !type_matches(signature.rettype, last_expr_type) {
                 let msg = format!(
                     "Function {} returns {} but should return {}",
                     cx.unintern(name.0),
-                    cx.unintern(last_expr_type),
-                    cx.unintern(signature.rettype.name.0),
+                    cx.unintern(last_expr_type.0),
+                    cx.unintern(signature.rettype.0),
                 );
                 return Err(TypeError::TypeMismatch(msg));
             }
@@ -140,15 +140,14 @@ pub fn typecheck_decl(cx: &mut Cx, symtbl: &mut Symtbl, decl: &ir::Decl) -> Resu
 }
 
 /// Returns a symbol representing the type of this expression, if it's ok, or an error if not.
-fn typecheck_expr(cx: &mut Cx, symtbl: &mut Symtbl, expr: &ir::Expr) -> Result<Sym, TypeError> {
+fn typecheck_expr(cx: &mut Cx, symtbl: &mut Symtbl, expr: &ir::Expr) -> Result<TypeSym, TypeError> {
     use ir::Expr::*;
-    let unitsym = cx.intern("()");
-    assert!(type_exists(cx, unitsym));
+    let unitsym = cx.get_typename("()").unwrap();
     let unit = Ok(unitsym);
     let ok = Ok(unitsym);
     match expr {
         Lit { val } => typecheck_literal(cx, val),
-        Var { name } => symtbl.get_var(cx, name.0),
+        Var { name } => symtbl.get_var(cx, *name),
         BinOp { op, lhs, rhs } => {
             let tlhs = typecheck_expr(cx, symtbl, lhs)?;
             let trhs = typecheck_expr(cx, symtbl, rhs)?;
@@ -160,9 +159,9 @@ fn typecheck_expr(cx: &mut Cx, symtbl: &mut Symtbl, expr: &ir::Expr) -> Result<S
                 let msg = format!(
                     "Invalid types for BOp {:?}: expected {}, got {} + {}",
                     op,
-                    cx.unintern(binop_type),
-                    cx.unintern(tlhs),
-                    cx.unintern(trhs)
+                    cx.unintern(binop_type.0),
+                    cx.unintern(tlhs.0),
+                    cx.unintern(trhs.0)
                 );
                 Err(TypeError::TypeMismatch(msg))
             }
@@ -177,8 +176,8 @@ fn typecheck_expr(cx: &mut Cx, symtbl: &mut Symtbl, expr: &ir::Expr) -> Result<S
                 let msg = format!(
                     "Invalid types for UOp {:?}: expected {}, got {}",
                     op,
-                    cx.unintern(uniop_type),
-                    cx.unintern(trhs)
+                    cx.unintern(uniop_type.0),
+                    cx.unintern(trhs.0)
                 );
                 Err(TypeError::TypeMismatch(msg))
             }
@@ -202,13 +201,10 @@ fn typecheck_expr(cx: &mut Cx, symtbl: &mut Symtbl, expr: &ir::Expr) -> Result<S
     }
 }
 
-fn typecheck_literal(cx: &mut Cx, lit: &ir::Literal) -> Result<Sym, TypeError> {
-    let t_i32 = cx.intern("i32");
-    let t_bool = cx.intern("bool");
-    let t_unit = cx.intern("()");
-    assert!(type_exists(cx, t_i32));
-    assert!(type_exists(cx, t_bool));
-    assert!(type_exists(cx, t_unit));
+fn typecheck_literal(cx: &mut Cx, lit: &ir::Literal) -> Result<TypeSym, TypeError> {
+    let t_i32 = cx.get_typename("i32").unwrap();
+    let t_bool = cx.get_typename("bool").unwrap();
+    let t_unit = cx.get_typename("()").unwrap();
     match lit {
         ir::Literal::Integer(_) => Ok(t_i32),
         ir::Literal::Bool(_) => Ok(t_bool),
@@ -225,12 +221,9 @@ mod tests {
     fn test_typecheck_lit() {
         use ir;
         let cx = &mut crate::Cx::new();
-        let t_i32 = cx.intern("i32");
-        let t_bool = cx.intern("bool");
-        let t_unit = cx.intern("()");
-        assert!(type_exists(cx, t_i32));
-        assert!(type_exists(cx, t_bool));
-        assert!(type_exists(cx, t_unit));
+        let t_i32 = cx.get_typename("i32").unwrap();
+        let t_bool = cx.get_typename("bool").unwrap();
+        let t_unit = cx.get_typename("()").unwrap();
 
         assert_eq!(
             typecheck_literal(cx, &ir::Literal::Integer(9)).unwrap(),
@@ -247,10 +240,10 @@ mod tests {
     #[test]
     fn test_symtbl() {
         let cx = &mut crate::Cx::new();
-        let t_foo = cx.intern("foo");
-        let t_bar = cx.intern("bar");
-        let t_i32 = cx.intern("i32");
-        let t_bool = cx.intern("bool");
+        let t_foo = VarSym(cx.intern("foo"));
+        let t_bar = VarSym(cx.intern("bar"));
+        let t_i32 = cx.get_typename("i32").unwrap();
+        let t_bool = cx.get_typename("bool").unwrap();
         let mut t = Symtbl::new();
 
         // Make sure we can get a value
@@ -288,12 +281,9 @@ mod tests {
     #[test]
     fn test_type_lit() {
         let cx = &mut crate::Cx::new();
-        let t_i32 = cx.intern("i32");
-        let t_bool = cx.intern("bool");
-        let t_unit = cx.intern("()");
-        assert!(type_exists(cx, t_i32));
-        assert!(type_exists(cx, t_bool));
-        assert!(type_exists(cx, t_unit));
+        let t_i32 = cx.get_typename("i32").unwrap();
+        let t_bool = cx.get_typename("bool").unwrap();
+        let t_unit = cx.get_typename("()").unwrap();
 
         let l1 = ir::Literal::Integer(3);
         let l1t = typecheck_literal(cx, &l1).unwrap();
@@ -314,7 +304,7 @@ mod tests {
     #[test]
     fn test_binop() {
         let cx = &mut crate::Cx::new();
-        let t_i32 = cx.intern("i32");
+        let t_i32 = cx.get_typename("i32").unwrap();
         let tbl = &mut Symtbl::new();
 
         use ir::*;
@@ -348,7 +338,7 @@ mod tests {
     #[test]
     fn test_uniop() {
         let cx = &mut crate::Cx::new();
-        let t_i32 = cx.intern("i32");
+        let t_i32 = cx.get_typename("i32").unwrap();
         let tbl = &mut Symtbl::new();
 
         use ir::*;

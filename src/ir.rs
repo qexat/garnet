@@ -13,19 +13,8 @@
 //! Currently it's not really lowered by much!  If's and maybe loops or something.
 //! It's mostly a layer of indirection for further stuff to happen to.
 
-use crate::intern::Sym;
-
 use crate::ast::{self};
-pub use crate::ast::{BOp, Literal, Signature, Type, UOp};
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct Symbol(pub Sym);
-
-impl From<&ast::Symbol> for Symbol {
-    fn from(s: &ast::Symbol) -> Self {
-        Symbol(s.0)
-    }
-}
+pub use crate::ast::{BOp, Literal, Signature, Type, TypeSym, UOp, VarSym};
 
 /// Any expression.
 #[derive(Debug, Clone, PartialEq)]
@@ -34,7 +23,7 @@ pub enum Expr {
         val: Literal,
     },
     Var {
-        name: Symbol,
+        name: VarSym,
     },
     BinOp {
         op: BOp,
@@ -49,8 +38,8 @@ pub enum Expr {
         body: Vec<Expr>,
     },
     Let {
-        varname: Symbol,
-        typename: Type,
+        varname: VarSym,
+        typename: TypeSym,
         init: Box<Expr>,
     },
     If {
@@ -100,7 +89,7 @@ impl Expr {
 #[derive(Debug, Clone, PartialEq)]
 pub enum Decl {
     Function {
-        name: Symbol,
+        name: VarSym,
         signature: Signature,
         body: Vec<Expr>,
     },
@@ -125,8 +114,12 @@ fn lower_lit(lit: &ast::Literal) -> Literal {
     lit.clone()
 }
 
-fn lower_symbol(sym: &ast::Symbol) -> Symbol {
-    Symbol::from(sym)
+fn lower_varsym(sym: &ast::VarSym) -> VarSym {
+    *sym
+}
+
+fn lower_typesym(sym: &ast::TypeSym) -> TypeSym {
+    *sym
 }
 
 fn lower_bop(bop: &ast::BOp) -> BOp {
@@ -154,7 +147,7 @@ fn lower_expr(expr: &ast::Expr) -> Expr {
             val: lower_lit(val),
         },
         E::Var { name } => Var {
-            name: lower_symbol(name),
+            name: lower_varsym(name),
         },
         E::BinOp { op, lhs, rhs } => {
             let nop = lower_bop(op);
@@ -183,8 +176,8 @@ fn lower_expr(expr: &ast::Expr) -> Expr {
             typename,
             init,
         } => {
-            let nvarname = lower_symbol(varname);
-            let ntypename = lower_type(typename);
+            let nvarname = lower_varsym(varname);
+            let ntypename = lower_typesym(typename);
             let ninit = Box::new(lower_expr(init));
             Let {
                 varname: nvarname,
@@ -261,7 +254,7 @@ fn lower_decl(decl: &ast::Decl) -> Decl {
             signature,
             body,
         } => Decl::Function {
-            name: lower_symbol(name),
+            name: lower_varsym(name),
             signature: lower_signature(signature),
             body: lower_exprs(body),
         },
