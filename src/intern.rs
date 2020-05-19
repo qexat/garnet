@@ -15,7 +15,7 @@ pub struct Interner {
 }
 
 /// The type for an interned string.
-#[derive(Copy, Clone, PartialEq, PartialOrd, Hash, Debug)]
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Hash, Debug)]
 pub struct Sym(usize);
 
 impl Interner {
