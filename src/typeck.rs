@@ -81,6 +81,13 @@ fn type_matches(t1: TypeSym, t2: TypeSym) -> bool {
     t1 == t2
 }
 
+/// Does t1 refer to a type that is defined the same way as t2?
+/// For example, are these two unnamed tuple types or function types
+/// the same?
+fn structural_type_matches(cx: &mut Cx, t1: &crate::TypeDef, t2: &crate::TypeDef) -> bool {
+    t1 == t2
+}
+
 pub fn typecheck(cx: &mut Cx, ir: &ir::Ir) -> Result<(), TypeError> {
     let symtbl = &mut Symtbl::new();
     for decl in ir.decls.iter() {
