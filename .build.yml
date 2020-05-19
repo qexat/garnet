@@ -1,5 +1,6 @@
 image: debian/buster
 packages:
+    - pkg-config
     - curl
     - libssl-dev
     # - cargo
