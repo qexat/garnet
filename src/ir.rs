@@ -111,7 +111,7 @@ pub enum Decl {
 /// Currently, basically a compilation unit.
 #[derive(Debug, Clone, Default)]
 pub struct Ir {
-    decls: Vec<Decl>,
+    pub decls: Vec<Decl>,
 }
 
 /// Transforms AST into IR, doing simplifying transformations on the way.

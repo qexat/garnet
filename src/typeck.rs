@@ -81,7 +81,13 @@ fn type_matches(t1: Sym, t2: Sym) -> bool {
     t1 == t2
 }
 
-pub fn typecheck(cx: &mut Cx, ir: &ir::Ir) {}
+pub fn typecheck(cx: &mut Cx, ir: &ir::Ir) -> Result<(), TypeError> {
+    let symtbl = &mut Symtbl::new();
+    for decl in ir.decls.iter() {
+        typecheck_decl(cx, symtbl, decl)?;
+    }
+    Ok(())
+}
 
 /// Typechecks a single decl
 pub fn typecheck_decl(cx: &mut Cx, symtbl: &mut Symtbl, decl: &ir::Decl) -> Result<(), TypeError> {
@@ -161,7 +167,22 @@ fn typecheck_expr(cx: &mut Cx, symtbl: &mut Symtbl, expr: &ir::Expr) -> Result<S
                 Err(TypeError::TypeMismatch(msg))
             }
         }
-        UniOp { op, rhs } => ok,
+        UniOp { op, rhs } => {
+            let trhs = typecheck_expr(cx, symtbl, rhs)?;
+            // Currently, our only valid binops are on numbers.
+            let uniop_type = op.type_of(cx);
+            if type_matches(uniop_type, trhs) {
+                Ok(uniop_type)
+            } else {
+                let msg = format!(
+                    "Invalid types for UOp {:?}: expected {}, got {}",
+                    op,
+                    cx.unintern(uniop_type),
+                    cx.unintern(trhs)
+                );
+                Err(TypeError::TypeMismatch(msg))
+            }
+        }
         Block { body } => ok,
         Let {
             varname,
@@ -294,7 +315,6 @@ mod tests {
     fn test_binop() {
         let cx = &mut crate::Cx::new();
         let t_i32 = cx.intern("i32");
-        let t_bool = cx.intern("bool");
         let tbl = &mut Symtbl::new();
 
         use ir::*;
@@ -316,6 +336,33 @@ mod tests {
                 lhs: Box::new(Expr::Lit {
                     val: Literal::Integer(3),
                 }),
+                rhs: Box::new(Expr::Lit {
+                    val: Literal::Bool(false),
+                }),
+            };
+            assert!(typecheck_expr(cx, tbl, &bad_ir).is_err());
+        }
+    }
+
+    /// Test binop typechecks
+    #[test]
+    fn test_uniop() {
+        let cx = &mut crate::Cx::new();
+        let t_i32 = cx.intern("i32");
+        let tbl = &mut Symtbl::new();
+
+        use ir::*;
+        {
+            let ir = Expr::UniOp {
+                op: UOp::Neg,
+                rhs: Box::new(Expr::Lit {
+                    val: Literal::Integer(4),
+                }),
+            };
+            assert!(type_matches(typecheck_expr(cx, tbl, &ir).unwrap(), t_i32));
+
+            let bad_ir = Expr::UniOp {
+                op: UOp::Neg,
                 rhs: Box::new(Expr::Lit {
                     val: Literal::Bool(false),
                 }),
