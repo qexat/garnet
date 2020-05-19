@@ -3,7 +3,6 @@
 
 use std::collections::HashMap;
 
-use crate::intern::Sym;
 use crate::ir::{self, TypeSym, VarSym};
 use crate::Cx;
 
@@ -139,6 +138,11 @@ pub fn typecheck_decl(cx: &mut Cx, symtbl: &mut Symtbl, decl: &ir::Decl) -> Resu
 
             symtbl.pop_scope();
         }
+        ir::Decl::Const {
+            name,
+            typename,
+            init,
+        } => {}
     }
     Ok(())
 }
