@@ -1,0 +1,13 @@
+image: debian/buster
+packages:
+ - cargo
+sources:
+ - hg+https://hg.sr.ht/~icefox/garnet
+tasks:
+ - build: |
+    cd garnet
+    cargo build
+ - test: |
+    cd garnet
+    cargo test
+
