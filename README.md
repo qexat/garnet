@@ -76,3 +76,4 @@ MIT
  * <https://c9x.me/compile/> (and the related <https://myrlang.org/> )
  * <https://gankra.github.io/blah/swift-abi/> (and related,
    <https://swift.org/blog/library-evolution/>)
+ * <https://en.wikipedia.org/wiki/Operator-precedence_parser>

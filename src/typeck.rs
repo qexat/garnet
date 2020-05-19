@@ -430,9 +430,29 @@ mod tests {
     #[test]
     fn test_block() {}
 
-    /// TODO
+    /// Do let expr's have the right return?
     #[test]
-    fn test_let() {}
+    fn test_let() {
+        let cx = &mut crate::Cx::new();
+        let tbl = &mut Symtbl::new();
+        let t_i32 = cx.get_typename("i32").unwrap();
+        let t_unit = cx.get_typename("()").unwrap();
+        let fooname = VarSym::new(cx, "foo");
+
+        use ir::*;
+        {
+            let ir = Expr::Let {
+                varname: fooname,
+                typename: t_i32,
+                init: Box::new(Expr::Lit {
+                    val: Literal::Integer(42),
+                }),
+            };
+            assert!(type_matches(typecheck_expr(cx, tbl, &ir).unwrap(), t_unit));
+            // Is the variable now bound in our symbol table?
+            assert_eq!(tbl.get_var(cx, fooname).unwrap(), t_i32);
+        }
+    }
 
     /// TODO
     #[test]
