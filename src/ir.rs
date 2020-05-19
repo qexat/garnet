@@ -1,7 +1,7 @@
 //! Intermediate representation, basically what you get after all the typechecking and other kinds
 //! of checking happen.  Slightly simplified over the AST -- basically the result of a
 //! lowering/desugaring pass.  This might give us a nice place to do other simple
-//! lowering/optimization-like things like constant folding, dead code detection, etc.
+//! optimization-like things like constant folding, dead code detection, etc.
 //!
 //! An IR is always assumed to be a valid program, since it has passed all the checking stuff.
 //!
@@ -93,6 +93,11 @@ pub enum Decl {
         signature: Signature,
         body: Vec<Expr>,
     },
+    Const {
+        name: VarSym,
+        typename: TypeSym,
+        init: Expr,
+    },
 }
 
 /// A compilable chunk of AST.
@@ -112,14 +117,6 @@ pub fn lower(ast: &ast::Ast) -> Ir {
 
 fn lower_lit(lit: &ast::Literal) -> Literal {
     lit.clone()
-}
-
-fn lower_varsym(sym: &ast::VarSym) -> VarSym {
-    *sym
-}
-
-fn lower_typesym(sym: &ast::TypeSym) -> TypeSym {
-    *sym
 }
 
 fn lower_bop(bop: &ast::BOp) -> BOp {
@@ -146,9 +143,7 @@ fn lower_expr(expr: &ast::Expr) -> Expr {
         E::Lit { val } => Lit {
             val: lower_lit(val),
         },
-        E::Var { name } => Var {
-            name: lower_varsym(name),
-        },
+        E::Var { name } => Var { name: *name },
         E::BinOp { op, lhs, rhs } => {
             let nop = lower_bop(op);
             let nlhs = lower_expr(lhs);
@@ -176,12 +171,10 @@ fn lower_expr(expr: &ast::Expr) -> Expr {
             typename,
             init,
         } => {
-            let nvarname = lower_varsym(varname);
-            let ntypename = lower_typesym(typename);
             let ninit = Box::new(lower_expr(init));
             Let {
-                varname: nvarname,
-                typename: ntypename,
+                varname: *varname,
+                typename: *typename,
                 init: ninit,
             }
         }
@@ -254,9 +247,18 @@ fn lower_decl(decl: &ast::Decl) -> Decl {
             signature,
             body,
         } => Decl::Function {
-            name: lower_varsym(name),
+            name: *name,
             signature: lower_signature(signature),
             body: lower_exprs(body),
+        },
+        D::Const {
+            name,
+            typename,
+            init,
+        } => Decl::Const {
+            name: *name,
+            typename: *typename,
+            init: lower_expr(init),
         },
     }
 }

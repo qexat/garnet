@@ -160,6 +160,11 @@ pub enum Decl {
         signature: Signature,
         body: Vec<Expr>,
     },
+    Const {
+        name: VarSym,
+        typename: TypeSym,
+        init: Expr,
+    },
 }
 
 /// A compilable chunk of AST.
