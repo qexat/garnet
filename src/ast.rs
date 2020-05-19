@@ -27,6 +27,14 @@ pub enum BOp {
     Mod,
 }
 
+impl BOp {
+    /// Returns the type that the bin op operates on.
+    /// Currently, only numbers.
+    pub fn type_of(&self, cx: &mut crate::Cx) -> Sym {
+        cx.intern("i32")
+    }
+}
+
 /// Unary operation
 #[derive(Debug, Clone, PartialEq)]
 pub enum UOp {

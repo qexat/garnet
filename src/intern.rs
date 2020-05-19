@@ -19,11 +19,6 @@ pub struct Interner {
 pub struct Sym(usize);
 
 impl Interner {
-    /// Create new Interner
-    pub fn new() -> Self {
-        Interner::default()
-    }
-
     /// Intern the string, if necessary, returning a token for it.
     pub fn intern(&mut self, s: &str) -> Sym {
         // Apparently I'm not smart enough to use entry() currently.
