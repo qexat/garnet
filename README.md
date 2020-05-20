@@ -51,6 +51,15 @@ change with time.
    ABI's, using DLL's, and parallelizing the compiler itself.  No solid
    thoughts here yet, but it is an area worth thinking about.
 
+## Pain points in Rust to think about
+
+ * You can't be generic over mutability and ownership, so for example
+   you end up with `iter()`, `into_iter()`, and `iter_mut()`.
+ * Rust's hacky generic-ness over length of sequences/tuples is pretty lame
+ * The slightly-magical relationship between `String` and `&str`, and `&[]`
+   and `[]` and `[;N]`, is a little distressing
+ * Magical `AsRef` and `Deref` behavior is a little distressing
+
 
 # Toolchain
 
@@ -64,6 +73,54 @@ Things to consider:
  * rustyline (for repl)
  * codespan (for error reporting)
  * lasso or `string-interner` (for string interning)
+
+## Backend thoughts
+
+Something I need to consider a little is what I want in terms of a
+compiler backend, since emitting `x86_64` opcodes myself basically
+sounds like the least fun thing ever.
+
+Goals:
+
+ * Not huge
+ * Operates pretty fast
+ * Outputs pretty good/fast/small code
+ * Doesn't require binding to C/C++ code
+ * Produces `x86_64`, ideally also Aarch64 and WASM, SPIR-V would be a
+   nice bonus
+
+Non-goals:
+
+ * Makes best code evar
+ * Super cool innovative research project
+ * Supports every platform evar, or anything less than 32-bits (it'd be
+   cool, but it's not a goal)
+
+Options:
+
+ * Write our own -- ideal choice in the long run, worst choice in the
+   short run
+ * LLVM -- Fails at "not huge", "operates fast" and "doesn't require C++
+   bindings"
+ * Cranelift -- Might actually be a good choice, but word on the street
+   (as of early 2020) is it's poorly documented and unstable.
+   Investigate more.
+ * QBE -- Fails at "doesn't require C bindings", but initially looks
+   good for everything else.  Its Aarch64 unit tests have some failures
+   though, and it doesn't output wasm.  Probably my top pick currently.
+ * WASM -- Just output straight-up WASM and use wasmtime to run it.
+   Cool idea in the short term, WASM is easy to output and doesn't need
+   us to optimize it much in theory, and would work well enough to let
+   us bootstrap the compiler if we want to.  Much easier to output than
+   raw asm, there's good libraries to output it, and I know how to do it.
+ * C -- Just output C Code. The traditional solution, complicates build
+   process, but will work.
+ * Rust -- Rust compiles slow but that's the only downside, complicates
+   build process, but will work.  Might be useful if we can proof
+   whatever borrow checking type stuff we implement against Rust's
+
+Current thoughts: Try out QBE and Cranelift, then if those don't work out
+either output Rust or WASM.
 
 # License
 
