@@ -134,3 +134,4 @@ MIT
  * <https://gankra.github.io/blah/swift-abi/> (and related,
    <https://swift.org/blog/library-evolution/>)
  * <https://en.wikipedia.org/wiki/Operator-precedence_parser>
+ * <https://play.rust-lang.org/?version=stable&mode=debug&edition=2018&gist=174ca95a8b938168764846e97d5e9a2c>
