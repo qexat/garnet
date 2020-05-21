@@ -14,7 +14,8 @@
 //! It's mostly a layer of indirection for further stuff to happen to.
 
 use crate::ast::{self};
-pub use crate::ast::{BOp, Literal, Signature, Type, TypeSym, UOp, VarSym};
+pub use crate::ast::{BOp, Literal, Signature, Type, UOp};
+use crate::{TypeSym, VarSym};
 
 /// Any expression.
 #[derive(Debug, Clone, PartialEq)]

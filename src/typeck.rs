@@ -3,8 +3,8 @@
 
 use std::collections::HashMap;
 
-use crate::ir::{self, TypeSym, VarSym};
-use crate::Cx;
+use crate::ir::{self};
+use crate::{Cx, TypeSym, VarSym};
 
 #[derive(Debug, Clone)]
 pub enum TypeError {
@@ -16,8 +16,8 @@ pub enum TypeError {
 /// A variable binding
 #[derive(Debug, Clone)]
 pub struct VarBinding {
-    name: ir::VarSym,
-    typename: ir::TypeSym,
+    name: VarSym,
+    typename: TypeSym,
 }
 
 /// Symbol table.  Stores the scope stack and variable bindings.

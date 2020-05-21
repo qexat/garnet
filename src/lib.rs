@@ -9,6 +9,26 @@ pub mod intern;
 pub mod ir;
 pub mod typeck;
 
+/// The interned name of a type
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+pub struct TypeSym(pub intern::Sym);
+
+impl TypeSym {
+    pub fn new(cx: &mut crate::Cx, name: &str) -> Self {
+        TypeSym(cx.intern(name))
+    }
+}
+
+/// The interned name of a variable/value
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+pub struct VarSym(pub intern::Sym);
+
+impl VarSym {
+    pub fn new(cx: &mut crate::Cx, name: &str) -> Self {
+        VarSym(cx.intern(name))
+    }
+}
+
 /// For now this is what we use as a type...
 /// This doesn't include the name, just the properties of it.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -45,7 +65,7 @@ pub struct Cx {
     /// Interned symbols
     syms: intern::Interner,
     /// Known types
-    types: HashMap<ir::TypeSym, TypeDef>,
+    types: HashMap<TypeSym, TypeDef>,
 }
 
 impl Cx {
@@ -69,19 +89,19 @@ impl Cx {
 
     /// Fill type table with whatever builtin types we have.
     fn populate_builtin_types(&mut self) {
-        let types: HashMap<ir::TypeSym, TypeDef> =
+        let types: HashMap<TypeSym, TypeDef> =
             [TypeDef::SInt(4), TypeDef::Bool, TypeDef::Tuple(vec![])]
                 .iter()
                 .cloned()
-                .map(|t| (ir::TypeSym(self.intern(t.get_name())), t))
+                .map(|t| (TypeSym(self.intern(t.get_name())), t))
                 .collect();
         self.types = types;
     }
 
     /// Returns the symbol naming the given type, or none if it's
     /// not defined.
-    pub fn get_typename(&mut self, name: &str) -> Option<ir::TypeSym> {
-        let s = ir::TypeSym(self.syms.intern(name));
+    pub fn get_typename(&mut self, name: &str) -> Option<TypeSym> {
+        let s = TypeSym(self.syms.intern(name));
         if self.types.contains_key(&s) {
             Some(s)
         } else {

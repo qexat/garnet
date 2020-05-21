@@ -7,7 +7,7 @@ fn main() {
     let i32sym = cx.get_typename("i32").unwrap();
     let ast = ast::Ast {
         decls: vec![ast::Decl::Function {
-            name: ast::VarSym(mainsym),
+            name: garnet::VarSym(mainsym),
             signature: ast::Signature {
                 params: vec![],
                 rettype: i32sym,

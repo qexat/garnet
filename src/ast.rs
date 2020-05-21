@@ -5,33 +5,13 @@
 //! eventually use the same structure for a code formatter and not
 //! have it nuke anything.
 
-use crate::intern::Sym;
+use crate::{TypeSym, VarSym};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Literal {
     Integer(i64),
     Bool(bool),
     Unit,
-}
-
-/// The interned name of a type
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
-pub struct TypeSym(pub Sym);
-
-impl TypeSym {
-    pub fn new(cx: &mut crate::Cx, name: &str) -> Self {
-        TypeSym(cx.intern(name))
-    }
-}
-
-/// The interned name of a variable/value
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
-pub struct VarSym(pub Sym);
-
-impl VarSym {
-    pub fn new(cx: &mut crate::Cx, name: &str) -> Self {
-        VarSym(cx.intern(name))
-    }
 }
 
 /// Binary operation
