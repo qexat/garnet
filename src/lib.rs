@@ -1,6 +1,7 @@
 //! Garnet compiler guts.
 //#![deny(missing_docs)]
 
+use std::borrow::Cow;
 use std::collections::HashMap;
 
 pub mod ast;
@@ -17,6 +18,24 @@ pub enum TypeDef {
     Bool,
     Tuple(Vec<TypeDef>),
     Lambda(Vec<TypeDef>, Box<TypeDef>),
+}
+
+impl TypeDef {
+    pub fn get_name(&self) -> Cow<'static, str> {
+        match self {
+            TypeDef::SInt(4) => Cow::Borrowed("i32"),
+            TypeDef::SInt(s) => panic!("Undefined integer size {}!", s),
+            TypeDef::Bool => Cow::Borrowed("bool"),
+            TypeDef::Tuple(v) => {
+                if v.len() == 0 {
+                    Cow::Borrowed("()")
+                } else {
+                    panic!("Can't yet define tuple {:?}", v)
+                }
+            }
+            TypeDef::Lambda(params, _rettype) => panic!("Can't yet name lambda {:?}", params),
+        }
+    }
 }
 
 /// Compilation context.  Contains things like symbol tables.
@@ -40,7 +59,7 @@ impl Cx {
     }
 
     /// Shortcut for getting an interned symbol.
-    pub fn intern(&mut self, s: &str) -> intern::Sym {
+    pub fn intern(&mut self, s: impl AsRef<str>) -> intern::Sym {
         self.syms.intern(s)
     }
 
@@ -50,16 +69,12 @@ impl Cx {
 
     /// Fill type table with whatever builtin types we have.
     fn populate_builtin_types(&mut self) {
-        let types: HashMap<ir::TypeSym, TypeDef> = [
-            (self.intern("i32"), TypeDef::SInt(4)),
-            (self.intern("bool"), TypeDef::Bool),
-            // TODO: Not sure I like naming tuples like this.
-            (self.intern("()"), TypeDef::Tuple(vec![])),
-        ]
-        .iter()
-        .cloned()
-        .map(|(n, t)| (ir::TypeSym(n), t))
-        .collect();
+        let types: HashMap<ir::TypeSym, TypeDef> =
+            [TypeDef::SInt(4), TypeDef::Bool, TypeDef::Tuple(vec![])]
+                .iter()
+                .cloned()
+                .map(|t| (ir::TypeSym(self.intern(t.get_name())), t))
+                .collect();
         self.types = types;
     }
 

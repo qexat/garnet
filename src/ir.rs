@@ -226,7 +226,7 @@ fn lower_expr(expr: &ast::Expr) -> Expr {
         E::Break => Break,
         E::Return { retval: None } => Return {
             // Return unit
-            retval: Box::new(Expr::Lit { val: Literal::Unit }),
+            retval: Box::new(Expr::unit()),
         },
         E::Return { retval: Some(e) } => Return {
             retval: Box::new(lower_expr(e)),

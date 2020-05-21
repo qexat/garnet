@@ -20,15 +20,15 @@ pub struct Sym(usize);
 
 impl Interner {
     /// Intern the string, if necessary, returning a token for it.
-    pub fn intern(&mut self, s: &str) -> Sym {
+    pub fn intern(&mut self, s: impl AsRef<str>) -> Sym {
         // Apparently I'm not smart enough to use entry() currently.
-        if let Some(sym) = self.map.get(s) {
+        if let Some(sym) = self.map.get(s.as_ref()) {
             // We have it, great
             *sym
         } else {
             let sym = Sym(self.data.len());
-            self.data.push(s.to_owned());
-            self.map.insert(s.to_owned(), sym);
+            self.data.push(s.as_ref().to_owned());
+            self.map.insert(s.as_ref().to_owned(), sym);
             sym
         }
     }
