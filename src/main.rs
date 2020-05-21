@@ -10,7 +10,7 @@ fn main() {
             name: garnet::VarSym(mainsym),
             signature: ast::Signature {
                 params: vec![],
-                rettype: i32sym,
+                rettype: garnet::TypeDef::SInt(4),
             },
             body: vec![ast::Expr::int(42)],
         }],

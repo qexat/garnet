@@ -14,8 +14,8 @@
 //! It's mostly a layer of indirection for further stuff to happen to.
 
 use crate::ast::{self};
-pub use crate::ast::{BOp, Literal, Signature, Type, UOp};
-use crate::{TypeSym, VarSym};
+pub use crate::ast::{BOp, Literal, Signature, UOp};
+use crate::{TypeDef, TypeSym, VarSym};
 
 /// Any expression.
 #[derive(Debug, Clone, PartialEq)]
@@ -40,7 +40,7 @@ pub enum Expr {
     },
     Let {
         varname: VarSym,
-        typename: TypeSym,
+        typename: TypeDef,
         init: Box<Expr>,
     },
     If {
@@ -96,7 +96,7 @@ pub enum Decl {
     },
     Const {
         name: VarSym,
-        typename: TypeSym,
+        typedef: TypeDef,
         init: Expr,
     },
 }
@@ -126,10 +126,6 @@ fn lower_bop(bop: &ast::BOp) -> BOp {
 
 fn lower_uop(uop: &ast::UOp) -> UOp {
     uop.clone()
-}
-
-fn lower_type(ty: &ast::Type) -> Type {
-    ty.clone()
 }
 
 fn lower_signature(sig: &ast::Signature) -> Signature {
@@ -175,7 +171,7 @@ fn lower_expr(expr: &ast::Expr) -> Expr {
             let ninit = Box::new(lower_expr(init));
             Let {
                 varname: *varname,
-                typename: *typename,
+                typename: typename.clone(),
                 init: ninit,
             }
         }
@@ -254,11 +250,11 @@ fn lower_decl(decl: &ast::Decl) -> Decl {
         },
         D::Const {
             name,
-            typename,
+            typedef,
             init,
         } => Decl::Const {
             name: *name,
-            typename: *typename,
+            typedef: typedef.clone(),
             init: lower_expr(init),
         },
     }

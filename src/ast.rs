@@ -5,7 +5,7 @@
 //! eventually use the same structure for a code formatter and not
 //! have it nuke anything.
 
-use crate::{TypeSym, VarSym};
+use crate::{TypeDef, TypeSym, VarSym};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Literal {
@@ -27,8 +27,8 @@ pub enum BOp {
 impl BOp {
     /// Returns the type that the bin op operates on.
     /// Currently, only numbers.
-    pub fn type_of(&self, cx: &mut crate::Cx) -> TypeSym {
-        TypeSym::new(cx, "i32")
+    pub fn type_of(&self, cx: &mut crate::Cx) -> TypeDef {
+        TypeDef::SInt(4)
     }
 }
 
@@ -41,8 +41,8 @@ pub enum UOp {
 impl UOp {
     /// Returns the type that the unary op operates on.
     /// Currently, only numbers.
-    pub fn type_of(&self, cx: &mut crate::Cx) -> TypeSym {
-        TypeSym::new(cx, "i32")
+    pub fn type_of(&self, cx: &mut crate::Cx) -> TypeDef {
+        TypeDef::SInt(4)
     }
 }
 
@@ -52,16 +52,11 @@ pub struct IfCase {
     pub body: Vec<Expr>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct Type {
-    pub name: TypeSym,
-}
-
 /// A function type signature
 #[derive(Debug, Clone, PartialEq)]
 pub struct Signature {
-    pub params: Vec<(VarSym, TypeSym)>,
-    pub rettype: TypeSym,
+    pub params: Vec<(VarSym, TypeDef)>,
+    pub rettype: TypeDef,
 }
 
 /// Any expression.
@@ -87,7 +82,7 @@ pub enum Expr {
     },
     Let {
         varname: VarSym,
-        typename: TypeSym,
+        typename: TypeDef,
         init: Box<Expr>,
     },
     If {
@@ -142,7 +137,7 @@ pub enum Decl {
     },
     Const {
         name: VarSym,
-        typename: TypeSym,
+        typedef: TypeDef,
         init: Expr,
     },
 }
