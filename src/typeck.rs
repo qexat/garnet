@@ -65,7 +65,7 @@ impl Symtbl {
                 return Ok(binding.typename.clone());
             }
         }
-        let msg = format!("Unknown var: {}", cx.unintern(name.0));
+        let msg = format!("Unknown var: {}", cx.unintern(name));
         Err(TypeError::UnknownVar(msg))
     }
 }
@@ -106,17 +106,19 @@ pub fn typecheck_decl(cx: &mut Cx, symtbl: &mut Symtbl, decl: &ir::Decl) -> Resu
             symtbl.push_scope();
             // TODO: Add the function itself!
             // TODO: How to handle return statements, hm?
+            /*
             for (pname, ptype) in signature.params.iter() {
                 if !type_exists(cx, ptype) {
                     let msg = format!(
-                        "Unknown type {} in function param {}",
+                        "Unknown type {} in function param {:?}",
                         ptype.get_name(),
-                        cx.unintern(pname.0)
+                        cx.unintern_type(pname)
                     );
                     return Err(TypeError::UnknownType(msg));
                 }
                 symtbl.add_var(*pname, ptype);
             }
+            */
             // This is squirrelly; basically, we want to return unit
             // if the function has no body, otherwise return the
             // type of the last expression.
@@ -128,7 +130,7 @@ pub fn typecheck_decl(cx: &mut Cx, symtbl: &mut Symtbl, decl: &ir::Decl) -> Resu
             if !type_matches(&signature.rettype, &last_expr_type) {
                 let msg = format!(
                     "Function {} returns {} but should return {}",
-                    cx.unintern(name.0),
+                    cx.unintern(*name),
                     last_expr_type.get_name(),
                     signature.rettype.get_name(),
                 );
@@ -216,7 +218,7 @@ fn typecheck_expr(cx: &mut Cx, symtbl: &mut Symtbl, expr: &ir::Expr) -> Result<T
             } else {
                 let msg = format!(
                     "initializer for variable {}: expected {}, got {}",
-                    cx.unintern(varname.0),
+                    cx.unintern(*varname),
                     typename.get_name(),
                     init_type.get_name()
                 );
