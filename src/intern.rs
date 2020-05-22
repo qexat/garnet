@@ -3,38 +3,45 @@
 //!
 //! Does not free its strings; free the whole thing.
 
-use std::borrow::Borrow;
 use std::collections::HashMap;
 use std::hash::Hash;
 
 /// Safe string interner.
-#[derive(Debug, Default)]
-pub struct Interner<Val>
+#[derive(Debug)]
+pub struct Interner<Ky, Val>
 where
     Val: Eq + Hash,
+    Ky: From<usize> + Into<usize> + Copy + Clone,
 {
     /// We store two copies of the string, because I don't want to bother with unsafe,
     /// so.  It's fine for now.
     data: Vec<Val>,
-    map: HashMap<Val, Sym>,
+    map: HashMap<Val, Ky>,
 }
 
 /// The type for an interned thingy.
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Hash, Debug)]
-pub struct Sym(usize);
+pub struct Sym(pub usize);
 
-impl<Val> Interner<Val>
+impl<Ky, Val> Interner<Ky, Val>
 where
     Val: Clone + Sized + Eq + Hash + 'static,
+    Ky: From<usize> + Into<usize> + Copy + Clone,
 {
+    pub fn new() -> Self {
+        Self {
+            data: vec![],
+            map: HashMap::new(),
+        }
+    }
     /// Intern the string, if necessary, returning a token for it.
-    pub fn intern(&mut self, s: &Val) -> Sym {
+    pub fn intern(&mut self, s: &Val) -> Ky {
         // Apparently I'm not smart enough to use entry() currently.
         if let Some(sym) = self.map.get(&s) {
             // We have it, great
             *sym
         } else {
-            let sym = Sym(self.data.len());
+            let sym = Ky::from(self.data.len());
             self.data.push(s.clone());
             self.map.insert(s.clone(), sym);
             sym
@@ -42,8 +49,8 @@ where
     }
 
     /// Get a string given its token
-    pub fn get(&self, sym: Sym) -> &Val {
-        &self.data[sym.0]
+    pub fn get(&self, sym: Ky) -> &Val {
+        &self.data[sym.into()]
     }
 }
 

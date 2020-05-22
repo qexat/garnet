@@ -4,10 +4,9 @@ use garnet::ast;
 fn main() {
     let mut cx = garnet::Cx::new();
     let mainsym = cx.intern("main");
-    let i32sym = cx.get_typename("i32").unwrap();
     let ast = ast::Ast {
         decls: vec![ast::Decl::Function {
-            name: garnet::VarSym(mainsym),
+            name: mainsym,
             signature: ast::Signature {
                 params: vec![],
                 rettype: garnet::TypeDef::SInt(4),
