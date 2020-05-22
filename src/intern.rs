@@ -61,12 +61,12 @@ mod tests {
     /// This found a bug.
     #[test]
     fn test_basic() {
-        let mut i: Interner<String> = Interner::default();
+        let mut i: Interner<usize, String> = Interner::new();
         let goodval = "foo";
         let badval = "bar";
-        let s1 = i.intern(goodval);
-        let s2 = i.intern(goodval);
-        let sbad = i.intern(badval);
+        let s1 = i.intern(&goodval.to_owned());
+        let s2 = i.intern(&goodval.to_owned());
+        let sbad = i.intern(&badval.to_owned());
 
         assert_eq!(s1, s2);
         assert_ne!(s1, sbad);
