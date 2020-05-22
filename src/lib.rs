@@ -63,7 +63,7 @@ impl TypeDef {
 /// things like output error messages or whatever?
 pub struct Cx {
     /// Interned symbols
-    syms: intern::Interner,
+    syms: intern::Interner<String>,
     /// Known types
     types: HashMap<TypeSym, TypeDef>,
 }
