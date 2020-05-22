@@ -27,8 +27,8 @@ pub enum BOp {
 impl BOp {
     /// Returns the type that the bin op operates on.
     /// Currently, only numbers.
-    pub fn type_of(&self, cx: &mut crate::Cx) -> TypeDef {
-        TypeDef::SInt(4)
+    pub fn type_of(&self, cx: &mut crate::Cx) -> TypeSym {
+        cx.intern_type(&TypeDef::SInt(4))
     }
 }
 
@@ -41,8 +41,8 @@ pub enum UOp {
 impl UOp {
     /// Returns the type that the unary op operates on.
     /// Currently, only numbers.
-    pub fn type_of(&self, cx: &mut crate::Cx) -> TypeDef {
-        TypeDef::SInt(4)
+    pub fn type_of(&self, cx: &mut crate::Cx) -> TypeSym {
+        cx.intern_type(&TypeDef::SInt(4))
     }
 }
 
@@ -55,8 +55,8 @@ pub struct IfCase {
 /// A function type signature
 #[derive(Debug, Clone, PartialEq)]
 pub struct Signature {
-    pub params: Vec<(VarSym, TypeDef)>,
-    pub rettype: TypeDef,
+    pub params: Vec<(VarSym, TypeSym)>,
+    pub rettype: TypeSym,
 }
 
 /// Any expression.
@@ -82,7 +82,7 @@ pub enum Expr {
     },
     Let {
         varname: VarSym,
-        typename: TypeDef,
+        typename: TypeSym,
         init: Box<Expr>,
     },
     If {
@@ -137,7 +137,7 @@ pub enum Decl {
     },
     Const {
         name: VarSym,
-        typedef: TypeDef,
+        typedef: TypeSym,
         init: Expr,
     },
 }

@@ -9,7 +9,7 @@ fn main() {
             name: mainsym,
             signature: ast::Signature {
                 params: vec![],
-                rettype: garnet::TypeDef::SInt(4),
+                rettype: cx.intern_type(&garnet::TypeDef::SInt(4)),
             },
             body: vec![ast::Expr::int(42)],
         }],

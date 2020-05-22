@@ -17,7 +17,7 @@ pub enum TypeError {
 #[derive(Debug, Clone)]
 pub struct VarBinding {
     name: VarSym,
-    typename: TypeDef,
+    typename: TypeSym,
 }
 
 /// Symbol table.  Stores the scope stack and variable bindings.
@@ -44,7 +44,7 @@ impl Symtbl {
 
     /// Add a variable to the top level of the scope.
     /// Allows shadowing.
-    fn add_var(&mut self, name: VarSym, typedef: &TypeDef) {
+    fn add_var(&mut self, name: VarSym, typedef: &TypeSym) {
         let tbl = self
             .syms
             .last_mut()
@@ -59,7 +59,7 @@ impl Symtbl {
     /// Get the type of the given variable, or an error
     ///
     /// TODO: cx is only for error message, can we fix?
-    fn get_var(&self, cx: &Cx, name: VarSym) -> Result<TypeDef, TypeError> {
+    fn get_var(&self, cx: &Cx, name: VarSym) -> Result<TypeSym, TypeError> {
         for scope in self.syms.iter().rev() {
             if let Some(binding) = scope.get(&name) {
                 return Ok(binding.typename.clone());
@@ -71,7 +71,7 @@ impl Symtbl {
 }
 
 /// Does this type exist in the type table?
-fn type_exists(cx: &Cx, t: &TypeDef) -> bool {
+fn type_exists(cx: &Cx, t: &TypeSym) -> bool {
     //cx.types.contains_key(&t)
     match t {
         _ => true,
@@ -82,7 +82,7 @@ fn type_exists(cx: &Cx, t: &TypeDef) -> bool {
 ///
 /// Currently we have no covariance or contravariance, so this is pretty simple.
 /// Currently it's just, if the structures match, the types match.
-fn type_matches(t1: &TypeDef, t2: &TypeDef) -> bool {
+fn type_matches(t1: &TypeSym, t2: &TypeSym) -> bool {
     t1 == t2
 }
 
@@ -131,8 +131,8 @@ pub fn typecheck_decl(cx: &mut Cx, symtbl: &mut Symtbl, decl: &ir::Decl) -> Resu
                 let msg = format!(
                     "Function {} returns {} but should return {}",
                     cx.unintern(*name),
-                    last_expr_type.get_name(),
-                    signature.rettype.get_name(),
+                    cx.unintern_type(last_expr_type).get_name(),
+                    cx.unintern_type(signature.rettype).get_name(),
                 );
                 return Err(TypeError::TypeMismatch(msg));
             }
@@ -154,8 +154,8 @@ fn typecheck_exprs(
     cx: &mut Cx,
     symtbl: &mut Symtbl,
     exprs: &[ir::Expr],
-) -> Result<TypeDef, TypeError> {
-    let mut last_expr_type = TypeDef::Tuple(vec![]);
+) -> Result<TypeSym, TypeError> {
+    let mut last_expr_type = cx.intern_type(&TypeDef::Tuple(vec![]));
     for expr in exprs {
         last_expr_type = typecheck_expr(cx, symtbl, expr)?;
     }
@@ -163,10 +163,10 @@ fn typecheck_exprs(
 }
 
 /// Returns a symbol representing the type of this expression, if it's ok, or an error if not.
-fn typecheck_expr(cx: &mut Cx, symtbl: &mut Symtbl, expr: &ir::Expr) -> Result<TypeDef, TypeError> {
+fn typecheck_expr(cx: &mut Cx, symtbl: &mut Symtbl, expr: &ir::Expr) -> Result<TypeSym, TypeError> {
     use ir::Expr::*;
-    let unittype = TypeDef::Tuple(vec![]);
-    let booltype = TypeDef::Bool;
+    let unittype = cx.intern_type(&TypeDef::Tuple(vec![]));
+    let booltype = cx.intern_type(&TypeDef::Bool);
     match expr {
         Lit { val } => typecheck_literal(cx, val),
         Var { name } => symtbl.get_var(cx, *name),
@@ -181,9 +181,9 @@ fn typecheck_expr(cx: &mut Cx, symtbl: &mut Symtbl, expr: &ir::Expr) -> Result<T
                 let msg = format!(
                     "Invalid types for BOp {:?}: expected {}, got {} + {}",
                     op,
-                    binop_type.get_name(),
-                    tlhs.get_name(),
-                    trhs.get_name()
+                    cx.unintern_type(binop_type).get_name(),
+                    cx.unintern_type(tlhs).get_name(),
+                    cx.unintern_type(trhs).get_name()
                 );
                 Err(TypeError::TypeMismatch(msg))
             }
@@ -198,8 +198,8 @@ fn typecheck_expr(cx: &mut Cx, symtbl: &mut Symtbl, expr: &ir::Expr) -> Result<T
                 let msg = format!(
                     "Invalid types for UOp {:?}: expected {}, got {}",
                     op,
-                    uniop_type.get_name(),
-                    trhs.get_name()
+                    cx.unintern_type(uniop_type).get_name(),
+                    cx.unintern_type(trhs).get_name()
                 );
                 Err(TypeError::TypeMismatch(msg))
             }
@@ -219,8 +219,8 @@ fn typecheck_expr(cx: &mut Cx, symtbl: &mut Symtbl, expr: &ir::Expr) -> Result<T
                 let msg = format!(
                     "initializer for variable {}: expected {}, got {}",
                     cx.unintern(*varname),
-                    typename.get_name(),
-                    init_type.get_name()
+                    cx.unintern_type(*typename).get_name(),
+                    cx.unintern_type(init_type).get_name()
                 );
                 Err(TypeError::TypeMismatch(msg))
             }
@@ -240,13 +240,16 @@ fn typecheck_expr(cx: &mut Cx, symtbl: &mut Symtbl, expr: &ir::Expr) -> Result<T
                 } else {
                     let msg = format!(
                         "If block return type is {}, but else block returns {}",
-                        if_type.get_name(),
-                        else_type.get_name(),
+                        cx.unintern_type(if_type).get_name(),
+                        cx.unintern_type(else_type).get_name(),
                     );
                     Err(TypeError::TypeMismatch(msg))
                 }
             } else {
-                let msg = format!("If expr condition is {}, not bool", cond_type.get_name(),);
+                let msg = format!(
+                    "If expr condition is {}, not bool",
+                    cx.unintern_type(cond_type).get_name(),
+                );
                 Err(TypeError::TypeMismatch(msg))
             }
         }
@@ -263,10 +266,10 @@ fn typecheck_expr(cx: &mut Cx, symtbl: &mut Symtbl, expr: &ir::Expr) -> Result<T
     }
 }
 
-fn typecheck_literal(cx: &mut Cx, lit: &ir::Literal) -> Result<TypeDef, TypeError> {
-    let i32type = TypeDef::SInt(4);
-    let unittype = TypeDef::Tuple(vec![]);
-    let booltype = TypeDef::Bool;
+fn typecheck_literal(cx: &mut Cx, lit: &ir::Literal) -> Result<TypeSym, TypeError> {
+    let i32type = cx.intern_type(&TypeDef::SInt(4));
+    let unittype = cx.intern_type(&TypeDef::Tuple(vec![]));
+    let booltype = cx.intern_type(&TypeDef::Bool);
     match lit {
         ir::Literal::Integer(_) => Ok(i32type),
         ir::Literal::Bool(_) => Ok(booltype),
@@ -284,9 +287,9 @@ mod tests {
     fn test_typecheck_lit() {
         use ir;
         let cx = &mut crate::Cx::new();
-        let t_i32 = TypeDef::SInt(4);
-        let t_bool = TypeDef::Bool;
-        let t_unit = TypeDef::Tuple(vec![]);
+        let t_i32 = cx.intern_type(&TypeDef::SInt(4));
+        let t_bool = cx.intern_type(&TypeDef::Bool);
+        let t_unit = cx.intern_type(&TypeDef::Tuple(vec![]));
 
         assert_eq!(
             typecheck_literal(cx, &ir::Literal::Integer(9)).unwrap(),
@@ -303,10 +306,11 @@ mod tests {
     #[test]
     fn test_symtbl() {
         let cx = &mut crate::Cx::new();
-        let t_foo = VarSym(cx.intern("foo"));
-        let t_bar = VarSym(cx.intern("bar"));
-        let t_i32 = TypeDef::SInt(4);
-        let t_bool = TypeDef::Bool;
+        let t_foo = cx.intern("foo");
+        let t_bar = cx.intern("bar");
+        let t_i32 = cx.intern_type(&TypeDef::SInt(4));
+        let t_bool = cx.intern_type(&TypeDef::Bool);
+        let t_unit = cx.intern_type(&TypeDef::Tuple(vec![]));
         let mut t = Symtbl::new();
 
         // Make sure we can get a value
@@ -344,9 +348,9 @@ mod tests {
     #[test]
     fn test_type_lit() {
         let cx = &mut crate::Cx::new();
-        let t_i32 = TypeDef::SInt(4);
-        let t_bool = TypeDef::Bool;
-        let t_unit = TypeDef::Tuple(vec![]);
+        let t_i32 = cx.intern_type(&TypeDef::SInt(4));
+        let t_bool = cx.intern_type(&TypeDef::Bool);
+        let t_unit = cx.intern_type(&TypeDef::Tuple(vec![]));
 
         let l1 = ir::Literal::Integer(3);
         let l1t = typecheck_literal(cx, &l1).unwrap();
@@ -367,9 +371,9 @@ mod tests {
     #[test]
     fn test_binop() {
         let cx = &mut crate::Cx::new();
-        let t_i32 = TypeDef::SInt(4);
-        let t_bool = TypeDef::Bool;
-        let t_unit = TypeDef::Tuple(vec![]);
+        let t_i32 = cx.intern_type(&TypeDef::SInt(4));
+        let t_bool = cx.intern_type(&TypeDef::Bool);
+        let t_unit = cx.intern_type(&TypeDef::Tuple(vec![]));
         let tbl = &mut Symtbl::new();
 
         use ir::*;
@@ -403,9 +407,9 @@ mod tests {
     #[test]
     fn test_uniop() {
         let cx = &mut crate::Cx::new();
-        let t_i32 = TypeDef::SInt(4);
-        let t_bool = TypeDef::Bool;
-        let t_unit = TypeDef::Tuple(vec![]);
+        let t_i32 = cx.intern_type(&TypeDef::SInt(4));
+        let t_bool = cx.intern_type(&TypeDef::Bool);
+        let t_unit = cx.intern_type(&TypeDef::Tuple(vec![]));
         let tbl = &mut Symtbl::new();
 
         use ir::*;
@@ -437,9 +441,9 @@ mod tests {
     fn test_let() {
         let cx = &mut crate::Cx::new();
         let tbl = &mut Symtbl::new();
-        let t_i32 = TypeDef::SInt(4);
-        let t_bool = TypeDef::Bool;
-        let t_unit = TypeDef::Tuple(vec![]);
+        let t_i32 = cx.intern_type(&TypeDef::SInt(4));
+        let t_bool = cx.intern_type(&TypeDef::Bool);
+        let t_unit = cx.intern_type(&TypeDef::Tuple(vec![]));
         let fooname = VarSym::new(cx, "foo");
 
         use ir::*;

@@ -40,7 +40,7 @@ pub enum Expr {
     },
     Let {
         varname: VarSym,
-        typename: TypeDef,
+        typename: TypeSym,
         init: Box<Expr>,
     },
     If {
@@ -96,7 +96,7 @@ pub enum Decl {
     },
     Const {
         name: VarSym,
-        typedef: TypeDef,
+        typedef: TypeSym,
         init: Expr,
     },
 }
