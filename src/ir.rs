@@ -177,6 +177,8 @@ fn lower_expr(expr: &ast::Expr) -> Expr {
         }
         E::If { cases, falseblock } => {
             // Expand cases out into nested if ... else if ... else if ... else
+            // TODO: Really this should be lowered into a match expr, but we don't
+            // have those yet, so.
             fn unheck_if(ifcases: &[ast::IfCase], elsecase: &[ast::Expr]) -> Expr {
                 match ifcases {
                     [] => panic!("If statement with no condition; should never happen"),

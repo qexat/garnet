@@ -70,14 +70,6 @@ impl Symtbl {
     }
 }
 
-/// Does this type exist in the type table?
-fn type_exists(cx: &Cx, t: &TypeSym) -> bool {
-    //cx.types.contains_key(&t)
-    match t {
-        _ => true,
-    }
-}
-
 /// Does t1 equal t2?
 ///
 /// Currently we have no covariance or contravariance, so this is pretty simple.
@@ -254,12 +246,57 @@ fn typecheck_expr(cx: &mut Cx, symtbl: &mut Symtbl, expr: &ir::Expr) -> Result<T
             }
         }
         Loop { body } => typecheck_exprs(cx, symtbl, body),
-        Lambda { signature, body } => Ok(unittype),
+        Lambda { signature, body } => {
+            symtbl.push_scope();
+            // add params to symbol table
+            for (paramname, paramtype) in signature.params.iter() {
+                symtbl.add_var(*paramname, paramtype);
+            }
+            let bodytype = typecheck_exprs(cx, symtbl, body)?;
+            // TODO: validate/unify types
+            assert!(type_matches(&bodytype, &signature.rettype));
+            symtbl.pop_scope();
+            let paramtypes: Vec<TypeSym> = signature
+                .params
+                .iter()
+                .map(|(_varsym, typesym)| *typesym)
+                .collect();
+            let lambdatype =
+                cx.intern_type(&TypeDef::Lambda(paramtypes, Box::new(signature.rettype)));
+            Ok(lambdatype)
+        }
         Funcall { func, params } => {
-            // First, look up function
-            // Then, verify params are correct
-            // Then, if all is well, return function's ret type
-            Ok(unittype)
+            // First, get param types
+            let given_param_types = params
+                .iter()
+                .map(|p| typecheck_expr(cx, symtbl, p))
+                .collect::<Result<Vec<TypeSym>, _>>()?;
+            // Then, look up function
+            let f = typecheck_expr(cx, symtbl, func)?;
+            let fdef = cx.unintern_type(f);
+            match fdef {
+                TypeDef::Lambda(paramtypes, rettype) => {
+                    // Now, make sure all the function's params match what it wants
+                    for (given, wanted) in given_param_types.iter().zip(paramtypes) {
+                        if !type_matches(given, wanted) {
+                            let msg = format!(
+                                "Function wanted type {} in param but got type {}",
+                                cx.unintern_type(*wanted).get_name(),
+                                cx.unintern_type(*given).get_name()
+                            );
+                            return Err(TypeError::TypeMismatch(msg));
+                        }
+                    }
+                    Ok(**rettype)
+                }
+                other => {
+                    let msg = format!(
+                        "Tried to call function but it is not a function, it is a {}",
+                        other.get_name()
+                    );
+                    Err(TypeError::TypeMismatch(msg))
+                }
+            }
         }
         Break => Ok(unittype),
         Return { .. } => panic!("oh gods oh gods oh gods oh gods whyyyyyy"),
@@ -478,7 +515,48 @@ mod tests {
 
     /// TODO
     #[test]
-    fn test_funcall() {}
+    fn test_funcall() {
+        let cx = &mut crate::Cx::new();
+        let tbl = &mut Symtbl::new();
+        let t_i32 = cx.intern_type(&TypeDef::SInt(4));
+        let t_bool = cx.intern_type(&TypeDef::Bool);
+        let t_unit = cx.intern_type(&TypeDef::Tuple(vec![]));
+        let fname = VarSym::new(cx, "foo");
+        let aname = VarSym::new(cx, "a");
+        let bname = VarSym::new(cx, "b");
+        let ftype = cx.intern_type(&TypeDef::Lambda(vec![t_i32, t_i32], Box::new(t_i32)));
+
+        use ir::*;
+        {
+            let ir = vec![
+                Expr::Let {
+                    varname: fname,
+                    typename: ftype,
+                    init: Box::new(Expr::Lambda {
+                        signature: Signature {
+                            params: vec![(aname, t_i32), (bname, t_i32)],
+                            rettype: t_i32,
+                        },
+                        body: vec![Expr::BinOp {
+                            op: BOp::Add,
+                            lhs: Box::new(Expr::Var { name: aname }),
+                            rhs: Box::new(Expr::Var { name: bname }),
+                        }],
+                    }),
+                },
+                Expr::Funcall {
+                    func: Box::new(Expr::Var { name: fname }),
+                    params: vec![Expr::int(3), Expr::int(4)],
+                },
+            ];
+            assert!(type_matches(
+                &typecheck_exprs(cx, tbl, &ir).unwrap(),
+                &t_i32
+            ));
+            // Is the variable now bound in our symbol table?
+            assert_eq!(tbl.get_var(cx, fname).unwrap(), ftype);
+        }
+    }
 
     /// TODO
     #[test]
