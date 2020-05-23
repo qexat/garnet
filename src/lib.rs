@@ -56,16 +56,24 @@ impl From<VarSym> for usize {
 /// This doesn't include the name, just the properties of it.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum TypeDef {
+    /// Unknown type not inferred yet
+    Unknown,
+    /// Reference saying "this type is the same as that one",
+    /// which may still be unknown
+    Ref(TypeSym),
     /// Signed integer with the given number of bytes
     SInt(usize),
     Bool,
-    Tuple(Vec<TypeDef>),
-    Lambda(Vec<TypeDef>, Box<TypeDef>),
+    /// We can infer types for tuples
+    Tuple(Vec<TypeSym>),
+    Lambda(Vec<TypeSym>, Box<TypeSym>),
 }
 
 impl TypeDef {
     pub fn get_name(&self) -> Cow<'static, str> {
         match self {
+            TypeDef::Unknown => Cow::Borrowed("unknown!"),
+            TypeDef::Ref(s) => Cow::Owned(format!("'{}", s.0)),
             TypeDef::SInt(4) => Cow::Borrowed("i32"),
             TypeDef::SInt(s) => panic!("Undefined integer size {}!", s),
             TypeDef::Bool => Cow::Borrowed("bool"),
