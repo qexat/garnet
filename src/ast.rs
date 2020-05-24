@@ -137,7 +137,7 @@ pub enum Decl {
     },
     Const {
         name: VarSym,
-        typedef: TypeSym,
+        typename: TypeSym,
         init: Expr,
     },
 }

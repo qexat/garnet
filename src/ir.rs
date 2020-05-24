@@ -15,7 +15,7 @@
 
 use crate::ast::{self};
 pub use crate::ast::{BOp, Literal, Signature, UOp};
-use crate::{TypeDef, TypeSym, VarSym};
+use crate::{TypeSym, VarSym};
 
 /// Any expression.
 #[derive(Debug, Clone, PartialEq)]
@@ -96,7 +96,7 @@ pub enum Decl {
     },
     Const {
         name: VarSym,
-        typedef: TypeSym,
+        typename: TypeSym,
         init: Expr,
     },
 }
@@ -252,11 +252,11 @@ fn lower_decl(decl: &ast::Decl) -> Decl {
         },
         D::Const {
             name,
-            typedef,
+            typename,
             init,
         } => Decl::Const {
             name: *name,
-            typedef: typedef.clone(),
+            typename: *typename,
             init: lower_expr(init),
         },
     }
