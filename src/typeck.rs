@@ -11,6 +11,7 @@ pub enum TypeError {
     UnknownType(String),
     UnknownVar(String),
     TypeMismatch(String),
+    InferenceFailure(String),
 }
 
 /// A variable binding
@@ -67,6 +68,88 @@ impl Symtbl {
         }
         let msg = format!("Unknown var: {}", cx.unintern(name));
         Err(TypeError::UnknownVar(msg))
+    }
+}
+
+impl Cx {
+    /// Make the types of two terms equivalent, or produce an error if they're in conflict
+    fn unify(&mut self, a: TypeSym, b: TypeSym) -> Result<(), TypeError> {
+        let ta = self.unintern_type(a).clone();
+        let tb = self.unintern_type(b).clone();
+        use TypeDef::*;
+        match (ta, tb) {
+            // Follow references
+            (Ref(a), _) => self.unify(a, b),
+            (_, Ref(b)) => self.unify(a, b),
+
+            // When we don't know about a type, assume they match and
+            // make the one know nothing about refer to the one we may
+            // know something about
+            (Unknown, _) => Ok(()),
+            (_, Unknown) => Ok(()),
+
+            // Primitives are easy to unify
+            (SInt(sa), SInt(sb)) if sa == sb => Ok(()),
+            (SInt(sa), SInt(sb)) => Err(TypeError::TypeMismatch(format!(
+                "Integer mismatch: {} != {}",
+                sa, sb
+            ))),
+            (Bool, Bool) => Ok(()),
+
+            // For complex types, we must unify their sub-types.
+            (Tuple(ta), Tuple(tb)) => {
+                for (a, b) in ta.iter().zip(tb) {
+                    self.unify(*a, b)?;
+                }
+                Ok(())
+            }
+            (Lambda(pa, ra), Lambda(pb, rb)) => {
+                for (a, b) in pa.iter().zip(pb) {
+                    self.unify(*a, b)?;
+                }
+                self.unify(*ra, *rb)
+            }
+
+            // No attempt to match was successful, error.
+            (a, b) => Err(TypeError::InferenceFailure(format!(
+                "Could not unify types: {:?} and {:?}",
+                a, b
+            ))),
+        }
+    }
+
+    /// Attempt to reconstruct a concrete type from a symbol.  This may
+    /// fail if we don't have enough info to figure out what the type is.
+    pub fn reconstruct(&self, sym: TypeSym) -> Result<TypeDef, TypeError> {
+        let t = self.unintern_type(sym).clone();
+        use TypeDef::*;
+        match t {
+            Unknown => Err(TypeError::InferenceFailure(format!(
+                "No type for {:?}",
+                sym
+            ))),
+            Ref(id) => self.reconstruct(id),
+            SInt(i) => Ok(SInt(i)),
+            Bool => Ok(Bool),
+            Lambda(p, r) => {
+                let mut ts = vec![];
+                for ty in p {
+                    ts.push(self.reconstruct(ty)?);
+                }
+                let rettype = self.reconstruct(*r)?;
+                //Ok(Lambda(ts, rettype))
+
+                Ok(Bool)
+            }
+            Tuple(t) => {
+                let mut ts = vec![];
+                for ty in t {
+                    ts.push(self.reconstruct(ty)?);
+                }
+                //Ok(Tuple(ts))
+                Ok(Bool)
+            }
+        }
     }
 }
 
