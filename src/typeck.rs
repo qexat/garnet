@@ -73,7 +73,8 @@ impl Symtbl {
 
 impl Cx {
     /// Make the types of two terms equivalent, or produce an error if they're in conflict
-    fn unify(&mut self, a: TypeSym, b: TypeSym) -> Result<(), TypeError> {
+    /// TODO: Figure out how to use this
+    pub fn unify(&mut self, a: TypeSym, b: TypeSym) -> Result<(), TypeError> {
         let ta = self.unintern_type(a).clone();
         let tb = self.unintern_type(b).clone();
         use TypeDef::*;
@@ -136,7 +137,7 @@ impl Cx {
                 for ty in p {
                     ts.push(self.reconstruct(ty)?);
                 }
-                let rettype = self.reconstruct(*r)?;
+                let _rettype = self.reconstruct(*r)?;
                 //Ok(Lambda(ts, rettype))
 
                 Ok(Bool)

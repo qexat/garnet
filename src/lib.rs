@@ -69,6 +69,27 @@ pub enum TypeDef {
     Lambda(Vec<TypeSym>, Box<TypeSym>),
 }
 
+/* TODO:
+ * Do we HAVE to separate concrete from maybe-unknown types?
+ * How do we divide this up?
+ * How does the interning work out?
+ * Think about this.
+/// The interned name of a variable/value
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+pub struct TypeInfoId(pub usize);
+
+/// Information known about a possibly-unknown type.
+pub enum TypeInfo {
+    /// Unknown type not inferred yet
+    Unknown,
+    /// Reference saying "this type is the same as that one",
+    /// which may still be unknown
+    Ref(TypeInfoId),
+    /// Signed integer with the given number of bytes
+    Known(TypeSym),
+}
+*/
+
 impl TypeDef {
     pub fn get_name(&self) -> Cow<'static, str> {
         match self {
