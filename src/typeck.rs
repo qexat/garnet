@@ -346,7 +346,6 @@ mod tests {
         let t_bar = cx.intern("bar");
         let t_i32 = cx.intern_type(&TypeDef::SInt(4));
         let t_bool = cx.intern_type(&TypeDef::Bool);
-        let t_unit = cx.intern_type(&TypeDef::Tuple(vec![]));
         let mut t = Symtbl::new();
 
         // Make sure we can get a value
@@ -408,8 +407,6 @@ mod tests {
     fn test_binop() {
         let cx = &mut crate::Cx::new();
         let t_i32 = cx.intern_type(&TypeDef::SInt(4));
-        let t_bool = cx.intern_type(&TypeDef::Bool);
-        let t_unit = cx.intern_type(&TypeDef::Tuple(vec![]));
         let tbl = &mut Symtbl::new();
 
         use ir::*;
@@ -444,8 +441,6 @@ mod tests {
     fn test_uniop() {
         let cx = &mut crate::Cx::new();
         let t_i32 = cx.intern_type(&TypeDef::SInt(4));
-        let t_bool = cx.intern_type(&TypeDef::Bool);
-        let t_unit = cx.intern_type(&TypeDef::Tuple(vec![]));
         let tbl = &mut Symtbl::new();
 
         use ir::*;
@@ -478,7 +473,6 @@ mod tests {
         let cx = &mut crate::Cx::new();
         let tbl = &mut Symtbl::new();
         let t_i32 = cx.intern_type(&TypeDef::SInt(4));
-        let t_bool = cx.intern_type(&TypeDef::Bool);
         let t_unit = cx.intern_type(&TypeDef::Tuple(vec![]));
         let fooname = VarSym::new(cx, "foo");
 
@@ -518,8 +512,6 @@ mod tests {
         let cx = &mut crate::Cx::new();
         let tbl = &mut Symtbl::new();
         let t_i32 = cx.intern_type(&TypeDef::SInt(4));
-        let t_bool = cx.intern_type(&TypeDef::Bool);
-        let t_unit = cx.intern_type(&TypeDef::Tuple(vec![]));
         let fname = VarSym::new(cx, "foo");
         let aname = VarSym::new(cx, "a");
         let bname = VarSym::new(cx, "b");
