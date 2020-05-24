@@ -3,3 +3,12 @@
 [[package]]
 name = "garnet"
 version = "0.1.0"
+dependencies = [
+ "parity-wasm",
+]
+
+[[package]]
+name = "parity-wasm"
+version = "0.41.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ddfc878dac00da22f8f61e7af3157988424567ab01d9920b962ef7dcbd7cd865"

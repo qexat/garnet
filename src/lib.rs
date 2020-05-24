@@ -4,6 +4,7 @@
 use std::borrow::Cow;
 
 pub mod ast;
+pub mod backend;
 pub mod intern;
 pub mod ir;
 pub mod typeck;
