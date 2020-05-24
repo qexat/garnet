@@ -98,19 +98,9 @@ pub fn typecheck_decl(cx: &mut Cx, symtbl: &mut Symtbl, decl: &ir::Decl) -> Resu
             symtbl.push_scope();
             // TODO: Add the function itself!
             // TODO: How to handle return statements, hm?
-            /*
             for (pname, ptype) in signature.params.iter() {
-                if !type_exists(cx, ptype) {
-                    let msg = format!(
-                        "Unknown type {} in function param {:?}",
-                        ptype.get_name(),
-                        cx.unintern_type(pname)
-                    );
-                    return Err(TypeError::UnknownType(msg));
-                }
                 symtbl.add_var(*pname, ptype);
             }
-            */
             // This is squirrelly; basically, we want to return unit
             // if the function has no body, otherwise return the
             // type of the last expression.
@@ -133,9 +123,11 @@ pub fn typecheck_decl(cx: &mut Cx, symtbl: &mut Symtbl, decl: &ir::Decl) -> Resu
         }
         ir::Decl::Const {
             name,
-            typedef,
-            init,
-        } => {}
+            typename,
+            init: _,
+        } => {
+            symtbl.add_var(*name, typename);
+        }
     }
     Ok(())
 }
@@ -254,7 +246,14 @@ fn typecheck_expr(cx: &mut Cx, symtbl: &mut Symtbl, expr: &ir::Expr) -> Result<T
             }
             let bodytype = typecheck_exprs(cx, symtbl, body)?;
             // TODO: validate/unify types
-            assert!(type_matches(&bodytype, &signature.rettype));
+            if !type_matches(&bodytype, &signature.rettype) {
+                let msg = format!(
+                    "Function returns type {:?} but should be {:?}",
+                    cx.unintern_type(bodytype),
+                    cx.unintern_type(signature.rettype)
+                );
+                return Err(TypeError::TypeMismatch(msg));
+            }
             symtbl.pop_scope();
             let paramtypes: Vec<TypeSym> = signature
                 .params
