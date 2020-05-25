@@ -558,7 +558,7 @@ mod tests {
         let tbl = &mut Symtbl::new();
         let t_i32 = cx.intern_type(&TypeDef::SInt(4));
         let t_unit = cx.intern_type(&TypeDef::Tuple(vec![]));
-        let fooname = VarSym::new(cx, "foo");
+        let fooname = cx.intern("foo");
 
         use ir::*;
         {
@@ -596,9 +596,9 @@ mod tests {
         let cx = &mut crate::Cx::new();
         let tbl = &mut Symtbl::new();
         let t_i32 = cx.intern_type(&TypeDef::SInt(4));
-        let fname = VarSym::new(cx, "foo");
-        let aname = VarSym::new(cx, "a");
-        let bname = VarSym::new(cx, "b");
+        let fname = cx.intern("foo");
+        let aname = cx.intern("a");
+        let bname = cx.intern("b");
         let ftype = cx.intern_type(&TypeDef::Lambda(vec![t_i32, t_i32], Box::new(t_i32)));
 
         use ir::*;
