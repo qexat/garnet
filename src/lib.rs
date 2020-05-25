@@ -7,17 +7,12 @@ pub mod ast;
 pub mod backend;
 pub mod intern;
 pub mod ir;
+pub mod parser;
 pub mod typeck;
 
 /// The interned name of a type
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct TypeSym(pub usize);
-
-impl TypeSym {
-    pub fn new(cx: &mut crate::Cx, name: &TypeDef) -> Self {
-        cx.intern_type(name)
-    }
-}
 
 impl From<usize> for TypeSym {
     fn from(i: usize) -> TypeSym {
@@ -34,12 +29,6 @@ impl From<TypeSym> for usize {
 /// The interned name of a variable/value
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct VarSym(pub usize);
-
-impl VarSym {
-    pub fn new(cx: &mut crate::Cx, name: &str) -> Self {
-        cx.intern(name)
-    }
-}
 
 impl From<usize> for VarSym {
     fn from(i: usize) -> VarSym {
