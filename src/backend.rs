@@ -138,6 +138,11 @@ fn compile_exprs(
     exprs: &[ir::Expr],
 ) -> usize {
     // TODO Implement
+    // I considered making this a step in the IR that basically turns
+    // every `foo(); bar()` into `ignore(foo()); bar()` explicitly,
+    // but how hard to ignore it is dependent on the return type and
+    // so doing it here seems easier.  IR doesn't explicitly store
+    // the return type of each expression... though maybe it should.
     exprs.iter().for_each(|expr| {
         compile_expr(cx, locals, isns, expr);
     });
@@ -251,8 +256,6 @@ fn compile_typesym(cx: &Cx, t: TypeSym) -> t::ValType {
 
 fn compile_type(_cx: &Cx, t: &TypeDef) -> t::ValType {
     match t {
-        TypeDef::Unknown => panic!("Can't happen!"),
-        TypeDef::Ref(_) => panic!("Can't happen"),
         TypeDef::SInt(4) => t::ValType::I32,
         TypeDef::SInt(_) => panic!("TODO"),
         TypeDef::Bool => t::ValType::I32,

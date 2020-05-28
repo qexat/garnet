@@ -42,15 +42,21 @@ impl From<VarSym> for usize {
     }
 }
 
+pub enum TypeInfo {
+    /// Unknown type not inferred yet
+    Unknown,
+    /// Reference saying "this type is the same as that one",
+    /// which may still be unknown.
+    /// TODO: Symbol type needs to change.
+    Ref(TypeSym),
+    /// Known type.
+    Known(TypeDef),
+}
+
 /// For now this is what we use as a type...
 /// This doesn't include the name, just the properties of it.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum TypeDef {
-    /// Unknown type not inferred yet
-    Unknown,
-    /// Reference saying "this type is the same as that one",
-    /// which may still be unknown
-    Ref(TypeSym),
     /// Signed integer with the given number of bytes
     SInt(usize),
     Bool,
@@ -83,8 +89,6 @@ pub enum TypeInfo {
 impl TypeDef {
     pub fn get_name(&self) -> Cow<'static, str> {
         match self {
-            TypeDef::Unknown => Cow::Borrowed("unknown!"),
-            TypeDef::Ref(s) => Cow::Owned(format!("'{}", s.0)),
             TypeDef::SInt(4) => Cow::Borrowed("i32"),
             TypeDef::SInt(s) => panic!("Undefined integer size {}!", s),
             TypeDef::Bool => Cow::Borrowed("bool"),

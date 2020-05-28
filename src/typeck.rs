@@ -4,7 +4,7 @@
 use std::collections::HashMap;
 
 use crate::ir::{self};
-use crate::{Cx, TypeDef, TypeSym, VarSym};
+use crate::{Cx, TypeDef, TypeInfo, TypeSym, VarSym};
 
 #[derive(Debug, Clone)]
 pub enum TypeError {
@@ -72,13 +72,12 @@ impl Symtbl {
 }
 
 impl Cx {
+    /*
     /// Make the types of two terms equivalent, or produce an error if they're in conflict
     /// TODO: Figure out how to use this
-    pub fn unify(&mut self, a: TypeSym, b: TypeSym) -> Result<(), TypeError> {
-        let ta = self.unintern_type(a).clone();
-        let tb = self.unintern_type(b).clone();
-        use TypeDef::*;
-        match (ta, tb) {
+    pub fn unify(&mut self, a: TypeInfo, b: TypeInfo) -> Result<(), TypeError> {
+        use TypeInfo::*;
+        match (a, b) {
             // Follow references
             (Ref(a), _) => self.unify(a, b),
             (_, Ref(b)) => self.unify(a, b),
@@ -89,6 +88,13 @@ impl Cx {
             (Unknown, _) => Ok(()),
             (_, Unknown) => Ok(()),
 
+            (Known(t1), Known(t2)) if t1 == t2 => Ok(()),
+            (Known(t1), Known(t2)) => Err(TypeError::TypeMismatch(format!(
+                "type mismatch: {} != {}",
+                t1, t2
+            ))),
+
+            /*
             // Primitives are easy to unify
             (SInt(sa), SInt(sb)) if sa == sb => Ok(()),
             (SInt(sa), SInt(sb)) => Err(TypeError::TypeMismatch(format!(
@@ -110,7 +116,7 @@ impl Cx {
                 }
                 self.unify(*ra, *rb)
             }
-
+            */
             // No attempt to match was successful, error.
             (a, b) => Err(TypeError::InferenceFailure(format!(
                 "Could not unify types: {:?} and {:?}",
@@ -152,6 +158,7 @@ impl Cx {
             }
         }
     }
+    */
 }
 
 /// Does t1 equal t2?
