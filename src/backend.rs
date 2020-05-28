@@ -11,47 +11,6 @@ use wasm_builder::{instr as i, module as m, sections as s, types as t};
 use crate::ir;
 use crate::*;
 
-/*
-/// A useful structure that lets us put a wasm module
-/// together piecemeal.  parity_wasm does things like
-/// preserve order of segments that are irrelevant to us.
-#[derive(Debug, Clone)]
-struct Module {
-    /// Eventually we'll need to dedupe this but we need to preserve order too,
-    /// 'cause everything is resolved by indices, so for now we just fake this
-    typesec: Vec<elem::Type>,
-    /// For now assume we don't need to dedupe whole functions
-    codesec: Vec<elem::FuncBody>,
-    /// Function signatures
-    funcsec: Vec<elem::Func>,
-    /// Exports.  Name and typed reference.
-    exportsec: Vec<elem::ExportEntry>,
-}
-
-impl Module {
-    fn new() -> Self {
-        Module {
-            typesec: Vec::new(),
-            codesec: Vec::new(),
-            funcsec: Vec::new(),
-            exportsec: Vec::new(),
-        }
-    }
-
-    /// Finally output the thing to actual wasm
-    fn output(self) -> Result<Vec<u8>, elem::Error> {
-        let typesec = elem::Section::Type(elem::TypeSection::with_types(self.typesec));
-        let codesec = elem::Section::Code(elem::CodeSection::with_bodies(self.codesec));
-        let funcsec = elem::Section::Function(elem::FunctionSection::with_entries(self.funcsec));
-        let exportsec = elem::Section::Export(elem::ExportSection::with_entries(self.exportsec));
-        // TODO: The ordering of these sections matters!  Live and learn.
-        let sections = vec![typesec, funcsec, exportsec, codesec];
-        let m = elem::Module::new(sections);
-        m.to_bytes()
-    }
-}
-*/
-
 /// Entry point to turn the IR into a compiled wasm module
 pub fn output(cx: &mut Cx, program: &ir::Ir) -> Vec<u8> {
     let mut m = m::Module::new();
@@ -150,11 +109,7 @@ fn compile_function(cx: &mut Cx, sig: &ir::Signature, body: &[ir::Expr]) -> s::F
     }
 
     // Compile the actual thing.
-    body.iter()
-        .for_each(|expr| compile_expr(cx, &mut locals, &mut isns, expr));
-
-    // Functions must end with END
-    //isns.push(I::End);
+    let _ = compile_exprs(cx, &mut locals, &mut isns, body);
 
     // Turn locals into an array that just contains the types.
     let mut local_arr: Vec<_> = locals.values().map(|l| l).collect();
@@ -173,28 +128,53 @@ fn compile_function(cx: &mut Cx, sig: &ir::Signature, body: &[ir::Expr]) -> s::F
     }
 }
 
+/// Compile multiple exprs, making sure they don't leave unused
+/// values on the stack by adding drop's as necessary.
+/// Returns the number of values left on the stack at the end.
+fn compile_exprs(
+    cx: &mut Cx,
+    locals: &mut HashMap<VarSym, LocalVar>,
+    isns: &mut Vec<i::Instruction>,
+    exprs: &[ir::Expr],
+) -> usize {
+    // TODO Implement
+    exprs.iter().for_each(|expr| {
+        compile_expr(cx, locals, isns, expr);
+    });
+    0
+}
+
 /// Generates code to evaluate the given expr, inserting the instructions into
 /// the given instruction list, leaving values on the stack.
+/// Returns how many values it leaves on the stack, so we know how many
+/// values to get rid of if the return val is ignored.
 fn compile_expr(
     cx: &mut Cx,
     locals: &mut HashMap<VarSym, LocalVar>,
     isns: &mut Vec<i::Instruction>,
     expr: &ir::Expr,
-) {
+) -> usize {
     use i::Instruction as I;
     use ir::Expr as E;
     use ir::*;
     match expr {
         E::Lit { val } => match val {
-            Literal::Integer(i) => isns.push(I::Const(i::Literal::I32(*i as i32))),
-            Literal::Bool(b) => isns.push(I::Const(i::Literal::I32(if *b { 1 } else { 0 }))),
-            Literal::Unit => (),
+            Literal::Integer(i) => {
+                isns.push(I::Const(i::Literal::I32(*i as i32)));
+                1
+            }
+            Literal::Bool(b) => {
+                isns.push(I::Const(i::Literal::I32(if *b { 1 } else { 0 })));
+                1
+            }
+            Literal::Unit => 0,
         },
         E::Var { name } => {
             let ldef = locals
                 .get(name)
                 .expect(&format!("Unknown local {:?}; should never happen", name));
             isns.push(I::LocalGet(ldef.local_idx));
+            0
         }
         E::BinOp { op, lhs, rhs } => {
             // Currently we only have signed integers
@@ -216,6 +196,7 @@ fn compile_expr(
                     signed: true,
                 }),
             }
+            0
         }
         E::UniOp { op, rhs } => match op {
             // We just implement this as 0 - thing.
@@ -224,13 +205,13 @@ fn compile_expr(
                 isns.push(I::Const(i::Literal::I32(0)));
                 compile_expr(cx, locals, isns, rhs);
                 isns.push(I::Subtract(t::ValType::I32));
+                0
             }
         },
         // This is pretty much just a list of expr's by now.
-        E::Block { body } => {
-            body.iter()
-                .for_each(|expr| compile_expr(cx, locals, isns, expr));
-        }
+        // However, functions/etc must not leave extra values
+        // on the stack, so this needs to
+        E::Block { body } => compile_exprs(cx, locals, isns, body),
         E::Let {
             varname,
             typename,
@@ -248,17 +229,18 @@ fn compile_expr(
             compile_expr(cx, locals, isns, init);
             // Store result of expression
             isns.push(I::LocalSet(l.local_idx));
+            0
         }
         E::If {
             condition,
             trueblock,
             falseblock,
-        } => {}
-        E::Loop { body } => {}
-        E::Lambda { signature, body } => {}
-        E::Funcall { func, params } => {}
-        E::Break => {}
-        E::Return { retval } => {}
+        } => 0,
+        E::Loop { body } => 0,
+        E::Lambda { signature, body } => 0,
+        E::Funcall { func, params } => 0,
+        E::Break => 0,
+        E::Return { retval } => 0,
     }
 }
 

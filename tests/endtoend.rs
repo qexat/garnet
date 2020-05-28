@@ -87,23 +87,21 @@ fn block() {
             },
             //body: vec![ast::Expr::int(42)],
             body: vec![
-                /*
                 ast::Expr::BinOp {
                     op: ast::BOp::Div,
                     lhs: Box::new(ast::Expr::int(3)),
                     rhs: Box::new(ast::Expr::int(1)),
                 },
-                */
                 ast::Expr::Block {
                     body: vec![
                         /* TODO: Fix this test, blocks don't end
                          * with the right number of things on the stack.
+                         */
                         ast::Expr::BinOp {
                             op: ast::BOp::Div,
                             lhs: Box::new(ast::Expr::int(3)),
                             rhs: Box::new(ast::Expr::int(1)),
                         },
-                        */
                         ast::Expr::bool(false),
                     ],
                 },
