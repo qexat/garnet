@@ -21,7 +21,11 @@ fn main() {
                     typename: i32_t,
                     init: Box::new(ast::Expr::int(42)),
                 },
-                ast::Expr::Var { name: varsym },
+                ast::Expr::BinOp {
+                    op: ast::BOp::Add,
+                    lhs: Box::new(ast::Expr::Var { name: varsym }),
+                    rhs: Box::new(ast::Expr::Var { name: varsym }),
+                },
             ],
         }],
     };

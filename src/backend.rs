@@ -193,9 +193,35 @@ fn compile_expr(
                 .expect(&format!("Unknown local {:?}; should never happen", name));
             isns.push(I::GetLocal(ldef.local_idx));
         }
-        E::BinOp { op, lhs, rhs } => (),
-        E::UniOp { op, rhs } => (),
-        E::Block { body } => (),
+        E::BinOp { op, lhs, rhs } => {
+            // Currently we only have signed integers
+            // so this is pretty simple.
+            compile_expr(cx, locals, isns, lhs);
+            compile_expr(cx, locals, isns, rhs);
+            match op {
+                ir::BOp::Add => isns.push(I::I32Add),
+                ir::BOp::Sub => isns.push(I::I32Sub),
+                ir::BOp::Mul => isns.push(I::I32Mul),
+                // TODO: Check for div0?
+                ir::BOp::Div => isns.push(I::I32DivS),
+                // TODO: Check for div0?
+                ir::BOp::Mod => isns.push(I::I32RemS),
+            }
+        }
+        E::UniOp { op, rhs } => match op {
+            // We just implement this as 0 - thing.
+            // By definition this only works on signed integers anyway.
+            ir::UOp::Neg => {
+                isns.push(I::I32Const(0));
+                compile_expr(cx, locals, isns, rhs);
+                isns.push(I::I32Sub);
+            }
+        },
+        // This is pretty much just a list of expr's by now.
+        E::Block { body } => {
+            body.iter()
+                .for_each(|expr| compile_expr(cx, locals, isns, expr));
+        }
         E::Let {
             varname,
             typename,
@@ -224,7 +250,6 @@ fn compile_expr(
         E::Funcall { func, params } => {}
         E::Break => {}
         E::Return { retval } => {}
-        _ => panic!("whlarg!"),
     }
 }
 
@@ -233,7 +258,7 @@ fn compile_typesym(cx: &Cx, t: TypeSym) -> elem::ValueType {
     compile_type(cx, tdef)
 }
 
-fn compile_type(cx: &Cx, t: &TypeDef) -> elem::ValueType {
+fn compile_type(_cx: &Cx, t: &TypeDef) -> elem::ValueType {
     match t {
         TypeDef::Unknown => panic!("Can't happen!"),
         TypeDef::Ref(_) => panic!("Can't happen"),
@@ -242,5 +267,60 @@ fn compile_type(cx: &Cx, t: &TypeDef) -> elem::ValueType {
         TypeDef::Bool => w::elements::ValueType::I32,
         TypeDef::Tuple(_) => panic!("Unimplemented"),
         TypeDef::Lambda(_, _) => panic!("Unimplemented"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+
+    use parity_wasm::elements::Instruction as I;
+
+    use crate::backend::*;
+    use crate::ir::Expr as E;
+    use crate::*;
+
+    /// Test compiling a let expr and var lookup
+    #[test]
+    fn test_compile_var() {
+        let cx = &mut Cx::new();
+        let locals = &mut HashMap::new();
+        let isns = &mut vec![];
+
+        let varname = cx.intern("foo");
+
+        let expr = E::Let {
+            varname: cx.intern("foo"),
+            typename: cx.intern_type(&TypeDef::SInt(4)),
+            init: Box::new(ir::Expr::int(9)),
+        };
+        compile_expr(cx, locals, isns, &expr);
+
+        assert_eq!(locals.len(), 1);
+        assert_eq!(locals[&varname].local_idx, 0);
+        assert_eq!(isns[0], I::I32Const(9));
+        assert_eq!(isns[1], I::SetLocal(0));
+
+        let expr = E::Var { name: varname };
+        compile_expr(cx, locals, isns, &expr);
+        assert_eq!(isns[2], I::GetLocal(0));
+    }
+
+    #[test]
+    fn test_compile_binop() {
+        let cx = &mut Cx::new();
+        let locals = &mut HashMap::new();
+        let isns = &mut vec![];
+
+        let expr = ir::Expr::BinOp {
+            op: ir::BOp::Sub,
+            lhs: Box::new(ir::Expr::int(9)),
+            rhs: Box::new(ir::Expr::int(-3)),
+        };
+
+        compile_expr(cx, locals, isns, &expr);
+        assert_eq!(isns[0], I::I32Const(9));
+        assert_eq!(isns[1], I::I32Const(-3));
+        assert_eq!(isns[2], I::I32Sub);
     }
 }
