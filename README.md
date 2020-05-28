@@ -65,7 +65,12 @@ change with time.
    re-export `core`, because then more programs could be `no_std`
    implicitly.  `alloc` is kinda a red-headed stepchild in this
    hierarchy; Zig's approach of explicit allocator objects everywhere
-   may or may not be superior.
+   may or may not be superior.  Talk to some of the stdlib or embedded
+   people about how they'd *want* to arrange it if they could; papering
+   over weird platforms like wasm is a known annoyance.
+ * Syntax inconsistencies/nuisances: Fiddly match blocks, <>'s for
+   generics (though the turbofish is wonderful), i32 is both a type and
+   a module, -> and => being different is a PITA,
 
 ## Glory points in Rust to exploit or even enhance
 
