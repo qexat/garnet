@@ -186,8 +186,8 @@ fn compile_expr(
     use ir::*;
     match expr {
         E::Lit { val } => match val {
-            Literal::Integer(i) => isns.push(I::Const(i::Literal::Int(*i as i32))),
-            Literal::Bool(b) => isns.push(I::Const(i::Literal::Int(if *b { 1 } else { 0 }))),
+            Literal::Integer(i) => isns.push(I::Const(i::Literal::I32(*i as i32))),
+            Literal::Bool(b) => isns.push(I::Const(i::Literal::I32(if *b { 1 } else { 0 }))),
             Literal::Unit => (),
         },
         E::Var { name } => {
@@ -202,17 +202,17 @@ fn compile_expr(
             compile_expr(cx, locals, isns, lhs);
             compile_expr(cx, locals, isns, rhs);
             match op {
-                ir::BOp::Add => isns.push(I::Add(i::MemoryType::Int)),
-                ir::BOp::Sub => isns.push(I::Subtract(i::MemoryType::Int)),
-                ir::BOp::Mul => isns.push(I::Multiply(i::MemoryType::Int)),
+                ir::BOp::Add => isns.push(I::Add(t::ValType::I32)),
+                ir::BOp::Sub => isns.push(I::Subtract(t::ValType::I32)),
+                ir::BOp::Mul => isns.push(I::Multiply(t::ValType::I32)),
                 // TODO: Check for div0?
-                ir::BOp::Div => isns.push(I::IntDivision {
-                    ty: i::IntegerType::Int,
+                ir::BOp::Div => isns.push(I::I32Division {
+                    ty: i::IntegerType::I32,
                     signed: true,
                 }),
                 // TODO: Check for div0?
                 ir::BOp::Mod => isns.push(I::Remainder {
-                    ty: i::IntegerType::Int,
+                    ty: i::IntegerType::I32,
                     signed: true,
                 }),
             }
@@ -221,9 +221,9 @@ fn compile_expr(
             // We just implement this as 0 - thing.
             // By definition this only works on signed integers anyway.
             ir::UOp::Neg => {
-                isns.push(I::Const(i::Literal::Int(0)));
+                isns.push(I::Const(i::Literal::I32(0)));
                 compile_expr(cx, locals, isns, rhs);
-                isns.push(I::Subtract(i::MemoryType::Int));
+                isns.push(I::Subtract(t::ValType::I32));
             }
         },
         // This is pretty much just a list of expr's by now.
@@ -271,9 +271,9 @@ fn compile_type(_cx: &Cx, t: &TypeDef) -> t::ValType {
     match t {
         TypeDef::Unknown => panic!("Can't happen!"),
         TypeDef::Ref(_) => panic!("Can't happen"),
-        TypeDef::SInt(4) => t::ValType::Int,
+        TypeDef::SInt(4) => t::ValType::I32,
         TypeDef::SInt(_) => panic!("TODO"),
-        TypeDef::Bool => t::ValType::Int,
+        TypeDef::Bool => t::ValType::I32,
         TypeDef::Tuple(_) => panic!("Unimplemented"),
         TypeDef::Lambda(_, _) => panic!("Unimplemented"),
     }
@@ -307,7 +307,7 @@ mod tests {
 
         assert_eq!(locals.len(), 1);
         assert_eq!(locals[&varname].local_idx, 0);
-        assert_eq!(isns[0], I::Const(i::Literal::Int(9)));
+        assert_eq!(isns[0], I::Const(i::Literal::I32(9)));
         assert_eq!(isns[1], I::LocalSet(0));
 
         let expr = E::Var { name: varname };
@@ -328,8 +328,8 @@ mod tests {
         };
 
         compile_expr(cx, locals, isns, &expr);
-        assert_eq!(isns[0], I::Const(i::Literal::Int(9)));
-        assert_eq!(isns[1], I::Const(i::Literal::Int(-3)));
-        assert_eq!(isns[2], I::Subtract(i::MemoryType::Int));
+        assert_eq!(isns[0], I::Const(i::Literal::I32(9)));
+        assert_eq!(isns[1], I::Const(i::Literal::I32(-3)));
+        assert_eq!(isns[2], I::Subtract(t::ValType::I32));
     }
 }

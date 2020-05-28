@@ -989,7 +989,7 @@ checksum = "cccddf32554fecc6acb585f82a32a72e28b48f8c4c1883ddfeeeaa96f7d8e519"
 [[package]]
 name = "wasm-builder"
 version = "0.1.0"
-source = "git+https://github.com/icefoxen/wasm-builder.git#58efb0499e182c70e70c7fc5305408b98994de1f"
+source = "git+https://github.com/JCapucho/wasm-builder.git#86e89bf77f53b9eec8baa131406901595ba043ce"
 dependencies = [
  "leb128",
 ]
