@@ -8,3 +8,7 @@ edition = "2018"
 
 [dependencies]
 parity-wasm = "0.41"
+
+[dev-dependencies]
+# Use wasmtime to evaluate results of end-to-end tests.
+wasmtime = "0.16"
