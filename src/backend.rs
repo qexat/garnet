@@ -3,7 +3,8 @@
 //! For now, we're going to output WASM.  That should let us get interesting output
 //! and maybe bootstrap stuff if we feel like it.
 
-use std::collections::HashSet;
+use std::cmp;
+use std::collections::HashMap;
 
 use parity_wasm::{self as w, elements as elem};
 
@@ -70,10 +71,11 @@ fn compile_decl(cx: &mut Cx, m: &mut Module, decl: &ir::Decl) {
             // TODO For now we don't try to dedupe types, just add 'em as redundantly
             // as necessary.
             let typesec_idx = m.typesec.len();
-            m.typesec.push(elem::Type::Function(sig));
-            let body = compile_function(cx, signature, body);
-            m.codesec.push(body);
             let funcsec_idx = m.funcsec.len();
+            let body = compile_function(cx, signature, body);
+
+            m.codesec.push(body);
+            m.typesec.push(elem::Type::Function(sig));
             m.funcsec.push(elem::Func::new(typesec_idx as u32));
             m.exportsec.push(elem::ExportEntry::new(
                 cx.unintern(*name).to_owned(),
@@ -88,8 +90,7 @@ fn compile_decl(cx: &mut Cx, m: &mut Module, decl: &ir::Decl) {
             // Okay this is actually harder than it looks because
             // wasm only lets globals be value types.
             // ...and if it's really const then why do we need it anyway
-            let tdef = cx.unintern_type(*typename).clone();
-            let wasm_type = compile_type(cx, &tdef);
+            let wasm_type = compile_typesym(cx, *typename);
         }
     }
 }
@@ -98,13 +99,9 @@ fn function_signature(cx: &mut Cx, m: &mut Module, sig: &ir::Signature) -> elem:
     let params: Vec<elem::ValueType> = sig
         .params
         .iter()
-        .map(|(_varsym, typesym)| {
-            let typedef = cx.unintern_type(*typesym);
-            compile_type(cx, typedef)
-        })
+        .map(|(_varsym, typesym)| compile_typesym(cx, *typesym))
         .collect();
-    let rettypedef = cx.unintern_type(sig.rettype);
-    let rettype = compile_type(cx, rettypedef);
+    let rettype = compile_typesym(cx, sig.rettype);
     elem::FunctionType::new(params, Some(rettype))
 }
 
@@ -118,27 +115,122 @@ struct Locals {
     f64: Vec<()>,
 }
 
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+struct LocalVar {
+    local_idx: u32,
+    wasm_type: elem::ValueType,
+}
+
+/// Order by local index
+impl cmp::PartialOrd for LocalVar {
+    fn partial_cmp(&self, other: &Self) -> Option<cmp::Ordering> {
+        Some(self.local_idx.cmp(&other.local_idx))
+    }
+}
+
+/// Order by local index
+impl cmp::Ord for LocalVar {
+    fn cmp(&self, other: &Self) -> cmp::Ordering {
+        self.local_idx.cmp(&other.local_idx)
+    }
+}
+
 /// Compile a function, specifically -- wasm needs to know about its params and such.
 fn compile_function(cx: &mut Cx, sig: &ir::Signature, body: &[ir::Expr]) -> elem::FuncBody {
-    let mut locals = vec![];
+    use elem::Instruction as I;
+    // A simple, scope-less symbol table.
+    let mut locals: HashMap<VarSym, LocalVar> = HashMap::new();
     let mut isns = vec![];
 
-    use elem::Instruction as I;
-    for expr in body {
-        use ir::*;
-        match expr {
-            Expr::Lit { val } => match val {
-                Literal::Integer(i) => isns.push(I::I32Const(*i as i32)),
-                Literal::Bool(b) => isns.push(I::I32Const(if *b { 1 } else { 0 })),
-                Literal::Unit => (),
-            },
-            _ => panic!("whlarg!"),
-        }
+    // Function params are passed in the "locals" section.
+    // So, we add them all to the symbol table.
+    for (pname, ptype) in sig.params.iter() {
+        let p = LocalVar {
+            local_idx: locals.len() as u32,
+            wasm_type: compile_typesym(cx, *ptype),
+        };
+        locals.insert(*pname, p);
     }
+
+    // Compile the actual thing.
+    body.iter()
+        .for_each(|expr| compile_expr(cx, &mut locals, &mut isns, expr));
+
     // Functions must end with END
     isns.push(I::End);
 
-    elem::FuncBody::new(locals, elem::Instructions::new(isns))
+    // Turn locals into an array that just contains the types.
+    let mut local_arr: Vec<_> = locals.values().map(|l| l).collect();
+    local_arr.sort();
+    let wasm_locals = local_arr
+        .into_iter()
+        .map(|l| elem::Local::new(1, l.wasm_type))
+        .collect();
+
+    elem::FuncBody::new(wasm_locals, elem::Instructions::new(isns))
+}
+
+/// Generates code to evaluate the given expr, inserting the instructions into
+/// the given instruction list, leaving values on the stack.
+fn compile_expr(
+    cx: &mut Cx,
+    locals: &mut HashMap<VarSym, LocalVar>,
+    isns: &mut Vec<elem::Instruction>,
+    expr: &ir::Expr,
+) {
+    use elem::Instruction as I;
+    use ir::Expr as E;
+    use ir::*;
+    match expr {
+        E::Lit { val } => match val {
+            Literal::Integer(i) => isns.push(I::I32Const(*i as i32)),
+            Literal::Bool(b) => isns.push(I::I32Const(if *b { 1 } else { 0 })),
+            Literal::Unit => (),
+        },
+        E::Var { name } => {
+            let ldef = locals
+                .get(name)
+                .expect(&format!("Unknown local {:?}; should never happen", name));
+            isns.push(I::GetLocal(ldef.local_idx));
+        }
+        E::BinOp { op, lhs, rhs } => (),
+        E::UniOp { op, rhs } => (),
+        E::Block { body } => (),
+        E::Let {
+            varname,
+            typename,
+            init,
+        } => {
+            // Declare local var storage
+            let wasm_type = compile_typesym(cx, *typename);
+            let local_idx = locals.len() as u32;
+            let l = LocalVar {
+                local_idx,
+                wasm_type,
+            };
+            locals.insert(*varname, l);
+            // Compile init expression
+            compile_expr(cx, locals, isns, init);
+            // Store result of expression
+            isns.push(I::SetLocal(l.local_idx));
+        }
+        E::If {
+            condition,
+            trueblock,
+            falseblock,
+        } => {}
+        E::Loop { body } => {}
+        E::Lambda { signature, body } => {}
+        E::Funcall { func, params } => {}
+        E::Break => {}
+        E::Return { retval } => {}
+        _ => panic!("whlarg!"),
+    }
+}
+
+fn compile_typesym(cx: &Cx, t: TypeSym) -> elem::ValueType {
+    let tdef = cx.unintern_type(t);
+    compile_type(cx, tdef)
 }
 
 fn compile_type(cx: &Cx, t: &TypeDef) -> elem::ValueType {
