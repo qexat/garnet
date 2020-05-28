@@ -7,7 +7,7 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-wasm-builder = { git = "https://github.com/icefoxen/wasm-builder.git" }
+wasm-builder = { git = "https://github.com/JCapucho/wasm-builder.git" }
 
 [dev-dependencies]
 # Use wasmtime to evaluate results of end-to-end tests.
