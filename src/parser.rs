@@ -7,8 +7,9 @@ But don't go ham sacrificing familiarity for How It Should Be
 Keyword-delimited blocks instead of curly braces
 and/or/not keywords for logical operators instead of ||, && etc
 Keep | and & and ~ for binary operations
+TODO: Make sure trailing commas are always allowed
 
-I kinda want Erlang-style pattern matching in fun args, but
+I kinda want Erlang-style pattern matching in function args, but
 the point of this language is to KISS.
 
 
@@ -48,7 +49,7 @@ typename =
   // Fixed-size arrays
   | "[" typename ";" INTEGER} "]"
   // TODO: Generics?
-  // | ID "[" typename, {"," typename} "]"
+  // | ID "[" typename {"," typename} "]"
   // slices can just then be slice[...]
   // TODO: Function syntax?  Possibilities below.
   // | "fn" "(" fn_args ")" [":" typename]

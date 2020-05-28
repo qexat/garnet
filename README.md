@@ -30,9 +30,9 @@ change with time.
  * Simplicity over runtime performance -- Rust and Go are very different
    places on this spectrum, but I think OCaml demonstrates you should be
    able to have a bunch of both.  There needs to be more points on this
-   spectrum.
+   spectrum.  Investigate more.
  * Fast compiler -- This is a pain point for Rust for various reasons,
-   and one of those things where having it work well is real nice
+   and one of those things where having it work well is real nice.
  * Simplicity of compiler -- I'd rather have a GOOD compiler in 50k
    lines than a FANTASTIC compiler in 500k lines; investigate
    [qbe](https://c9x.me/compile/) for example.
@@ -49,7 +49,8 @@ change with time.
  * I am not CONVINCED that a linker is the best way to handle things.
    This has implications on things like distributing libraries, defining
    ABI's, using DLL's, and parallelizing the compiler itself.  No solid
-   thoughts here yet, but it is an area worth thinking about.
+   thoughts here yet, but it is an area worth thinking about.  Rust, C,
+   Go and Swift present different points in this area to look at.
 
 ## Pain points in Rust to think about
 
@@ -58,9 +59,29 @@ change with time.
  * Related, the pile of AsRef, Deref, Borrow, ToOwned etc. traits.
  * Rust's hacky generic-ness over length of sequences/tuples is pretty lame
  * The slightly-magical relationship between `String` and `&str`, and `&[]`
-   and `[]` and `[;N]`, is a little distressing
+   and `[]` and `[T;N]`, is a little distressing
  * Magical `AsRef` and `Deref` behavior is a little distressing
+ * `std` vs `core` vs `alloc` -- it'd be better if `std` didn't actually
+   re-export `core`, because then more programs could be `no_std`
+   implicitly.  `alloc` is kinda a red-headed stepchild in this
+   hierarchy; Zig's approach of explicit allocator objects everywhere
+   may or may not be superior.
 
+## Glory points in Rust to exploit or even enhance
+
+ * Move semantics everywhere
+ * Derive traits
+ * methods <-> functions
+ * True, if conservative, constexpr's
+ * Iterators just return Option
+ * Math is checked by default
+ * Stack unwinding without recovery -- very nice compromise of
+   complexity
+
+## Functionality sacrificed for simplicity
+
+ * match blocks on function params, like Erlang -- just syntactic sugar
+ * Monomorphized generics -- for now?
 
 # Toolchain
 
@@ -73,6 +94,7 @@ Things to consider:
  * structopt (for arg parsing)
  * rustyline (for repl)
  * codespan (for error reporting)
+ * logos (for lexer)
  * lasso or `string-interner` (for string interning)
 
 ## Backend thoughts

@@ -5,14 +5,24 @@ fn main() {
     let mut cx = garnet::Cx::new();
     //let mainsym = cx.intern("main");
     let mainsym = cx.intern("_start");
+    let varsym = cx.intern("foo");
+    let i32_t = cx.intern_type(&garnet::TypeDef::SInt(4));
     let ast = ast::Ast {
         decls: vec![ast::Decl::Function {
             name: mainsym,
             signature: ast::Signature {
                 params: vec![],
-                rettype: cx.intern_type(&garnet::TypeDef::SInt(4)),
+                rettype: i32_t,
             },
-            body: vec![ast::Expr::int(42)],
+            //body: vec![ast::Expr::int(42)],
+            body: vec![
+                ast::Expr::Let {
+                    varname: varsym,
+                    typename: i32_t,
+                    init: Box::new(ast::Expr::int(42)),
+                },
+                ast::Expr::Var { name: varsym },
+            ],
         }],
     };
     println!("AST: {:#?}", ast);
