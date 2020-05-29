@@ -6,23 +6,30 @@
 use std::cmp;
 use std::collections::HashMap;
 
+use walrus as w;
 use wasm_builder::{instr as i, module as m, sections as s, types as t};
 
 use crate::ir;
 use crate::*;
 
-/// Entry point to turn the IR into a compiled wasm module
-pub fn output(cx: &mut Cx, program: &ir::Ir) -> Vec<u8> {
-    let mut m = m::Module::new();
-    for decl in program.decls.iter() {
-        compile_decl(cx, &mut m, decl);
-    }
-    let mut output = std::io::Cursor::new(vec![]);
-    m.encode(&mut output).unwrap();
-    output.into_inner()
+/// Backend context
+struct BCx<'a> {
+    cx: &'a mut Cx,
+    m: w::Module,
 }
 
-fn compile_decl(cx: &mut Cx, m: &mut m::Module, decl: &ir::Decl) {
+/// Entry point to turn the IR into a compiled wasm module
+pub fn output(cx: &mut Cx, program: &ir::Ir) -> Vec<u8> {
+    let config = w::ModuleConfig::new();
+    let m = w::Module::with_config(config);
+    let bcx = &mut BCx { cx, m };
+    for decl in program.decls.iter() {
+        compile_decl(bcx, decl);
+    }
+    bcx.m.emit_wasm()
+}
+
+fn compile_decl(bcx: &mut BCx, decl: &ir::Decl) {
     use ir::*;
     match decl {
         Decl::Function {
@@ -30,6 +37,10 @@ fn compile_decl(cx: &mut Cx, m: &mut m::Module, decl: &ir::Decl) {
             signature,
             body,
         } => {
+            let function_id = compile_function(bcx, signature, body);
+            let name = bcx.cx.unintern(*name);
+            bcx.m.exports.add(name, function_id);
+            /*
             let sig = function_signature(cx, m, signature);
             // TODO For now we don't try to dedupe types, just add 'em as redundantly
             // as necessary.
@@ -44,6 +55,7 @@ fn compile_decl(cx: &mut Cx, m: &mut m::Module, decl: &ir::Decl) {
                 name: cx.unintern(*name).to_owned(),
                 desc: s::Desc::Function(funcsec_idx as u32),
             });
+            */
         }
         Decl::Const {
             name,
@@ -53,22 +65,19 @@ fn compile_decl(cx: &mut Cx, m: &mut m::Module, decl: &ir::Decl) {
             // Okay this is actually harder than it looks because
             // wasm only lets globals be value types.
             // ...and if it's really const then why do we need it anyway
-            let wasm_type = compile_typesym(cx, *typename);
+            //let wasm_type = compile_typesym(cx, *typename);
         }
     }
 }
 
-fn function_signature(cx: &mut Cx, m: &mut m::Module, sig: &ir::Signature) -> t::FunctionType {
-    let params: Vec<t::ValType> = sig
+fn function_signature(cx: &mut Cx, sig: &ir::Signature) -> (Vec<w::ValType>, Vec<w::ValType>) {
+    let params: Vec<w::ValType> = sig
         .params
         .iter()
         .map(|(_varsym, typesym)| compile_typesym(cx, *typesym))
         .collect();
     let rettype = compile_typesym(cx, sig.rettype);
-    t::FunctionType {
-        parameter_types: params,
-        return_types: vec![rettype],
-    }
+    (params, vec![rettype])
 }
 #[derive(Copy, Clone, Debug, PartialEq)]
 struct LocalVar {
@@ -93,11 +102,20 @@ impl cmp::Ord for LocalVar {
 impl cmp::Eq for LocalVar {}
 
 /// Compile a function, specifically -- wasm needs to know about its params and such.
-fn compile_function(cx: &mut Cx, sig: &ir::Signature, body: &[ir::Expr]) -> s::Function {
+fn compile_function(bcx: &mut BCx, sig: &ir::Signature, body: &[ir::Expr]) -> w::FunctionId {
+    let (paramtype, rettype) = function_signature(bcx.cx, sig);
+    let mut fb = w::FunctionBuilder::new(&mut bcx.m.types, &paramtype, &rettype);
     // A simple, scope-less symbol table.
-    let mut locals: HashMap<VarSym, LocalVar> = HashMap::new();
-    let mut isns = vec![];
+    let mut locals: HashMap<VarSym, w::LocalId> = HashMap::new();
+    // add params
+    //bcx.m.locals.add();
+    // add locals
+    //bcx.m.locals.add();
+    let _ = compile_exprs(cx, &mut locals, &mut isns, body);
+    fb.finish(vec![], &mut bcx.m.funcs)
 
+    /*
+    let mut isns = vec![];
     // Function params are passed in the "locals" section.
     // So, we add them all to the symbol table.
     for (pname, ptype) in sig.params.iter() {
@@ -126,8 +144,10 @@ fn compile_function(cx: &mut Cx, sig: &ir::Signature, body: &[ir::Expr]) -> s::F
         locals: wasm_locals,
         body: i::Expr(isns),
     }
+                */
 }
 
+/*
 /// Compile multiple exprs, making sure they don't leave unused
 /// values on the stack by adding drop's as necessary.
 /// Returns the number of values left on the stack at the end.
@@ -248,17 +268,18 @@ fn compile_expr(
         E::Return { retval } => 0,
     }
 }
+*/
 
-fn compile_typesym(cx: &Cx, t: TypeSym) -> t::ValType {
+fn compile_typesym(cx: &Cx, t: TypeSym) -> w::ValType {
     let tdef = cx.unintern_type(t);
     compile_type(cx, tdef)
 }
 
-fn compile_type(_cx: &Cx, t: &TypeDef) -> t::ValType {
+fn compile_type(_cx: &Cx, t: &TypeDef) -> w::ValType {
     match t {
-        TypeDef::SInt(4) => t::ValType::I32,
+        TypeDef::SInt(4) => w::ValType::I32,
         TypeDef::SInt(_) => panic!("TODO"),
-        TypeDef::Bool => t::ValType::I32,
+        TypeDef::Bool => w::ValType::I32,
         TypeDef::Tuple(_) => panic!("Unimplemented"),
         TypeDef::Lambda(_, _) => panic!("Unimplemented"),
     }
