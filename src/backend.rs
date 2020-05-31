@@ -70,19 +70,19 @@ fn compile_decl(bcx: &mut BCx, decl: &ir::Decl) {
     }
 }
 
-fn function_signature(cx: &mut Cx, sig: &ir::Signature) -> (Vec<w::ValType>, Vec<w::ValType>) {
+fn function_signature(bcx: &mut BCx, sig: &ir::Signature) -> (Vec<w::ValType>, Vec<w::ValType>) {
     let params: Vec<w::ValType> = sig
         .params
         .iter()
-        .map(|(_varsym, typesym)| compile_typesym(cx, *typesym))
+        .map(|(_varsym, typesym)| compile_typesym(bcx, *typesym))
         .collect();
-    let rettype = compile_typesym(cx, sig.rettype);
+    let rettype = compile_typesym(bcx, sig.rettype);
     (params, vec![rettype])
 }
 #[derive(Copy, Clone, Debug, PartialEq)]
 struct LocalVar {
-    local_idx: u32,
-    wasm_type: t::ValType,
+    local_idx: w::ir::LocalId,
+    wasm_type: w::ValType,
 }
 
 /// Order by local index
@@ -103,15 +103,23 @@ impl cmp::Eq for LocalVar {}
 
 /// Compile a function, specifically -- wasm needs to know about its params and such.
 fn compile_function(bcx: &mut BCx, sig: &ir::Signature, body: &[ir::Expr]) -> w::FunctionId {
-    let (paramtype, rettype) = function_signature(bcx.cx, sig);
+    let (paramtype, rettype) = function_signature(bcx, sig);
     let mut fb = w::FunctionBuilder::new(&mut bcx.m.types, &paramtype, &rettype);
     // A simple, scope-less symbol table.
-    let mut locals: HashMap<VarSym, w::LocalId> = HashMap::new();
+    let mut locals: HashMap<VarSym, LocalVar> = HashMap::new();
     // add params
-    //bcx.m.locals.add();
+    for (pname, ptype) in sig.params.iter() {
+        let idx = bcx.m.locals.add(compile_typesym(bcx, *ptype));
+        let p = LocalVar {
+            local_idx: idx,
+            wasm_type: compile_typesym(bcx, *ptype),
+        };
+        locals.insert(*pname, p);
+    }
     // add locals
     //bcx.m.locals.add();
-    let _ = compile_exprs(cx, &mut locals, &mut isns, body);
+    let instrs = &mut fb.func_body();
+    let _ = compile_exprs(bcx, &mut locals, instrs, &body);
     fb.finish(vec![], &mut bcx.m.funcs)
 
     /*
@@ -147,14 +155,13 @@ fn compile_function(bcx: &mut BCx, sig: &ir::Signature, body: &[ir::Expr]) -> w:
                 */
 }
 
-/*
 /// Compile multiple exprs, making sure they don't leave unused
 /// values on the stack by adding drop's as necessary.
 /// Returns the number of values left on the stack at the end.
 fn compile_exprs(
-    cx: &mut Cx,
+    bcx: &mut BCx,
     locals: &mut HashMap<VarSym, LocalVar>,
-    isns: &mut Vec<i::Instruction>,
+    instrs: &mut w::InstrSeqBuilder,
     exprs: &[ir::Expr],
 ) -> usize {
     // TODO Implement
@@ -164,7 +171,7 @@ fn compile_exprs(
     // so doing it here seems easier.  IR doesn't explicitly store
     // the return type of each expression... though maybe it should.
     exprs.iter().for_each(|expr| {
-        compile_expr(cx, locals, isns, expr);
+        compile_expr(bcx, locals, instrs, expr);
     });
     0
 }
@@ -174,9 +181,9 @@ fn compile_exprs(
 /// Returns how many values it leaves on the stack, so we know how many
 /// values to get rid of if the return val is ignored.
 fn compile_expr(
-    cx: &mut Cx,
+    bcx: &mut BCx,
     locals: &mut HashMap<VarSym, LocalVar>,
-    isns: &mut Vec<i::Instruction>,
+    instrs: &mut w::InstrSeqBuilder,
     expr: &ir::Expr,
 ) -> usize {
     use i::Instruction as I;
@@ -185,11 +192,12 @@ fn compile_expr(
     match expr {
         E::Lit { val } => match val {
             Literal::Integer(i) => {
-                isns.push(I::Const(i::Literal::I32(*i as i32)));
+                assert!(*i < (i32::MAX as i64));
+                instrs.i32_const(*i as i32);
                 1
             }
             Literal::Bool(b) => {
-                isns.push(I::Const(i::Literal::I32(if *b { 1 } else { 0 })));
+                instrs.i32_const(if *b { 1 } else { 0 });
                 1
             }
             Literal::Unit => 0,
@@ -198,12 +206,13 @@ fn compile_expr(
             let ldef = locals
                 .get(name)
                 .expect(&format!("Unknown local {:?}; should never happen", name));
-            isns.push(I::LocalGet(ldef.local_idx));
+            instrs.local_get(ldef.local_idx);
             0
         }
         E::BinOp { op, lhs, rhs } => {
             // Currently we only have signed integers
             // so this is pretty simple.
+            /*
             compile_expr(cx, locals, isns, lhs);
             compile_expr(cx, locals, isns, rhs);
             match op {
@@ -221,27 +230,30 @@ fn compile_expr(
                     signed: true,
                 }),
             }
+            */
             0
         }
-        E::UniOp { op, rhs } => match op {
-            // We just implement this as 0 - thing.
-            // By definition this only works on signed integers anyway.
-            ir::UOp::Neg => {
-                isns.push(I::Const(i::Literal::I32(0)));
-                compile_expr(cx, locals, isns, rhs);
-                isns.push(I::Subtract(t::ValType::I32));
-                0
-            }
-        },
+        E::UniOp { op, rhs } => 0, /*match op {
+        // We just implement this as 0 - thing.
+        // By definition this only works on signed integers anyway.
+        ir::UOp::Neg => {
+        isns.push(I::Const(i::Literal::I32(0)));
+        compile_expr(cx, locals, isns, rhs);
+        isns.push(I::Subtract(t::ValType::I32));
+        0
+        }
+        } ,
+         */
         // This is pretty much just a list of expr's by now.
         // However, functions/etc must not leave extra values
-        // on the stack, so this needs to
-        E::Block { body } => compile_exprs(cx, locals, isns, body),
+        // on the stack, so this needs to insert drop's as appropriate
+        E::Block { body } => compile_exprs(bcx, locals, instrs, body),
         E::Let {
             varname,
             typename,
             init,
         } => {
+            /*
             // Declare local var storage
             let wasm_type = compile_typesym(cx, *typename);
             let local_idx = locals.len() as u32;
@@ -254,6 +266,7 @@ fn compile_expr(
             compile_expr(cx, locals, isns, init);
             // Store result of expression
             isns.push(I::LocalSet(l.local_idx));
+            */
             0
         }
         E::If {
@@ -268,11 +281,10 @@ fn compile_expr(
         E::Return { retval } => 0,
     }
 }
-*/
 
-fn compile_typesym(cx: &Cx, t: TypeSym) -> w::ValType {
-    let tdef = cx.unintern_type(t);
-    compile_type(cx, tdef)
+fn compile_typesym(bcx: &BCx, t: TypeSym) -> w::ValType {
+    let tdef = bcx.cx.unintern_type(t);
+    compile_type(bcx.cx, tdef)
 }
 
 fn compile_type(_cx: &Cx, t: &TypeDef) -> w::ValType {
