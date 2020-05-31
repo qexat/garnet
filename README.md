@@ -52,6 +52,16 @@ change with time.
    thoughts here yet, but it is an area worth thinking about.  Rust, C,
    Go and Swift present different points in this area to look at.
 
+## C's advantages that I want to have
+
+ * Easy to port to new systems
+ * Easy to use on embedded systems
+ * Easy to control code size bloat
+ * Easy to get a (partial) mental model, which is low-level enough to
+   teach you a lot
+ * Simple and universal ABI -- easy for higher level stuff to call it
+ * Compiles fast
+
 ## Pain points in Rust to think about
 
  * You can't be generic over mutability and ownership, so for example
@@ -66,6 +76,9 @@ change with time.
    implicitly.  `alloc` is kinda a red-headed stepchild in this
    hierarchy; Zig's approach of explicit allocator objects everywhere
    may or may not be superior.
+ * Tail call optimization is not guarenteed -- Drop impl's get in the
+   way, but it should be possible to avoid that.
+ * Lack of construct-on-heap is occasionally kinda awful.
 
 ## Glory points in Rust to exploit or even enhance
 
@@ -77,11 +90,13 @@ change with time.
  * Math is checked by default
  * Stack unwinding without recovery -- very nice compromise of
    complexity
+ * UTF-8 everywhere
 
 ## Functionality sacrificed for simplicity
 
  * match blocks on function params, like Erlang -- just syntactic sugar
  * Monomorphized generics -- for now?
+ * Cool arbitrary/rational number types -- can be a lib.
 
 # Toolchain
 
