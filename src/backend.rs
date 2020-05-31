@@ -6,60 +6,30 @@
 use std::cmp;
 use std::collections::HashMap;
 
-use parity_wasm::{self as w, elements as elem};
+use walrus as w;
+use wasm_builder::{instr as i, module as m, sections as s, types as t};
 
 use crate::ir;
 use crate::*;
 
-/// A useful structure that lets us put a wasm module
-/// together piecemeal.  parity_wasm does things like
-/// preserve order of segments that are irrelevant to us.
-#[derive(Debug, Clone)]
-struct Module {
-    /// Eventually we'll need to dedupe this but we need to preserve order too,
-    /// 'cause everything is resolved by indices, so for now we just fake this
-    typesec: Vec<elem::Type>,
-    /// For now assume we don't need to dedupe whole functions
-    codesec: Vec<elem::FuncBody>,
-    /// Function signatures
-    funcsec: Vec<elem::Func>,
-    /// Exports.  Name and typed reference.
-    exportsec: Vec<elem::ExportEntry>,
-}
-
-impl Module {
-    fn new() -> Self {
-        Module {
-            typesec: Vec::new(),
-            codesec: Vec::new(),
-            funcsec: Vec::new(),
-            exportsec: Vec::new(),
-        }
-    }
-
-    /// Finally output the thing to actual wasm
-    fn output(self) -> Result<Vec<u8>, elem::Error> {
-        let typesec = elem::Section::Type(elem::TypeSection::with_types(self.typesec));
-        let codesec = elem::Section::Code(elem::CodeSection::with_bodies(self.codesec));
-        let funcsec = elem::Section::Function(elem::FunctionSection::with_entries(self.funcsec));
-        let exportsec = elem::Section::Export(elem::ExportSection::with_entries(self.exportsec));
-        // TODO: The ordering of these sections matters!  Live and learn.
-        let sections = vec![typesec, funcsec, exportsec, codesec];
-        let m = elem::Module::new(sections);
-        m.to_bytes()
-    }
+/// Backend context
+struct BCx<'a> {
+    cx: &'a mut Cx,
+    m: w::Module,
 }
 
 /// Entry point to turn the IR into a compiled wasm module
 pub fn output(cx: &mut Cx, program: &ir::Ir) -> Vec<u8> {
-    let mut m = Module::new();
+    let config = w::ModuleConfig::new();
+    let m = w::Module::with_config(config);
+    let bcx = &mut BCx { cx, m };
     for decl in program.decls.iter() {
-        compile_decl(cx, &mut m, decl);
+        compile_decl(bcx, decl);
     }
-    m.output().unwrap()
+    bcx.m.emit_wasm()
 }
 
-fn compile_decl(cx: &mut Cx, m: &mut Module, decl: &ir::Decl) {
+fn compile_decl(bcx: &mut BCx, decl: &ir::Decl) {
     use ir::*;
     match decl {
         Decl::Function {
@@ -67,20 +37,25 @@ fn compile_decl(cx: &mut Cx, m: &mut Module, decl: &ir::Decl) {
             signature,
             body,
         } => {
+            let function_id = compile_function(bcx, signature, body);
+            let name = bcx.cx.unintern(*name);
+            bcx.m.exports.add(name, function_id);
+            /*
             let sig = function_signature(cx, m, signature);
             // TODO For now we don't try to dedupe types, just add 'em as redundantly
             // as necessary.
-            let typesec_idx = m.typesec.len();
-            let funcsec_idx = m.funcsec.len();
+            let typesec_idx = m.types.len();
+            let funcsec_idx = m.functions.len();
             let body = compile_function(cx, signature, body);
 
-            m.codesec.push(body);
-            m.typesec.push(elem::Type::Function(sig));
-            m.funcsec.push(elem::Func::new(typesec_idx as u32));
-            m.exportsec.push(elem::ExportEntry::new(
-                cx.unintern(*name).to_owned(),
-                elem::Internal::Function(funcsec_idx as u32),
-            ));
+            m.code.push(body);
+            m.types.push(sig);
+            m.functions.push(typesec_idx as u32);
+            m.exports.push(s::Export {
+                name: cx.unintern(*name).to_owned(),
+                desc: s::Desc::Function(funcsec_idx as u32),
+            });
+            */
         }
         Decl::Const {
             name,
@@ -90,35 +65,24 @@ fn compile_decl(cx: &mut Cx, m: &mut Module, decl: &ir::Decl) {
             // Okay this is actually harder than it looks because
             // wasm only lets globals be value types.
             // ...and if it's really const then why do we need it anyway
-            let wasm_type = compile_typesym(cx, *typename);
+            //let wasm_type = compile_typesym(cx, *typename);
         }
     }
 }
 
-fn function_signature(cx: &mut Cx, m: &mut Module, sig: &ir::Signature) -> elem::FunctionType {
-    let params: Vec<elem::ValueType> = sig
+fn function_signature(cx: &mut Cx, sig: &ir::Signature) -> (Vec<w::ValType>, Vec<w::ValType>) {
+    let params: Vec<w::ValType> = sig
         .params
         .iter()
         .map(|(_varsym, typesym)| compile_typesym(cx, *typesym))
         .collect();
     let rettype = compile_typesym(cx, sig.rettype);
-    elem::FunctionType::new(params, Some(rettype))
+    (params, vec![rettype])
 }
-
-/// Tracks local variables in a function for each type
-#[derive(Clone, Default, Debug)]
-struct Locals {
-    // TODO: Eventually fill these out with whatever var info we need
-    i32: Vec<()>,
-    i64: Vec<()>,
-    f32: Vec<()>,
-    f64: Vec<()>,
-}
-
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 struct LocalVar {
     local_idx: u32,
-    wasm_type: elem::ValueType,
+    wasm_type: t::ValType,
 }
 
 /// Order by local index
@@ -135,13 +99,23 @@ impl cmp::Ord for LocalVar {
     }
 }
 
-/// Compile a function, specifically -- wasm needs to know about its params and such.
-fn compile_function(cx: &mut Cx, sig: &ir::Signature, body: &[ir::Expr]) -> elem::FuncBody {
-    use elem::Instruction as I;
-    // A simple, scope-less symbol table.
-    let mut locals: HashMap<VarSym, LocalVar> = HashMap::new();
-    let mut isns = vec![];
+impl cmp::Eq for LocalVar {}
 
+/// Compile a function, specifically -- wasm needs to know about its params and such.
+fn compile_function(bcx: &mut BCx, sig: &ir::Signature, body: &[ir::Expr]) -> w::FunctionId {
+    let (paramtype, rettype) = function_signature(bcx.cx, sig);
+    let mut fb = w::FunctionBuilder::new(&mut bcx.m.types, &paramtype, &rettype);
+    // A simple, scope-less symbol table.
+    let mut locals: HashMap<VarSym, w::LocalId> = HashMap::new();
+    // add params
+    //bcx.m.locals.add();
+    // add locals
+    //bcx.m.locals.add();
+    let _ = compile_exprs(cx, &mut locals, &mut isns, body);
+    fb.finish(vec![], &mut bcx.m.funcs)
+
+    /*
+    let mut isns = vec![];
     // Function params are passed in the "locals" section.
     // So, we add them all to the symbol table.
     for (pname, ptype) in sig.params.iter() {
@@ -153,45 +127,79 @@ fn compile_function(cx: &mut Cx, sig: &ir::Signature, body: &[ir::Expr]) -> elem
     }
 
     // Compile the actual thing.
-    body.iter()
-        .for_each(|expr| compile_expr(cx, &mut locals, &mut isns, expr));
-
-    // Functions must end with END
-    isns.push(I::End);
+    let _ = compile_exprs(cx, &mut locals, &mut isns, body);
 
     // Turn locals into an array that just contains the types.
     let mut local_arr: Vec<_> = locals.values().map(|l| l).collect();
     local_arr.sort();
     let wasm_locals = local_arr
         .into_iter()
-        .map(|l| elem::Local::new(1, l.wasm_type))
+        .map(|l| s::Local {
+            n: 1,
+            ty: l.wasm_type,
+        })
         .collect();
 
-    elem::FuncBody::new(wasm_locals, elem::Instructions::new(isns))
+    s::Function {
+        locals: wasm_locals,
+        body: i::Expr(isns),
+    }
+                */
+}
+
+/*
+/// Compile multiple exprs, making sure they don't leave unused
+/// values on the stack by adding drop's as necessary.
+/// Returns the number of values left on the stack at the end.
+fn compile_exprs(
+    cx: &mut Cx,
+    locals: &mut HashMap<VarSym, LocalVar>,
+    isns: &mut Vec<i::Instruction>,
+    exprs: &[ir::Expr],
+) -> usize {
+    // TODO Implement
+    // I considered making this a step in the IR that basically turns
+    // every `foo(); bar()` into `ignore(foo()); bar()` explicitly,
+    // but how hard to ignore it is dependent on the return type and
+    // so doing it here seems easier.  IR doesn't explicitly store
+    // the return type of each expression... though maybe it should.
+    exprs.iter().for_each(|expr| {
+        compile_expr(cx, locals, isns, expr);
+    });
+    0
 }
 
 /// Generates code to evaluate the given expr, inserting the instructions into
 /// the given instruction list, leaving values on the stack.
+/// Returns how many values it leaves on the stack, so we know how many
+/// values to get rid of if the return val is ignored.
 fn compile_expr(
     cx: &mut Cx,
     locals: &mut HashMap<VarSym, LocalVar>,
-    isns: &mut Vec<elem::Instruction>,
+    isns: &mut Vec<i::Instruction>,
     expr: &ir::Expr,
-) {
-    use elem::Instruction as I;
+) -> usize {
+    use i::Instruction as I;
     use ir::Expr as E;
     use ir::*;
     match expr {
         E::Lit { val } => match val {
-            Literal::Integer(i) => isns.push(I::I32Const(*i as i32)),
-            Literal::Bool(b) => isns.push(I::I32Const(if *b { 1 } else { 0 })),
-            Literal::Unit => (),
+            Literal::Integer(i) => {
+                isns.push(I::Const(i::Literal::I32(*i as i32)));
+                1
+            }
+            Literal::Bool(b) => {
+                isns.push(I::Const(i::Literal::I32(if *b { 1 } else { 0 })));
+                1
+            }
+            Literal::Unit => 0,
         },
         E::Var { name } => {
             let ldef = locals
                 .get(name)
                 .expect(&format!("Unknown local {:?}; should never happen", name));
-            isns.push(I::GetLocal(ldef.local_idx));
+            isns.push(I::LocalGet(ldef.local_idx));
+            0
         }
         E::BinOp { op, lhs, rhs } => {
             // Currently we only have signed integers
@@ -199,29 +207,36 @@ fn compile_expr(
             compile_expr(cx, locals, isns, lhs);
             compile_expr(cx, locals, isns, rhs);
             match op {
-                ir::BOp::Add => isns.push(I::I32Add),
-                ir::BOp::Sub => isns.push(I::I32Sub),
-                ir::BOp::Mul => isns.push(I::I32Mul),
+                ir::BOp::Add => isns.push(I::Add(t::ValType::I32)),
+                ir::BOp::Sub => isns.push(I::Subtract(t::ValType::I32)),
+                ir::BOp::Mul => isns.push(I::Multiply(t::ValType::I32)),
                 // TODO: Check for div0?
-                ir::BOp::Div => isns.push(I::I32DivS),
+                ir::BOp::Div => isns.push(I::I32Division {
+                    ty: i::IntegerType::I32,
+                    signed: true,
+                }),
                 // TODO: Check for div0?
-                ir::BOp::Mod => isns.push(I::I32RemS),
+                ir::BOp::Mod => isns.push(I::Remainder {
+                    ty: i::IntegerType::I32,
+                    signed: true,
+                }),
             }
+            0
         }
         E::UniOp { op, rhs } => match op {
             // We just implement this as 0 - thing.
             // By definition this only works on signed integers anyway.
             ir::UOp::Neg => {
-                isns.push(I::I32Const(0));
+                isns.push(I::Const(i::Literal::I32(0)));
                 compile_expr(cx, locals, isns, rhs);
-                isns.push(I::I32Sub);
+                isns.push(I::Subtract(t::ValType::I32));
+                0
             }
         },
         // This is pretty much just a list of expr's by now.
-        E::Block { body } => {
-            body.iter()
-                .for_each(|expr| compile_expr(cx, locals, isns, expr));
-        }
+        // However, functions/etc must not leave extra values
+        // on the stack, so this needs to
+        E::Block { body } => compile_exprs(cx, locals, isns, body),
         E::Let {
             varname,
             typename,
@@ -238,33 +253,33 @@ fn compile_expr(
             // Compile init expression
             compile_expr(cx, locals, isns, init);
             // Store result of expression
-            isns.push(I::SetLocal(l.local_idx));
+            isns.push(I::LocalSet(l.local_idx));
+            0
         }
         E::If {
             condition,
             trueblock,
             falseblock,
-        } => {}
-        E::Loop { body } => {}
-        E::Lambda { signature, body } => {}
-        E::Funcall { func, params } => {}
-        E::Break => {}
-        E::Return { retval } => {}
+        } => 0,
+        E::Loop { body } => 0,
+        E::Lambda { signature, body } => 0,
+        E::Funcall { func, params } => 0,
+        E::Break => 0,
+        E::Return { retval } => 0,
     }
 }
+*/
 
-fn compile_typesym(cx: &Cx, t: TypeSym) -> elem::ValueType {
+fn compile_typesym(cx: &Cx, t: TypeSym) -> w::ValType {
     let tdef = cx.unintern_type(t);
     compile_type(cx, tdef)
 }
 
-fn compile_type(_cx: &Cx, t: &TypeDef) -> elem::ValueType {
+fn compile_type(_cx: &Cx, t: &TypeDef) -> w::ValType {
     match t {
-        TypeDef::Unknown => panic!("Can't happen!"),
-        TypeDef::Ref(_) => panic!("Can't happen"),
-        TypeDef::SInt(4) => w::elements::ValueType::I32,
+        TypeDef::SInt(4) => w::ValType::I32,
         TypeDef::SInt(_) => panic!("TODO"),
-        TypeDef::Bool => w::elements::ValueType::I32,
+        TypeDef::Bool => w::ValType::I32,
         TypeDef::Tuple(_) => panic!("Unimplemented"),
         TypeDef::Lambda(_, _) => panic!("Unimplemented"),
     }
@@ -274,7 +289,7 @@ fn compile_type(_cx: &Cx, t: &TypeDef) -> elem::ValueType {
 mod tests {
     use std::collections::HashMap;
 
-    use parity_wasm::elements::Instruction as I;
+    use wasm_builder::{instr as i, instr::Instruction as I};
 
     use crate::backend::*;
     use crate::ir::Expr as E;
@@ -298,12 +313,12 @@ mod tests {
 
         assert_eq!(locals.len(), 1);
         assert_eq!(locals[&varname].local_idx, 0);
-        assert_eq!(isns[0], I::I32Const(9));
-        assert_eq!(isns[1], I::SetLocal(0));
+        assert_eq!(isns[0], I::Const(i::Literal::I32(9)));
+        assert_eq!(isns[1], I::LocalSet(0));
 
         let expr = E::Var { name: varname };
         compile_expr(cx, locals, isns, &expr);
-        assert_eq!(isns[2], I::GetLocal(0));
+        assert_eq!(isns[2], I::LocalGet(0));
     }
 
     #[test]
@@ -319,8 +334,8 @@ mod tests {
         };
 
         compile_expr(cx, locals, isns, &expr);
-        assert_eq!(isns[0], I::I32Const(9));
-        assert_eq!(isns[1], I::I32Const(-3));
-        assert_eq!(isns[2], I::I32Sub);
+        assert_eq!(isns[0], I::Const(i::Literal::I32(9)));
+        assert_eq!(isns[1], I::Const(i::Literal::I32(-3)));
+        assert_eq!(isns[2], I::Subtract(t::ValType::I32));
     }
 }
