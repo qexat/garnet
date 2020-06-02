@@ -287,10 +287,30 @@ fn compile_expr(
             condition,
             trueblock,
             falseblock,
-        } => 0,
+        } => {
+            // TODO: We need to know what type the blocks return.  Hmm.
+            assert_eq!(compile_expr(bcx, locals, instrs, condition), 1);
+            let mut true_count = 0;
+            let mut false_count = 0;
+            instrs.if_else(
+                None,
+                |then| {
+                    true_count = compile_exprs(bcx, locals, then, trueblock);
+                },
+                |else_| {
+                    false_count = compile_exprs(bcx, locals, else_, falseblock);
+                },
+            );
+            assert_eq!(true_count, false_count);
+            true_count
+        }
+
         E::Loop { body } => 0,
         E::Lambda { signature, body } => 0,
-        E::Funcall { func, params } => 0,
+        E::Funcall { func, params } => {
+            //assert_eq!(compile_expr(bcx, locals, instrs, func), 1);
+            0
+        }
         E::Break => 0,
         E::Return { retval } => 0,
     }
