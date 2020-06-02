@@ -190,7 +190,7 @@ fn compile_exprs(
                     instrs.drop();
                 }
             });
-            compile_expr(bcx, locals, instrs, &exprs[l])
+            compile_expr(bcx, locals, instrs, &exprs[l - 1])
         }
     }
 }
@@ -231,38 +231,34 @@ fn compile_expr(
         E::BinOp { op, lhs, rhs } => {
             // Currently we only have signed integers
             // so this is pretty simple.
-            /*
-            compile_expr(cx, locals, isns, lhs);
-            compile_expr(cx, locals, isns, rhs);
-            match op {
-                ir::BOp::Add => isns.push(I::Add(t::ValType::I32)),
-                ir::BOp::Sub => isns.push(I::Subtract(t::ValType::I32)),
-                ir::BOp::Mul => isns.push(I::Multiply(t::ValType::I32)),
-                // TODO: Check for div0?
-                ir::BOp::Div => isns.push(I::I32Division {
-                    ty: i::IntegerType::I32,
-                    signed: true,
-                }),
-                // TODO: Check for div0?
-                ir::BOp::Mod => isns.push(I::Remainder {
-                    ty: i::IntegerType::I32,
-                    signed: true,
-                }),
+            fn compile_binop(op: &ir::BOp) -> w::ir::BinaryOp {
+                match op {
+                    ir::BOp::Add => w::ir::BinaryOp::I32Add,
+                    ir::BOp::Sub => w::ir::BinaryOp::I32Sub,
+                    ir::BOp::Mul => w::ir::BinaryOp::I32Mul,
+
+                    // TODO: Check for div0?
+                    ir::BOp::Div => w::ir::BinaryOp::I32DivS,
+                    // TODO: Check for div0?
+                    ir::BOp::Mod => w::ir::BinaryOp::I32RemS,
+                }
             }
-            */
-            0
+            assert_eq!(compile_expr(bcx, locals, instrs, lhs), 1);
+            assert_eq!(compile_expr(bcx, locals, instrs, rhs), 1);
+            let op = compile_binop(op);
+            instrs.binop(op);
+            1
         }
-        E::UniOp { op, rhs } => 0, /*match op {
-        // We just implement this as 0 - thing.
-        // By definition this only works on signed integers anyway.
-        ir::UOp::Neg => {
-        isns.push(I::Const(i::Literal::I32(0)));
-        compile_expr(cx, locals, isns, rhs);
-        isns.push(I::Subtract(t::ValType::I32));
-        0
-        }
-        } ,
-         */
+        E::UniOp { op, rhs } => match op {
+            // We just implement this as 0 - thing.
+            // By definition this only works on signed integers anyway.
+            ir::UOp::Neg => {
+                instrs.i32_const(0);
+                assert_eq!(compile_expr(bcx, locals, instrs, rhs), 1);
+                instrs.binop(w::ir::BinaryOp::I32Sub);
+                1
+            }
+        },
         // This is pretty much just a list of expr's by now.
         // However, functions/etc must not leave extra values
         // on the stack, so this needs to insert drop's as appropriate
