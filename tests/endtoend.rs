@@ -84,8 +84,6 @@ fn subtraction() {
     };
     let ir = garnet::ir::lower(&ast);
     let wasm = garnet::backend::output(&mut cx, &ir);
-    // Compiling a function gets us a dynamically-typed thing.
-    // Assert what its type is and run it.
     let f = compile_wasm(&wasm).get1::<(), i32>().unwrap();
     let res: i32 = f(()).unwrap();
     assert_eq!(res, 12);
@@ -123,7 +121,6 @@ fn maths() {
 fn block() {
     let mut cx = garnet::Cx::new();
     let mainsym = cx.intern("test");
-    //let i32_t = cx.intern_type(&garnet::TypeDef::SInt(4));
     let bool_t = cx.intern_type(&garnet::TypeDef::Bool);
     let ast = ast::Ast {
         decls: vec![ast::Decl::Function {
@@ -132,7 +129,6 @@ fn block() {
                 params: vec![],
                 rettype: bool_t,
             },
-            //body: vec![ast::Expr::int(42)],
             body: vec![
                 ast::Expr::BinOp {
                     op: ast::BOp::Div,
@@ -141,9 +137,6 @@ fn block() {
                 },
                 ast::Expr::Block {
                     body: vec![
-                        /* TODO: Fix this test, blocks don't end
-                         * with the right number of things on the stack.
-                         */
                         ast::Expr::BinOp {
                             op: ast::BOp::Div,
                             lhs: Box::new(ast::Expr::int(3)),
@@ -157,8 +150,6 @@ fn block() {
     };
     let ir = garnet::ir::lower(&ast);
     let wasm = garnet::backend::output(&mut cx, &ir);
-    // Compiling a function gets us a dynamically-typed thing.
-    // Assert what its type is and run it.
     let f = compile_wasm(&wasm).get1::<(), i32>().unwrap();
     let res: i32 = f(()).unwrap();
     assert_eq!(res, 0);
