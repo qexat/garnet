@@ -142,10 +142,15 @@ impl<'cx, 'input> Parser<'cx, 'input> {
         Parser { lex, cx }
     }
 
+    /// Read all its input and returns an Ast.
+    ///
+    /// Currently just panics on error.
     pub fn parse(&mut self) -> ast::Ast {
-        ast::Ast {
-            decls: vec![self.parse_decl()],
+        let mut decls = vec![];
+        while let Some(d) = self.parse_decl() {
+            decls.push(d);
         }
+        ast::Ast { decls: decls }
     }
 
     fn error(&self, token: Option<Token>) -> ! {
@@ -175,11 +180,13 @@ impl<'cx, 'input> Parser<'cx, 'input> {
         }
     }
 
-    fn parse_decl(&mut self) -> ast::Decl {
+    /// Returns None on EOF.
+    fn parse_decl(&mut self) -> Option<ast::Decl> {
         //-> ast::Decl {
         match self.lex.next() {
-            Some(T::Const) => self.parse_const(),
-            Some(T::Fn) => self.parse_fn(),
+            Some(T::Const) => Some(self.parse_const()),
+            Some(T::Fn) => Some(self.parse_fn()),
+            None => None,
             other => self.error(other),
         }
     }
@@ -231,26 +238,61 @@ impl<'cx, 'input> Parser<'cx, 'input> {
 mod tests {
     use crate::ast;
     use crate::parser::*;
-    use crate::{Cx, TypeSym, VarSym};
+    use crate::{Cx, TypeDef, TypeSym, VarSym};
 
-    fn assert_decl(s: &str, res: ast::Decl) {
-        let cx = &mut Cx::new();
+    fn assert_decl(cx: &Cx, s: &str, res: ast::Decl) {
         let p = &mut Parser::new(cx, s);
         let d = p.parse_decl();
-        assert_eq!(d, res);
+        assert_eq!(d, Some(res));
     }
 
     #[test]
     fn test_const() {
+        let cx = &Cx::new();
+        let foosym = cx.intern("foo");
+        let i32_t = cx.intern_type(&TypeDef::SInt(4));
         // TODO: How can we not hardcode VarSym and TypeSym here,
         // without it being a PITA?
         assert_decl(
+            cx,
             "const foo: i32 = -9",
             ast::Decl::Const {
-                name: VarSym(0),
-                typename: TypeSym(0),
+                name: foosym,
+                typename: i32_t,
                 init: ast::Expr::int(3),
             },
+        );
+    }
+
+    #[test]
+    fn test_multiple_decls() {
+        let s = r#"
+const foo: i32 = -9
+const bar: bool = 4
+"#;
+        let cx = &Cx::new();
+        let p = &mut Parser::new(cx, s);
+        let foosym = cx.intern("foo");
+        let barsym = cx.intern("bar");
+        let i32_t = cx.intern_type(&TypeDef::SInt(4));
+        let bool_t = cx.intern_type(&TypeDef::Bool);
+        let d = p.parse();
+        assert_eq!(
+            d,
+            ast::Ast {
+                decls: vec![
+                    ast::Decl::Const {
+                        name: foosym,
+                        typename: i32_t,
+                        init: ast::Expr::int(3),
+                    },
+                    ast::Decl::Const {
+                        name: barsym,
+                        typename: bool_t,
+                        init: ast::Expr::int(3),
+                    }
+                ],
+            }
         );
     }
 }

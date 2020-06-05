@@ -123,11 +123,10 @@ pub struct Cx {
 
 impl Cx {
     pub fn new() -> Self {
-        let mut s = Cx {
+        let s = Cx {
             syms: intern::Interner::new(),
             types: intern::Interner::new(),
         };
-        s.populate_builtin_types();
         s
     }
 
@@ -148,9 +147,10 @@ impl Cx {
         self.types.fetch(s)
     }
 
+    /*
     /// Fill type table with whatever builtin types we have.
+    /// ...this is kinda unnecessary now?
     fn populate_builtin_types(&mut self) {
-        /*
         let types: HashMap<TypeSym, TypeDef> =
             [TypeDef::SInt(4), TypeDef::Bool, TypeDef::Tuple(vec![])]
                 .iter()
@@ -158,8 +158,8 @@ impl Cx {
                 .map(|t| (self.intern(t.get_name()), t))
                 .collect();
         self.types = types;
-        */
     }
+        */
 
     /*
     /// Returns the symbol naming the given type, or none if it's
