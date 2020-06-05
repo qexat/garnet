@@ -85,7 +85,7 @@ pub enum Token {
     Ident(String),
     #[regex("true|false", |lex| lex.slice().parse())]
     Bool(bool),
-    #[regex("[-][0-9]+", |lex| lex.slice().parse())]
+    #[regex("-?[0-9]+", |lex| lex.slice().parse())]
     Number(i32),
 
     #[token("const")]
@@ -233,7 +233,7 @@ mod tests {
         // TODO: How can we not hardcode VarSym and TypeSym here,
         // without it being a PITA?
         assert_decl(
-            "const foo: i32 = 9",
+            "const foo: i32 = -9",
             ast::Decl::Const {
                 name: VarSym(0),
                 typename: TypeSym(0),
