@@ -560,6 +560,15 @@ const baz: {} = {}
         );
     }
 
+    /// Take a list of strings and try parsing them with the given function.
+    fn test_parse_with<T>(f: impl Fn(&mut Parser) -> T, strs: &[&str]) {
+        for s in strs {
+            let cx = &Cx::new();
+            let mut p = Parser::new(cx, s);
+            f(&mut p);
+        }
+    }
+
     #[test]
     fn parse_fn_args() {
         let valid_args = vec![
@@ -569,11 +578,7 @@ const baz: {} = {}
             "(x: i32, y: bool)",
             //"(x: i32, y: bool,)",
         ];
-        let cx = &Cx::new();
-        for s in &valid_args {
-            let p = &mut Parser::new(cx, s);
-            p.parse_fn_args();
-        }
+        test_parse_with(|p| p.parse_fn_args(), &valid_args)
     }
     #[test]
     fn parse_fn_signature() {
@@ -584,21 +589,14 @@ const baz: {} = {}
             "(x: i32, y: bool)",
             "(x: i32, y: bool):bool",
         ];
-        let cx = &Cx::new();
-        for s in &valid_args {
-            let p = &mut Parser::new(cx, s);
-            p.parse_fn_signature();
-        }
+        test_parse_with(|p| p.parse_fn_signature(), &valid_args)
     }
-
     #[test]
     fn parse_let() {
         let valid_args = vec!["let x: i32 = 5", "let y: bool = false", "let z: {} = z"];
-        let cx = &Cx::new();
-        for s in &valid_args {
-            let p = &mut Parser::new(cx, s);
-            p.parse_let();
-        }
+        // The lifetimes and inference here gets WEIRD if you try to pass it Parser::parse_let.
+        test_parse_with(|p| p.parse_let(), &valid_args);
+        test_parse_with(|p| p.parse_expr(), &valid_args);
     }
 
     #[test]
@@ -622,31 +620,22 @@ const baz: {} = {}
             end
             "#,
         ];
-        let cx = &Cx::new();
-        for s in &valid_args {
-            let p = &mut Parser::new(cx, s);
-            p.parse_if();
-        }
+        test_parse_with(|p| p.parse_if(), &valid_args);
+        test_parse_with(|p| p.parse_expr(), &valid_args);
     }
 
     #[test]
     fn parse_loop() {
         let valid_args = vec!["loop 10 end", "loop 10 20 30 end", "loop end"];
-        let cx = &Cx::new();
-        for s in &valid_args {
-            let p = &mut Parser::new(cx, s);
-            p.parse_loop();
-        }
+        test_parse_with(|p| p.parse_loop(), &valid_args);
+        test_parse_with(|p| p.parse_expr(), &valid_args);
     }
 
     #[test]
     fn parse_block() {
         let valid_args = vec!["do 10 end", "do 10 20 30 end", "do end"];
-        let cx = &Cx::new();
-        for s in &valid_args {
-            let p = &mut Parser::new(cx, s);
-            p.parse_block();
-        }
+        test_parse_with(|p| p.parse_block(), &valid_args);
+        test_parse_with(|p| p.parse_expr(), &valid_args);
     }
 
     #[test]
@@ -657,10 +646,7 @@ const baz: {} = {}
             "lambda() = {} end",
             "lambda() = end",
         ];
-        let cx = &Cx::new();
-        for s in &valid_args {
-            let p = &mut Parser::new(cx, s);
-            p.parse_lambda();
-        }
+        test_parse_with(|p| p.parse_lambda(), &valid_args);
+        test_parse_with(|p| p.parse_expr(), &valid_args);
     }
 }
