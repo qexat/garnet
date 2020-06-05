@@ -63,10 +63,12 @@ pub enum TypeDef {
     /// We can infer types for tuples
     Tuple(Vec<TypeSym>),
     Lambda(Vec<TypeSym>, Box<TypeSym>),
+    /*
     /// TODO: AUGJDKSFLJDSFSLAF
     /// This is basically a type that has been named but we
     /// don't know what type it actually is until after type checking...
     Named(String),
+    */
 }
 
 /* TODO:
