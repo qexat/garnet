@@ -131,87 +131,99 @@ pub enum Token {
 
 use self::Token as T;
 
-type Lexer<'a> = logos::Lexer<'a, Token>;
-
-fn lex(s: &str) -> Lexer {
-    Token::lexer(s)
+pub struct Parser<'cx, 'input> {
+    lex: logos::Lexer<'input, Token>,
+    cx: &'cx Cx,
 }
 
-fn error(token: Option<Token>, lex: &mut Lexer) -> ! {
-    let msg = format!(
-        "Parse error on {:?}, got token {:?} on str {}",
-        lex.span(),
-        token,
-        lex.slice()
-    );
-    panic!(msg)
-}
-
-/// Consume a token that doesn't return anything
-fn expect(tok: Token, lex: &mut Lexer) {
-    match lex.next() {
-        Some(t) if t == tok => (),
-        other => error(other, lex),
+impl<'cx, 'input> Parser<'cx, 'input> {
+    pub fn new(cx: &'cx Cx, s: &'input str) -> Self {
+        let lex = Token::lexer(s);
+        Parser { lex, cx }
     }
-}
 
-/// Consume an identifier and return its interned symbol.
-/// Note this returns a VarSym, not a TypeSym...
-fn expect_ident(cx: &mut Cx, lex: &mut Lexer) -> VarSym {
-    match lex.next() {
-        Some(T::Ident(s)) => cx.intern(s),
-        other => error(other, lex),
-    }
-}
-
-fn parse_decl(cx: &mut Cx, lex: &mut Lexer) -> ast::Decl {
-    //-> ast::Decl {
-    match lex.next() {
-        Some(T::Const) => parse_const(cx, lex),
-        Some(T::Fn) => parse_fn(cx, lex),
-        other => error(other, lex),
-    }
-}
-
-fn parse_const(cx: &mut Cx, lex: &mut Lexer) -> ast::Decl {
-    let name = expect_ident(cx, lex);
-    expect(T::Colon, lex);
-    let typename = parse_type(cx, lex);
-    expect(T::Equals, lex);
-    let init = parse_expr(cx, lex);
-    ast::Decl::Const {
-        name,
-        typename,
-        init,
-    }
-}
-fn parse_fn(cx: &mut Cx, lex: &mut Lexer) -> ast::Decl {
-    // TODO
-    let name = expect_ident(cx, lex);
-    unimplemented!()
-}
-
-fn parse_expr(cx: &mut Cx, lex: &mut Lexer) -> ast::Expr {
-    // TODO
-    match lex.next() {
-        Some(T::Ident(_)) | Some(T::Bool(_)) | Some(T::Number(_)) => ast::Expr::int(3),
-        other => error(other, lex),
-    }
-}
-
-fn parse_type(cx: &mut Cx, lex: &mut Lexer) -> TypeSym {
-    // TODO: This is a bit too hardwired tbh...
-    match lex.next() {
-        Some(T::Ident(s)) => match s.as_ref() {
-            "i32" => cx.intern_type(&TypeDef::SInt(4)),
-            "bool" => cx.intern_type(&TypeDef::Bool),
-            _ => error(Some(T::Ident(s)), lex),
-        },
-        Some(T::LBrace) => {
-            expect(T::RBrace, lex);
-            cx.intern_type(&TypeDef::Tuple(vec![]))
+    pub fn parse(&mut self) -> ast::Ast {
+        ast::Ast {
+            decls: vec![self.parse_decl()],
         }
-        other => error(other, lex),
+    }
+
+    fn error(&self, token: Option<Token>) -> ! {
+        let msg = format!(
+            "Parse error on {:?}, got token {:?} on str {}",
+            self.lex.span(),
+            token,
+            self.lex.slice()
+        );
+        panic!(msg)
+    }
+
+    /// Consume a token that doesn't return anything
+    fn expect(&mut self, tok: Token) {
+        match self.lex.next() {
+            Some(t) if t == tok => (),
+            other => self.error(other),
+        }
+    }
+
+    /// Consume an identifier and return its interned symbol.
+    /// Note this returns a VarSym, not a TypeSym...
+    fn expect_ident(&mut self) -> VarSym {
+        match self.lex.next() {
+            Some(T::Ident(s)) => self.cx.intern(s),
+            other => self.error(other),
+        }
+    }
+
+    fn parse_decl(&mut self) -> ast::Decl {
+        //-> ast::Decl {
+        match self.lex.next() {
+            Some(T::Const) => self.parse_const(),
+            Some(T::Fn) => self.parse_fn(),
+            other => self.error(other),
+        }
+    }
+
+    fn parse_const(&mut self) -> ast::Decl {
+        let name = self.expect_ident();
+        self.expect(T::Colon);
+        let typename = self.parse_type();
+        self.expect(T::Equals);
+        let init = self.parse_expr();
+        ast::Decl::Const {
+            name,
+            typename,
+            init,
+        }
+    }
+    fn parse_fn(&mut self) -> ast::Decl {
+        // TODO
+        let name = self.expect_ident();
+        unimplemented!()
+    }
+
+    fn parse_expr(&mut self) -> ast::Expr {
+        // TODO
+        match self.lex.next() {
+            Some(T::Ident(_)) | Some(T::Bool(_)) | Some(T::Number(_)) => ast::Expr::int(3),
+            other => self.error(other),
+        }
+    }
+
+    fn parse_type(&mut self) -> TypeSym {
+        match self.lex.next() {
+            Some(T::Ident(s)) => match s.as_ref() {
+                // TODO: This is a bit too hardwired tbh...
+                "i32" => self.cx.intern_type(&TypeDef::SInt(4)),
+                "bool" => self.cx.intern_type(&TypeDef::Bool),
+                _ => self.error(Some(T::Ident(s))),
+            },
+            Some(T::LBrace) => {
+                self.expect(T::RBrace);
+                self.cx.intern_type(&TypeDef::Tuple(vec![]))
+            }
+            other => self.error(other),
+        }
     }
 }
 
@@ -223,8 +235,8 @@ mod tests {
 
     fn assert_decl(s: &str, res: ast::Decl) {
         let cx = &mut Cx::new();
-        let l = &mut Token::lexer(s);
-        let d = parse_decl(cx, l);
+        let p = &mut Parser::new(cx, s);
+        let d = p.parse_decl();
         assert_eq!(d, res);
     }
 
