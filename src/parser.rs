@@ -123,6 +123,11 @@ pub enum Token {
     RBrace,
     #[token(",")]
     Comma,
+    // We save comment strings so we can use this same
+    // parser as a reformatter or such.
+    // TODO: How do we skip these in the parser?
+    #[regex(r"--.*\n", |lex| lex.slice().to_owned())]
+    Comment(String),
 
     #[error]
     #[regex(r"[ \t\n\f]+", logos::skip)]
@@ -212,7 +217,12 @@ impl<'cx, 'input> Parser<'cx, 'input> {
     fn parse_expr(&mut self) -> ast::Expr {
         // TODO
         match self.lex.next() {
-            Some(T::Ident(_)) | Some(T::Bool(_)) | Some(T::Number(_)) => ast::Expr::int(3),
+            Some(T::Bool(b)) => ast::Expr::bool(b),
+            Some(T::Number(i)) => ast::Expr::int(i as i64),
+            Some(T::LBrace) => {
+                self.expect(T::RBrace);
+                ast::Expr::unit()
+            }
             other => self.error(other),
         }
     }
@@ -259,7 +269,7 @@ mod tests {
             ast::Decl::Const {
                 name: foosym,
                 typename: i32_t,
-                init: ast::Expr::int(3),
+                init: ast::Expr::int(-9),
             },
         );
     }
@@ -269,13 +279,16 @@ mod tests {
         let s = r#"
 const foo: i32 = -9
 const bar: bool = 4
+const baz: {} = {}
 "#;
         let cx = &Cx::new();
         let p = &mut Parser::new(cx, s);
         let foosym = cx.intern("foo");
         let barsym = cx.intern("bar");
+        let bazsym = cx.intern("baz");
         let i32_t = cx.intern_type(&TypeDef::SInt(4));
         let bool_t = cx.intern_type(&TypeDef::Bool);
+        let unit_t = cx.intern_type(&TypeDef::Tuple(vec![]));
         let d = p.parse();
         assert_eq!(
             d,
@@ -284,12 +297,17 @@ const bar: bool = 4
                     ast::Decl::Const {
                         name: foosym,
                         typename: i32_t,
-                        init: ast::Expr::int(3),
+                        init: ast::Expr::int(-9),
                     },
                     ast::Decl::Const {
                         name: barsym,
                         typename: bool_t,
-                        init: ast::Expr::int(3),
+                        init: ast::Expr::int(4),
+                    },
+                    ast::Decl::Const {
+                        name: bazsym,
+                        typename: unit_t,
+                        init: ast::Expr::unit(),
                     }
                 ],
             }
