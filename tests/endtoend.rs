@@ -157,14 +157,8 @@ fn block() {
 
 #[test]
 fn parse_and_compile() {
-    let cx = &mut garnet::Cx::new();
     let src = r#"fn test : i32 12 end"#;
-    let ast = {
-        let mut parser = garnet::parser::Parser::new(cx, src);
-        parser.parse()
-    };
-    let ir = garnet::ir::lower(&ast);
-    let wasm = garnet::backend::output(cx, &ir);
+    let wasm = garnet::compile(src);
     let f = compile_wasm(&wasm).get1::<(), i32>().unwrap();
     let res: i32 = f(()).unwrap();
     assert_eq!(res, 12);
@@ -172,14 +166,8 @@ fn parse_and_compile() {
 
 #[test]
 fn parse_and_compile2() {
-    let cx = &mut garnet::Cx::new();
     let src = r#"fn test x: i32 : i32 x end"#;
-    let ast = {
-        let mut parser = garnet::parser::Parser::new(cx, src);
-        parser.parse()
-    };
-    let ir = garnet::ir::lower(&ast);
-    let wasm = garnet::backend::output(cx, &ir);
+    let wasm = garnet::compile(src);
     let f = compile_wasm(&wasm).get1::<i32, i32>().unwrap();
     let res: i32 = f(3).unwrap();
     assert_eq!(res, 3);
