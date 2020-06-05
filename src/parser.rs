@@ -183,10 +183,26 @@ impl<'cx, 'input> Parser<'cx, 'input> {
     }
 
     /// Consume a token that doesn't return anything
-    fn expect(&mut self, tok: Token) {
+    fn expect(&mut self, expected: Token) {
         match self.lex.next() {
-            Some((t, _span)) if t == tok => (),
-            other => self.error(other),
+            Some((t, _span)) if t == expected => (),
+            Some((tok, span)) => {
+                let msg = format!(
+                    "Parse error on {:?}: got token {:?} from str {}.  Expected token: {:?}",
+                    span,
+                    tok,
+                    &self.source[span.clone()],
+                    expected
+                );
+                panic!(msg);
+            }
+            None => {
+                let msg = format!(
+                    "Parse error: Got end of input or malformed token.  Expected token: {:?}",
+                    expected
+                );
+                panic!(msg);
+            }
         }
     }
 
@@ -195,7 +211,21 @@ impl<'cx, 'input> Parser<'cx, 'input> {
     fn expect_ident(&mut self) -> VarSym {
         match self.lex.next() {
             Some((T::Ident(s), _span)) => self.cx.intern(s),
-            other => self.error(other),
+            Some((tok, span)) => {
+                let msg = format!(
+                    "Parse error on {:?}: got token {:?} from str {}.  Expected identifier.",
+                    span,
+                    tok,
+                    &self.source[span.clone()],
+                );
+                panic!(msg);
+            }
+            None => {
+                let msg = format!(
+                    "Parse error: Got end of input or malformed token.  Expected identifier",
+                );
+                panic!(msg);
+            }
         }
     }
 
@@ -235,7 +265,7 @@ impl<'cx, 'input> Parser<'cx, 'input> {
         }
     }
 
-    // signature = fn_args [":" typename]
+    /// signature = fn_args [":" typename]
     fn parse_fn_signature(&mut self) -> ast::Signature {
         let params = self.parse_fn_args();
         let rettype = if let Some((T::Colon, _span)) = self.lex.peek() {
@@ -247,15 +277,19 @@ impl<'cx, 'input> Parser<'cx, 'input> {
         ast::Signature { params, rettype }
     }
 
-    // fn_args = [ident ":" typename {"," ident ":" typename}]
+    /// fn_args = [ident ":" typename {"," ident ":" typename}]
+    ///
+    /// TODO: Trailing comma!
     fn parse_fn_args(&mut self) -> Vec<(VarSym, TypeSym)> {
         let mut args = vec![];
+        self.expect(T::LParen);
         if let Some((T::Ident(_i), _span)) = self.lex.peek() {
             let name = self.expect_ident();
             self.expect(T::Colon);
             let tname = self.parse_type();
             args.push((name, tname));
 
+            // If it leads to another arg, carry on.
             while let Some((T::Comma, _span)) = self.lex.peek() {
                 self.expect(T::Comma);
                 let name = self.expect_ident();
@@ -263,11 +297,14 @@ impl<'cx, 'input> Parser<'cx, 'input> {
                 let tname = self.parse_type();
                 args.push((name, tname));
             }
-            // Consume trailing comma if it's there.
-            if let Some((T::Comma, _span)) = self.lex.peek() {
-                self.expect(T::Comma);
-            }
         }
+        // Consume trailing comma if it's there.
+        /*
+        if let Some((T::Comma, _span)) = self.lex.peek() {
+            self.expect(T::Comma);
+        }
+        */
+        self.expect(T::RParen);
         args
     }
 
@@ -279,6 +316,8 @@ impl<'cx, 'input> Parser<'cx, 'input> {
         exprs
     }
 
+    /// Returns None if there is no valid follow-on expression,
+    /// which usually means the end of a block or such.
     fn parse_expr(&mut self) -> Option<ast::Expr> {
         let token: Option<Tok> = self.lex.peek().cloned();
         match token {
@@ -360,7 +399,7 @@ mod tests {
         // without it being a PITA?
         assert_decl(
             cx,
-            "fn foo x:i32 : i32 -9 end",
+            "fn foo(x: i32): i32 -9 end",
             ast::Decl::Function {
                 name: foosym,
                 signature: ast::Signature {
@@ -410,5 +449,36 @@ const baz: {} = {}
                 ],
             }
         );
+    }
+
+    #[test]
+    fn parse_fn_args() {
+        let valid_args = vec![
+            "()",
+            "(x: bool)",
+            //"(x: bool,)",
+            "(x: i32, y: bool)",
+            //"(x: i32, y: bool,)",
+        ];
+        let cx = &Cx::new();
+        for s in &valid_args {
+            let p = &mut Parser::new(cx, s);
+            p.parse_fn_args();
+        }
+    }
+    #[test]
+    fn parse_fn_signature() {
+        let valid_args = vec![
+            "()",
+            "(x: bool):i32",
+            "(x: bool):{}",
+            "(x: i32, y: bool)",
+            "(x: i32, y: bool):bool",
+        ];
+        let cx = &Cx::new();
+        for s in &valid_args {
+            let p = &mut Parser::new(cx, s);
+            p.parse_fn_signature();
+        }
     }
 }

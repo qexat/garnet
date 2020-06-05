@@ -78,12 +78,23 @@ change with time.
    may or may not be superior.  Talk to some of the stdlib or embedded
    people about how they'd *want* to arrange it if they could; papering
    over weird platforms like wasm is a known annoyance.
+   Maybe something like `core` for pure computational things, `sys` for
+   platform-specific low-level stuff like threading and timekeeping
+   primitives that may appear in a microcontroller or low-level VM
+   without a full OS, then `os` or something for stuff like filesystems,
+   processes, etc.  Need better names though.
  * Syntax inconsistencies/nuisances: Fiddly match blocks, <>'s for
    generics (though the turbofish is wonderful), i32 is both a type and
-   a module, -> and => being different is a PITA,
+   a module, -> and => being different is a PITA, you declare values
+   with `=` in let statements but `:` in struct constructors,
  * Tail call optimization is not guarenteed -- Drop impl's get in the
-   way, but it should be possible to avoid that.
+   way, but it should be possible to avoid that, or at least make it so
+   the compiler gives a warning if it can't guarentee that
  * Lack of construct-on-heap is occasionally kinda awful.
+ * Rather mediocre support for data type reflection at either compile or
+   run time, such as RTTI in general.  Also bites us in trying to make
+   C-like enums, separate enum discriminants from enums or vice versa
+   (which makes them awkward to compose),
 
 ## Glory points in Rust to exploit or even enhance
 
@@ -96,6 +107,7 @@ change with time.
  * Stack unwinding without recovery -- very nice compromise of
    complexity
  * UTF-8 everywhere
+ * Lack of magical constructors
 
 ## Functionality sacrificed for simplicity
 
@@ -178,3 +190,4 @@ MIT
    <https://swift.org/blog/library-evolution/>)
  * <https://en.wikipedia.org/wiki/Operator-precedence_parser>
  * <https://play.rust-lang.org/?version=stable&mode=debug&edition=2018&gist=174ca95a8b938168764846e97d5e9a2c>
+ * <https://www.evanmiller.org/statistical-shortcomings-in-standard-math-libraries.html>
