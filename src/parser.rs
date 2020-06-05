@@ -79,7 +79,7 @@ use logos::Logos;
 use crate::ast;
 use crate::{Cx, TypeDef, TypeSym, VarSym};
 
-#[derive(Logos, Debug, PartialEq)]
+#[derive(Logos, Debug, PartialEq, Clone)]
 pub enum Token {
     #[regex("[a-zA-Z_][a-zA-Z0-9_]*", |lex| lex.slice().to_owned())]
     Ident(String),
@@ -136,15 +136,18 @@ pub enum Token {
 
 use self::Token as T;
 
+type Tok = (Token, logos::Span);
+
 pub struct Parser<'cx, 'input> {
-    lex: logos::Lexer<'input, Token>,
+    lex: std::iter::Peekable<logos::SpannedIter<'input, Token>>,
     cx: &'cx Cx,
+    source: &'input str,
 }
 
 impl<'cx, 'input> Parser<'cx, 'input> {
-    pub fn new(cx: &'cx Cx, s: &'input str) -> Self {
-        let lex = Token::lexer(s);
-        Parser { lex, cx }
+    pub fn new(cx: &'cx Cx, source: &'input str) -> Self {
+        let lex = Token::lexer(source).spanned().peekable();
+        Parser { lex, cx, source }
     }
 
     /// Read all its input and returns an Ast.
@@ -158,20 +161,31 @@ impl<'cx, 'input> Parser<'cx, 'input> {
         ast::Ast { decls: decls }
     }
 
-    fn error(&self, token: Option<Token>) -> ! {
-        let msg = format!(
-            "Parse error on {:?}, got token {:?} on str {}",
-            self.lex.span(),
-            token,
-            self.lex.slice()
-        );
-        panic!(msg)
+    fn error(&self, token: Option<Tok>) -> ! {
+        if let Some((ref tok, ref span)) = token {
+            let msg = format!(
+                "Parse error on {:?}, got token {:?} on str {}",
+                span,
+                tok,
+                &self.source[span.clone()]
+            );
+            panic!(msg)
+        } else {
+            let msg = format!("FDSAFDSAFDSAFSDA TODO");
+            panic!(msg)
+        }
+    }
+
+    /// Consume a token, we don't care what it is.
+    /// Presumably because we've already peeked at it.
+    fn drop(&mut self) {
+        self.lex.next();
     }
 
     /// Consume a token that doesn't return anything
     fn expect(&mut self, tok: Token) {
         match self.lex.next() {
-            Some(t) if t == tok => (),
+            Some((t, _span)) if t == tok => (),
             other => self.error(other),
         }
     }
@@ -180,7 +194,7 @@ impl<'cx, 'input> Parser<'cx, 'input> {
     /// Note this returns a VarSym, not a TypeSym...
     fn expect_ident(&mut self) -> VarSym {
         match self.lex.next() {
-            Some(T::Ident(s)) => self.cx.intern(s),
+            Some((T::Ident(s), _span)) => self.cx.intern(s),
             other => self.error(other),
         }
     }
@@ -189,8 +203,8 @@ impl<'cx, 'input> Parser<'cx, 'input> {
     fn parse_decl(&mut self) -> Option<ast::Decl> {
         //-> ast::Decl {
         match self.lex.next() {
-            Some(T::Const) => Some(self.parse_const()),
-            Some(T::Fn) => Some(self.parse_fn()),
+            Some((T::Const, _span)) => Some(self.parse_const()),
+            Some((T::Fn, _span)) => Some(self.parse_fn()),
             None => None,
             other => self.error(other),
         }
@@ -201,7 +215,7 @@ impl<'cx, 'input> Parser<'cx, 'input> {
         self.expect(T::Colon);
         let typename = self.parse_type();
         self.expect(T::Equals);
-        let init = self.parse_expr();
+        let init = self.parse_expr().unwrap();
         ast::Decl::Const {
             name,
             typename,
@@ -211,31 +225,89 @@ impl<'cx, 'input> Parser<'cx, 'input> {
     fn parse_fn(&mut self) -> ast::Decl {
         // TODO
         let name = self.expect_ident();
-        unimplemented!()
+        let signature = self.parse_fn_signature();
+        let body = self.parse_exprs();
+        self.expect(T::End);
+        ast::Decl::Function {
+            name,
+            signature,
+            body,
+        }
     }
 
-    fn parse_expr(&mut self) -> ast::Expr {
-        // TODO
-        match self.lex.next() {
-            Some(T::Bool(b)) => ast::Expr::bool(b),
-            Some(T::Number(i)) => ast::Expr::int(i as i64),
-            Some(T::LBrace) => {
-                self.expect(T::RBrace);
-                ast::Expr::unit()
+    // signature = fn_args [":" typename]
+    fn parse_fn_signature(&mut self) -> ast::Signature {
+        let params = self.parse_fn_args();
+        let rettype = if let Some((T::Colon, _span)) = self.lex.peek() {
+            self.expect(T::Colon);
+            self.parse_type()
+        } else {
+            self.cx.intern_type(&TypeDef::Tuple(vec![]))
+        };
+        ast::Signature { params, rettype }
+    }
+
+    // fn_args = [ident ":" typename {"," ident ":" typename}]
+    fn parse_fn_args(&mut self) -> Vec<(VarSym, TypeSym)> {
+        let mut args = vec![];
+        if let Some((T::Ident(_i), _span)) = self.lex.peek() {
+            let name = self.expect_ident();
+            self.expect(T::Colon);
+            let tname = self.parse_type();
+            args.push((name, tname));
+
+            while let Some((T::Comma, _span)) = self.lex.peek() {
+                self.expect(T::Comma);
+                let name = self.expect_ident();
+                self.expect(T::Colon);
+                let tname = self.parse_type();
+                args.push((name, tname));
             }
-            other => self.error(other),
+            // Consume trailing comma if it's there.
+            if let Some((T::Comma, _span)) = self.lex.peek() {
+                self.expect(T::Comma);
+            }
+        }
+        args
+    }
+
+    fn parse_exprs(&mut self) -> Vec<ast::Expr> {
+        let mut exprs = vec![];
+        while let Some(e) = self.parse_expr() {
+            exprs.push(e);
+        }
+        exprs
+    }
+
+    fn parse_expr(&mut self) -> Option<ast::Expr> {
+        let token: Option<Tok> = self.lex.peek().cloned();
+        match token {
+            Some((T::Bool(b), _span)) => {
+                self.drop();
+                Some(ast::Expr::bool(b))
+            }
+            Some((T::Number(i), _span)) => {
+                self.drop();
+                Some(ast::Expr::int(i as i64))
+            }
+            Some((T::LBrace, _span)) => {
+                self.drop();
+                self.expect(T::RBrace);
+                Some(ast::Expr::unit())
+            }
+            _other => None,
         }
     }
 
     fn parse_type(&mut self) -> TypeSym {
         match self.lex.next() {
-            Some(T::Ident(s)) => match s.as_ref() {
+            Some((T::Ident(s), span)) => match s.as_ref() {
                 // TODO: This is a bit too hardwired tbh...
                 "i32" => self.cx.intern_type(&TypeDef::SInt(4)),
                 "bool" => self.cx.intern_type(&TypeDef::Bool),
-                _ => self.error(Some(T::Ident(s))),
+                _ => self.error(Some((T::Ident(s), span))),
             },
-            Some(T::LBrace) => {
+            Some((T::LBrace, _span)) => {
                 self.expect(T::RBrace);
                 self.cx.intern_type(&TypeDef::Tuple(vec![]))
             }
@@ -270,6 +342,28 @@ mod tests {
                 name: foosym,
                 typename: i32_t,
                 init: ast::Expr::int(-9),
+            },
+        );
+    }
+
+    #[test]
+    fn test_fn() {
+        let cx = &Cx::new();
+        let foosym = cx.intern("foo");
+        let xsym = cx.intern("x");
+        let i32_t = cx.intern_type(&TypeDef::SInt(4));
+        // TODO: How can we not hardcode VarSym and TypeSym here,
+        // without it being a PITA?
+        assert_decl(
+            cx,
+            "fn foo x:i32 : i32 -9 end",
+            ast::Decl::Function {
+                name: foosym,
+                signature: ast::Signature {
+                    params: vec![(xsym, i32_t)],
+                    rettype: i32_t,
+                },
+                body: vec![ast::Expr::int(-9)],
             },
         );
     }
