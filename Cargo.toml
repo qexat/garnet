@@ -9,6 +9,7 @@ edition = "2018"
 [dependencies]
 wasm-builder = { git = "https://github.com/JCapucho/wasm-builder.git" }
 walrus = {version = "0.17", default-features = false}
+logos = "0.11"
 
 [dev-dependencies]
 # Use wasmtime to evaluate results of end-to-end tests.
