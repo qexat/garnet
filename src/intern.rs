@@ -1,13 +1,13 @@
-//! Simple string interner
-//! Could use `https://github.com/Robbepop/string-interner` instead, but, eh.
+//! Simple generic interner
 //!
-//! Does not free its strings; free the whole thing.
+//! Does not free its contents; free the whole thing.
 
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::hash::Hash;
+use std::rc::Rc;
 
-/// Safe string interner.
+/// Safe interner.
 /// The mutable caches and other guts are RefCell'd, so this is logically "immutable".
 #[derive(Debug)]
 pub struct Interner<Ky, Val>
@@ -17,8 +17,8 @@ where
 {
     /// We store two copies of the string, because I don't want to bother with unsafe,
     /// so.  It's fine for now.
-    data: RefCell<Vec<Val>>,
-    map: RefCell<HashMap<Val, Ky>>,
+    data: RefCell<Vec<Rc<Val>>>,
+    map: RefCell<HashMap<Rc<Val>, Ky>>,
 }
 
 /// The type for an interned thingy.
@@ -41,19 +41,22 @@ where
         // Apparently I'm not smart enough to use entry() currently.
         let mut data = self.data.borrow_mut();
         let mut map = self.map.borrow_mut();
-        if let Some(sym) = map.get(&s) {
+        if let Some(sym) = map.get(&*s) {
             // We have it, great
             *sym
         } else {
             let sym = Ky::from(data.len());
+            let s = Rc::new(s.clone());
             data.push(s.clone());
-            map.insert(s.clone(), sym);
+            map.insert(s, sym);
             sym
         }
     }
 
     /// Get a value given its token
-    pub fn get(&self, sym: Ky) -> Val {
+    /// Clones the value, which is kinda ugly, but otherwise it runs
+    /// into borrowing issues with its RefCell.
+    pub fn fetch(&self, sym: Ky) -> Rc<Val> {
         self.data.borrow()[sym.into()].clone()
     }
 }
@@ -65,7 +68,7 @@ mod tests {
     /// This found a bug.
     #[test]
     fn test_basic() {
-        let mut i: Interner<usize, String> = Interner::new();
+        let i: Interner<usize, String> = Interner::new();
         let goodval = "foo";
         let badval = "bar";
         let s1 = i.intern(&goodval.to_owned());
@@ -75,8 +78,8 @@ mod tests {
         assert_eq!(s1, s2);
         assert_ne!(s1, sbad);
 
-        let check = i.get(s1);
-        assert_eq!(check, goodval);
-        assert_ne!(check, badval);
+        let check = i.fetch(s1);
+        assert_eq!(&*check, goodval);
+        assert_ne!(&*check, badval);
     }
 }

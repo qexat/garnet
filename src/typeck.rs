@@ -4,7 +4,7 @@
 use std::collections::HashMap;
 
 use crate::ir::{self};
-use crate::{Cx, TypeDef, TypeInfo, TypeSym, VarSym};
+use crate::{Cx, TypeDef, TypeSym, VarSym};
 
 #[derive(Debug, Clone)]
 pub enum TypeError {
@@ -66,7 +66,7 @@ impl Symtbl {
                 return Ok(binding.typename.clone());
             }
         }
-        let msg = format!("Unknown var: {}", cx.unintern(name));
+        let msg = format!("Unknown var: {}", cx.fetch(name));
         Err(TypeError::UnknownVar(msg))
     }
 }
@@ -203,9 +203,9 @@ pub fn typecheck_decl(cx: &mut Cx, symtbl: &mut Symtbl, decl: &ir::Decl) -> Resu
             if !type_matches(&signature.rettype, &last_expr_type) {
                 let msg = format!(
                     "Function {} returns {} but should return {}",
-                    cx.unintern(*name),
-                    cx.unintern_type(last_expr_type).get_name(),
-                    cx.unintern_type(signature.rettype).get_name(),
+                    cx.fetch(*name),
+                    cx.fetch_type(last_expr_type).get_name(),
+                    cx.fetch_type(signature.rettype).get_name(),
                 );
                 return Err(TypeError::TypeMismatch(msg));
             }
@@ -256,9 +256,9 @@ fn typecheck_expr(cx: &mut Cx, symtbl: &mut Symtbl, expr: &ir::Expr) -> Result<T
                 let msg = format!(
                     "Invalid types for BOp {:?}: expected {}, got {} + {}",
                     op,
-                    cx.unintern_type(binop_type).get_name(),
-                    cx.unintern_type(tlhs).get_name(),
-                    cx.unintern_type(trhs).get_name()
+                    cx.fetch_type(binop_type).get_name(),
+                    cx.fetch_type(tlhs).get_name(),
+                    cx.fetch_type(trhs).get_name()
                 );
                 Err(TypeError::TypeMismatch(msg))
             }
@@ -273,8 +273,8 @@ fn typecheck_expr(cx: &mut Cx, symtbl: &mut Symtbl, expr: &ir::Expr) -> Result<T
                 let msg = format!(
                     "Invalid types for UOp {:?}: expected {}, got {}",
                     op,
-                    cx.unintern_type(uniop_type).get_name(),
-                    cx.unintern_type(trhs).get_name()
+                    cx.fetch_type(uniop_type).get_name(),
+                    cx.fetch_type(trhs).get_name()
                 );
                 Err(TypeError::TypeMismatch(msg))
             }
@@ -293,9 +293,9 @@ fn typecheck_expr(cx: &mut Cx, symtbl: &mut Symtbl, expr: &ir::Expr) -> Result<T
             } else {
                 let msg = format!(
                     "initializer for variable {}: expected {}, got {}",
-                    cx.unintern(*varname),
-                    cx.unintern_type(*typename).get_name(),
-                    cx.unintern_type(init_type).get_name()
+                    cx.fetch(*varname),
+                    cx.fetch_type(*typename).get_name(),
+                    cx.fetch_type(init_type).get_name()
                 );
                 Err(TypeError::TypeMismatch(msg))
             }
@@ -315,15 +315,15 @@ fn typecheck_expr(cx: &mut Cx, symtbl: &mut Symtbl, expr: &ir::Expr) -> Result<T
                 } else {
                     let msg = format!(
                         "If block return type is {}, but else block returns {}",
-                        cx.unintern_type(if_type).get_name(),
-                        cx.unintern_type(else_type).get_name(),
+                        cx.fetch_type(if_type).get_name(),
+                        cx.fetch_type(else_type).get_name(),
                     );
                     Err(TypeError::TypeMismatch(msg))
                 }
             } else {
                 let msg = format!(
                     "If expr condition is {}, not bool",
-                    cx.unintern_type(cond_type).get_name(),
+                    cx.fetch_type(cond_type).get_name(),
                 );
                 Err(TypeError::TypeMismatch(msg))
             }
@@ -340,8 +340,8 @@ fn typecheck_expr(cx: &mut Cx, symtbl: &mut Symtbl, expr: &ir::Expr) -> Result<T
             if !type_matches(&bodytype, &signature.rettype) {
                 let msg = format!(
                     "Function returns type {:?} but should be {:?}",
-                    cx.unintern_type(bodytype),
-                    cx.unintern_type(signature.rettype)
+                    cx.fetch_type(bodytype),
+                    cx.fetch_type(signature.rettype)
                 );
                 return Err(TypeError::TypeMismatch(msg));
             }
@@ -363,7 +363,7 @@ fn typecheck_expr(cx: &mut Cx, symtbl: &mut Symtbl, expr: &ir::Expr) -> Result<T
                 .collect::<Result<Vec<TypeSym>, _>>()?;
             // Then, look up function
             let f = typecheck_expr(cx, symtbl, func)?;
-            let fdef = cx.unintern_type(f);
+            let fdef = &*cx.fetch_type(f);
             match fdef {
                 TypeDef::Lambda(paramtypes, rettype) => {
                     // Now, make sure all the function's params match what it wants
@@ -371,13 +371,13 @@ fn typecheck_expr(cx: &mut Cx, symtbl: &mut Symtbl, expr: &ir::Expr) -> Result<T
                         if !type_matches(given, &wanted) {
                             let msg = format!(
                                 "Function wanted type {} in param but got type {}",
-                                cx.unintern_type(wanted).get_name(),
-                                cx.unintern_type(*given).get_name()
+                                cx.fetch_type(*wanted).get_name(),
+                                cx.fetch_type(*given).get_name()
                             );
                             return Err(TypeError::TypeMismatch(msg));
                         }
                     }
-                    Ok(*rettype)
+                    Ok(**rettype)
                 }
                 other => {
                     let msg = format!(

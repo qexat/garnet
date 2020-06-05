@@ -44,7 +44,7 @@ fn compile_decl(bcx: &mut BCx, decl: &ir::Decl) {
             body,
         } => {
             let function_id = compile_function(bcx, signature, body);
-            let name = bcx.cx.unintern(*name);
+            let name = bcx.cx.fetch(*name);
             bcx.m.exports.add(&name, function_id);
             /*
             let sig = function_signature(cx, m, signature);
@@ -58,7 +58,7 @@ fn compile_decl(bcx: &mut BCx, decl: &ir::Decl) {
             m.types.push(sig);
             m.functions.push(typesec_idx as u32);
             m.exports.push(s::Export {
-                name: cx.unintern(*name).to_owned(),
+                name: cx.fetch(*name).to_owned(),
                 desc: s::Desc::Function(funcsec_idx as u32),
             });
             */
@@ -321,7 +321,7 @@ fn compile_expr(
 }
 
 fn compile_typesym(bcx: &BCx, t: TypeSym) -> w::ValType {
-    let tdef = bcx.cx.unintern_type(t);
+    let tdef = bcx.cx.fetch_type(t);
     compile_type(bcx.cx, &tdef)
 }
 
