@@ -21,7 +21,7 @@ decl =
   | const_decl
 
 const_decl = "const" ident ":" typename "=" expr
-function_decl = "fn" ident "(" fn_args ")" [":" typename] {expr} "end"
+function_decl = "fn" ident fn_args [":" typename] {expr} "end"
 
 value =
   | NUMBER
@@ -46,7 +46,7 @@ funcall = expr "(" [expr {"," expr}] ")"
 // TODO: 'lambda' is long to type.  : or -> for return type?
 lambda = "lambda" fn_args [":" typename] "=" {expr} "end"
 
-fn_args = [ident ":" typename {"," ident ":" typename}]
+fn_args = "(" [ident ":" typename {"," ident ":" typename}] ")"
 
 typename =
   | "i32"
@@ -64,6 +64,7 @@ typename =
   // | "fn" fn_args ["->" typename]
 
 // Things to add, roughly in order
+// Break and return
 // while/for loops
 // arrays/slices
 // enums
@@ -113,6 +114,8 @@ pub enum Token {
     Loop,
     #[token("do")]
     Do,
+    #[token("lambda")]
+    Lambda,
     #[token("(")]
     LParen,
     #[token(")")]
@@ -338,9 +341,115 @@ impl<'cx, 'input> Parser<'cx, 'input> {
                 let ident = self.expect_ident();
                 Some(ast::Expr::Var { name: ident })
             }
+            Some((T::Let, _span)) => Some(self.parse_let()),
+            Some((T::If, _span)) => Some(self.parse_if()),
+            Some((T::Loop, _span)) => Some(self.parse_loop()),
+            Some((T::Do, _span)) => Some(self.parse_block()),
+            Some((T::Lambda, _span)) => Some(self.parse_lambda()),
             _other => None,
         }
     }
+
+    /// let = "let" ident ":" typename "=" expr
+    fn parse_let(&mut self) -> ast::Expr {
+        self.expect(T::Let);
+        let varname = self.expect_ident();
+        self.expect(T::Colon);
+        let typename = self.parse_type();
+        self.expect(T::Equals);
+        let init = Box::new(self.parse_expr().expect("TODO: Better error message"));
+        ast::Expr::Let {
+            varname,
+            typename,
+            init,
+        }
+    }
+
+    /// {"elif" expr "then" {expr}}
+    ///
+    /// TODO: `else if` instead?  I kinda like it more but it's
+    /// a little more ambiguous.
+    fn parse_elif(&mut self, accm: &mut Vec<ast::IfCase>) {
+        while let Some((T::Elif, _)) = self.lex.peek().cloned() {
+            self.expect(T::Elif);
+            let condition = self
+                .parse_expr()
+                .expect("TODO: Expect better error message");
+            self.expect(T::Then);
+            let body = self.parse_exprs();
+            accm.push(ast::IfCase {
+                condition: Box::new(condition),
+                body,
+            });
+        }
+    }
+
+    /// if = "if" expr "then" {expr} {"elif" expr "then" {expr}} ["else" {expr}] "end"
+    ///
+    /// ...or maybe this?
+    /// if = "if" expr "then" {expr} {"else" "if" expr "then" {expr}} ["else" {expr}] "end"
+    fn parse_if(&mut self) -> ast::Expr {
+        self.expect(T::If);
+        let condition = self
+            .parse_expr()
+            .expect("TODO: Expect better error message");
+        self.expect(T::Then);
+        let body = self.parse_exprs();
+        let mut ifcases = vec![ast::IfCase {
+            condition: Box::new(condition),
+            body,
+        }];
+        // Parse 0 or more elif cases
+        self.parse_elif(&mut ifcases);
+        let next = self.lex.peek().cloned();
+        let falseblock = match next {
+            Some((T::Else, _)) => {
+                self.expect(T::Else);
+                let elsepart = self.parse_exprs();
+                self.expect(T::End);
+                elsepart
+            }
+            Some((T::End, _)) => {
+                self.expect(T::End);
+                vec![]
+            }
+            other => self.error(other),
+        };
+        ast::Expr::If {
+            cases: ifcases,
+            falseblock,
+        }
+    }
+
+    fn parse_loop(&mut self) -> ast::Expr {
+        self.expect(T::Loop);
+        let body = self.parse_exprs();
+        self.expect(T::End);
+        ast::Expr::Loop { body }
+    }
+
+    fn parse_block(&mut self) -> ast::Expr {
+        self.expect(T::Do);
+        let body = self.parse_exprs();
+        self.expect(T::End);
+        ast::Expr::Block { body }
+    }
+
+    fn parse_lambda(&mut self) -> ast::Expr {
+        self.expect(T::Lambda);
+        let signature = self.parse_fn_signature();
+        self.expect(T::Equals);
+        let body = self.parse_exprs();
+        self.expect(T::End);
+        ast::Expr::Lambda { signature, body }
+    }
+
+    /* TODO
+    fn parse_funcall(&mut self) -> ast::Expr {
+    }
+
+    fn parse_term(&mut self) -> ast::Expr {
+    */
 
     fn parse_type(&mut self) -> TypeSym {
         match self.lex.next() {
@@ -479,6 +588,79 @@ const baz: {} = {}
         for s in &valid_args {
             let p = &mut Parser::new(cx, s);
             p.parse_fn_signature();
+        }
+    }
+
+    #[test]
+    fn parse_let() {
+        let valid_args = vec!["let x: i32 = 5", "let y: bool = false", "let z: {} = z"];
+        let cx = &Cx::new();
+        for s in &valid_args {
+            let p = &mut Parser::new(cx, s);
+            p.parse_let();
+        }
+    }
+
+    #[test]
+    fn parse_if() {
+        let valid_args = vec![
+            "if x then y end",
+            "if 10 then let x: bool = false 10 end",
+            r#"if 10 then false
+            else true
+            end
+            "#,
+            r#"if 10 then false
+            elif 20 then false
+            else true
+            end
+            "#,
+            r#"if 10 then false
+            elif 20 then {} false
+            elif 30 then {}
+            else true
+            end
+            "#,
+        ];
+        let cx = &Cx::new();
+        for s in &valid_args {
+            let p = &mut Parser::new(cx, s);
+            p.parse_if();
+        }
+    }
+
+    #[test]
+    fn parse_loop() {
+        let valid_args = vec!["loop 10 end", "loop 10 20 30 end", "loop end"];
+        let cx = &Cx::new();
+        for s in &valid_args {
+            let p = &mut Parser::new(cx, s);
+            p.parse_loop();
+        }
+    }
+
+    #[test]
+    fn parse_block() {
+        let valid_args = vec!["do 10 end", "do 10 20 30 end", "do end"];
+        let cx = &Cx::new();
+        for s in &valid_args {
+            let p = &mut Parser::new(cx, s);
+            p.parse_block();
+        }
+    }
+
+    #[test]
+    fn parse_lambda() {
+        let valid_args = vec![
+            "lambda(x:i32):i32 = x end",
+            "lambda(x:i32, i:bool) = x end",
+            "lambda() = {} end",
+            "lambda() = end",
+        ];
+        let cx = &Cx::new();
+        for s in &valid_args {
+            let p = &mut Parser::new(cx, s);
+            p.parse_lambda();
         }
     }
 }
