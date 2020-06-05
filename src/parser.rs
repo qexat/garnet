@@ -295,6 +295,10 @@ impl<'cx, 'input> Parser<'cx, 'input> {
                 self.expect(T::RBrace);
                 Some(ast::Expr::unit())
             }
+            Some((T::Ident(_), _span)) => {
+                let ident = self.expect_ident();
+                Some(ast::Expr::Var { name: ident })
+            }
             _other => None,
         }
     }
