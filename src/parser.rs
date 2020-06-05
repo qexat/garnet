@@ -77,7 +77,7 @@ typename =
 use logos::Logos;
 
 use crate::ast;
-use crate::{Cx, TypeDef, VarSym};
+use crate::{Cx, TypeDef, TypeSym, VarSym};
 
 #[derive(Logos, Debug, PartialEq)]
 pub enum Token {
@@ -162,6 +162,14 @@ fn expect_ident(cx: &mut Cx, lex: &mut Lexer) -> VarSym {
     }
 }
 
+/// Exactly the same as above but gets a type name...
+fn expect_type(cx: &mut Cx, lex: &mut Lexer) -> TypeSym {
+    match lex.next() {
+        Some(T::Ident(s)) => cx.intern_type(&TypeDef::Named(s)),
+        other => error(other, lex),
+    }
+}
+
 fn parse_decl(cx: &mut Cx, lex: &mut Lexer) -> ast::Decl {
     //-> ast::Decl {
     match lex.next() {
@@ -174,10 +182,9 @@ fn parse_decl(cx: &mut Cx, lex: &mut Lexer) -> ast::Decl {
 fn parse_const(cx: &mut Cx, lex: &mut Lexer) -> ast::Decl {
     let name = expect_ident(cx, lex);
     expect(T::Colon, lex);
-    let def = parse_type(lex);
-    let typename = cx.intern_type(&def);
+    let typename = parse_type(cx, lex);
     expect(T::Equals, lex);
-    let init = parse_expr(lex);
+    let init = parse_expr(cx, lex);
     ast::Decl::Const {
         name,
         typename,
@@ -189,16 +196,15 @@ fn parse_fn(lex: &mut Lexer) -> ast::Decl {
     unimplemented!()
 }
 
-fn parse_expr(lex: &mut Lexer) -> ast::Expr {
+fn parse_expr(cx: &mut Cx, lex: &mut Lexer) -> ast::Expr {
     // TODO
     expect(T::Unit, lex);
     ast::Expr::int(3)
 }
 
-fn parse_type(lex: &mut Lexer) -> TypeDef {
+fn parse_type(cx: &mut Cx, lex: &mut Lexer) -> TypeSym {
     // TODO
-    expect(T::Unit, lex);
-    TypeDef::SInt(4)
+    expect_type(cx, lex)
 }
 
 #[cfg(test)]
@@ -219,7 +225,7 @@ mod tests {
         // TODO: How can we not hardcode VarSym and TypeSym here,
         // without it being a PITA?
         assert_decl(
-            "const foo: () = ()",
+            "const foo: bar = ()",
             ast::Decl::Const {
                 name: VarSym(0),
                 typename: TypeSym(0),
