@@ -292,6 +292,8 @@ fn compile_expr(
             assert_eq!(compile_expr(bcx, locals, instrs, condition), 1);
             let mut true_count = 0;
             let mut false_count = 0;
+            /* TODO
+             * sort out this double-borrow
             instrs.if_else(
                 None,
                 |then| {
@@ -301,6 +303,7 @@ fn compile_expr(
                     false_count = compile_exprs(bcx, locals, else_, falseblock);
                 },
             );
+            */
             assert_eq!(true_count, false_count);
             true_count
         }
