@@ -2,6 +2,7 @@
 //#![deny(missing_docs)]
 
 use std::borrow::Cow;
+use std::rc::Rc;
 
 pub mod ast;
 pub mod backend;
@@ -135,16 +136,16 @@ impl Cx {
         self.syms.intern(&s.as_ref().to_owned())
     }
 
-    pub fn unintern(&self, s: VarSym) -> String {
-        self.syms.get(s)
+    pub fn fetch(&self, s: VarSym) -> Rc<String> {
+        self.syms.fetch(s)
     }
 
     pub fn intern_type(&self, s: &TypeDef) -> TypeSym {
         self.types.intern(&s)
     }
 
-    pub fn unintern_type(&self, s: TypeSym) -> TypeDef {
-        self.types.get(s)
+    pub fn fetch_type(&self, s: TypeSym) -> Rc<TypeDef> {
+        self.types.fetch(s)
     }
 
     /// Fill type table with whatever builtin types we have.
