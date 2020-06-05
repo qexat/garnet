@@ -45,7 +45,7 @@ fn compile_decl(bcx: &mut BCx, decl: &ir::Decl) {
         } => {
             let function_id = compile_function(bcx, signature, body);
             let name = bcx.cx.unintern(*name);
-            bcx.m.exports.add(name, function_id);
+            bcx.m.exports.add(&name, function_id);
             /*
             let sig = function_signature(cx, m, signature);
             // TODO For now we don't try to dedupe types, just add 'em as redundantly
@@ -294,6 +294,7 @@ fn compile_expr(
             let mut false_count = 0;
             /* TODO
              * sort out this double-borrow
+             * Basically just needs immutable bcx and properly stacked locals.
             instrs.if_else(
                 None,
                 |then| {
@@ -321,7 +322,7 @@ fn compile_expr(
 
 fn compile_typesym(bcx: &BCx, t: TypeSym) -> w::ValType {
     let tdef = bcx.cx.unintern_type(t);
-    compile_type(bcx.cx, tdef)
+    compile_type(bcx.cx, &tdef)
 }
 
 fn compile_type(_cx: &Cx, t: &TypeDef) -> w::ValType {

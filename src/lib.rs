@@ -131,19 +131,19 @@ impl Cx {
     }
 
     /// Shortcut for getting an interned symbol.
-    pub fn intern(&mut self, s: impl AsRef<str>) -> VarSym {
+    pub fn intern(&self, s: impl AsRef<str>) -> VarSym {
         self.syms.intern(&s.as_ref().to_owned())
     }
 
-    pub fn unintern(&self, s: VarSym) -> &str {
+    pub fn unintern(&self, s: VarSym) -> String {
         self.syms.get(s)
     }
 
-    pub fn intern_type(&mut self, s: &TypeDef) -> TypeSym {
+    pub fn intern_type(&self, s: &TypeDef) -> TypeSym {
         self.types.intern(&s)
     }
 
-    pub fn unintern_type(&self, s: TypeSym) -> &TypeDef {
+    pub fn unintern_type(&self, s: TypeSym) -> TypeDef {
         self.types.get(s)
     }
 

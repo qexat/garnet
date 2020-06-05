@@ -368,16 +368,16 @@ fn typecheck_expr(cx: &mut Cx, symtbl: &mut Symtbl, expr: &ir::Expr) -> Result<T
                 TypeDef::Lambda(paramtypes, rettype) => {
                     // Now, make sure all the function's params match what it wants
                     for (given, wanted) in given_param_types.iter().zip(paramtypes) {
-                        if !type_matches(given, wanted) {
+                        if !type_matches(given, &wanted) {
                             let msg = format!(
                                 "Function wanted type {} in param but got type {}",
-                                cx.unintern_type(*wanted).get_name(),
+                                cx.unintern_type(wanted).get_name(),
                                 cx.unintern_type(*given).get_name()
                             );
                             return Err(TypeError::TypeMismatch(msg));
                         }
                     }
-                    Ok(**rettype)
+                    Ok(*rettype)
                 }
                 other => {
                     let msg = format!(
