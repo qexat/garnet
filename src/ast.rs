@@ -145,7 +145,7 @@ pub enum Decl {
 /// A compilable chunk of AST.
 ///
 /// Currently, basically a compilation unit.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct Ast {
     pub decls: Vec<Decl>,
 }
