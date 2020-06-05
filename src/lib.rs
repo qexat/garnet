@@ -174,3 +174,16 @@ impl Cx {
     }
     */
 }
+
+/// Main driver function.
+/// Compile a given source string to wasm.
+pub fn compile(src: &str) -> Vec<u8> {
+    let cx = &mut Cx::new();
+    let ast = {
+        let mut parser = parser::Parser::new(cx, src);
+        parser.parse()
+    };
+    let ir = ir::lower(&ast);
+    let wasm = backend::output(cx, &ir);
+    wasm
+}
