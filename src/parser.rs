@@ -83,8 +83,6 @@ use crate::{Cx, TypeDef, TypeSym, VarSym};
 pub enum Token {
     #[regex("[a-zA-Z_][a-zA-Z0-9_]*", |lex| lex.slice().to_owned())]
     Ident(String),
-    #[token("()")]
-    Unit,
     #[regex("true|false", |lex| lex.slice().parse())]
     Bool(bool),
     #[regex("[-][0-9]+", |lex| lex.slice().parse())]
@@ -119,6 +117,10 @@ pub enum Token {
     LParen,
     #[token(")")]
     RParen,
+    #[token("{")]
+    LBrace,
+    #[token("}")]
+    RBrace,
     #[token(",")]
     Comma,
 
@@ -162,19 +164,11 @@ fn expect_ident(cx: &mut Cx, lex: &mut Lexer) -> VarSym {
     }
 }
 
-/// Exactly the same as above but gets a type name...
-fn expect_type(cx: &mut Cx, lex: &mut Lexer) -> TypeSym {
-    match lex.next() {
-        Some(T::Ident(s)) => cx.intern_type(&TypeDef::Named(s)),
-        other => error(other, lex),
-    }
-}
-
 fn parse_decl(cx: &mut Cx, lex: &mut Lexer) -> ast::Decl {
     //-> ast::Decl {
     match lex.next() {
         Some(T::Const) => parse_const(cx, lex),
-        Some(T::Fn) => parse_fn(lex),
+        Some(T::Fn) => parse_fn(cx, lex),
         other => error(other, lex),
     }
 }
@@ -191,20 +185,34 @@ fn parse_const(cx: &mut Cx, lex: &mut Lexer) -> ast::Decl {
         init,
     }
 }
-fn parse_fn(lex: &mut Lexer) -> ast::Decl {
+fn parse_fn(cx: &mut Cx, lex: &mut Lexer) -> ast::Decl {
     // TODO
+    let name = expect_ident(cx, lex);
     unimplemented!()
 }
 
 fn parse_expr(cx: &mut Cx, lex: &mut Lexer) -> ast::Expr {
     // TODO
-    expect(T::Unit, lex);
-    ast::Expr::int(3)
+    match lex.next() {
+        Some(T::Ident(_)) | Some(T::Bool(_)) | Some(T::Number(_)) => ast::Expr::int(3),
+        other => error(other, lex),
+    }
 }
 
 fn parse_type(cx: &mut Cx, lex: &mut Lexer) -> TypeSym {
-    // TODO
-    expect_type(cx, lex)
+    // TODO: This is a bit too hardwired tbh...
+    match lex.next() {
+        Some(T::Ident(s)) => match s.as_ref() {
+            "i32" => cx.intern_type(&TypeDef::SInt(4)),
+            "bool" => cx.intern_type(&TypeDef::Bool),
+            _ => error(Some(T::Ident(s)), lex),
+        },
+        Some(T::LBrace) => {
+            expect(T::RBrace, lex);
+            cx.intern_type(&TypeDef::Tuple(vec![]))
+        }
+        other => error(other, lex),
+    }
 }
 
 #[cfg(test)]
@@ -225,7 +233,7 @@ mod tests {
         // TODO: How can we not hardcode VarSym and TypeSym here,
         // without it being a PITA?
         assert_decl(
-            "const foo: bar = ()",
+            "const foo: i32 = 9",
             ast::Decl::Const {
                 name: VarSym(0),
                 typename: TypeSym(0),
