@@ -290,8 +290,8 @@ fn compile_expr(
         } => {
             // TODO: We need to know what type the blocks return.  Hmm.
             assert_eq!(compile_expr(bcx, locals, instrs, condition), 1);
-            let mut true_count = 0;
-            let mut false_count = 0;
+            let true_count = 0;
+            let false_count = 0;
             /* TODO
              * sort out this double-borrow
              * Basically just needs immutable bcx and properly stacked locals.
