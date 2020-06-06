@@ -191,3 +191,11 @@ MIT
  * <https://en.wikipedia.org/wiki/Operator-precedence_parser>
  * <https://play.rust-lang.org/?version=stable&mode=debug&edition=2018&gist=174ca95a8b938168764846e97d5e9a2c>
  * <https://www.evanmiller.org/statistical-shortcomings-in-standard-math-libraries.html>
+
+ # random
+
+ CI notes:
+
+  * Actual build takes ~1-2 minutes
+  * Adding end-to-end unit tests it takes 5 minutes
+  * Adding code coverage it takes ~15 minutes -- cargo-tarpaulin ain't instant but most of it is still spent in building it.
