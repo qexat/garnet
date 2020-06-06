@@ -12,8 +12,17 @@ and/or/not keywords for logical operators instead of ||, && etc
 Keep | and & and ~ for binary operations
 TODO: Make sure trailing commas are always allowed
 
-I kinda want Erlang-style pattern matching in function args, but
-the point of this language is to KISS.
+
+Deliberate choices so that we don't go ham:
+ * we use C/Lua-style function application
+   `foo(bar, baz)` instead of Lisp style `(foo bar baz)` or ML/Haskell
+   style `foo bar baz`.
+ * I kinda want Erlang-style pattern matching in function args, but
+   the point of this language is to KISS.
+ * Parens for tuples would make life simpler in some ways, but I feel
+   also make syntax and parsing more confusing, so let's go with Erlang
+   curly braces.  If we use curly braces for structs too, then this also
+   emphasizes the equivalence between structs and tuples.
 
 
 decl =
@@ -89,11 +98,13 @@ pub enum Token {
     #[regex("-?[0-9]+", |lex| lex.slice().parse())]
     Number(i32),
 
+    // Decl stuff
     #[token("const")]
     Const,
     #[token("fn")]
     Fn,
 
+    // Keywords
     #[token("let")]
     Let,
     #[token(":")]
@@ -114,6 +125,8 @@ pub enum Token {
     Do,
     #[token("lambda")]
     Lambda,
+
+    // Punctuation
     #[token("(")]
     LParen,
     #[token(")")]
@@ -124,6 +137,39 @@ pub enum Token {
     RBrace,
     #[token(",")]
     Comma,
+
+    // Operators
+    #[token("+")]
+    Plus,
+    #[token("-")]
+    Minus,
+    #[token("*")]
+    Mul,
+    #[token("/")]
+    Div,
+    #[token("%")]
+    Mod,
+    #[token("and")]
+    And,
+    #[token("or")]
+    Or,
+    #[token("not")]
+    Not,
+    #[token("xor")]
+    Xor,
+    #[token("==")]
+    Equal,
+    #[token("/=")]
+    NotEqual,
+    #[token(">")]
+    Gt,
+    #[token("<")]
+    Lt,
+    #[token(">=")]
+    Gte,
+    #[token("<=")]
+    Lte,
+
     // We save comment strings so we can use this same
     // parser as a reformatter or such.
     // TODO: How do we skip these in the parser?
@@ -140,6 +186,10 @@ use self::Token as T;
 type Tok = (Token, logos::Span);
 
 pub struct Parser<'cx, 'input> {
+    // TODO: The only methods we actually call on this are next() and peek,
+    // and it always returns a span which we then throw away.
+    // ...actually we want to keep spans attached to AST nodes,
+    // so we'll need those later.
     lex: std::iter::Peekable<logos::SpannedIter<'input, Token>>,
     cx: &'cx Cx,
     source: &'input str,
@@ -474,6 +524,36 @@ impl<'cx, 'input> Parser<'cx, 'input> {
             }
             other => self.error(other),
         }
+    }
+}
+
+// Binding power functions for the Pratt parser portion.
+// Reference:
+// https://matklad.github.io/2020/04/13/simple-but-powerful-pratt-parsing.html
+//
+fn prefix_binding_power(op: Token) -> ((), usize) {
+    match op {
+        T::Plus | T::Minus => ((), 110),
+        T::Not => todo!(),
+        x => panic!("{:?} is not a binary op", x),
+    }
+}
+
+fn postfix_binding_power(op: Token) -> Option<(usize, ())> {
+    match op {
+        T::LParen => todo!(),
+        x => panic!("{:?} is not a binary op", x),
+    }
+}
+
+fn infix_binding_power(op: Token) -> Option<(usize, usize)> {
+    match op {
+        T::Mul | T::Div | T::Mod => Some((100, 101)),
+        T::Plus | T::Minus => Some((90, 91)),
+        T::And | T::Or | T::Xor | T::Equal | T::NotEqual | T::Gt | T::Lt | T::Gte | T::Lte => {
+            todo!()
+        }
+        x => panic!("{:?} is not a binary op", x),
     }
 }
 
