@@ -211,7 +211,7 @@ fn compile_expr(
     match expr {
         E::Lit { val } => match val {
             Literal::Integer(i) => {
-                assert!(*i < (i32::MAX as i64));
+                assert!(*i < (std::i32::MAX as i64));
                 instrs.i32_const(*i as i32);
                 1
             }
