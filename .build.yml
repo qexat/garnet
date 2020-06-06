@@ -10,7 +10,6 @@ secrets:
  - 384fc780-f42a-4945-854e-cbd952d6802b
 tasks:
  - setup: |
-    source .cargo/env
     cargo install cargo-tarpaulin
  - build: |
     source .cargo/env
