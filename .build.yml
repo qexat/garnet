@@ -12,15 +12,12 @@ tasks:
  - setup: |
     cargo install cargo-tarpaulin
  - build: |
-    source .cargo/env
     cd garnet
     cargo build
  - test: |
-    source .cargo/env
     cd garnet
     cargo test
  - coverage: |
-    source .cargo/env
     cd garnet
     cargo tarpaulin -o Html
     scp -o StrictHostKeyChecking=no tarpaulin-report.html icefox@roc.alopex.li:htdocs/temp/
