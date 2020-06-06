@@ -300,33 +300,30 @@ fn typecheck_expr(cx: &mut Cx, symtbl: &mut Symtbl, expr: &ir::Expr) -> Result<T
                 Err(TypeError::TypeMismatch(msg))
             }
         }
-        If {
-            condition,
-            trueblock,
-            falseblock,
-        } => {
-            let cond_type = typecheck_expr(cx, symtbl, condition)?;
-            if type_matches(&cond_type, &booltype) {
-                // Proceed to typecheck arms
-                let if_type = typecheck_exprs(cx, symtbl, trueblock)?;
-                let else_type = typecheck_exprs(cx, symtbl, falseblock)?;
-                if type_matches(&if_type, &else_type) {
-                    Ok(if_type)
+        If { cases, falseblock } => {
+            let assumed_type = typecheck_exprs(cx, symtbl, falseblock)?;
+            for (cond, body) in cases {
+                let cond_type = typecheck_expr(cx, symtbl, cond)?;
+                if type_matches(&cond_type, &booltype) {
+                    // Proceed to typecheck arms
+                    let if_type = typecheck_exprs(cx, symtbl, body)?;
+                    if !type_matches(&if_type, &assumed_type) {
+                        let msg = format!(
+                            "If block return type is {}, but else block returns {}",
+                            cx.fetch_type(if_type).get_name(),
+                            cx.fetch_type(assumed_type).get_name(),
+                        );
+                        return Err(TypeError::TypeMismatch(msg));
+                    }
                 } else {
                     let msg = format!(
-                        "If block return type is {}, but else block returns {}",
-                        cx.fetch_type(if_type).get_name(),
-                        cx.fetch_type(else_type).get_name(),
+                        "If expr condition is {}, not bool",
+                        cx.fetch_type(cond_type).get_name(),
                     );
-                    Err(TypeError::TypeMismatch(msg))
+                    return Err(TypeError::TypeMismatch(msg));
                 }
-            } else {
-                let msg = format!(
-                    "If expr condition is {}, not bool",
-                    cx.fetch_type(cond_type).get_name(),
-                );
-                Err(TypeError::TypeMismatch(msg))
             }
+            return Ok(assumed_type);
         }
         Loop { body } => typecheck_exprs(cx, symtbl, body),
         Lambda { signature, body } => {
