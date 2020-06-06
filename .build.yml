@@ -19,6 +19,6 @@ tasks:
     cargo test
  - coverage: |
     cd garnet
-    cargo tarpaulin -o Html
+    PATH=$PATH:$HOME/.cargo/bin cargo tarpaulin -o Html
     scp -o StrictHostKeyChecking=no tarpaulin-report.html icefox@roc.alopex.li:htdocs/temp/
 
