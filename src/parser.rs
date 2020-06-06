@@ -39,7 +39,7 @@ expr =
 
 // Currently, type inference is not a thing
 let = "let" ident ":" typename "=" expr
-if = "if" expr "then" {expr} {"elif" expr "then" {expr}} ["else" {expr}] "end"
+if = "if" expr "then" {expr} {"else" "if" expr "then" {expr}} ["else" {expr}] "end"
 loop = "loop" {expr} "end"
 block = "do" {expr} "end"
 funcall = expr "(" [expr {"," expr}] ")"
@@ -104,8 +104,6 @@ pub enum Token {
     End,
     #[token("if")]
     If,
-    #[token("elif")]
-    Elif,
     #[token("then")]
     Then,
     #[token("else")]
@@ -206,6 +204,14 @@ impl<'cx, 'input> Parser<'cx, 'input> {
                 );
                 panic!(msg);
             }
+        }
+    }
+
+    fn peek_is(&mut self, expected: Token) -> bool {
+        if let Some((got, _)) = self.lex.peek().cloned() {
+            got == expected
+        } else {
+            false
         }
     }
 
@@ -365,28 +371,30 @@ impl<'cx, 'input> Parser<'cx, 'input> {
         }
     }
 
-    /// {"elif" expr "then" {expr}}
+    /// {"else" "if" expr "then" {expr}}
     ///
     /// TODO: `else if` instead?  I kinda like it more but it's
     /// a little more ambiguous.
     fn parse_elif(&mut self, accm: &mut Vec<ast::IfCase>) {
-        while let Some((T::Elif, _)) = self.lex.peek().cloned() {
-            self.expect(T::Elif);
-            let condition = self
-                .parse_expr()
-                .expect("TODO: Expect better error message");
-            self.expect(T::Then);
-            let body = self.parse_exprs();
-            accm.push(ast::IfCase {
-                condition: Box::new(condition),
-                body,
-            });
+        while self.peek_is(T::Else) {
+            self.expect(T::Else);
+            if self.peek_is(T::If) {
+                self.expect(T::If);
+                let condition = self
+                    .parse_expr()
+                    .expect("TODO: Expect better error message");
+                self.expect(T::Then);
+                let body = self.parse_exprs();
+                accm.push(ast::IfCase {
+                    condition: Box::new(condition),
+                    body,
+                });
+            } else {
+                break;
+            }
         }
     }
 
-    /// if = "if" expr "then" {expr} {"elif" expr "then" {expr}} ["else" {expr}] "end"
-    ///
-    /// ...or maybe this?
     /// if = "if" expr "then" {expr} {"else" "if" expr "then" {expr}} ["else" {expr}] "end"
     fn parse_if(&mut self) -> ast::Expr {
         self.expect(T::If);
@@ -399,19 +407,20 @@ impl<'cx, 'input> Parser<'cx, 'input> {
             condition: Box::new(condition),
             body,
         }];
-        // Parse 0 or more elif cases
+        // Parse 0 or more else if cases
         self.parse_elif(&mut ifcases);
         let next = self.lex.peek().cloned();
         let falseblock = match next {
-            Some((T::Else, _)) => {
-                self.expect(T::Else);
-                let elsepart = self.parse_exprs();
-                self.expect(T::End);
-                elsepart
-            }
+            // No else block, we're done
             Some((T::End, _)) => {
                 self.expect(T::End);
                 vec![]
+            }
+            // We're in an else block but not an else-if block
+            Some((_, _)) => {
+                let elsepart = self.parse_exprs();
+                self.expect(T::End);
+                elsepart
             }
             other => self.error(other),
         };
@@ -609,19 +618,25 @@ const baz: {} = {}
             end
             "#,
             r#"if 10 then false
-            elif 20 then false
+            else if 20 then false
             else true
             end
             "#,
             r#"if 10 then false
-            elif 20 then {} false
-            elif 30 then {}
+            else if 20 then {} false
+            else if 30 then {}
             else true
             end
             "#,
         ];
         test_parse_with(|p| p.parse_if(), &valid_args);
         test_parse_with(|p| p.parse_expr(), &valid_args);
+    }
+    #[test]
+    #[should_panic]
+    fn parse_if_aiee() {
+        let valid_args = vec!["if true then 10 else else else 20 end"];
+        test_parse_with(|p| p.parse_if(), &valid_args);
     }
 
     #[test]
