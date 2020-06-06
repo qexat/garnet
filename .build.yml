@@ -3,15 +3,13 @@ packages:
     - pkg-config
     - curl
     - libssl-dev
-    # - cargo
+    - cargo
 sources:
  - hg+https://hg.sr.ht/~icefox/garnet
 secrets:
  - 384fc780-f42a-4945-854e-cbd952d6802b
 tasks:
  - setup: |
-    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs > rustup.sh
-    sh rustup.sh -y -q
     source .cargo/env
     cargo install cargo-tarpaulin
  - build: |

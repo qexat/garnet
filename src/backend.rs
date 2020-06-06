@@ -283,13 +283,9 @@ fn compile_expr(
 
             0
         }
-        E::If {
-            condition,
-            trueblock,
-            falseblock,
-        } => {
+        E::If { cases, falseblock } => {
             // TODO: We need to know what type the blocks return.  Hmm.
-            assert_eq!(compile_expr(bcx, locals, instrs, condition), 1);
+            //assert_eq!(compile_expr(bcx, locals, instrs, condition), 1);
             let true_count = 0;
             let false_count = 0;
             /* TODO

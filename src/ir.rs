@@ -14,7 +14,7 @@
 //! It's mostly a layer of indirection for further stuff to happen to.
 
 use crate::ast::{self};
-pub use crate::ast::{BOp, Literal, Signature, UOp};
+pub use crate::ast::{BOp, IfCase, Literal, Signature, UOp};
 use crate::{TypeSym, VarSym};
 
 /// Any expression.
@@ -44,8 +44,7 @@ pub enum Expr {
         init: Box<Expr>,
     },
     If {
-        condition: Box<Expr>,
-        trueblock: Vec<Expr>,
+        cases: Vec<(Expr, Vec<Expr>)>,
         falseblock: Vec<Expr>,
     },
     Loop {
@@ -176,6 +175,14 @@ fn lower_expr(expr: &ast::Expr) -> Expr {
             }
         }
         E::If { cases, falseblock } => {
+            assert!(cases.len() > 0, "Should never happen");
+            let cases = cases
+                .iter()
+                .map(|case| (lower_expr(&*case.condition), lower_exprs(&case.body)))
+                .collect();
+            let falseblock = lower_exprs(falseblock);
+            If { cases, falseblock }
+            /*
             // Expand cases out into nested if ... else if ... else if ... else
             // TODO: Really this should be lowered into a match expr, but we don't
             // have those yet, so.
@@ -201,6 +208,7 @@ fn lower_expr(expr: &ast::Expr) -> Expr {
                 }
             }
             unheck_if(cases.as_slice(), falseblock.as_slice())
+            */
         }
         E::Loop { body } => {
             let nbody = lower_exprs(body);
@@ -308,8 +316,7 @@ mod tests {
             falseblock: vec![A::int(2)],
         };
         let output = I::If {
-            condition: Box::new(I::bool(false)),
-            trueblock: vec![I::int(1)],
+            cases: vec![(I::bool(false), vec![I::int(1)])],
             falseblock: vec![I::int(2)],
         };
         let res = lower_expr(&input);
@@ -334,13 +341,11 @@ mod tests {
             falseblock: vec![A::int(3)],
         };
         let output = I::If {
-            condition: Box::new(I::bool(false)),
-            trueblock: vec![I::int(1)],
-            falseblock: vec![I::If {
-                condition: Box::new(I::bool(true)),
-                trueblock: vec![I::int(2)],
-                falseblock: vec![I::int(3)],
-            }],
+            cases: vec![
+                (I::bool(false), vec![I::int(1)]),
+                (I::bool(true), vec![I::int(2)]),
+            ],
+            falseblock: vec![I::int(3)],
         };
         let res = lower_expr(&input);
         assert_eq!(&res, &output);
