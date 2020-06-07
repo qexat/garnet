@@ -248,7 +248,7 @@ reasonable/performant way:
    stack.  If correctly executing a program requires assuming an
    un-smashed stack, well, that's tricky.
 
-Other common sources of UB in C, from <https://stackoverflow.com/questions/367633/what-are-all-the-common-undefined-behaviours-that-a-c-programmer-should-know-a>:
+Todo list of other common sources of UB in C, from <https://stackoverflow.com/questions/367633/what-are-all-the-common-undefined-behaviours-that-a-c-programmer-should-know-a>:
 
  * Converting pointers to objects of incompatible types
  * Left-shifting values by a negative amount (right shifts by negative amounts are implementation defined)
