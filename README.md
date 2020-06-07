@@ -46,6 +46,26 @@ change with time.
  * No undefined behavior -- This may be hard to do, but it would be
    really nice to eliminate this scourge from existence, or at least
    demonstrate that it can be eliminated in a reasonable way.
+ * Some more thoughts on the lack of undefined behavior is... you COULD
+   define "read an invalid pointer" to be "return unknown value, or
+   crash the program".  But only if you knew that pointer could never
+   aim at memory-mapped I/O.  *Writing* to an invalid pointer could
+   literally do anything in terms of corrupting program state.  Some
+   slightly-heated discussion with `devsnek` breaks the problem down
+   into two parts: For example, WASM does not have undefined behavior.
+   If you look at a computer from the point of view of assembly
+   language + OS, it MOSTLY lacks undefined behavior, though some things
+   like data races still can result in it.  If you smash a stack in
+   assembly you can look at it and define what *is* going to happen.
+   But from the point of view of the assumptions made by a higher-level
+   language, especially one free to tinker with the ABI a little,
+   there's no way you can define what will happen when a stack gets
+   smashed.  And even if you're writing in assembly on a microcontroller
+   then you might still end up doing Undefined things by poking
+   memory-mapped I/O.  So, Undefined Behavior isn't really Undefined,
+   rather it's defined by a system out of the scope of the language
+   definition.  So let's just stop calling it Undefined Behavior and
+   call it an `out of context problem`.
  * I am not CONVINCED that a linker is the best way to handle things.
    This has implications on things like distributing libraries, defining
    ABI's, using DLL's, and parallelizing the compiler itself.  No solid
@@ -192,10 +212,49 @@ MIT
  * <https://play.rust-lang.org/?version=stable&mode=debug&edition=2018&gist=174ca95a8b938168764846e97d5e9a2c>
  * <https://www.evanmiller.org/statistical-shortcomings-in-standard-math-libraries.html>
 
- # random
+# Random notes
 
- CI notes:
+## CI
 
-  * Actual build takes ~1-2 minutes
-  * Adding end-to-end unit tests it takes 5 minutes
-  * Adding code coverage it takes ~15 minutes -- cargo-tarpaulin ain't instant but most of it is still spent in building it.
+ * Actual build takes ~1-2 minutes
+ * Adding end-to-end unit tests it takes 5 minutes
+ * Adding code coverage it takes ~15 minutes -- cargo-tarpaulin ain't instant but most of it is still spent in building it.
+ * Making a `.deb` package for cargo-tarpaulin would help a lot then.
+
+## Out Of Context Problems
+
+nee "Undefined Behavior"
+
+Things that I think we CAN define context for:
+
+ * Integer overflow either overflows or panics.
+ * **Constructing** an undefined pointer just is a number in a register.
+ * **Reading** an undefined pointer, in the absence of memmapped I/O,
+   either gives a random result, panics, or causes the host system to
+   produce an error (ie by segfaulting your program)
+ * We **may** have well-defined pointers that are never valid,
+   ie, null pointer.  Reading and writing to these can do whatever we
+   feel like.  We should probably make them either panic or cause the
+   host system to produce an error.
+ * Reading uninitialized data should be a compile-time error.  Manually
+   eliding initialization for performance reasons just means your
+   compiler isn't good enough at avoiding it itself.
+ * Order of evaluation of function arguments.
+
+Here's a list of things that I don't see a way of defining in any
+reasonable/performant way:
+
+ * **Writing** an undefined pointer may do anything, ie by smashing the
+   stack.  If correctly executing a program requires assuming an
+   un-smashed stack, well, that's tricky.
+
+Other common sources of UB in C, from <https://stackoverflow.com/questions/367633/what-are-all-the-common-undefined-behaviours-that-a-c-programmer-should-know-a>:
+
+ * Converting pointers to objects of incompatible types
+ * Left-shifting values by a negative amount (right shifts by negative amounts are implementation defined)
+ * Evaluating an expression that is not mathematically defined (ie, div
+   by 0)
+ * Evaluating an expression that is not mathematically defined
+ * Casting a numeric value into a value that can't be represented by the target type (either directly or via `static_cast`)
+ * Attempting to modify a string literal or any other const object during its lifetime
+ * A pile of other things that are mostly C++'s fault
