@@ -327,7 +327,7 @@ impl<'cx, 'input> Parser<'cx, 'input> {
     /// signature = fn_args [":" typename]
     fn parse_fn_signature(&mut self) -> ast::Signature {
         let params = self.parse_fn_args();
-        let rettype = if let Some((T::Colon, _span)) = self.lex.peek() {
+        let rettype = if self.peek_is(T::Colon) {
             self.expect(T::Colon);
             self.parse_type()
         } else {
@@ -349,7 +349,7 @@ impl<'cx, 'input> Parser<'cx, 'input> {
             args.push((name, tname));
 
             // If it leads to another arg, carry on.
-            while let Some((T::Comma, _span)) = self.lex.peek() {
+            while self.peek_is(T::Comma) {
                 self.expect(T::Comma);
                 let name = self.expect_ident();
                 self.expect(T::Colon);
@@ -358,6 +358,7 @@ impl<'cx, 'input> Parser<'cx, 'input> {
             }
         }
         // Consume trailing comma if it's there.
+        // This doesn't work right, fix.
         /*
         if let Some((T::Comma, _span)) = self.lex.peek() {
             self.expect(T::Comma);
@@ -378,31 +379,34 @@ impl<'cx, 'input> Parser<'cx, 'input> {
     /// Returns None if there is no valid follow-on expression,
     /// which usually means the end of a block or such.
     fn parse_expr(&mut self) -> Option<ast::Expr> {
-        let token: Option<Tok> = self.lex.peek().cloned();
-        match token {
-            Some((T::Bool(b), _span)) => {
-                self.drop();
-                Some(ast::Expr::bool(b))
+        if let Some((token, _span)) = self.lex.peek().cloned() {
+            match token {
+                T::Bool(b) => {
+                    self.drop();
+                    Some(ast::Expr::bool(b))
+                }
+                T::Number(i) => {
+                    self.drop();
+                    Some(ast::Expr::int(i as i64))
+                }
+                T::LBrace => {
+                    self.drop();
+                    self.expect(T::RBrace);
+                    Some(ast::Expr::unit())
+                }
+                T::Ident(_) => {
+                    let ident = self.expect_ident();
+                    Some(ast::Expr::Var { name: ident })
+                }
+                T::Let => Some(self.parse_let()),
+                T::If => Some(self.parse_if()),
+                T::Loop => Some(self.parse_loop()),
+                T::Do => Some(self.parse_block()),
+                T::Lambda => Some(self.parse_lambda()),
+                _x => None,
             }
-            Some((T::Number(i), _span)) => {
-                self.drop();
-                Some(ast::Expr::int(i as i64))
-            }
-            Some((T::LBrace, _span)) => {
-                self.drop();
-                self.expect(T::RBrace);
-                Some(ast::Expr::unit())
-            }
-            Some((T::Ident(_), _span)) => {
-                let ident = self.expect_ident();
-                Some(ast::Expr::Var { name: ident })
-            }
-            Some((T::Let, _span)) => Some(self.parse_let()),
-            Some((T::If, _span)) => Some(self.parse_if()),
-            Some((T::Loop, _span)) => Some(self.parse_loop()),
-            Some((T::Do, _span)) => Some(self.parse_block()),
-            Some((T::Lambda, _span)) => Some(self.parse_lambda()),
-            _other => None,
+        } else {
+            None
         }
     }
 
