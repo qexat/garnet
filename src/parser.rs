@@ -181,6 +181,17 @@ pub enum Token {
     Error,
 }
 
+fn bop_for(t: &Token) -> ast::BOp {
+    match t {
+        T::Plus => ast::BOp::Add,
+        T::Minus => ast::BOp::Sub,
+        T::Mul => ast::BOp::Mul,
+        T::Div => ast::BOp::Div,
+        T::Mod => ast::BOp::Mod,
+        _other => panic!("ASDF"),
+    }
+}
+
 use self::Token as T;
 
 type Tok = (Token, logos::Span);
@@ -288,6 +299,27 @@ impl<'cx, 'input> Parser<'cx, 'input> {
         }
     }
 
+    /// Consumes a number and returns it.
+    fn expect_number(&mut self) -> i32 {
+        match self.lex.next() {
+            Some((T::Number(s), _span)) => s,
+            Some((tok, span)) => {
+                let msg = format!(
+                    "Parse error on {:?}: got token {:?} from str {}.  Expected number.",
+                    span,
+                    tok,
+                    &self.source[span.clone()],
+                );
+                panic!(msg);
+            }
+            None => {
+                let msg =
+                    format!("Parse error: Got end of input or malformed token.  Expected number",);
+                panic!(msg);
+            }
+        }
+    }
+
     /// Returns None on EOF.
     fn parse_decl(&mut self) -> Option<ast::Decl> {
         //-> ast::Decl {
@@ -378,6 +410,9 @@ impl<'cx, 'input> Parser<'cx, 'input> {
 
     /// Returns None if there is no valid follow-on expression,
     /// which usually means the end of a block or such.
+    ///
+    /// This departs from pure recursive descent and uses a Pratt
+    /// parser to parse math expressions and such.
     fn parse_expr(&mut self) -> Option<ast::Expr> {
         if let Some((token, _span)) = self.lex.peek().cloned() {
             match token {
@@ -403,10 +438,50 @@ impl<'cx, 'input> Parser<'cx, 'input> {
                 T::Loop => Some(self.parse_loop()),
                 T::Do => Some(self.parse_block()),
                 T::Lambda => Some(self.parse_lambda()),
-                _x => None,
+                x => {
+                    // It's something else, so,
+                    // try to parse an expression
+                    self.parse_expr_bp(0)
+                }
             }
         } else {
             None
+        }
+    }
+
+    /// Parse a prefix, postfix or infix expression with a given
+    /// binding power or greater.
+    fn parse_expr_bp(&mut self, min_bp: usize) -> Option<ast::Expr> {
+        // Expect atom here...
+        // TODO: Currently just a number, could be a var
+        // or eventually a paren or other prefix op
+        match self.lex.peek().cloned() {
+            Some((T::Number(_), _span)) => {
+                let mut lhs = ast::Expr::int(self.expect_number() as i64);
+                dbg!(&lhs, self.lex.peek());
+                loop {
+                    let op = match self.lex.peek().cloned() {
+                        Some((op, _span)) => op,
+                        None => break,
+                        //other => self.error(other),
+                    };
+                    let (l_bp, r_bp) = infix_binding_power(&op).unwrap();
+
+                    if l_bp < min_bp {
+                        break;
+                    }
+                    self.drop();
+                    dbg!(&lhs, &op, self.lex.peek());
+                    let rhs = self.parse_expr_bp(r_bp).unwrap();
+                    lhs = ast::Expr::BinOp {
+                        op: bop_for(&op),
+                        lhs: Box::new(lhs),
+                        rhs: Box::new(rhs),
+                    };
+                }
+                Some(lhs)
+            }
+            _x => None,
         }
     }
 
@@ -426,9 +501,6 @@ impl<'cx, 'input> Parser<'cx, 'input> {
     }
 
     /// {"else" "if" expr "then" {expr}}
-    ///
-    /// TODO: `else if` instead?  I kinda like it more but it's
-    /// a little more ambiguous.
     fn parse_elif(&mut self, accm: &mut Vec<ast::IfCase>) {
         while self.peek_is(T::Else) {
             self.expect(T::Else);
@@ -534,8 +606,7 @@ impl<'cx, 'input> Parser<'cx, 'input> {
 // Binding power functions for the Pratt parser portion.
 // Reference:
 // https://matklad.github.io/2020/04/13/simple-but-powerful-pratt-parsing.html
-//
-fn prefix_binding_power(op: Token) -> ((), usize) {
+fn prefix_binding_power(op: &Token) -> ((), usize) {
     match op {
         T::Plus | T::Minus => ((), 110),
         T::Not => todo!(),
@@ -543,14 +614,16 @@ fn prefix_binding_power(op: Token) -> ((), usize) {
     }
 }
 
-fn postfix_binding_power(op: Token) -> Option<(usize, ())> {
+fn postfix_binding_power(op: &Token) -> Option<(usize, ())> {
     match op {
         T::LParen => todo!(),
         x => panic!("{:?} is not a binary op", x),
     }
 }
 
-fn infix_binding_power(op: Token) -> Option<(usize, usize)> {
+fn infix_binding_power(op: &Token) -> Option<(usize, usize)> {
+    // Right associations are slightly more powerful so we always produce
+    // a deterministic tree.
     match op {
         T::Mul | T::Div | T::Mod => Some((100, 101)),
         T::Plus | T::Minus => Some((90, 91)),
@@ -747,5 +820,15 @@ const baz: {} = {}
         ];
         test_parse_with(|p| p.parse_lambda(), &valid_args);
         test_parse_with(|p| p.parse_expr(), &valid_args);
+    }
+
+    #[test]
+    fn parse_binding_power() {
+        let valid_args = vec![
+            "1 + 2",
+            "1 + 2 + 3 + 4 + 5", // TODO"1 + do 3 + 4 end"
+            "1 + 2 * 3",
+        ];
+        test_parse_with(|p| p.parse_expr_bp(0), &valid_args);
     }
 }
