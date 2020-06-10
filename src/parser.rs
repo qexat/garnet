@@ -336,7 +336,7 @@ impl<'cx, 'input> Parser<'cx, 'input> {
         self.expect(T::Colon);
         let typename = self.parse_type();
         self.expect(T::Equals);
-        let init = self.parse_expr().unwrap();
+        let init = self.parse_expr(0).unwrap();
         ast::Decl::Const {
             name,
             typename,
@@ -402,7 +402,7 @@ impl<'cx, 'input> Parser<'cx, 'input> {
 
     fn parse_exprs(&mut self) -> Vec<ast::Expr> {
         let mut exprs = vec![];
-        while let Some(e) = self.parse_expr() {
+        while let Some(e) = self.parse_expr(0) {
             exprs.push(e);
         }
         exprs
@@ -413,7 +413,7 @@ impl<'cx, 'input> Parser<'cx, 'input> {
     ///
     /// This departs from pure recursive descent and uses a Pratt
     /// parser to parse math expressions and such.
-    fn parse_expr(&mut self) -> Option<ast::Expr> {
+    fn parse_expr(&mut self, bp: usize) -> Option<ast::Expr> {
         if let Some((token, _span)) = self.lex.peek().cloned() {
             match token {
                 T::Bool(b) => {
@@ -441,7 +441,7 @@ impl<'cx, 'input> Parser<'cx, 'input> {
                 x => {
                     // It's something else, so,
                     // try to parse an expression
-                    self.parse_expr_bp(0)
+                    self.parse_expr_bp(bp)
                 }
             }
         } else {
@@ -472,7 +472,7 @@ impl<'cx, 'input> Parser<'cx, 'input> {
                     }
                     self.drop();
                     dbg!(&lhs, &op, self.lex.peek());
-                    let rhs = self.parse_expr_bp(r_bp).unwrap();
+                    let rhs = self.parse_expr(r_bp).unwrap();
                     lhs = ast::Expr::BinOp {
                         op: bop_for(&op),
                         lhs: Box::new(lhs),
@@ -492,7 +492,7 @@ impl<'cx, 'input> Parser<'cx, 'input> {
         self.expect(T::Colon);
         let typename = self.parse_type();
         self.expect(T::Equals);
-        let init = Box::new(self.parse_expr().expect("TODO: Better error message"));
+        let init = Box::new(self.parse_expr(0).expect("TODO: Better error message"));
         ast::Expr::Let {
             varname,
             typename,
@@ -507,7 +507,7 @@ impl<'cx, 'input> Parser<'cx, 'input> {
             if self.peek_is(T::If) {
                 self.expect(T::If);
                 let condition = self
-                    .parse_expr()
+                    .parse_expr(0)
                     .expect("TODO: Expect better error message");
                 self.expect(T::Then);
                 let body = self.parse_exprs();
@@ -525,7 +525,7 @@ impl<'cx, 'input> Parser<'cx, 'input> {
     fn parse_if(&mut self) -> ast::Expr {
         self.expect(T::If);
         let condition = self
-            .parse_expr()
+            .parse_expr(0)
             .expect("TODO: Expect better error message");
         self.expect(T::Then);
         let body = self.parse_exprs();
@@ -762,7 +762,7 @@ const baz: {} = {}
         let valid_args = vec!["let x: i32 = 5", "let y: bool = false", "let z: {} = z"];
         // The lifetimes and inference here gets WEIRD if you try to pass it Parser::parse_let.
         test_parse_with(|p| p.parse_let(), &valid_args);
-        test_parse_with(|p| p.parse_expr(), &valid_args);
+        test_parse_with(|p| p.parse_expr(0), &valid_args);
     }
 
     #[test]
@@ -787,7 +787,7 @@ const baz: {} = {}
             "#,
         ];
         test_parse_with(|p| p.parse_if(), &valid_args);
-        test_parse_with(|p| p.parse_expr(), &valid_args);
+        test_parse_with(|p| p.parse_expr(0), &valid_args);
     }
     #[test]
     #[should_panic]
@@ -800,14 +800,14 @@ const baz: {} = {}
     fn parse_loop() {
         let valid_args = vec!["loop 10 end", "loop 10 20 30 end", "loop end"];
         test_parse_with(|p| p.parse_loop(), &valid_args);
-        test_parse_with(|p| p.parse_expr(), &valid_args);
+        test_parse_with(|p| p.parse_expr(0), &valid_args);
     }
 
     #[test]
     fn parse_block() {
         let valid_args = vec!["do 10 end", "do 10 20 30 end", "do end"];
         test_parse_with(|p| p.parse_block(), &valid_args);
-        test_parse_with(|p| p.parse_expr(), &valid_args);
+        test_parse_with(|p| p.parse_expr(0), &valid_args);
     }
 
     #[test]
@@ -819,15 +819,18 @@ const baz: {} = {}
             "lambda() = end",
         ];
         test_parse_with(|p| p.parse_lambda(), &valid_args);
-        test_parse_with(|p| p.parse_expr(), &valid_args);
+        test_parse_with(|p| p.parse_expr(0), &valid_args);
     }
 
     #[test]
     fn parse_binding_power() {
         let valid_args = vec![
             "1 + 2",
-            "1 + 2 + 3 + 4 + 5", // TODO"1 + do 3 + 4 end"
+            "1 + 2 + 3 + 4 + 5", // TODO
             "1 + 2 * 3",
+            "1 + if true then 1 else 4 end",
+            //"1 + if true then 1 else 2 + 4 end",
+            //"3 * do 2 + 3 end",
         ];
         test_parse_with(|p| p.parse_expr_bp(0), &valid_args);
     }
