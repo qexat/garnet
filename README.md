@@ -258,3 +258,9 @@ Todo list of other common sources of UB in C, from <https://stackoverflow.com/qu
  * Casting a numeric value into a value that can't be represented by the target type (either directly or via `static_cast`)
  * Attempting to modify a string literal or any other const object during its lifetime
  * A pile of other things that are mostly C++'s fault
+
+Reading material: <https://blog.regehr.org/archives/213> and the follow-on
+articles.  Also, apparently Zig has opt-*in* undefined behavior for
+things like integer overflow, shift checking, etc which sounds pretty
+hot.  Another option is to provide compiler-intrinsic escape hatches,
+similar to Rust's various `unchecked_foo()` functions.
