@@ -413,16 +413,12 @@ impl<'cx, 'input> Parser<'cx, 'input> {
     ///
     /// This departs from pure recursive descent and uses a Pratt
     /// parser to parse math expressions and such.
-    fn parse_expr(&mut self, bp: usize) -> Option<ast::Expr> {
+    fn parse_expr(&mut self, min_bp: usize) -> Option<ast::Expr> {
         if let Some((token, _span)) = self.lex.peek().cloned() {
             match token {
                 T::Bool(b) => {
                     self.drop();
                     Some(ast::Expr::bool(b))
-                }
-                T::Number(i) => {
-                    self.drop();
-                    Some(ast::Expr::int(i as i64))
                 }
                 T::LBrace => {
                     self.drop();
@@ -438,11 +434,39 @@ impl<'cx, 'input> Parser<'cx, 'input> {
                 T::Loop => Some(self.parse_loop()),
                 T::Do => Some(self.parse_block()),
                 T::Lambda => Some(self.parse_lambda()),
-                x => {
-                    // It's something else, so,
-                    // try to parse an expression
-                    self.parse_expr_bp(bp)
+
+                /*
+                T::Number(i) => {
+                    self.drop();
+                    Some(ast::Expr::int(i as i64))
                 }
+                */
+                T::Number(_) => {
+                    let mut lhs = ast::Expr::int(self.expect_number() as i64);
+                    dbg!(&lhs, self.lex.peek());
+                    loop {
+                        let op = match self.lex.peek().cloned() {
+                            Some((T::Plus, _span)) => T::Plus,
+                            //None => break,
+                            other => break, //self.error(other),
+                        };
+                        let (l_bp, r_bp) = infix_binding_power(&op).unwrap();
+
+                        if l_bp < min_bp {
+                            break;
+                        }
+                        self.drop();
+                        dbg!(&lhs, &op, self.lex.peek());
+                        let rhs = self.parse_expr(r_bp).unwrap();
+                        lhs = ast::Expr::BinOp {
+                            op: bop_for(&op),
+                            lhs: Box::new(lhs),
+                            rhs: Box::new(rhs),
+                        };
+                    }
+                    Some(lhs)
+                }
+                _x => None,
             }
         } else {
             None
@@ -452,37 +476,7 @@ impl<'cx, 'input> Parser<'cx, 'input> {
     /// Parse a prefix, postfix or infix expression with a given
     /// binding power or greater.
     fn parse_expr_bp(&mut self, min_bp: usize) -> Option<ast::Expr> {
-        // Expect atom here...
-        // TODO: Currently just a number, could be a var
-        // or eventually a paren or other prefix op
-        match self.lex.peek().cloned() {
-            Some((T::Number(_), _span)) => {
-                let mut lhs = ast::Expr::int(self.expect_number() as i64);
-                dbg!(&lhs, self.lex.peek());
-                loop {
-                    let op = match self.lex.peek().cloned() {
-                        Some((op, _span)) => op,
-                        None => break,
-                        //other => self.error(other),
-                    };
-                    let (l_bp, r_bp) = infix_binding_power(&op).unwrap();
-
-                    if l_bp < min_bp {
-                        break;
-                    }
-                    self.drop();
-                    dbg!(&lhs, &op, self.lex.peek());
-                    let rhs = self.parse_expr(r_bp).unwrap();
-                    lhs = ast::Expr::BinOp {
-                        op: bop_for(&op),
-                        lhs: Box::new(lhs),
-                        rhs: Box::new(rhs),
-                    };
-                }
-                Some(lhs)
-            }
-            _x => None,
-        }
+        None
     }
 
     /// let = "let" ident ":" typename "=" expr
@@ -732,6 +726,8 @@ const baz: {} = {}
             let cx = &Cx::new();
             let mut p = Parser::new(cx, s);
             f(&mut p);
+            // Make sure we've parsed the whole string.
+            assert_eq!(p.lex.peek(), None);
         }
     }
 
@@ -823,14 +819,14 @@ const baz: {} = {}
     }
 
     #[test]
-    fn parse_binding_power() {
+    fn parse_operators() {
         let valid_args = vec![
             "1 + 2",
-            "1 + 2 + 3 + 4 + 5", // TODO
+            "1 + 2 + 3 + 4 + 5",
             "1 + 2 * 3",
             "1 + if true then 1 else 4 end",
-            //"1 + if true then 1 else 2 + 4 end",
-            //"3 * do 2 + 3 end",
+            "1 + if true then 1 else 2 + 4 end",
+            "3 * do 2 + 3 end",
         ];
         test_parse_with(|p| p.parse_expr_bp(0), &valid_args);
     }
