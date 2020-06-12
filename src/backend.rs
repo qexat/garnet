@@ -7,7 +7,6 @@ use std::cmp;
 use std::collections::HashMap;
 
 use walrus as w;
-use wasm_builder::{instr as i, module as m, sections as s, types as t};
 
 use crate::ir;
 use crate::*;
@@ -205,7 +204,6 @@ fn compile_expr(
     instrs: &mut w::InstrSeqBuilder,
     expr: &ir::Expr,
 ) -> usize {
-    use i::Instruction as I;
     use ir::Expr as E;
     use ir::*;
     match expr {
