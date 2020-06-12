@@ -1,13 +1,13 @@
 image: debian/bullseye
 packages:
-    - pkg-config
-    - curl
-    - libssl-dev
-    - cargo
+ - pkg-config
+ - curl
+ - libssl-dev
+ - cargo
+secrets:
+ - 3a468e17-bc01-4c2b-b6fd-d20691b54278
 sources:
  - hg+https://hg.sr.ht/~icefox/garnet
-secrets:
- - 384fc780-f42a-4945-854e-cbd952d6802b
 tasks:
  - build: |
     cd garnet
@@ -16,8 +16,19 @@ tasks:
     cd garnet
     cargo test
  - coverage: |
-    cargo install cargo-tarpaulin
+    # A somewhat hacky setup to use a cargo-tarpaulin binary
+    # Someday we'll have a debian package for it, but it's non-trivial
+    # to make; see https://todo.sr.ht/~icefox/garnet/2
+    curl -o ~/cargo-tarpaulin https://alopex.li/ci/common/cargo-tarpaulin.stripped
+    # We set this here rather than downloading it from the server
+    # so if the server gets compromised we don't execute arbitrary
+    # programs.
+    # If the hg repo is compromised though... well, it compromises the
+    # ci account on the server, but that's all.
+    echo 'ee0a51f252fab2227bf535acfa0219593240fdadf2e19201dc9b34196ce0c0e48112a35095887ed60c9083f3588a44b52c9d306d224989547921b357efb6bb11  cargo-tarpaulin' > ~/cargo-tarpaulin.sha512
+    sha512sum -c ~/cargo-tarpaulin.sha512
+    chmod +x ~/cargo-tarpaulin
     cd garnet
-    PATH=$PATH:$HOME/.cargo/bin cargo tarpaulin -o Html
-    scp -o StrictHostKeyChecking=no tarpaulin-report.html icefox@roc.alopex.li:htdocs/temp/
+    ~/cargo-tarpaulin tarpaulin -o Html
+    scp -o StrictHostKeyChecking=no tarpaulin-report.html ci@roc.alopex.li:htdocs/garnet/tarpaulin-report.html
 
