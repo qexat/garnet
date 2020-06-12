@@ -821,14 +821,12 @@ const baz: {} = {}
     #[test]
     fn parse_operators() {
         let valid_args = vec![
-            /*
             "1 + 2",
             "1 + 2 + 3 + 4 + 5",
             "1 + 2 * 3",
             "1 + if true then 1 else 4 end",
             "1 + if true then 1 else 2 + 4 end",
             "3 * do 2 + 3 end",
-            */
         ];
         test_parse_with(|p| p.parse_expr_bp(0), &valid_args);
     }
