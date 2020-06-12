@@ -224,7 +224,7 @@ fn compile_expr(
                 .get(name)
                 .expect(&format!("Unknown local {:?}; should never happen", name));
             instrs.local_get(ldef.local_idx);
-            0
+            1
         }
         E::BinOp { op, lhs, rhs } => {
             // Currently we only have signed integers
@@ -360,15 +360,20 @@ mod tests {
         let instrs = &mut fb.func_body();
         let locals = &mut HashMap::new();
 
+        // Can we compile the let?
         let expr = E::Let {
             varname: varname,
             typename: i32_t,
             init: Box::new(ir::Expr::int(9)),
         };
-        compile_expr(bcx, locals, instrs, &expr);
+        assert_eq!(compile_expr(bcx, locals, instrs, &expr), 0);
 
         assert_eq!(locals.len(), 1);
         assert!(locals.get(&varname).is_some());
+
+        // Can we then compile the var lookup?
+        let expr = E::Var { name: varname };
+        assert_eq!(compile_expr(bcx, locals, instrs, &expr), 1);
         /*
         assert_eq!(
             instrs.instrs()[0].0,
