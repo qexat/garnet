@@ -170,6 +170,8 @@ pub enum Token {
     #[token("<=")]
     Lte,
 
+    //Op(Operator),
+
     // We save comment strings so we can use this same
     // parser as a reformatter or such.
     // TODO: How do we skip these in the parser?
@@ -180,6 +182,17 @@ pub enum Token {
     #[regex(r"[ \t\n\f]+", logos::skip)]
     Error,
 }
+
+/*
+#[derive(Debug, PartialEq, Clone)]
+pub struct Operator {
+        T::Plus => ast::BOp::Add,
+        T::Minus => ast::BOp::Sub,
+        T::Mul => ast::BOp::Mul,
+        T::Div => ast::BOp::Div,
+        T::Mod => ast::BOp::Mod,
+}
+*/
 
 fn bop_for(t: &Token) -> ast::BOp {
     match t {
@@ -408,7 +421,7 @@ impl<'cx, 'input> Parser<'cx, 'input> {
         exprs
     }
 
-    /// Returns None if there is no valid follow-on expression,
+    /// Returns None if there is no valid expression,
     /// which usually means the end of a block or such.
     ///
     /// This departs from pure recursive descent and uses a Pratt
@@ -441,14 +454,20 @@ impl<'cx, 'input> Parser<'cx, 'input> {
                     Some(ast::Expr::int(i as i64))
                 }
                 */
+                // Parse a prefix, postfix or infix expression with a given
+                // binding power or greater.
                 T::Number(_) => {
                     let mut lhs = ast::Expr::int(self.expect_number() as i64);
                     dbg!(&lhs, self.lex.peek());
                     loop {
                         let op = match self.lex.peek().cloned() {
                             Some((T::Plus, _span)) => T::Plus,
+                            Some((T::Minus, _span)) => T::Minus,
+                            Some((T::Mul, _span)) => T::Mul,
+                            Some((T::Div, _span)) => T::Div,
+                            Some((T::Mod, _span)) => T::Mod,
                             //None => break,
-                            other => break, //self.error(other),
+                            _other => break, //self.error(other),
                         };
                         let (l_bp, r_bp) = infix_binding_power(&op).unwrap();
 
@@ -471,12 +490,6 @@ impl<'cx, 'input> Parser<'cx, 'input> {
         } else {
             None
         }
-    }
-
-    /// Parse a prefix, postfix or infix expression with a given
-    /// binding power or greater.
-    fn parse_expr_bp(&mut self, min_bp: usize) -> Option<ast::Expr> {
-        None
     }
 
     /// let = "let" ident ":" typename "=" expr
@@ -725,7 +738,26 @@ const baz: {} = {}
         for s in strs {
             let cx = &Cx::new();
             let mut p = Parser::new(cx, s);
+            dbg!(s);
             f(&mut p);
+            // Make sure we've parsed the whole string.
+            assert_eq!(p.lex.peek(), None);
+        }
+    }
+
+    /// Take a list of strings, parse them, make sure they match
+    /// the given ast.  The function gets passed a cx so it can
+    /// intern strings for identifiers.
+    ///
+    /// For now it's just for expr's, since that's most of the language.
+    fn test_expr_is(f: impl Fn(&Cx) -> ast::Expr, strs: &[&str]) {
+        let cx = &Cx::new();
+        let ast = f(cx);
+        for s in strs {
+            let mut p = Parser::new(cx, s);
+            dbg!(s);
+            let parsed_expr = p.parse_expr(0).unwrap();
+            assert_eq!(&ast, &parsed_expr);
             // Make sure we've parsed the whole string.
             assert_eq!(p.lex.peek(), None);
         }
@@ -828,6 +860,45 @@ const baz: {} = {}
             "1 + if true then 1 else 2 + 4 end",
             "3 * do 2 + 3 end",
         ];
-        test_parse_with(|p| p.parse_expr_bp(0), &valid_args);
+        test_parse_with(|p| p.parse_expr(0), &valid_args);
+    }
+
+    // Test op precedence works
+    #[test]
+    fn verify_precedence() {
+        test_expr_is(
+            |_cx| ast::Expr::BinOp {
+                op: ast::BOp::Add,
+                lhs: Box::new(ast::Expr::int(1)),
+                rhs: Box::new(ast::Expr::int(2)),
+            },
+            &["1+2"],
+        );
+
+        test_expr_is(
+            |_cx| ast::Expr::BinOp {
+                op: ast::BOp::Add,
+                lhs: Box::new(ast::Expr::int(1)),
+                rhs: Box::new(ast::Expr::BinOp {
+                    op: ast::BOp::Mul,
+                    lhs: Box::new(ast::Expr::int(2)),
+                    rhs: Box::new(ast::Expr::int(3)),
+                }),
+            },
+            &["1+2*3"],
+        );
+
+        test_expr_is(
+            |_cx| ast::Expr::BinOp {
+                op: ast::BOp::Add,
+                lhs: Box::new(ast::Expr::BinOp {
+                    op: ast::BOp::Mul,
+                    lhs: Box::new(ast::Expr::int(1)),
+                    rhs: Box::new(ast::Expr::int(2)),
+                }),
+                rhs: Box::new(ast::Expr::int(3)),
+            },
+            &["1*2+3"],
+        )
     }
 }
