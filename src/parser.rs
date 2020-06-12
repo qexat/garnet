@@ -194,14 +194,14 @@ pub struct Operator {
 }
 */
 
-fn bop_for(t: &Token) -> ast::BOp {
+fn bop_for(t: &Token) -> Option<ast::BOp> {
     match t {
-        T::Plus => ast::BOp::Add,
-        T::Minus => ast::BOp::Sub,
-        T::Mul => ast::BOp::Mul,
-        T::Div => ast::BOp::Div,
-        T::Mod => ast::BOp::Mod,
-        _other => panic!("ASDF"),
+        T::Plus => Some(ast::BOp::Add),
+        T::Minus => Some(ast::BOp::Sub),
+        T::Mul => Some(ast::BOp::Mul),
+        T::Div => Some(ast::BOp::Div),
+        T::Mod => Some(ast::BOp::Mod),
+        _other => None,
     }
 }
 
@@ -460,25 +460,27 @@ impl<'cx, 'input> Parser<'cx, 'input> {
                     let mut lhs = ast::Expr::int(self.expect_number() as i64);
                     dbg!(&lhs, self.lex.peek());
                     loop {
-                        let op = match self.lex.peek().cloned() {
-                            Some((T::Plus, _span)) => T::Plus,
-                            Some((T::Minus, _span)) => T::Minus,
-                            Some((T::Mul, _span)) => T::Mul,
-                            Some((T::Div, _span)) => T::Div,
-                            Some((T::Mod, _span)) => T::Mod,
-                            //None => break,
-                            _other => break, //self.error(other),
+                        let op_token = match self.lex.peek().cloned() {
+                            Some((maybe_op, _span)) => maybe_op,
+                            // End of input
+                            _other => break,
                         };
-                        let (l_bp, r_bp) = infix_binding_power(&op).unwrap();
+                        let bop = if let Some(op) = bop_for(&op_token) {
+                            op
+                        } else {
+                            // Token is not a bin op
+                            break;
+                        };
+                        let (l_bp, r_bp) = infix_binding_power(&bop).unwrap();
 
                         if l_bp < min_bp {
                             break;
                         }
                         self.drop();
-                        dbg!(&lhs, &op, self.lex.peek());
+                        //dbg!(&lhs, &op, self.lex.peek());
                         let rhs = self.parse_expr(r_bp).unwrap();
                         lhs = ast::Expr::BinOp {
-                            op: bop_for(&op),
+                            op: bop,
                             lhs: Box::new(lhs),
                             rhs: Box::new(rhs),
                         };
@@ -613,7 +615,7 @@ impl<'cx, 'input> Parser<'cx, 'input> {
 // Binding power functions for the Pratt parser portion.
 // Reference:
 // https://matklad.github.io/2020/04/13/simple-but-powerful-pratt-parsing.html
-fn prefix_binding_power(op: &Token) -> ((), usize) {
+fn _prefix_binding_power(op: &Token) -> ((), usize) {
     match op {
         T::Plus | T::Minus => ((), 110),
         T::Not => todo!(),
@@ -621,23 +623,23 @@ fn prefix_binding_power(op: &Token) -> ((), usize) {
     }
 }
 
-fn postfix_binding_power(op: &Token) -> Option<(usize, ())> {
+fn _postfix_binding_power(op: &Token) -> Option<(usize, ())> {
     match op {
         T::LParen => todo!(),
         x => panic!("{:?} is not a binary op", x),
     }
 }
 
-fn infix_binding_power(op: &Token) -> Option<(usize, usize)> {
+fn infix_binding_power(op: &ast::BOp) -> Option<(usize, usize)> {
     // Right associations are slightly more powerful so we always produce
     // a deterministic tree.
     match op {
-        T::Mul | T::Div | T::Mod => Some((100, 101)),
-        T::Plus | T::Minus => Some((90, 91)),
-        T::And | T::Or | T::Xor | T::Equal | T::NotEqual | T::Gt | T::Lt | T::Gte | T::Lte => {
+        ast::BOp::Mul | ast::BOp::Div | ast::BOp::Mod => Some((100, 101)),
+        ast::BOp::Add | ast::BOp::Sub => Some((90, 91)),
+        /*T::And | T::Or | T::Xor | T::Equal | T::NotEqual | T::Gt | T::Lt | T::Gte | T::Lte => {
             todo!()
         }
-        x => panic!("{:?} is not a binary op", x),
+        */
     }
 }
 
