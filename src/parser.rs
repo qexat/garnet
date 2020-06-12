@@ -427,69 +427,66 @@ impl<'cx, 'input> Parser<'cx, 'input> {
     /// This departs from pure recursive descent and uses a Pratt
     /// parser to parse math expressions and such.
     fn parse_expr(&mut self, min_bp: usize) -> Option<ast::Expr> {
-        if let Some((token, _span)) = self.lex.peek().cloned() {
-            let mut lhs = match token {
-                T::Bool(b) => {
-                    self.drop();
-                    ast::Expr::bool(b)
-                }
-                T::LBrace => {
-                    self.drop();
-                    self.expect(T::RBrace);
-                    ast::Expr::unit()
-                }
-                T::Ident(_) => {
-                    let ident = self.expect_ident();
-                    ast::Expr::Var { name: ident }
-                }
-                T::Let => self.parse_let(),
-                T::If => self.parse_if(),
-                T::Loop => self.parse_loop(),
-                T::Do => self.parse_block(),
-                T::Lambda => self.parse_lambda(),
-
-                /*
-                T::Number(i) => {
-                    self.drop();
-                    Some(ast::Expr::int(i as i64))
-                }
-                */
-                // Parse a prefix, postfix or infix expression with a given
-                // binding power or greater.
-                T::Number(_) => ast::Expr::int(self.expect_number() as i64),
-                _x => return None,
-            };
-            dbg!(&lhs, self.lex.peek());
-            loop {
-                let op_token = match self.lex.peek().cloned() {
-                    Some((maybe_op, _span)) => maybe_op,
-                    // End of input
-                    _other => break,
-                };
-                let bop = if let Some(op) = bop_for(&op_token) {
-                    op
-                } else {
-                    // Token is not a bin op
-                    break;
-                };
-                let (l_bp, r_bp) = infix_binding_power(&bop).unwrap();
-
-                if l_bp < min_bp {
-                    break;
-                }
+        let (token, _span) = self.lex.peek().cloned()?;
+        let mut lhs = match token {
+            T::Bool(b) => {
                 self.drop();
-                //dbg!(&lhs, &op, self.lex.peek());
-                let rhs = self.parse_expr(r_bp).unwrap();
-                lhs = ast::Expr::BinOp {
-                    op: bop,
-                    lhs: Box::new(lhs),
-                    rhs: Box::new(rhs),
-                };
+                ast::Expr::bool(b)
             }
-            Some(lhs)
-        } else {
-            None
+            T::LBrace => {
+                self.drop();
+                self.expect(T::RBrace);
+                ast::Expr::unit()
+            }
+            T::Ident(_) => {
+                let ident = self.expect_ident();
+                ast::Expr::Var { name: ident }
+            }
+            T::Let => self.parse_let(),
+            T::If => self.parse_if(),
+            T::Loop => self.parse_loop(),
+            T::Do => self.parse_block(),
+            T::Lambda => self.parse_lambda(),
+
+            /*
+            T::Number(i) => {
+                self.drop();
+                Some(ast::Expr::int(i as i64))
+            }
+            */
+            // Parse a prefix, postfix or infix expression with a given
+            // binding power or greater.
+            T::Number(_) => ast::Expr::int(self.expect_number() as i64),
+            _x => return None,
+        };
+        dbg!(&lhs, self.lex.peek());
+        loop {
+            let op_token = match self.lex.peek().cloned() {
+                Some((maybe_op, _span)) => maybe_op,
+                // End of input
+                _other => break,
+            };
+            let bop = if let Some(op) = bop_for(&op_token) {
+                op
+            } else {
+                // Token is not a bin op
+                break;
+            };
+            let (l_bp, r_bp) = infix_binding_power(&bop).unwrap();
+
+            if l_bp < min_bp {
+                break;
+            }
+            self.drop();
+            //dbg!(&lhs, &op, self.lex.peek());
+            let rhs = self.parse_expr(r_bp).unwrap();
+            lhs = ast::Expr::BinOp {
+                op: bop,
+                lhs: Box::new(lhs),
+                rhs: Box::new(rhs),
+            };
         }
+        Some(lhs)
     }
 
     /// let = "let" ident ":" typename "=" expr

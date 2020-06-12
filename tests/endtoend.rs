@@ -38,6 +38,15 @@ fn compile_wasm(bytes: &[u8]) -> w::Func {
         .expect("Test function needs to be called 'test'")
 }
 
+/// Takes a program defining a function with 1 arg named 'test',
+/// that returns 1 arg, and makes sure they match.
+fn program1_assert_eq(src: &str, input: i32, desired_result: i32) {
+    let wasm = garnet::compile(src);
+    let f = compile_wasm(&wasm).get1::<i32, i32>().unwrap();
+    let res: i32 = f(input).unwrap();
+    assert_eq!(res, desired_result);
+}
+
 #[test]
 fn var_lookup() {
     let mut cx = garnet::Cx::new();
@@ -171,4 +180,16 @@ fn parse_and_compile2() {
     let f = compile_wasm(&wasm).get1::<i32, i32>().unwrap();
     let res: i32 = f(3).unwrap();
     assert_eq!(res, 3);
+}
+
+#[test]
+fn parse_and_compile_expr() {
+    let src = r#"fn test(x: i32): i32 x end"#;
+    program1_assert_eq(src, 3, 3);
+
+    let src = r#"fn test(x: i32): i32 3 * 3 + 2 end"#;
+    program1_assert_eq(src, 0, 11);
+
+    let src = r#"fn test(x: i32): i32 x * 3 + 2 end"#;
+    program1_assert_eq(src, 3, 11);
 }
