@@ -428,25 +428,25 @@ impl<'cx, 'input> Parser<'cx, 'input> {
     /// parser to parse math expressions and such.
     fn parse_expr(&mut self, min_bp: usize) -> Option<ast::Expr> {
         if let Some((token, _span)) = self.lex.peek().cloned() {
-            match token {
+            let mut lhs = match token {
                 T::Bool(b) => {
                     self.drop();
-                    Some(ast::Expr::bool(b))
+                    ast::Expr::bool(b)
                 }
                 T::LBrace => {
                     self.drop();
                     self.expect(T::RBrace);
-                    Some(ast::Expr::unit())
+                    ast::Expr::unit()
                 }
                 T::Ident(_) => {
                     let ident = self.expect_ident();
-                    Some(ast::Expr::Var { name: ident })
+                    ast::Expr::Var { name: ident }
                 }
-                T::Let => Some(self.parse_let()),
-                T::If => Some(self.parse_if()),
-                T::Loop => Some(self.parse_loop()),
-                T::Do => Some(self.parse_block()),
-                T::Lambda => Some(self.parse_lambda()),
+                T::Let => self.parse_let(),
+                T::If => self.parse_if(),
+                T::Loop => self.parse_loop(),
+                T::Do => self.parse_block(),
+                T::Lambda => self.parse_lambda(),
 
                 /*
                 T::Number(i) => {
@@ -456,39 +456,37 @@ impl<'cx, 'input> Parser<'cx, 'input> {
                 */
                 // Parse a prefix, postfix or infix expression with a given
                 // binding power or greater.
-                T::Number(_) => {
-                    let mut lhs = ast::Expr::int(self.expect_number() as i64);
-                    dbg!(&lhs, self.lex.peek());
-                    loop {
-                        let op_token = match self.lex.peek().cloned() {
-                            Some((maybe_op, _span)) => maybe_op,
-                            // End of input
-                            _other => break,
-                        };
-                        let bop = if let Some(op) = bop_for(&op_token) {
-                            op
-                        } else {
-                            // Token is not a bin op
-                            break;
-                        };
-                        let (l_bp, r_bp) = infix_binding_power(&bop).unwrap();
+                T::Number(_) => ast::Expr::int(self.expect_number() as i64),
+                _x => return None,
+            };
+            dbg!(&lhs, self.lex.peek());
+            loop {
+                let op_token = match self.lex.peek().cloned() {
+                    Some((maybe_op, _span)) => maybe_op,
+                    // End of input
+                    _other => break,
+                };
+                let bop = if let Some(op) = bop_for(&op_token) {
+                    op
+                } else {
+                    // Token is not a bin op
+                    break;
+                };
+                let (l_bp, r_bp) = infix_binding_power(&bop).unwrap();
 
-                        if l_bp < min_bp {
-                            break;
-                        }
-                        self.drop();
-                        //dbg!(&lhs, &op, self.lex.peek());
-                        let rhs = self.parse_expr(r_bp).unwrap();
-                        lhs = ast::Expr::BinOp {
-                            op: bop,
-                            lhs: Box::new(lhs),
-                            rhs: Box::new(rhs),
-                        };
-                    }
-                    Some(lhs)
+                if l_bp < min_bp {
+                    break;
                 }
-                _x => None,
+                self.drop();
+                //dbg!(&lhs, &op, self.lex.peek());
+                let rhs = self.parse_expr(r_bp).unwrap();
+                lhs = ast::Expr::BinOp {
+                    op: bop,
+                    lhs: Box::new(lhs),
+                    rhs: Box::new(rhs),
+                };
             }
+            Some(lhs)
         } else {
             None
         }
@@ -740,7 +738,6 @@ const baz: {} = {}
         for s in strs {
             let cx = &Cx::new();
             let mut p = Parser::new(cx, s);
-            dbg!(s);
             f(&mut p);
             // Make sure we've parsed the whole string.
             assert_eq!(p.lex.peek(), None);
@@ -757,7 +754,6 @@ const baz: {} = {}
         let ast = f(cx);
         for s in strs {
             let mut p = Parser::new(cx, s);
-            dbg!(s);
             let parsed_expr = p.parse_expr(0).unwrap();
             assert_eq!(&ast, &parsed_expr);
             // Make sure we've parsed the whole string.
@@ -861,6 +857,8 @@ const baz: {} = {}
             "1 + if true then 1 else 4 end",
             "1 + if true then 1 else 2 + 4 end",
             "3 * do 2 + 3 end",
+            "do 2 + 3 end * 5",
+            "if z then x + 3 else 5 / 9 end * 6",
         ];
         test_parse_with(|p| p.parse_expr(0), &valid_args);
     }
