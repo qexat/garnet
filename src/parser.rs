@@ -467,6 +467,13 @@ impl<'cx, 'input> Parser<'cx, 'input> {
                     rhs: Box::new(rhs),
                 }
             }
+            // Parenthesized expr's
+            T::LParen => {
+                self.drop();
+                let lhs = self.parse_expr(0)?;
+                self.expect(T::RParen);
+                lhs
+            }
 
             _x => return None,
         };
@@ -491,7 +498,7 @@ impl<'cx, 'input> Parser<'cx, 'input> {
                 };
                 continue;
             }
-
+            // TODO: Figure this shit out more
             let bop = if let Some(op) = bop_for(&op_token) {
                 op
             } else {
@@ -511,6 +518,8 @@ impl<'cx, 'input> Parser<'cx, 'input> {
                 lhs: Box::new(lhs),
                 rhs: Box::new(rhs),
             };
+
+            // END TODO
         }
         Some(lhs)
     }
@@ -938,6 +947,9 @@ const baz: {} = {}
             },
             &["foo(0, bar(1 * 2), 3)"],
         );
+
+        test_expr_is(|_cx| ast::Expr::int(1), &["(1)"]);
+        test_expr_is(|_cx| ast::Expr::int(1), &["(((1)))"]);
     }
 
     // Test op precedence works
@@ -986,6 +998,28 @@ const baz: {} = {}
                 params: vec![],
             },
             &["x()"],
+        );
+        test_expr_is(
+            |cx| ast::Expr::Funcall {
+                func: Box::new(ast::Expr::Var {
+                    name: cx.intern("x"),
+                }),
+                params: vec![],
+            },
+            &["(x())"],
+        );
+
+        test_expr_is(
+            |_cx| ast::Expr::BinOp {
+                op: ast::BOp::Mul,
+                lhs: Box::new(ast::Expr::BinOp {
+                    op: ast::BOp::Add,
+                    lhs: Box::new(ast::Expr::int(1)),
+                    rhs: Box::new(ast::Expr::int(2)),
+                }),
+                rhs: Box::new(ast::Expr::int(3)),
+            },
+            &["(1+2)*3"],
         );
     }
 }
