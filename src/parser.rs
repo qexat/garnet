@@ -30,7 +30,7 @@ decl =
   | const_decl
 
 const_decl = "const" ident ":" typename "=" expr
-function_decl = "fn" ident fn_args [":" typename] {expr} "end"
+function_decl = "fn" ident fn_signature "=" {expr} "end"
 
 value =
   | NUMBER
@@ -53,9 +53,10 @@ loop = "loop" {expr} "end"
 block = "do" {expr} "end"
 funcall = expr "(" [expr {"," expr}] ")"
 // TODO: 'lambda' is long to type.  : or -> for return type?
-lambda = "lambda" fn_args [":" typename] "=" {expr} "end"
+lambda = "fn" fn_signature "=" {expr} "end"
 
 fn_args = "(" [ident ":" typename {"," ident ":" typename}] ")"
+fn_signature = fn_args [":" typename]
 
 typename =
   | "i32"
@@ -125,8 +126,6 @@ pub enum Token {
     Loop,
     #[token("do")]
     Do,
-    #[token("lambda")]
-    Lambda,
 
     // Punctuation
     #[token("(")]
@@ -370,6 +369,7 @@ impl<'cx, 'input> Parser<'cx, 'input> {
         // TODO
         let name = self.expect_ident();
         let signature = self.parse_fn_signature();
+        self.expect(T::Equals);
         let body = self.parse_exprs();
         self.expect(T::End);
         ast::Decl::Function {
@@ -413,7 +413,7 @@ impl<'cx, 'input> Parser<'cx, 'input> {
             }
         }
         // Consume trailing comma if it's there.
-        // This doesn't work right, fix.
+        // TODO: This doesn't work right, fix.
         /*
         if let Some((T::Comma, _span)) = self.lex.peek() {
             self.expect(T::Comma);
@@ -457,7 +457,7 @@ impl<'cx, 'input> Parser<'cx, 'input> {
             T::If => self.parse_if(),
             T::Loop => self.parse_loop(),
             T::Do => self.parse_block(),
-            T::Lambda => self.parse_lambda(),
+            T::Fn => self.parse_lambda(),
 
             // Unary prefix ops
             T::Minus => {
@@ -622,20 +622,13 @@ impl<'cx, 'input> Parser<'cx, 'input> {
     }
 
     fn parse_lambda(&mut self) -> ast::Expr {
-        self.expect(T::Lambda);
+        self.expect(T::Fn);
         let signature = self.parse_fn_signature();
         self.expect(T::Equals);
         let body = self.parse_exprs();
         self.expect(T::End);
         ast::Expr::Lambda { signature, body }
     }
-
-    /* TODO
-    fn parse_funcall(&mut self) -> ast::Expr {
-    }
-
-    fn parse_term(&mut self) -> ast::Expr {
-    */
 
     fn parse_type(&mut self) -> TypeSym {
         match self.lex.next() {
@@ -725,7 +718,7 @@ mod tests {
         // without it being a PITA?
         assert_decl(
             cx,
-            "fn foo(x: i32): i32 -9 end",
+            "fn foo(x: i32): i32 = -9 end",
             ast::Decl::Function {
                 name: foosym,
                 signature: ast::Signature {
@@ -883,10 +876,10 @@ const baz: {} = {}
     #[test]
     fn parse_lambda() {
         let valid_args = vec![
-            "lambda(x:i32):i32 = x end",
-            "lambda(x:i32, i:bool) = x end",
-            "lambda() = {} end",
-            "lambda() = end",
+            "fn(x:i32):i32 = x end",
+            "fn(x:i32, i:bool) = x end",
+            "fn() = {} end",
+            "fn() = end",
         ];
         test_parse_with(|p| p.parse_lambda(), &valid_args);
         test_parse_with(|p| p.parse_expr(0), &valid_args);
