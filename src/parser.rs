@@ -67,8 +67,8 @@ fn_args = "(" [ident ":" typename {"," ident ":" typename}] ")"
 fn_signature = fn_args [":" typename]
 
 typename =
-  | "i32"
-  | "bool"
+  | "I32"
+  | "Bool"
   // Tuples with curly braces like Erlang seem less ambiguous than the more traditional parens...
   // I hope that will let us get away without semicolons.
   | "{" [typename {"," typename}] "}"
@@ -392,34 +392,24 @@ impl<'cx, 'input> Parser<'cx, 'input> {
         ast::Signature { params, rettype }
     }
 
-    /// fn_args = [ident ":" typename {"," ident ":" typename}]
-    ///
-    /// TODO: Trailing comma!
+    /// sig = ident ":" typename
+    /// fn_args = [sig {"," sig} [","]]
     fn parse_fn_args(&mut self) -> Vec<(VarSym, TypeSym)> {
         let mut args = vec![];
         self.expect(T::LParen);
-        if let Some((T::Ident(_i), _span)) = self.lex.peek() {
+
+        while let Some((T::Ident(_i), _span)) = self.lex.peek() {
             let name = self.expect_ident();
             self.expect(T::Colon);
             let tname = self.parse_type();
             args.push((name, tname));
 
-            // If it leads to another arg, carry on.
-            while self.peek_is(T::Comma) {
+            if self.peek_is(T::Comma) {
                 self.expect(T::Comma);
-                let name = self.expect_ident();
-                self.expect(T::Colon);
-                let tname = self.parse_type();
-                args.push((name, tname));
+            } else {
+                break;
             }
         }
-        // Consume trailing comma if it's there.
-        // TODO: This doesn't work right, fix.
-        /*
-        if let Some((T::Comma, _span)) = self.lex.peek() {
-            self.expect(T::Comma);
-        }
-        */
         self.expect(T::RParen);
         args
     }
@@ -635,8 +625,8 @@ impl<'cx, 'input> Parser<'cx, 'input> {
         match self.lex.next() {
             Some((T::Ident(s), span)) => match s.as_ref() {
                 // TODO: This is a bit too hardwired tbh...
-                "i32" => self.cx.intern_type(&TypeDef::SInt(4)),
-                "bool" => self.cx.intern_type(&TypeDef::Bool),
+                "I32" => self.cx.intern_type(&TypeDef::SInt(4)),
+                "Bool" => self.cx.intern_type(&TypeDef::Bool),
                 _ => self.error(Some((T::Ident(s), span))),
             },
             Some((T::LBrace, _span)) => {
@@ -733,7 +723,7 @@ mod tests {
 
     #[test]
     fn test_const() {
-        test_decl_is("const foo: i32 = -9", |cx| ast::Decl::Const {
+        test_decl_is("const foo: I32 = -9", |cx| ast::Decl::Const {
             name: cx.intern("foo"),
             typename: cx.intern_type(&TypeDef::SInt(4)),
             init: Expr::int(-9),
@@ -742,7 +732,7 @@ mod tests {
 
     #[test]
     fn test_fn() {
-        test_decl_is("fn foo(x: i32): i32 = -9 end", |cx| {
+        test_decl_is("fn foo(x: I32): I32 = -9 end", |cx| {
             let i32_t = cx.intern_type(&TypeDef::SInt(4));
             ast::Decl::Function {
                 name: cx.intern("foo"),
@@ -758,8 +748,8 @@ mod tests {
     #[test]
     fn test_multiple_decls() {
         let s = r#"
-const foo: i32 = -9
-const bar: bool = 4
+const foo: I32 = -9
+const bar: Bool = 4
 const baz: {} = {}
 "#;
         let cx = &Cx::new();
@@ -798,10 +788,10 @@ const baz: {} = {}
     fn parse_fn_args() {
         let valid_args = vec![
             "()",
-            "(x: bool)",
-            //"(x: bool,)",
-            "(x: i32, y: bool)",
-            //"(x: i32, y: bool,)",
+            "(x: Bool)",
+            "(x: Bool,)",
+            "(x: I32, y: Bool)",
+            "(x: I32, y: Bool,)",
         ];
         test_parse_with(|p| p.parse_fn_args(), &valid_args)
     }
@@ -809,16 +799,18 @@ const baz: {} = {}
     fn parse_fn_signature() {
         let valid_args = vec![
             "()",
-            "(x: bool):i32",
-            "(x: bool):{}",
-            "(x: i32, y: bool)",
-            "(x: i32, y: bool):bool",
+            "(x: Bool):I32",
+            "(x: Bool):{}",
+            "(x: I32, y: Bool)",
+            "(x: I32, y: Bool):Bool",
+            "(x: I32, y: Bool,)",
+            "(x: I32, y: Bool,):Bool",
         ];
         test_parse_with(|p| p.parse_fn_signature(), &valid_args)
     }
     #[test]
     fn parse_let() {
-        let valid_args = vec!["let x: i32 = 5", "let y: bool = false", "let z: {} = z"];
+        let valid_args = vec!["let x: I32 = 5", "let y: Bool = false", "let z: {} = z"];
         // The lifetimes and inference here gets WEIRD if you try to pass it Parser::parse_let.
         test_parse_with(|p| p.parse_let(), &valid_args);
         test_parse_with(|p| p.parse_expr(0), &valid_args);
@@ -828,7 +820,7 @@ const baz: {} = {}
     fn parse_if() {
         let valid_args = vec![
             "if x then y end",
-            "if 10 then let x: bool = false 10 end",
+            "if 10 then let x: Bool = false 10 end",
             r#"if 10 then false
             else true
             end
@@ -872,8 +864,8 @@ const baz: {} = {}
     #[test]
     fn parse_lambda() {
         let valid_args = vec![
-            "fn(x:i32):i32 = x end",
-            "fn(x:i32, i:bool) = x end",
+            "fn(x:I32):I32 = x end",
+            "fn(x:I32, i:Bool) = x end",
             "fn() = {} end",
             "fn() = end",
         ];
