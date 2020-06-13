@@ -125,6 +125,13 @@ impl Expr {
     pub const fn unit() -> Expr {
         Expr::Lit { val: Literal::Unit }
     }
+
+    /// Shortcuts for making vars
+    pub fn var(cx: &crate::Cx, name: &str) -> Expr {
+        Expr::Var {
+            name: cx.intern(name),
+        }
+    }
 }
 
 /// A top-level declaration in the source file.
