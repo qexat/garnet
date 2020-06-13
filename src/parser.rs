@@ -52,7 +52,6 @@ if = "if" expr "then" {expr} {"else" "if" expr "then" {expr}} ["else" {expr}] "e
 loop = "loop" {expr} "end"
 block = "do" {expr} "end"
 funcall = expr "(" [expr {"," expr}] ")"
-// TODO: 'lambda' is long to type.  : or -> for return type?
 lambda = "fn" fn_signature "=" {expr} "end"
 
 fn_args = "(" [ident ":" typename {"," ident ":" typename}] ")"
@@ -66,12 +65,10 @@ typename =
   | "{" [typename {"," typename}] "}"
   // Fixed-size arrays
   | "[" typename ";" INTEGER} "]"
+  // | "fn" fn_signature
   // TODO: Generics?
   // | ID "[" typename {"," typename} "]"
   // slices can just then be slice[...]
-  // TODO: Function syntax?  Possibilities below.
-  // | "fn" "(" fn_args ")" [":" typename]
-  // | "fn" fn_args ["->" typename]
 
 // Things to add, roughly in order
 // Break and return
@@ -206,7 +203,7 @@ fn bop_for(t: &Token) -> Option<ast::BOp> {
     }
 }
 
-fn uop_for(t: &Token) -> Option<ast::UOp> {
+fn _uop_for(t: &Token) -> Option<ast::UOp> {
     match t {
         //T::Plus => Some(ast::UOp::Plus),
         T::Minus => Some(ast::UOp::Neg),
@@ -219,10 +216,6 @@ use self::Token as T;
 type Tok = (Token, logos::Span);
 
 pub struct Parser<'cx, 'input> {
-    // TODO: The only methods we actually call on this are next() and peek,
-    // and it always returns a span which we then throw away.
-    // ...actually we want to keep spans attached to AST nodes,
-    // so we'll need those later.
     lex: std::iter::Peekable<logos::SpannedIter<'input, Token>>,
     cx: &'cx Cx,
     source: &'input str,
@@ -255,7 +248,7 @@ impl<'cx, 'input> Parser<'cx, 'input> {
             );
             panic!(msg)
         } else {
-            let msg = format!("FDSAFDSAFDSAFSDA TODO");
+            let msg = format!("Unexpected end of file!");
             panic!(msg)
         }
     }
@@ -366,7 +359,6 @@ impl<'cx, 'input> Parser<'cx, 'input> {
         }
     }
     fn parse_fn(&mut self) -> ast::Decl {
-        // TODO
         let name = self.expect_ident();
         let signature = self.parse_fn_signature();
         self.expect(T::Equals);
@@ -547,7 +539,10 @@ impl<'cx, 'input> Parser<'cx, 'input> {
         self.expect(T::Colon);
         let typename = self.parse_type();
         self.expect(T::Equals);
-        let init = Box::new(self.parse_expr(0).expect("TODO: Better error message"));
+        let init = Box::new(
+            self.parse_expr(0)
+                .expect("Expected expression after `let ... =`, did not get one"),
+        );
         ast::Expr::Let {
             varname,
             typename,
@@ -576,7 +571,7 @@ impl<'cx, 'input> Parser<'cx, 'input> {
         self.expect(T::If);
         let condition = self
             .parse_expr(0)
-            .expect("TODO: Expect better error message");
+            .expect("TODO: Expected expression after if, did not get one");
         self.expect(T::Then);
         let body = self.parse_exprs();
         let mut ifcases = vec![ast::IfCase {
@@ -682,52 +677,69 @@ fn infix_binding_power(op: &ast::BOp) -> Option<(usize, usize)> {
 mod tests {
     use crate::ast::{self, Expr};
     use crate::parser::*;
-    use crate::{Cx, TypeDef, TypeSym, VarSym};
+    use crate::{Cx, TypeDef};
 
-    fn assert_decl(cx: &Cx, s: &str, res: ast::Decl) {
-        let p = &mut Parser::new(cx, s);
-        let d = p.parse_decl();
-        assert_eq!(d, Some(res));
+    /// Take a list of strings and try parsing them with the given function.
+    /// Is ok iff the parsing succeeds, does no checking that the produced
+    /// AST is actually something that you want, or anything at all.
+    fn test_parse_with<T>(f: impl Fn(&mut Parser) -> T, strs: &[&str]) {
+        for s in strs {
+            let cx = &Cx::new();
+            let mut p = Parser::new(cx, s);
+            f(&mut p);
+            // Make sure we've parsed the whole string.
+            assert_eq!(p.lex.peek(), None);
+        }
+    }
+
+    /// Take a list of strings, parse them, make sure they match
+    /// the given ast.  The function gets passed a cx so it can
+    /// intern strings for identifiers.
+    ///
+    /// For now it's just for expr's, since that's most of the language.
+    fn test_expr_is(s: &str, f: impl Fn(&Cx) -> Expr) {
+        let cx = &Cx::new();
+        let ast = f(cx);
+        let mut p = Parser::new(cx, s);
+        let parsed_expr = p.parse_expr(0).unwrap();
+        assert_eq!(&ast, &parsed_expr);
+        // Make sure we've parsed the whole string.
+        assert_eq!(p.lex.peek(), None);
+    }
+
+    /// Same as test_expr_is but with decl's
+    fn test_decl_is(s: &str, f: impl Fn(&Cx) -> ast::Decl) {
+        let cx = &Cx::new();
+        let ast = f(cx);
+        let mut p = Parser::new(cx, s);
+        let parsed_decl = p.parse_decl().unwrap();
+        assert_eq!(&ast, &parsed_decl);
+        // Make sure we've parsed the whole string.
+        assert_eq!(p.lex.peek(), None);
     }
 
     #[test]
     fn test_const() {
-        let cx = &Cx::new();
-        let foosym = cx.intern("foo");
-        let i32_t = cx.intern_type(&TypeDef::SInt(4));
-        // TODO: How can we not hardcode VarSym and TypeSym here,
-        // without it being a PITA?
-        assert_decl(
-            cx,
-            "const foo: i32 = -9",
-            ast::Decl::Const {
-                name: foosym,
-                typename: i32_t,
-                init: Expr::int(-9),
-            },
-        );
+        test_decl_is("const foo: i32 = -9", |cx| ast::Decl::Const {
+            name: cx.intern("foo"),
+            typename: cx.intern_type(&TypeDef::SInt(4)),
+            init: Expr::int(-9),
+        });
     }
 
     #[test]
     fn test_fn() {
-        let cx = &Cx::new();
-        let foosym = cx.intern("foo");
-        let xsym = cx.intern("x");
-        let i32_t = cx.intern_type(&TypeDef::SInt(4));
-        // TODO: How can we not hardcode VarSym and TypeSym here,
-        // without it being a PITA?
-        assert_decl(
-            cx,
-            "fn foo(x: i32): i32 = -9 end",
+        test_decl_is("fn foo(x: i32): i32 = -9 end", |cx| {
+            let i32_t = cx.intern_type(&TypeDef::SInt(4));
             ast::Decl::Function {
-                name: foosym,
+                name: cx.intern("foo"),
                 signature: ast::Signature {
-                    params: vec![(xsym, i32_t)],
+                    params: vec![(cx.intern("x"), i32_t)],
                     rettype: i32_t,
                 },
                 body: vec![Expr::int(-9)],
-            },
-        );
+            }
+        });
     }
 
     #[test]
@@ -769,35 +781,6 @@ const baz: {} = {}
             }
         );
     }
-
-    /// Take a list of strings and try parsing them with the given function.
-    fn test_parse_with<T>(f: impl Fn(&mut Parser) -> T, strs: &[&str]) {
-        for s in strs {
-            let cx = &Cx::new();
-            let mut p = Parser::new(cx, s);
-            f(&mut p);
-            // Make sure we've parsed the whole string.
-            assert_eq!(p.lex.peek(), None);
-        }
-    }
-
-    /// Take a list of strings, parse them, make sure they match
-    /// the given ast.  The function gets passed a cx so it can
-    /// intern strings for identifiers.
-    ///
-    /// For now it's just for expr's, since that's most of the language.
-    fn test_expr_is(f: impl Fn(&Cx) -> Expr, strs: &[&str]) {
-        let cx = &Cx::new();
-        let ast = f(cx);
-        for s in strs {
-            let mut p = Parser::new(cx, s);
-            let parsed_expr = p.parse_expr(0).unwrap();
-            assert_eq!(&ast, &parsed_expr);
-            // Make sure we've parsed the whole string.
-            assert_eq!(p.lex.peek(), None);
-        }
-    }
-
     #[test]
     fn parse_fn_args() {
         let valid_args = vec![
@@ -906,47 +889,50 @@ const baz: {} = {}
 
     #[test]
     fn parse_funcall() {
-        test_expr_is(
-            |cx| Expr::Funcall {
-                func: Box::new(Expr::Var {
-                    name: cx.intern("y"),
-                }),
-                params: vec![Expr::int(1), Expr::int(2), Expr::int(3)],
-            },
-            &["y(1, 2, 3)"],
-        );
+        test_expr_is("y(1, 2, 3)", |cx| Expr::Funcall {
+            func: Box::new(Expr::Var {
+                name: cx.intern("y"),
+            }),
+            params: vec![Expr::int(1), Expr::int(2), Expr::int(3)],
+        });
 
-        test_expr_is(
-            |cx| Expr::Funcall {
-                func: Box::new(Expr::Var {
-                    name: cx.intern("foo"),
-                }),
-                params: vec![
-                    Expr::int(0),
-                    Expr::Funcall {
-                        func: Box::new(Expr::Var {
-                            name: cx.intern("bar"),
-                        }),
-                        params: vec![Expr::BinOp {
-                            op: ast::BOp::Mul,
-                            lhs: Box::new(Expr::int(1)),
-                            rhs: Box::new(Expr::int(2)),
-                        }],
-                    },
-                    Expr::int(3),
-                ],
-            },
-            &["foo(0, bar(1 * 2), 3)"],
-        );
+        test_expr_is("foo(0, bar(1 * 2), 3)", |cx| Expr::Funcall {
+            func: Box::new(Expr::Var {
+                name: cx.intern("foo"),
+            }),
+            params: vec![
+                Expr::int(0),
+                Expr::Funcall {
+                    func: Box::new(Expr::Var {
+                        name: cx.intern("bar"),
+                    }),
+                    params: vec![Expr::BinOp {
+                        op: ast::BOp::Mul,
+                        lhs: Box::new(Expr::int(1)),
+                        rhs: Box::new(Expr::int(2)),
+                    }],
+                },
+                Expr::int(3),
+            ],
+        });
 
-        test_expr_is(|_cx| Expr::int(1), &["(1)"]);
-        test_expr_is(|_cx| Expr::int(1), &["(((1)))"]);
+        test_expr_is("(1)", |_cx| Expr::int(1));
+        test_expr_is("(((1)))", |_cx| Expr::int(1));
     }
 
     #[test]
     fn verify_elseif() {
         use Expr;
         test_expr_is(
+            r#"
+            if x then
+                1
+            elseif y then
+                2
+            else
+                3
+            end
+            "#,
             |cx| Expr::If {
                 cases: vec![
                     ast::IfCase {
@@ -960,18 +946,20 @@ const baz: {} = {}
                 ],
                 falseblock: vec![Expr::int(3)],
             },
-            &[r#"
-            if x then
-                1
-            elseif y then
-                2
-            else
-                3
-            end
-            "#],
         );
 
         test_expr_is(
+            r#"
+            if x then
+                1
+            else
+                if y then
+                    2
+                else
+                    3
+                end
+            end
+            "#,
             |cx| Expr::If {
                 cases: vec![ast::IfCase {
                     condition: Box::new(Expr::var(cx, "x")),
@@ -985,88 +973,59 @@ const baz: {} = {}
                     falseblock: vec![Expr::int(3)],
                 }],
             },
-            &[r#"
-            if x then
-                1
-            else
-                if y then
-                    2
-                else
-                    3
-                end
-            end
-            "#],
         );
     }
 
     // Test op precedence works
     #[test]
     fn verify_precedence() {
-        test_expr_is(
-            |_cx| Expr::BinOp {
+        test_expr_is("1+2", |_cx| Expr::BinOp {
+            op: ast::BOp::Add,
+            lhs: Box::new(Expr::int(1)),
+            rhs: Box::new(Expr::int(2)),
+        });
+
+        test_expr_is("1+2*3", |_cx| Expr::BinOp {
+            op: ast::BOp::Add,
+            lhs: Box::new(Expr::int(1)),
+            rhs: Box::new(Expr::BinOp {
+                op: ast::BOp::Mul,
+                lhs: Box::new(Expr::int(2)),
+                rhs: Box::new(Expr::int(3)),
+            }),
+        });
+
+        test_expr_is("1*2+3", |_cx| Expr::BinOp {
+            op: ast::BOp::Add,
+            lhs: Box::new(Expr::BinOp {
+                op: ast::BOp::Mul,
+                lhs: Box::new(Expr::int(1)),
+                rhs: Box::new(Expr::int(2)),
+            }),
+            rhs: Box::new(Expr::int(3)),
+        });
+
+        test_expr_is("x()", |cx| Expr::Funcall {
+            func: Box::new(Expr::Var {
+                name: cx.intern("x"),
+            }),
+            params: vec![],
+        });
+        test_expr_is("(x())", |cx| Expr::Funcall {
+            func: Box::new(Expr::Var {
+                name: cx.intern("x"),
+            }),
+            params: vec![],
+        });
+
+        test_expr_is("(1+2)*3", |_cx| Expr::BinOp {
+            op: ast::BOp::Mul,
+            lhs: Box::new(Expr::BinOp {
                 op: ast::BOp::Add,
                 lhs: Box::new(Expr::int(1)),
                 rhs: Box::new(Expr::int(2)),
-            },
-            &["1+2"],
-        );
-
-        test_expr_is(
-            |_cx| Expr::BinOp {
-                op: ast::BOp::Add,
-                lhs: Box::new(Expr::int(1)),
-                rhs: Box::new(Expr::BinOp {
-                    op: ast::BOp::Mul,
-                    lhs: Box::new(Expr::int(2)),
-                    rhs: Box::new(Expr::int(3)),
-                }),
-            },
-            &["1+2*3"],
-        );
-
-        test_expr_is(
-            |_cx| Expr::BinOp {
-                op: ast::BOp::Add,
-                lhs: Box::new(Expr::BinOp {
-                    op: ast::BOp::Mul,
-                    lhs: Box::new(Expr::int(1)),
-                    rhs: Box::new(Expr::int(2)),
-                }),
-                rhs: Box::new(Expr::int(3)),
-            },
-            &["1*2+3"],
-        );
-
-        test_expr_is(
-            |cx| Expr::Funcall {
-                func: Box::new(Expr::Var {
-                    name: cx.intern("x"),
-                }),
-                params: vec![],
-            },
-            &["x()"],
-        );
-        test_expr_is(
-            |cx| Expr::Funcall {
-                func: Box::new(Expr::Var {
-                    name: cx.intern("x"),
-                }),
-                params: vec![],
-            },
-            &["(x())"],
-        );
-
-        test_expr_is(
-            |_cx| Expr::BinOp {
-                op: ast::BOp::Mul,
-                lhs: Box::new(Expr::BinOp {
-                    op: ast::BOp::Add,
-                    lhs: Box::new(Expr::int(1)),
-                    rhs: Box::new(Expr::int(2)),
-                }),
-                rhs: Box::new(Expr::int(3)),
-            },
-            &["(1+2)*3"],
-        );
+            }),
+            rhs: Box::new(Expr::int(3)),
+        });
     }
 }
