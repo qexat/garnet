@@ -138,8 +138,8 @@ change with time.
 # Toolchain
 
  * rustc
- * custom parser (recursive descent)
- * cranelift (tentatively)
+ * custom parser (recursive descent + Pratt)
+ * output wasm with `walrus`
 
 Things to consider:
 

@@ -393,7 +393,10 @@ impl<'cx, 'input> Parser<'cx, 'input> {
     }
 
     /// sig = ident ":" typename
-    /// fn_args = [sig {"," sig} [","]]
+    /// fn_args = "(" [sig {"," sig} [","]] ")"
+    ///
+    /// ...the while loop's break isn't really
+    /// expressible in EBNF's {}, is it...
     fn parse_fn_args(&mut self) -> Vec<(VarSym, TypeSym)> {
         let mut args = vec![];
         self.expect(T::LParen);
