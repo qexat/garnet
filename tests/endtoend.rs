@@ -165,7 +165,7 @@ fn block() {
 
 #[test]
 fn parse_and_compile() {
-    let src = r#"fn test(): i32 = 12 end"#;
+    let src = r#"fn test(): I32 = 12 end"#;
     let wasm = garnet::compile(src);
     let f = compile_wasm(&wasm).get1::<(), i32>().unwrap();
     let res: i32 = f(()).unwrap();
@@ -174,7 +174,7 @@ fn parse_and_compile() {
 
 #[test]
 fn parse_and_compile2() {
-    let src = r#"fn test(x: i32): i32 = x end"#;
+    let src = r#"fn test(x: I32): I32 = x end"#;
     let wasm = garnet::compile(src);
     let f = compile_wasm(&wasm).get1::<i32, i32>().unwrap();
     let res: i32 = f(3).unwrap();
@@ -183,12 +183,12 @@ fn parse_and_compile2() {
 
 #[test]
 fn parse_and_compile_expr() {
-    let src = r#"fn test(x: i32): i32 = x end"#;
+    let src = r#"fn test(x: I32): I32 = x end"#;
     assert_eq!(eval_program1(src, 3), 3);
 
-    let src = r#"fn test(x: i32): i32 = 3 * 3 + 2 end"#;
+    let src = r#"fn test(x: I32): I32 = 3 * 3 + 2 end"#;
     assert_eq!(eval_program1(src, 0), 11);
 
-    let src = r#"fn test(x: i32): i32 = 3 * x + 2 end"#;
+    let src = r#"fn test(x: I32): I32 = 3 * x + 2 end"#;
     assert_eq!(eval_program1(src, 3), 11);
 }

@@ -96,9 +96,9 @@ pub enum TypeInfo {
 impl TypeDef {
     pub fn get_name(&self) -> Cow<'static, str> {
         match self {
-            TypeDef::SInt(4) => Cow::Borrowed("i32"),
+            TypeDef::SInt(4) => Cow::Borrowed("I32"),
             TypeDef::SInt(s) => panic!("Undefined integer size {}!", s),
-            TypeDef::Bool => Cow::Borrowed("bool"),
+            TypeDef::Bool => Cow::Borrowed("Bool"),
             TypeDef::Tuple(v) => {
                 if v.len() == 0 {
                     Cow::Borrowed("()")
