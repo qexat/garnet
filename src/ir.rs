@@ -182,33 +182,6 @@ fn lower_expr(expr: &ast::Expr) -> Expr {
                 .collect();
             let falseblock = lower_exprs(falseblock);
             If { cases, falseblock }
-            /*
-            // Expand cases out into nested if ... else if ... else if ... else
-            // TODO: Really this should be lowered into a match expr, but we don't
-            // have those yet, so.
-            fn unheck_if(ifcases: &[ast::IfCase], elsecase: &[ast::Expr]) -> Expr {
-                match ifcases {
-                    [] => panic!("If statement with no condition; should never happen"),
-                    [single] => {
-                        let nelsecase = lower_exprs(elsecase);
-                        If {
-                            condition: Box::new(lower_expr(&*single.condition)),
-                            trueblock: lower_exprs(single.body.as_slice()),
-                            falseblock: nelsecase,
-                        }
-                    }
-                    [itm, rst @ ..] => {
-                        let res = unheck_if(rst, elsecase);
-                        If {
-                            condition: Box::new(lower_expr(&*itm.condition)),
-                            trueblock: lower_exprs(itm.body.as_slice()),
-                            falseblock: vec![res],
-                        }
-                    }
-                }
-            }
-            unheck_if(cases.as_slice(), falseblock.as_slice())
-            */
         }
         E::Loop { body } => {
             let nbody = lower_exprs(body);
