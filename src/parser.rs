@@ -117,6 +117,8 @@ pub enum Token {
     If,
     #[token("then")]
     Then,
+    #[token("elseif")]
+    Elseif,
     #[token("else")]
     Else,
     #[token("loop")]
@@ -553,28 +555,23 @@ impl<'cx, 'input> Parser<'cx, 'input> {
         }
     }
 
-    /// {"else" "if" expr "then" {expr}}
+    /// {"elseif" expr "then" {expr}}
     fn parse_elif(&mut self, accm: &mut Vec<ast::IfCase>) {
-        while self.peek_is(T::Else) {
-            self.expect(T::Else);
-            if self.peek_is(T::If) {
-                self.expect(T::If);
-                let condition = self
-                    .parse_expr(0)
-                    .expect("TODO: Expect better error message");
-                self.expect(T::Then);
-                let body = self.parse_exprs();
-                accm.push(ast::IfCase {
-                    condition: Box::new(condition),
-                    body,
-                });
-            } else {
-                break;
-            }
+        while self.peek_is(T::Elseif) {
+            self.expect(T::Elseif);
+            let condition = self
+                .parse_expr(0)
+                .expect("TODO: be better; could not parse expr after elseif");
+            self.expect(T::Then);
+            let body = self.parse_exprs();
+            accm.push(ast::IfCase {
+                condition: Box::new(condition),
+                body,
+            });
         }
     }
 
-    /// if = "if" expr "then" {expr} {"else" "if" expr "then" {expr}} ["else" {expr}] "end"
+    /// if = "if" expr "then" {expr} {"elseif" expr "then" {expr}} ["else" {expr}] "end"
     fn parse_if(&mut self) -> ast::Expr {
         self.expect(T::If);
         let condition = self
@@ -596,7 +593,8 @@ impl<'cx, 'input> Parser<'cx, 'input> {
                 vec![]
             }
             // We're in an else block but not an else-if block
-            Some((_, _)) => {
+            Some((T::Else, _)) => {
+                self.expect(T::Else);
                 let elsepart = self.parse_exprs();
                 self.expect(T::End);
                 elsepart
@@ -847,13 +845,13 @@ const baz: {} = {}
             end
             "#,
             r#"if 10 then false
-            else if 20 then false
+            elseif 20 then false
             else true
             end
             "#,
             r#"if 10 then false
-            else if 20 then {} false
-            else if 30 then {}
+            elseif 20 then {} false
+            elseif 30 then {}
             else true
             end
             "#,
@@ -972,7 +970,7 @@ const baz: {} = {}
             &[r#"
             if x then
                 1
-            else if y then
+            elseif y then
                 2
             else
                 3
@@ -982,17 +980,17 @@ const baz: {} = {}
 
         test_expr_is(
             |cx| Expr::If {
-                cases: vec![
-                    ast::IfCase {
-                        condition: Box::new(Expr::var(cx, "x")),
-                        body: vec![Expr::int(1)],
-                    },
-                    ast::IfCase {
+                cases: vec![ast::IfCase {
+                    condition: Box::new(Expr::var(cx, "x")),
+                    body: vec![Expr::int(1)],
+                }],
+                falseblock: vec![Expr::If {
+                    cases: vec![ast::IfCase {
                         condition: Box::new(Expr::var(cx, "y")),
                         body: vec![Expr::int(2)],
-                    },
-                ],
-                falseblock: vec![Expr::int(3)],
+                    }],
+                    falseblock: vec![Expr::int(3)],
+                }],
             },
             &[r#"
             if x then
