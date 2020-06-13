@@ -205,6 +205,14 @@ fn bop_for(t: &Token) -> Option<ast::BOp> {
     }
 }
 
+fn uop_for(t: &Token) -> Option<ast::UOp> {
+    match t {
+        //T::Plus => Some(ast::UOp::Plus),
+        T::Minus => Some(ast::UOp::Neg),
+        _other => None,
+    }
+}
+
 use self::Token as T;
 
 type Tok = (Token, logos::Span);
@@ -442,30 +450,49 @@ impl<'cx, 'input> Parser<'cx, 'input> {
                 let ident = self.expect_ident();
                 ast::Expr::Var { name: ident }
             }
+            T::Number(_) => ast::Expr::int(self.expect_number() as i64),
             T::Let => self.parse_let(),
             T::If => self.parse_if(),
             T::Loop => self.parse_loop(),
             T::Do => self.parse_block(),
             T::Lambda => self.parse_lambda(),
 
-            /*
-            T::Number(i) => {
+            // Unary prefix ops
+            T::Minus => {
                 self.drop();
-                Some(ast::Expr::int(i as i64))
+                let ((), r_bp) = prefix_binding_power(&T::Minus);
+                let rhs = self.parse_expr(r_bp)?;
+                ast::Expr::UniOp {
+                    op: ast::UOp::Neg,
+                    rhs: Box::new(rhs),
+                }
             }
-            */
-            // Parse a prefix, postfix or infix expression with a given
-            // binding power or greater.
-            T::Number(_) => ast::Expr::int(self.expect_number() as i64),
+
             _x => return None,
         };
         dbg!(&lhs, self.lex.peek());
+        // Parse a prefix, postfix or infix expression with a given
+        // binding power or greater.
         loop {
             let op_token = match self.lex.peek().cloned() {
                 Some((maybe_op, _span)) => maybe_op,
                 // End of input
                 _other => break,
             };
+            // Currently... our only postfix operator is function calls?
+            if let Some((l_bp, ())) = postfix_binding_power(&op_token) {
+                if l_bp < min_bp {
+                    break;
+                }
+                self.drop();
+                self.expect(T::RParen);
+                lhs = ast::Expr::Funcall {
+                    func: Box::new(lhs),
+                    params: vec![],
+                };
+                continue;
+            }
+
             let bop = if let Some(op) = bop_for(&op_token) {
                 op
             } else {
@@ -610,7 +637,7 @@ impl<'cx, 'input> Parser<'cx, 'input> {
 // Binding power functions for the Pratt parser portion.
 // Reference:
 // https://matklad.github.io/2020/04/13/simple-but-powerful-pratt-parsing.html
-fn _prefix_binding_power(op: &Token) -> ((), usize) {
+fn prefix_binding_power(op: &Token) -> ((), usize) {
     match op {
         T::Plus | T::Minus => ((), 110),
         T::Not => todo!(),
@@ -618,7 +645,7 @@ fn _prefix_binding_power(op: &Token) -> ((), usize) {
     }
 }
 
-fn _postfix_binding_power(op: &Token) -> Option<(usize, ())> {
+fn postfix_binding_power(op: &Token) -> Option<(usize, ())> {
     match op {
         T::LParen => todo!(),
         x => panic!("{:?} is not a binary op", x),
@@ -855,7 +882,10 @@ const baz: {} = {}
             "1 + if true then 1 else 2 + 4 end",
             "3 * do 2 + 3 end",
             "do 2 + 3 end * 5",
+            "-x",
+            "- - -x",
             "if z then x + 3 else 5 / 9 end * 6",
+            "if z then x + -3 else 5 / 9 end * 6",
         ];
         test_parse_with(|p| p.parse_expr(0), &valid_args);
     }
