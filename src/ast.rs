@@ -156,3 +156,5 @@ pub enum Decl {
 pub struct Ast {
     pub decls: Vec<Decl>,
 }
+
+impl Ast {}

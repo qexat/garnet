@@ -6,6 +6,7 @@ use std::rc::Rc;
 
 pub mod ast;
 pub mod backend;
+pub mod format;
 pub mod intern;
 pub mod ir;
 pub mod parser;
