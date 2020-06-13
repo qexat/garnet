@@ -1,5 +1,12 @@
 //! We're just going to do a simple LL recursive-descent parser.
 //! It's simple, robust, fast, and pretty hard to screw up.
+//!
+//! This does get enhanced for parsing expressions into a Pratt
+//! parser, as described  here:
+//! <https://matklad.github.io/2020/04/13/simple-but-powerful-pratt-parsing.html>
+//! This is extremely nice for parsing infix and postfix operators
+//! with a precendence that's defined trivially by a simple look-up function.
+//! I like it a lot.
 
 /*
 Broad syntax thoughts:
@@ -23,6 +30,8 @@ Deliberate choices so that we don't go ham:
    also make syntax and parsing more confusing, so let's go with Erlang
    curly braces.  If we use curly braces for structs too, then this also
    emphasizes the equivalence between structs and tuples.
+ * Tempting as it is, use `fn foo() ...` for functions, not `let foo = fn() ...`
+   or other OCaml-y iterations on it.
 
 
 decl =
@@ -435,6 +444,8 @@ impl<'cx, 'input> Parser<'cx, 'input> {
                 self.drop();
                 ast::Expr::bool(b)
             }
+            T::Number(_) => ast::Expr::int(self.expect_number() as i64),
+            // Tuple literal
             T::LBrace => {
                 self.drop();
                 self.expect(T::RBrace);
@@ -444,7 +455,6 @@ impl<'cx, 'input> Parser<'cx, 'input> {
                 let ident = self.expect_ident();
                 ast::Expr::Var { name: ident }
             }
-            T::Number(_) => ast::Expr::int(self.expect_number() as i64),
             T::Let => self.parse_let(),
             T::If => self.parse_if(),
             T::Loop => self.parse_loop(),
@@ -471,7 +481,6 @@ impl<'cx, 'input> Parser<'cx, 'input> {
 
             _x => return None,
         };
-        dbg!(&lhs, self.lex.peek());
         // Parse a prefix, postfix or infix expression with a given
         // binding power or greater.
         loop {
@@ -480,7 +489,7 @@ impl<'cx, 'input> Parser<'cx, 'input> {
                 // End of input
                 _other => break,
             };
-            // Currently... our only postfix operator is function calls?
+            // Is our token a postfix op?
             if let Some((l_bp, ())) = postfix_binding_power(&op_token) {
                 if l_bp < min_bp {
                     break;
@@ -492,28 +501,25 @@ impl<'cx, 'input> Parser<'cx, 'input> {
                 };
                 continue;
             }
-            // TODO: Figure this shit out more
-            let bop = if let Some(op) = bop_for(&op_token) {
-                op
-            } else {
-                // Token is not a bin op
-                break;
-            };
-            let (l_bp, r_bp) = infix_binding_power(&bop).unwrap();
+            // Is our token an infix op?
+            if let Some((l_bp, r_bp)) = infix_binding_power(&op_token) {
+                let bop = bop_for(&op_token).unwrap();
 
-            if l_bp < min_bp {
-                break;
+                if l_bp < min_bp {
+                    break;
+                }
+                self.drop();
+                //dbg!(&lhs, &op, self.lex.peek());
+                let rhs = self.parse_expr(r_bp).unwrap();
+                lhs = ast::Expr::BinOp {
+                    op: bop,
+                    lhs: Box::new(lhs),
+                    rhs: Box::new(rhs),
+                };
+                continue;
             }
-            self.drop();
-            //dbg!(&lhs, &op, self.lex.peek());
-            let rhs = self.parse_expr(r_bp).unwrap();
-            lhs = ast::Expr::BinOp {
-                op: bop,
-                lhs: Box::new(lhs),
-                rhs: Box::new(rhs),
-            };
-
-            // END TODO
+            // None of the above, so we are done parsing the expr
+            break;
         }
         Some(lhs)
     }
@@ -642,17 +648,20 @@ impl<'cx, 'input> Parser<'cx, 'input> {
     }
 }
 
-// Binding power functions for the Pratt parser portion.
-// Reference:
-// https://matklad.github.io/2020/04/13/simple-but-powerful-pratt-parsing.html
+/// Specifies binding power of prefix operators.
+///
+/// Panics on invalid token, which should never happen
+/// since we always know what kind of expression we're parsing
+/// from the get-go with prefix operators.
 fn prefix_binding_power(op: &Token) -> ((), usize) {
     match op {
         T::Plus | T::Minus => ((), 110),
-        T::Not => todo!(),
-        x => panic!("{:?} is not a binary op", x),
+        // TODO T::Not => todo!(),
+        x => panic!("{:?} is not a prefix op, should never happen!", x),
     }
 }
 
+/// Specifies binding power of postfix operators.
 fn postfix_binding_power(op: &Token) -> Option<(usize, ())> {
     match op {
         T::LParen => Some((120, ())),
@@ -660,12 +669,16 @@ fn postfix_binding_power(op: &Token) -> Option<(usize, ())> {
     }
 }
 
-fn infix_binding_power(op: &ast::BOp) -> Option<(usize, usize)> {
+/// Specifies binding power of infix operators.
+/// The binding power on one side should always be trivially
+/// greater than the other, so there's never ambiguity.
+fn infix_binding_power(op: &Token) -> Option<(usize, usize)> {
     // Right associations are slightly more powerful so we always produce
     // a deterministic tree.
     match op {
-        ast::BOp::Mul | ast::BOp::Div | ast::BOp::Mod => Some((100, 101)),
-        ast::BOp::Add | ast::BOp::Sub => Some((90, 91)),
+        T::Mul | T::Div | T::Mod => Some((100, 101)),
+        T::Plus | T::Minus => Some((90, 91)),
+        _ => None,
         /*T::And | T::Or | T::Xor | T::Equal | T::NotEqual | T::Gt | T::Lt | T::Gte | T::Lte => {
             todo!()
         }
