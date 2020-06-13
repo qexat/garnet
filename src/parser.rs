@@ -484,11 +484,10 @@ impl<'cx, 'input> Parser<'cx, 'input> {
                 if l_bp < min_bp {
                     break;
                 }
-                self.drop();
-                self.expect(T::RParen);
+                let params = self.parse_function_args();
                 lhs = ast::Expr::Funcall {
                     func: Box::new(lhs),
-                    params: vec![],
+                    params,
                 };
                 continue;
             }
@@ -514,6 +513,20 @@ impl<'cx, 'input> Parser<'cx, 'input> {
             };
         }
         Some(lhs)
+    }
+
+    fn parse_function_args(&mut self) -> Vec<ast::Expr> {
+        let mut params = vec![];
+        self.expect(T::LParen);
+        while let Some(expr) = self.parse_expr(0) {
+            params.push(expr);
+            if !self.peek_is(T::Comma) {
+                break;
+            }
+            self.expect(T::Comma);
+        }
+        self.expect(T::RParen);
+        params
     }
 
     /// let = "let" ident ":" typename "=" expr
@@ -647,8 +660,8 @@ fn prefix_binding_power(op: &Token) -> ((), usize) {
 
 fn postfix_binding_power(op: &Token) -> Option<(usize, ())> {
     match op {
-        T::LParen => todo!(),
-        x => panic!("{:?} is not a binary op", x),
+        T::LParen => Some((120, ())),
+        _x => None,
     }
 }
 
@@ -886,8 +899,45 @@ const baz: {} = {}
             "- - -x",
             "if z then x + 3 else 5 / 9 end * 6",
             "if z then x + -3 else 5 / 9 end * 6",
+            "x()",
         ];
         test_parse_with(|p| p.parse_expr(0), &valid_args);
+    }
+
+    #[test]
+    fn parse_funcall() {
+        test_expr_is(
+            |cx| ast::Expr::Funcall {
+                func: Box::new(ast::Expr::Var {
+                    name: cx.intern("y"),
+                }),
+                params: vec![ast::Expr::int(1), ast::Expr::int(2), ast::Expr::int(3)],
+            },
+            &["y(1, 2, 3)"],
+        );
+
+        test_expr_is(
+            |cx| ast::Expr::Funcall {
+                func: Box::new(ast::Expr::Var {
+                    name: cx.intern("foo"),
+                }),
+                params: vec![
+                    ast::Expr::int(0),
+                    ast::Expr::Funcall {
+                        func: Box::new(ast::Expr::Var {
+                            name: cx.intern("bar"),
+                        }),
+                        params: vec![ast::Expr::BinOp {
+                            op: ast::BOp::Mul,
+                            lhs: Box::new(ast::Expr::int(1)),
+                            rhs: Box::new(ast::Expr::int(2)),
+                        }],
+                    },
+                    ast::Expr::int(3),
+                ],
+            },
+            &["foo(0, bar(1 * 2), 3)"],
+        );
     }
 
     // Test op precedence works
@@ -926,6 +976,16 @@ const baz: {} = {}
                 rhs: Box::new(ast::Expr::int(3)),
             },
             &["1*2+3"],
-        )
+        );
+
+        test_expr_is(
+            |cx| ast::Expr::Funcall {
+                func: Box::new(ast::Expr::Var {
+                    name: cx.intern("x"),
+                }),
+                params: vec![],
+            },
+            &["x()"],
+        );
     }
 }
