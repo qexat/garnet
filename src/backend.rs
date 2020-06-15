@@ -90,6 +90,17 @@ struct LocalVar {
     wasm_type: w::ValType,
 }
 
+enum SymbolNode<'a> {
+    Nil,
+    Symbol(VarSym, LocalVar, &'a SymbolNode<'a>),
+}
+
+impl<'a> SymbolNode<'a> {
+    fn add(s: VarSym, local: LocalVar, prev: &'a SymbolNode) -> SymbolNode<'a> {
+        SymbolNode::Symbol(s, local, prev)
+    }
+}
+
 /// Order by local index
 impl cmp::PartialOrd for LocalVar {
     fn partial_cmp(&self, other: &Self) -> Option<cmp::Ordering> {
@@ -126,38 +137,6 @@ fn compile_function(bcx: &mut BCx, sig: &ir::Signature, body: &[ir::Expr]) -> w:
     let instrs = &mut fb.func_body();
     let _ = compile_exprs(bcx, &mut locals, instrs, &body);
     fb.finish(vec![], &mut bcx.m.funcs)
-
-    /*
-    let mut isns = vec![];
-    // Function params are passed in the "locals" section.
-    // So, we add them all to the symbol table.
-    for (pname, ptype) in sig.params.iter() {
-        let p = LocalVar {
-            local_idx: locals.len() as u32,
-            wasm_type: compile_typesym(cx, *ptype),
-        };
-        locals.insert(*pname, p);
-    }
-
-    // Compile the actual thing.
-    let _ = compile_exprs(cx, &mut locals, &mut isns, body);
-
-    // Turn locals into an array that just contains the types.
-    let mut local_arr: Vec<_> = locals.values().map(|l| l).collect();
-    local_arr.sort();
-    let wasm_locals = local_arr
-        .into_iter()
-        .map(|l| s::Local {
-            n: 1,
-            ty: l.wasm_type,
-        })
-        .collect();
-
-    s::Function {
-        locals: wasm_locals,
-        body: i::Expr(isns),
-    }
-                */
 }
 
 /// Compile multiple exprs, making sure they don't leave unused
@@ -169,7 +148,12 @@ fn compile_exprs(
     instrs: &mut w::InstrSeqBuilder,
     exprs: &[ir::Expr],
 ) -> usize {
-    // TODO Implement
+    // The trick here is that wasm doesn't let you leave stuff on
+    // the stack and just ignore it forevermore.  Like, functions must
+    // have only their return value on the stack when they return,
+    // stuff like that.  So we need to explicitly get rid of the
+    // things we ignore.
+    //
     // I considered making this a step in the IR that basically turns
     // every `foo(); bar()` into `ignore(foo()); bar()` explicitly,
     // but how hard to ignore it is dependent on the return type and
@@ -310,24 +294,53 @@ fn compile_expr(
         */
         E::If { cases, falseblock } => {
             // TODO: We need to know what type the blocks return.  Hmm.
-            //assert_eq!(compile_expr(bcx, locals, instrs, condition), 1);
-            let true_count = 0;
-            let false_count = 0;
-            /* TODO
-             * sort out this double-borrow
-             * Basically just needs immutable bcx and properly stacked locals.
-            instrs.if_else(
-                None,
-                |then| {
-                    true_count = compile_exprs(bcx, locals, then, trueblock);
-                },
-                |else_| {
-                    false_count = compile_exprs(bcx, locals, else_, falseblock);
-                },
-            );
-            */
-            assert_eq!(true_count, false_count);
-            true_count
+            // Currently we only have two types, nothing and i32.
+
+            // hokay, so.  For each case, we have to:
+            // compile the test
+            // generate the code for the if-part
+            // if there's another if-case, recurse.
+            fn compile_ifcase(
+                bcx: &mut BCx,
+                locals: &mut HashMap<VarSym, LocalVar>,
+                cases: &[(Expr, Vec<Expr>)],
+                instrs: &mut w::InstrSeqBuilder,
+                falseblock: &[Expr],
+            ) -> usize {
+                let mut return_count = 0;
+                assert!(cases.len() != 0);
+                /*
+                if cases.len() == 1 {
+                    // We are done, just compile the test...
+                    let (test, thenblock) = &cases[0];
+                    assert_eq!(1, compile_expr(bcx, locals, instrs, &test));
+                    instrs.if_else(
+                        None, // TODO
+                        |then| {
+                            compile_exprs(bcx, locals, then, &thenblock);
+                        },
+                        |else_| {
+                            compile_exprs(bcx, locals, else_, falseblock);
+                        },
+                    );
+                } else {
+                    // Compile the first if case, then recurse with the rest of them
+                    let (test, thenblock) = &cases[0];
+                    assert_eq!(1, compile_expr(bcx, locals, instrs, &test));
+                    instrs.if_else(
+                        None,
+                        |then| {
+                            compile_exprs(bcx, locals, then, &thenblock);
+                        },
+                        |else_| {
+                            compile_ifcase(bcx, locals, &cases[1..], else_, falseblock);
+                        },
+                    );
+                }
+                */
+                return_count
+            }
+            compile_ifcase(bcx, locals, cases, instrs, falseblock)
         }
 
         E::Loop { body } => 0,
@@ -337,7 +350,11 @@ fn compile_expr(
             0
         }
         E::Break => 0,
-        E::Return { retval } => 0,
+        E::Return { retval } => {
+            compile_expr(bcx, locals, instrs, retval);
+            instrs.return_();
+            0
+        }
     }
 }
 
