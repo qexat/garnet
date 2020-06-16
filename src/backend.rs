@@ -6,7 +6,6 @@
 use std::cell::RefCell;
 use std::cmp;
 use std::collections::HashMap;
-use std::rc::Rc;
 
 use walrus as w;
 
@@ -34,6 +33,7 @@ pub fn output(cx: &Cx, program: &ir::Ir) -> Vec<u8> {
         compile_decl(&bcx, decl);
     }
     let mut m = bcx.m.borrow_mut();
+    m.emit_wasm_file("/home/icefox/test.wasm");
     m.emit_wasm()
 }
 
@@ -315,13 +315,9 @@ fn compile_expr(
                 instrs: &mut w::InstrSeqBuilder,
                 falseblock: &[Expr],
             ) -> usize {
-                let mut return_count = 0;
+                let mut return_count = 1;
                 assert!(cases.len() != 0);
-                let (test, thenblock) = &cases[0];
-                assert_eq!(1, compile_expr(bcx, locals, instrs, &test));
-                let grr = Rc::new(RefCell::new(locals));
-                let grr1 = grr.clone();
-                let grr2 = grr.clone();
+                /*
                 instrs.if_else(
                     None, // TODO
                     |then| {
@@ -333,40 +329,40 @@ fn compile_expr(
                         compile_exprs(bcx, locals, else_, falseblock);
                     },
                 );
-                /*
+                */
                 if cases.len() == 1 {
                     // We are done, just compile the test...
                     let (test, thenblock) = &cases[0];
                     assert_eq!(1, compile_expr(bcx, locals, instrs, &test));
-                    let locals1 = &mut HashMap::new();
-                    let locals2 = &mut HashMap::new();
-                    let thenpart = |then| {
-                        compile_exprs(bcx, locals1, then, &thenblock);
-                    };
-                    let elsepart = |else_| {
-                        compile_exprs(bcx, locals2, else_, falseblock);
-                    };
+                    let grr = RefCell::new(locals);
                     instrs.if_else(
-                        None, // TODO
-                        thenpart, elsepart,
+                        w::ValType::I32, // TODO
+                        |then| {
+                            let locals = &mut grr.borrow_mut();
+                            compile_exprs(bcx, locals, then, &thenblock);
+                        },
+                        |else_| {
+                            let locals = &mut grr.borrow_mut();
+                            compile_exprs(bcx, locals, else_, falseblock);
+                        },
                     );
                 } else {
                     // Compile the first if case, then recurse with the rest of them
                     let (test, thenblock) = &cases[0];
                     assert_eq!(1, compile_expr(bcx, locals, instrs, &test));
-                    let locals1 = &mut HashMap::new();
-                    let locals2 = &mut HashMap::new();
+                    let grr = RefCell::new(locals);
                     instrs.if_else(
-                        None,
+                        w::ValType::I32, // TODO
                         |then| {
-                            compile_exprs(bcx, locals1, then, &thenblock);
+                            let locals = &mut grr.borrow_mut();
+                            compile_exprs(bcx, locals, then, &thenblock);
                         },
                         |else_| {
-                            compile_ifcase(bcx, locals2, &cases[1..], else_, falseblock);
+                            let locals = &mut grr.borrow_mut();
+                            compile_ifcase(bcx, locals, &cases[1..], else_, falseblock);
                         },
                     );
                 }
-                */
                 return_count
             }
             compile_ifcase(bcx, locals, cases, instrs, falseblock)
