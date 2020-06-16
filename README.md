@@ -115,6 +115,7 @@ change with time.
    run time, such as RTTI in general.  Also bites us in trying to make
    C-like enums, separate enum discriminants from enums or vice versa
    (which makes them awkward to compose),
+ * Rust's closures are awful.
 
 ## Glory points in Rust to exploit or even enhance
 
