@@ -3,8 +3,10 @@
 //! For now, we're going to output WASM.  That should let us get interesting output
 //! and maybe bootstrap stuff if we feel like it.
 
+use std::cell::RefCell;
 use std::cmp;
 use std::collections::HashMap;
+use std::rc::Rc;
 
 use walrus as w;
 
@@ -13,28 +15,29 @@ use crate::*;
 
 /// Backend context
 struct BCx<'a> {
-    cx: &'a mut Cx,
-    m: w::Module,
+    cx: &'a Cx,
+    m: RefCell<w::Module>,
 }
 
 impl<'a> BCx<'a> {
-    pub fn new(cx: &'a mut Cx) -> BCx<'a> {
+    pub fn new(cx: &'a Cx) -> BCx<'a> {
         let config = w::ModuleConfig::new();
-        let m = w::Module::with_config(config);
+        let m = RefCell::new(w::Module::with_config(config));
         Self { cx, m }
     }
 }
 
 /// Entry point to turn the IR into a compiled wasm module
-pub fn output(cx: &mut Cx, program: &ir::Ir) -> Vec<u8> {
-    let bcx = &mut BCx::new(cx);
+pub fn output(cx: &Cx, program: &ir::Ir) -> Vec<u8> {
+    let bcx = BCx::new(cx);
     for decl in program.decls.iter() {
-        compile_decl(bcx, decl);
+        compile_decl(&bcx, decl);
     }
-    bcx.m.emit_wasm()
+    let mut m = bcx.m.borrow_mut();
+    m.emit_wasm()
 }
 
-fn compile_decl(bcx: &mut BCx, decl: &ir::Decl) {
+fn compile_decl(bcx: &BCx, decl: &ir::Decl) {
     use ir::*;
     match decl {
         Decl::Function {
@@ -44,7 +47,7 @@ fn compile_decl(bcx: &mut BCx, decl: &ir::Decl) {
         } => {
             let function_id = compile_function(bcx, signature, body);
             let name = bcx.cx.fetch(*name);
-            bcx.m.exports.add(&name, function_id);
+            bcx.m.borrow_mut().exports.add(&name, function_id);
             /*
             let sig = function_signature(cx, m, signature);
             // TODO For now we don't try to dedupe types, just add 'em as redundantly
@@ -63,9 +66,12 @@ fn compile_decl(bcx: &mut BCx, decl: &ir::Decl) {
             */
         }
         Decl::Const {
+            /*
             name,
             typename,
             init,
+            */
+            ..
         } => {
             // Okay this is actually harder than it looks because
             // wasm only lets globals be value types.
@@ -75,7 +81,7 @@ fn compile_decl(bcx: &mut BCx, decl: &ir::Decl) {
     }
 }
 
-fn function_signature(bcx: &mut BCx, sig: &ir::Signature) -> (Vec<w::ValType>, Vec<w::ValType>) {
+fn function_signature(bcx: &BCx, sig: &ir::Signature) -> (Vec<w::ValType>, Vec<w::ValType>) {
     let params: Vec<w::ValType> = sig
         .params
         .iter()
@@ -90,6 +96,7 @@ struct LocalVar {
     wasm_type: w::ValType,
 }
 
+/*
 enum SymbolNode<'a> {
     Nil,
     Symbol(VarSym, LocalVar, &'a SymbolNode<'a>),
@@ -100,6 +107,7 @@ impl<'a> SymbolNode<'a> {
         SymbolNode::Symbol(s, local, prev)
     }
 }
+*/
 
 /// Order by local index
 impl cmp::PartialOrd for LocalVar {
@@ -118,14 +126,14 @@ impl cmp::Ord for LocalVar {
 impl cmp::Eq for LocalVar {}
 
 /// Compile a function, specifically -- wasm needs to know about its params and such.
-fn compile_function(bcx: &mut BCx, sig: &ir::Signature, body: &[ir::Expr]) -> w::FunctionId {
+fn compile_function(bcx: &BCx, sig: &ir::Signature, body: &[ir::Expr]) -> w::FunctionId {
     let (paramtype, rettype) = function_signature(bcx, sig);
-    let mut fb = w::FunctionBuilder::new(&mut bcx.m.types, &paramtype, &rettype);
+    let mut fb = w::FunctionBuilder::new(&mut bcx.m.borrow_mut().types, &paramtype, &rettype);
     // A simple, scope-less symbol table.
     let mut locals: HashMap<VarSym, LocalVar> = HashMap::new();
     // add params
     for (pname, ptype) in sig.params.iter() {
-        let idx = bcx.m.locals.add(compile_typesym(bcx, *ptype));
+        let idx = bcx.m.borrow_mut().locals.add(compile_typesym(bcx, *ptype));
         let p = LocalVar {
             local_idx: idx,
             wasm_type: compile_typesym(bcx, *ptype),
@@ -136,14 +144,14 @@ fn compile_function(bcx: &mut BCx, sig: &ir::Signature, body: &[ir::Expr]) -> w:
     //bcx.m.locals.add();
     let instrs = &mut fb.func_body();
     let _ = compile_exprs(bcx, &mut locals, instrs, &body);
-    fb.finish(vec![], &mut bcx.m.funcs)
+    fb.finish(vec![], &mut bcx.m.borrow_mut().funcs)
 }
 
 /// Compile multiple exprs, making sure they don't leave unused
 /// values on the stack by adding drop's as necessary.
 /// Returns the number of values left on the stack at the end.
 fn compile_exprs(
-    bcx: &mut BCx,
+    bcx: &BCx,
     locals: &mut HashMap<VarSym, LocalVar>,
     instrs: &mut w::InstrSeqBuilder,
     exprs: &[ir::Expr],
@@ -183,7 +191,7 @@ fn compile_exprs(
 /// Returns how many values it leaves on the stack, so we know how many
 /// values to get rid of if the return val is ignored.
 fn compile_expr(
-    bcx: &mut BCx,
+    bcx: &BCx,
     locals: &mut HashMap<VarSym, LocalVar>,
     instrs: &mut w::InstrSeqBuilder,
     expr: &ir::Expr,
@@ -252,7 +260,7 @@ fn compile_expr(
         } => {
             // Declare local var storage
             let wasm_type = compile_typesym(bcx, *typename);
-            let local_idx = bcx.m.locals.add(wasm_type);
+            let local_idx = bcx.m.borrow_mut().locals.add(wasm_type);
             let l = LocalVar {
                 local_idx,
                 wasm_type,
@@ -301,7 +309,7 @@ fn compile_expr(
             // generate the code for the if-part
             // if there's another if-case, recurse.
             fn compile_ifcase(
-                bcx: &mut BCx,
+                bcx: &BCx,
                 locals: &mut HashMap<VarSym, LocalVar>,
                 cases: &[(Expr, Vec<Expr>)],
                 instrs: &mut w::InstrSeqBuilder,
@@ -309,31 +317,52 @@ fn compile_expr(
             ) -> usize {
                 let mut return_count = 0;
                 assert!(cases.len() != 0);
+                let (test, thenblock) = &cases[0];
+                assert_eq!(1, compile_expr(bcx, locals, instrs, &test));
+                let grr = Rc::new(RefCell::new(locals));
+                let grr1 = grr.clone();
+                let grr2 = grr.clone();
+                instrs.if_else(
+                    None, // TODO
+                    |then| {
+                        let locals = &mut grr1.borrow_mut();
+                        compile_exprs(bcx, locals, then, thenblock);
+                    },
+                    |else_| {
+                        let locals = &mut grr2.borrow_mut();
+                        compile_exprs(bcx, locals, else_, falseblock);
+                    },
+                );
                 /*
                 if cases.len() == 1 {
                     // We are done, just compile the test...
                     let (test, thenblock) = &cases[0];
                     assert_eq!(1, compile_expr(bcx, locals, instrs, &test));
+                    let locals1 = &mut HashMap::new();
+                    let locals2 = &mut HashMap::new();
+                    let thenpart = |then| {
+                        compile_exprs(bcx, locals1, then, &thenblock);
+                    };
+                    let elsepart = |else_| {
+                        compile_exprs(bcx, locals2, else_, falseblock);
+                    };
                     instrs.if_else(
                         None, // TODO
-                        |then| {
-                            compile_exprs(bcx, locals, then, &thenblock);
-                        },
-                        |else_| {
-                            compile_exprs(bcx, locals, else_, falseblock);
-                        },
+                        thenpart, elsepart,
                     );
                 } else {
                     // Compile the first if case, then recurse with the rest of them
                     let (test, thenblock) = &cases[0];
                     assert_eq!(1, compile_expr(bcx, locals, instrs, &test));
+                    let locals1 = &mut HashMap::new();
+                    let locals2 = &mut HashMap::new();
                     instrs.if_else(
                         None,
                         |then| {
-                            compile_exprs(bcx, locals, then, &thenblock);
+                            compile_exprs(bcx, locals1, then, &thenblock);
                         },
                         |else_| {
-                            compile_ifcase(bcx, locals, &cases[1..], else_, falseblock);
+                            compile_ifcase(bcx, locals2, &cases[1..], else_, falseblock);
                         },
                     );
                 }
@@ -400,7 +429,7 @@ mod tests {
                 rettype: i32_t,
             },
         );
-        let mut fb = w::FunctionBuilder::new(&mut bcx.m.types, &paramtype, &rettype);
+        let mut fb = w::FunctionBuilder::new(&mut bcx.m.borrow_mut().types, &paramtype, &rettype);
         let instrs = &mut fb.func_body();
         let locals = &mut HashMap::new();
 
