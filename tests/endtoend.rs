@@ -194,4 +194,6 @@ fn parse_and_compile_expr() {
 
     let src = r#"fn test(x: I32): I32 = if true then x else 3 * 2 end end"#;
     assert_eq!(eval_program1(src, 3), 3);
+    let src = r#"fn test(x: I32): I32 = if true then x elseif false then 5 else 3 * 2 end end"#;
+    assert_eq!(eval_program1(src, 3), 3);
 }
