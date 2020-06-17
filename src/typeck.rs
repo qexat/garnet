@@ -206,7 +206,7 @@ pub fn typecheck_decl(
             //
             // Oh gods, what in the name of Eris do we do if there's
             // a return statement here?
-            let typechecked_exprs = typecheck2_exprs(cx, symtbl, body)?;
+            let typechecked_exprs = typecheck_exprs(cx, symtbl, body)?;
             // TODO: This only works if there are no return statements.
             let last_expr_type = last_type_of(cx, &typechecked_exprs);
 
@@ -236,7 +236,7 @@ pub fn typecheck_decl(
             Ok(ir::Decl::Const {
                 name,
                 typename,
-                init: typecheck2_expr(cx, symtbl, init)?,
+                init: typecheck_expr(cx, symtbl, init)?,
             })
         }
     }
@@ -247,25 +247,11 @@ pub fn typecheck_decl(
 fn typecheck_exprs(
     cx: &mut Cx,
     symtbl: &mut Symtbl,
-    exprs: &[ir::Expr],
-) -> Result<TypeSym, TypeError> {
-    let mut last_expr_type = cx.intern_type(&TypeDef::Tuple(vec![]));
-    for expr in exprs {
-        last_expr_type = typecheck_expr(cx, symtbl, expr)?;
-    }
-    Ok(last_expr_type)
-}
-
-/// Typecheck a vec of expr's and return the type of the last one.
-/// If the vec is empty, return unit.
-fn typecheck2_exprs(
-    cx: &mut Cx,
-    symtbl: &mut Symtbl,
     exprs: Vec<ir::TypedExpr<()>>,
 ) -> Result<Vec<ir::TypedExpr<TypeSym>>, TypeError> {
     exprs
         .into_iter()
-        .map(|e| typecheck2_expr(cx, symtbl, e))
+        .map(|e| typecheck_expr(cx, symtbl, e))
         .collect()
 }
 
@@ -278,12 +264,12 @@ fn last_type_of(cx: &Cx, exprs: &[ir::TypedExpr<TypeSym>]) -> TypeSym {
         .unwrap_or_else(|| cx.intern_type(&TypeDef::Tuple(vec![])))
 }
 
-fn typecheck2_expr(
+fn typecheck_expr(
     cx: &mut Cx,
     symtbl: &mut Symtbl,
     expr: ir::TypedExpr<()>,
 ) -> Result<ir::TypedExpr<TypeSym>, TypeError> {
-    use ir::Expr2::*;
+    use ir::Expr::*;
     let unittype = cx.intern_type(&TypeDef::Tuple(vec![]));
     let booltype = cx.intern_type(&TypeDef::Bool);
     match expr.e {
@@ -297,8 +283,8 @@ fn typecheck2_expr(
             Ok(expr.map(t))
         }
         BinOp { op, lhs, rhs } => {
-            let lhs = Box::new(typecheck2_expr(cx, symtbl, *lhs)?);
-            let rhs = Box::new(typecheck2_expr(cx, symtbl, *rhs)?);
+            let lhs = Box::new(typecheck_expr(cx, symtbl, *lhs)?);
+            let rhs = Box::new(typecheck_expr(cx, symtbl, *rhs)?);
             // Currently, our only valid binops are on numbers.
             let binop_type = op.type_of(cx);
             if type_matches(&lhs.t, &rhs.t) && type_matches(&binop_type, &lhs.t) {
@@ -318,7 +304,7 @@ fn typecheck2_expr(
             }
         }
         UniOp { op, rhs } => {
-            let rhs = Box::new(typecheck2_expr(cx, symtbl, *rhs)?);
+            let rhs = Box::new(typecheck_expr(cx, symtbl, *rhs)?);
             // Currently, our only valid binops are on numbers.
             let uniop_type = op.type_of(cx);
             if type_matches(&uniop_type, &rhs.t) {
@@ -337,7 +323,7 @@ fn typecheck2_expr(
             }
         }
         Block { body } => {
-            let b = typecheck2_exprs(cx, symtbl, body)?;
+            let b = typecheck_exprs(cx, symtbl, body)?;
             let t = last_type_of(cx, &b);
             Ok(ir::TypedExpr {
                 e: Block { body: b },
@@ -349,7 +335,7 @@ fn typecheck2_expr(
             typename,
             init,
         } => {
-            let init_expr = typecheck2_expr(cx, symtbl, *init)?;
+            let init_expr = typecheck_expr(cx, symtbl, *init)?;
             let init_type = init_expr.t;
             if type_matches(&init_type, &typename) {
                 // Add var to symbol table, proceed
@@ -360,7 +346,7 @@ fn typecheck2_expr(
                         typename,
                         init: Box::new(init_expr),
                     },
-                    t: init_type,
+                    t: unittype,
                 })
             } else {
                 let msg = format!(
@@ -373,14 +359,14 @@ fn typecheck2_expr(
             }
         }
         If { cases, falseblock } => {
-            let falseblock = typecheck2_exprs(cx, symtbl, falseblock)?;
+            let falseblock = typecheck_exprs(cx, symtbl, falseblock)?;
             let assumed_type = last_type_of(cx, &falseblock);
             let mut new_cases = vec![];
             for (cond, body) in cases {
-                let cond_expr = typecheck2_expr(cx, symtbl, cond)?;
+                let cond_expr = typecheck_expr(cx, symtbl, cond)?;
                 if type_matches(&cond_expr.t, &booltype) {
                     // Proceed to typecheck arms
-                    let ifbody_exprs = typecheck2_exprs(cx, symtbl, body)?;
+                    let ifbody_exprs = typecheck_exprs(cx, symtbl, body)?;
                     let if_type = last_type_of(cx, &ifbody_exprs);
                     if !type_matches(&if_type, &assumed_type) {
                         let msg = format!(
@@ -410,7 +396,7 @@ fn typecheck2_expr(
             })
         }
         Loop { body } => {
-            let b = typecheck2_exprs(cx, symtbl, body)?;
+            let b = typecheck_exprs(cx, symtbl, body)?;
             let t = last_type_of(cx, &b);
             Ok(ir::TypedExpr {
                 e: Loop { body: b },
@@ -423,7 +409,7 @@ fn typecheck2_expr(
             for (paramname, paramtype) in signature.params.iter() {
                 symtbl.add_var(*paramname, paramtype);
             }
-            let body_expr = typecheck2_exprs(cx, symtbl, body)?;
+            let body_expr = typecheck_exprs(cx, symtbl, body)?;
             let bodytype = last_type_of(cx, &body_expr);
             // TODO: validate/unify types
             if !type_matches(&bodytype, &signature.rettype) {
@@ -452,9 +438,9 @@ fn typecheck2_expr(
         }
         Funcall { func, params } => {
             // First, get param types
-            let given_params = typecheck2_exprs(cx, symtbl, params)?;
+            let given_params = typecheck_exprs(cx, symtbl, params)?;
             // Then, look up function
-            let f = typecheck2_expr(cx, symtbl, *func)?;
+            let f = typecheck_expr(cx, symtbl, *func)?;
             let fdef = &*cx.fetch_type(f.t);
             match fdef {
                 TypeDef::Lambda(paramtypes, rettype) => {
@@ -488,159 +474,6 @@ fn typecheck2_expr(
         }
         Break => Ok(expr.map(unittype)),
         Return { .. } => unimplemented!("TODO: Never type"),
-    }
-}
-
-/// Returns a symbol representing the type of this expression, if it's ok, or an error if not.
-fn typecheck_expr(cx: &mut Cx, symtbl: &mut Symtbl, expr: &ir::Expr) -> Result<TypeSym, TypeError> {
-    use ir::Expr::*;
-    let unittype = cx.intern_type(&TypeDef::Tuple(vec![]));
-    let booltype = cx.intern_type(&TypeDef::Bool);
-    match expr {
-        Lit { val } => typecheck_literal(cx, val),
-        Var { name } => symtbl.get_var(cx, *name),
-        BinOp { op, lhs, rhs } => {
-            let tlhs = typecheck_expr(cx, symtbl, lhs)?;
-            let trhs = typecheck_expr(cx, symtbl, rhs)?;
-            // Currently, our only valid binops are on numbers.
-            let binop_type = op.type_of(cx);
-            if type_matches(&tlhs, &trhs) && type_matches(&binop_type, &tlhs) {
-                Ok(binop_type)
-            } else {
-                let msg = format!(
-                    "Invalid types for BOp {:?}: expected {}, got {} + {}",
-                    op,
-                    cx.fetch_type(binop_type).get_name(),
-                    cx.fetch_type(tlhs).get_name(),
-                    cx.fetch_type(trhs).get_name()
-                );
-                Err(TypeError::TypeMismatch(msg))
-            }
-        }
-        UniOp { op, rhs } => {
-            let trhs = typecheck_expr(cx, symtbl, rhs)?;
-            // Currently, our only valid binops are on numbers.
-            let uniop_type = op.type_of(cx);
-            if type_matches(&uniop_type, &trhs) {
-                Ok(uniop_type)
-            } else {
-                let msg = format!(
-                    "Invalid types for UOp {:?}: expected {}, got {}",
-                    op,
-                    cx.fetch_type(uniop_type).get_name(),
-                    cx.fetch_type(trhs).get_name()
-                );
-                Err(TypeError::TypeMismatch(msg))
-            }
-        }
-        Block { body } => typecheck_exprs(cx, symtbl, body),
-        Let {
-            varname,
-            typename,
-            init,
-        } => {
-            let init_type = typecheck_expr(cx, symtbl, init)?;
-            if type_matches(&init_type, &typename) {
-                // Add var to symbol table, proceed
-                symtbl.add_var(*varname, typename);
-                Ok(unittype)
-            } else {
-                let msg = format!(
-                    "initializer for variable {}: expected {}, got {}",
-                    cx.fetch(*varname),
-                    cx.fetch_type(*typename).get_name(),
-                    cx.fetch_type(init_type).get_name()
-                );
-                Err(TypeError::TypeMismatch(msg))
-            }
-        }
-        If { cases, falseblock } => {
-            let assumed_type = typecheck_exprs(cx, symtbl, falseblock)?;
-            for (cond, body) in cases {
-                let cond_type = typecheck_expr(cx, symtbl, cond)?;
-                if type_matches(&cond_type, &booltype) {
-                    // Proceed to typecheck arms
-                    let if_type = typecheck_exprs(cx, symtbl, body)?;
-                    if !type_matches(&if_type, &assumed_type) {
-                        let msg = format!(
-                            "If block return type is {}, but else block returns {}",
-                            cx.fetch_type(if_type).get_name(),
-                            cx.fetch_type(assumed_type).get_name(),
-                        );
-                        return Err(TypeError::TypeMismatch(msg));
-                    }
-                } else {
-                    let msg = format!(
-                        "If expr condition is {}, not bool",
-                        cx.fetch_type(cond_type).get_name(),
-                    );
-                    return Err(TypeError::TypeMismatch(msg));
-                }
-            }
-            return Ok(assumed_type);
-        }
-        Loop { body } => typecheck_exprs(cx, symtbl, body),
-        Lambda { signature, body } => {
-            symtbl.push_scope();
-            // add params to symbol table
-            for (paramname, paramtype) in signature.params.iter() {
-                symtbl.add_var(*paramname, paramtype);
-            }
-            let bodytype = typecheck_exprs(cx, symtbl, body)?;
-            // TODO: validate/unify types
-            if !type_matches(&bodytype, &signature.rettype) {
-                let msg = format!(
-                    "Function returns type {:?} but should be {:?}",
-                    cx.fetch_type(bodytype),
-                    cx.fetch_type(signature.rettype)
-                );
-                return Err(TypeError::TypeMismatch(msg));
-            }
-            symtbl.pop_scope();
-            let paramtypes: Vec<TypeSym> = signature
-                .params
-                .iter()
-                .map(|(_varsym, typesym)| *typesym)
-                .collect();
-            let lambdatype =
-                cx.intern_type(&TypeDef::Lambda(paramtypes, Box::new(signature.rettype)));
-            Ok(lambdatype)
-        }
-        Funcall { func, params } => {
-            // First, get param types
-            let given_param_types = params
-                .iter()
-                .map(|p| typecheck_expr(cx, symtbl, p))
-                .collect::<Result<Vec<TypeSym>, _>>()?;
-            // Then, look up function
-            let f = typecheck_expr(cx, symtbl, func)?;
-            let fdef = &*cx.fetch_type(f);
-            match fdef {
-                TypeDef::Lambda(paramtypes, rettype) => {
-                    // Now, make sure all the function's params match what it wants
-                    for (given, wanted) in given_param_types.iter().zip(paramtypes) {
-                        if !type_matches(given, &wanted) {
-                            let msg = format!(
-                                "Function wanted type {} in param but got type {}",
-                                cx.fetch_type(*wanted).get_name(),
-                                cx.fetch_type(*given).get_name()
-                            );
-                            return Err(TypeError::TypeMismatch(msg));
-                        }
-                    }
-                    Ok(**rettype)
-                }
-                other => {
-                    let msg = format!(
-                        "Tried to call function but it is not a function, it is a {}",
-                        other.get_name()
-                    );
-                    Err(TypeError::TypeMismatch(msg))
-                }
-            }
-        }
-        Break => Ok(unittype),
-        Return { .. } => panic!("oh gods oh gods oh gods oh gods whyyyyyy"),
     }
 }
 
@@ -754,27 +587,30 @@ mod tests {
         use ir::*;
         // Basic addition
         {
-            let ir = Expr::BinOp {
+            let ir = plz(Expr::BinOp {
                 op: BOp::Add,
-                lhs: Box::new(Expr::Lit {
+                lhs: Box::new(plz(Expr::Lit {
                     val: Literal::Integer(3),
-                }),
-                rhs: Box::new(Expr::Lit {
+                })),
+                rhs: Box::new(plz(Expr::Lit {
                     val: Literal::Integer(4),
-                }),
-            };
-            assert!(type_matches(&typecheck_expr(cx, tbl, &ir).unwrap(), &t_i32));
+                })),
+            });
+            assert!(type_matches(
+                &typecheck_expr(cx, tbl, ir).unwrap().t,
+                &t_i32
+            ));
 
-            let bad_ir = Expr::BinOp {
+            let bad_ir = plz(Expr::BinOp {
                 op: BOp::Add,
-                lhs: Box::new(Expr::Lit {
+                lhs: Box::new(plz(Expr::Lit {
                     val: Literal::Integer(3),
-                }),
-                rhs: Box::new(Expr::Lit {
+                })),
+                rhs: Box::new(plz(Expr::Lit {
                     val: Literal::Bool(false),
-                }),
-            };
-            assert!(typecheck_expr(cx, tbl, &bad_ir).is_err());
+                })),
+            });
+            assert!(typecheck_expr(cx, tbl, bad_ir).is_err());
         }
     }
 
@@ -787,21 +623,24 @@ mod tests {
 
         use ir::*;
         {
-            let ir = Expr::UniOp {
+            let ir = plz(Expr::UniOp {
                 op: UOp::Neg,
-                rhs: Box::new(Expr::Lit {
+                rhs: Box::new(plz(Expr::Lit {
                     val: Literal::Integer(4),
-                }),
-            };
-            assert!(type_matches(&typecheck_expr(cx, tbl, &ir).unwrap(), &t_i32));
+                })),
+            });
+            assert!(type_matches(
+                &typecheck_expr(cx, tbl, ir).unwrap().t,
+                &t_i32
+            ));
 
-            let bad_ir = Expr::UniOp {
+            let bad_ir = plz(Expr::UniOp {
                 op: UOp::Neg,
-                rhs: Box::new(Expr::Lit {
+                rhs: Box::new(plz(Expr::Lit {
                     val: Literal::Bool(false),
-                }),
-            };
-            assert!(typecheck_expr(cx, tbl, &bad_ir).is_err());
+                })),
+            });
+            assert!(typecheck_expr(cx, tbl, bad_ir).is_err());
         }
     }
 
@@ -820,15 +659,15 @@ mod tests {
 
         use ir::*;
         {
-            let ir = Expr::Let {
+            let ir = plz(Expr::Let {
                 varname: fooname,
                 typename: t_i32.clone(),
-                init: Box::new(Expr::Lit {
+                init: Box::new(plz(Expr::Lit {
                     val: Literal::Integer(42),
-                }),
-            };
+                })),
+            });
             assert!(type_matches(
-                &typecheck_expr(cx, tbl, &ir).unwrap(),
+                &typecheck_expr(cx, tbl, ir).unwrap().t,
                 &t_unit
             ));
             // Is the variable now bound in our symbol table?
@@ -862,30 +701,28 @@ mod tests {
         use ir::*;
         {
             let ir = vec![
-                Expr::Let {
+                plz(Expr::Let {
                     varname: fname,
                     typename: ftype,
-                    init: Box::new(Expr::Lambda {
+                    init: Box::new(plz(Expr::Lambda {
                         signature: Signature {
                             params: vec![(aname, t_i32), (bname, t_i32)],
                             rettype: t_i32,
                         },
-                        body: vec![Expr::BinOp {
+                        body: vec![plz(Expr::BinOp {
                             op: BOp::Add,
-                            lhs: Box::new(Expr::Var { name: aname }),
-                            rhs: Box::new(Expr::Var { name: bname }),
-                        }],
-                    }),
-                },
-                Expr::Funcall {
-                    func: Box::new(Expr::Var { name: fname }),
-                    params: vec![Expr::int(3), Expr::int(4)],
-                },
+                            lhs: Box::new(plz(Expr::Var { name: aname })),
+                            rhs: Box::new(plz(Expr::Var { name: bname })),
+                        })],
+                    })),
+                }),
+                plz(Expr::Funcall {
+                    func: Box::new(plz(Expr::Var { name: fname })),
+                    params: vec![plz(Expr::int(3)), plz(Expr::int(4))],
+                }),
             ];
-            assert!(type_matches(
-                &typecheck_exprs(cx, tbl, &ir).unwrap(),
-                &t_i32
-            ));
+            let exprs = &typecheck_exprs(cx, tbl, ir).unwrap();
+            assert!(type_matches(&last_type_of(cx, exprs), &t_i32));
             // Is the variable now bound in our symbol table?
             assert_eq!(tbl.get_var(cx, fname).unwrap(), ftype);
         }

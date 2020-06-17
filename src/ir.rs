@@ -17,75 +17,7 @@ use crate::ast::{self};
 pub use crate::ast::{BOp, IfCase, Literal, Signature, UOp};
 use crate::{TypeSym, VarSym};
 
-/// Any expression.
-#[derive(Debug, Clone, PartialEq)]
-pub enum Expr {
-    Lit {
-        val: Literal,
-    },
-    Var {
-        name: VarSym,
-    },
-    BinOp {
-        op: BOp,
-        lhs: Box<Expr>,
-        rhs: Box<Expr>,
-    },
-    UniOp {
-        op: UOp,
-        rhs: Box<Expr>,
-    },
-    Block {
-        body: Vec<Expr>,
-    },
-    Let {
-        varname: VarSym,
-        typename: TypeSym,
-        init: Box<Expr>,
-    },
-    If {
-        cases: Vec<(Expr, Vec<Expr>)>,
-        falseblock: Vec<Expr>,
-    },
-    Loop {
-        body: Vec<Expr>,
-    },
-    Lambda {
-        signature: Signature,
-        body: Vec<Expr>,
-    },
-    Funcall {
-        func: Box<Expr>,
-        params: Vec<Expr>,
-    },
-    Break,
-    Return {
-        retval: Box<Expr>,
-    },
-}
-
-impl Expr {
-    /// Shortcut function for making literal bools
-    pub const fn bool(b: bool) -> Expr {
-        Expr::Lit {
-            val: Literal::Bool(b),
-        }
-    }
-
-    /// Shortcut function for making literal integers
-    pub const fn int(i: i64) -> Expr {
-        Expr::Lit {
-            val: Literal::Integer(i),
-        }
-    }
-
-    /// Shortcut function for making literal unit
-    pub const fn unit() -> Expr {
-        Expr::Lit { val: Literal::Unit }
-    }
-}
-
-impl<T> Expr2<T> {
+impl<T> Expr<T> {
     /// Shortcut function for making literal bools
     pub const fn bool(b: bool) -> Self {
         Self::Lit {
@@ -111,7 +43,7 @@ pub struct TypedExpr<T> {
     /// type
     pub t: T,
     /// expression
-    pub e: Expr2<T>,
+    pub e: Expr<T>,
 }
 
 impl<T> TypedExpr<T> {
@@ -131,7 +63,7 @@ impl<T> TypedExpr<T> {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum Expr2<T> {
+pub enum Expr<T> {
     Lit {
         val: Literal,
     },
@@ -176,12 +108,12 @@ pub enum Expr2<T> {
     },
 }
 
-impl<T> Expr2<T> {
-    pub fn map<T2>(self, new_t: T2) -> Expr2<T2>
+impl<T> Expr<T> {
+    pub fn map<T2>(self, new_t: T2) -> Expr<T2>
     where
         T2: Copy,
     {
-        use Expr2 as E;
+        use Expr as E;
         let map_vec =
             |body: Vec<TypedExpr<T>>| body.into_iter().map(|e| TypedExpr::map(e, new_t)).collect();
         match self {
@@ -286,7 +218,7 @@ fn lower_signature(sig: &ast::Signature) -> Signature {
 /// This is the biggie currently
 fn lower_expr(expr: &ast::Expr) -> TypedExpr<()> {
     use ast::Expr as E;
-    use Expr2::*;
+    use Expr::*;
     let new_exp = match expr {
         E::Lit { val } => Lit {
             val: lower_lit(val),
@@ -360,7 +292,7 @@ fn lower_expr(expr: &ast::Expr) -> TypedExpr<()> {
             // Return unit
             retval: Box::new(TypedExpr {
                 t: (),
-                e: Expr2::unit(),
+                e: Expr::unit(),
             }),
         },
         E::Return { retval: Some(e) } => Return {
@@ -403,11 +335,11 @@ fn lower_decls(decls: &[ast::Decl]) -> Vec<Decl<()>> {
     decls.iter().map(lower_decl).collect()
 }
 
-/// Shortcut to take an Expr2 and wrap it with a unit type.
+/// Shortcut to take an Expr and wrap it with a unit type.
 /// ...doesn't... ACTUALLY save that much typing, but...
 /// TODO: Better name.
 #[cfg(test)]
-pub(crate) fn plz(e: Expr2<()>) -> TypedExpr<()> {
+pub(crate) fn plz(e: Expr<()>) -> TypedExpr<()> {
     TypedExpr { t: (), e: e }
 }
 
@@ -415,7 +347,7 @@ pub(crate) fn plz(e: Expr2<()>) -> TypedExpr<()> {
 mod tests {
     use super::*;
     use crate::ast::Expr as A;
-    use crate::ir::Expr2 as I;
+    use crate::ir::Expr as I;
 
     /// Does `return;` turn into `return ();`?
     #[test]
