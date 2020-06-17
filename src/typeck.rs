@@ -193,6 +193,12 @@ pub fn typecheck_decl(
             signature,
             body,
         } => {
+            // Add function to global scope
+            let type_params = signature.params.iter().map(|(_name, t)| *t).collect();
+            let function_type =
+                cx.intern_type(&TypeDef::Lambda(type_params, Box::new(signature.rettype)));
+            symtbl.add_var(name, &function_type);
+
             // Push scope, typecheck and add params to symbol table
             symtbl.push_scope();
             // TODO: Add the function itself!
@@ -200,6 +206,7 @@ pub fn typecheck_decl(
             for (pname, ptype) in signature.params.iter() {
                 symtbl.add_var(*pname, ptype);
             }
+
             // This is squirrelly; basically, we want to return unit
             // if the function has no body, otherwise return the
             // type of the last expression.
