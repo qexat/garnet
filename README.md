@@ -87,6 +87,10 @@ change with time.
  * You can't be generic over mutability and ownership, so for example
    you end up with `iter()`, `into_iter()`, and `iter_mut()`.
  * Related, the pile of AsRef, Deref, Borrow, ToOwned etc. traits.
+ * Related, the pile of various things that look kinda like
+   references/pointers but aren't, and all the hacks that go into making
+   them work.  Example: Box.  Seems fine, right?  Can't pattern match on
+   it.  See the `box_pattern` RFC.
  * Rust's hacky generic-ness over length of sequences/tuples is pretty lame
  * The slightly-magical relationship between `String` and `&str`, and `&[]`
    and `[]` and `[T;N]`, is a little distressing
