@@ -32,7 +32,8 @@ fn main() {
     println!("AST: {:#?}", ast);
     let ir = garnet::ir::lower(&ast);
     //println!("That becomes: {:#?}", ir);
-    let wasm = garnet::backend::output(&mut cx, &ir);
+    let checked = garnet::typeck::typecheck(&mut cx, ir).unwrap();
+    let wasm = garnet::backend::output(&mut cx, &checked);
     //println!("WASM is: {:?}", wasm);
 
     // Output to file

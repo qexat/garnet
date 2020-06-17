@@ -85,6 +85,27 @@ impl Expr {
     }
 }
 
+impl<T> Expr2<T> {
+    /// Shortcut function for making literal bools
+    pub const fn bool(b: bool) -> Self {
+        Self::Lit {
+            val: Literal::Bool(b),
+        }
+    }
+
+    /// Shortcut function for making literal integers
+    pub const fn int(i: i64) -> Self {
+        Self::Lit {
+            val: Literal::Integer(i),
+        }
+    }
+
+    /// Shortcut function for making literal unit
+    pub const fn unit() -> Self {
+        Self::Lit { val: Literal::Unit }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct TypedExpr<T> {
     /// type
@@ -94,6 +115,10 @@ pub struct TypedExpr<T> {
 }
 
 impl<T> TypedExpr<T> {
+    /// TODO: This is less useful than it should be,
+    /// I was kinda imagining it as a general purpose
+    /// transformer but it can only correctly transform
+    /// leaf nodes.  Hnyrn.
     pub fn map<T2>(self, new_t: T2) -> TypedExpr<T2>
     where
         T2: Copy,
@@ -214,16 +239,16 @@ impl<T> Expr2<T> {
 
 /// A top-level declaration in the source file.
 #[derive(Debug, Clone, PartialEq)]
-pub enum Decl {
+pub enum Decl<T> {
     Function {
         name: VarSym,
         signature: Signature,
-        body: Vec<Expr>,
+        body: Vec<TypedExpr<T>>,
     },
     Const {
         name: VarSym,
         typename: TypeSym,
-        init: Expr,
+        init: TypedExpr<T>,
     },
 }
 
@@ -231,12 +256,12 @@ pub enum Decl {
 ///
 /// Currently, basically a compilation unit.
 #[derive(Debug, Clone, Default)]
-pub struct Ir {
-    pub decls: Vec<Decl>,
+pub struct Ir<T> {
+    pub decls: Vec<Decl<T>>,
 }
 
 /// Transforms AST into IR, doing simplifying transformations on the way.
-pub fn lower(ast: &ast::Ast) -> Ir {
+pub fn lower(ast: &ast::Ast) -> Ir<()> {
     Ir {
         decls: lower_decls(&ast.decls),
     }
@@ -259,10 +284,10 @@ fn lower_signature(sig: &ast::Signature) -> Signature {
 }
 
 /// This is the biggie currently
-fn lower_expr(expr: &ast::Expr) -> Expr {
+fn lower_expr(expr: &ast::Expr) -> TypedExpr<()> {
     use ast::Expr as E;
-    use Expr::*;
-    match expr {
+    use Expr2::*;
+    let new_exp = match expr {
         E::Lit { val } => Lit {
             val: lower_lit(val),
         },
@@ -333,20 +358,24 @@ fn lower_expr(expr: &ast::Expr) -> Expr {
         E::Break => Break,
         E::Return { retval: None } => Return {
             // Return unit
-            retval: Box::new(Expr::unit()),
+            retval: Box::new(TypedExpr {
+                t: (),
+                e: Expr2::unit(),
+            }),
         },
         E::Return { retval: Some(e) } => Return {
             retval: Box::new(lower_expr(e)),
         },
-    }
+    };
+    TypedExpr { t: (), e: new_exp }
 }
 
 /// handy shortcut to lower Vec<ast::Expr>
-fn lower_exprs(exprs: &[ast::Expr]) -> Vec<Expr> {
+fn lower_exprs(exprs: &[ast::Expr]) -> Vec<TypedExpr<()>> {
     exprs.iter().map(lower_expr).collect()
 }
 
-fn lower_decl(decl: &ast::Decl) -> Decl {
+fn lower_decl(decl: &ast::Decl) -> Decl<()> {
     use ast::Decl as D;
     match decl {
         D::Function {
@@ -370,23 +399,31 @@ fn lower_decl(decl: &ast::Decl) -> Decl {
     }
 }
 
-fn lower_decls(decls: &[ast::Decl]) -> Vec<Decl> {
+fn lower_decls(decls: &[ast::Decl]) -> Vec<Decl<()>> {
     decls.iter().map(lower_decl).collect()
+}
+
+/// Shortcut to take an Expr2 and wrap it with a unit type.
+/// ...doesn't... ACTUALLY save that much typing, but...
+/// TODO: Better name.
+#[cfg(test)]
+pub(crate) fn plz(e: Expr2<()>) -> TypedExpr<()> {
+    TypedExpr { t: (), e: e }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::ast::Expr as A;
-    use crate::ir::Expr as I;
+    use crate::ir::Expr2 as I;
 
     /// Does `return;` turn into `return ();`?
     #[test]
     fn test_return_none() {
         let input = A::Return { retval: None };
-        let output = I::Return {
-            retval: Box::new(I::unit()),
-        };
+        let output = plz(I::Return {
+            retval: Box::new(plz(I::unit())),
+        });
         let res = lower_expr(&input);
         assert_eq!(&res, &output);
     }
@@ -397,9 +434,9 @@ mod tests {
         let input = A::Return {
             retval: Some(Box::new(A::unit())),
         };
-        let output = I::Return {
-            retval: Box::new(I::unit()),
-        };
+        let output = plz(I::Return {
+            retval: Box::new(plz(I::unit())),
+        });
         let res = lower_expr(&input);
         assert_eq!(&res, &output);
     }
@@ -415,10 +452,10 @@ mod tests {
             }],
             falseblock: vec![A::int(2)],
         };
-        let output = I::If {
-            cases: vec![(I::bool(false), vec![I::int(1)])],
-            falseblock: vec![I::int(2)],
-        };
+        let output = plz(I::If {
+            cases: vec![(plz(I::bool(false)), vec![plz(I::int(1))])],
+            falseblock: vec![plz(I::int(2))],
+        });
         let res = lower_expr(&input);
         assert_eq!(&res, &output);
     }
@@ -440,13 +477,13 @@ mod tests {
             ],
             falseblock: vec![A::int(3)],
         };
-        let output = I::If {
+        let output = plz(I::If {
             cases: vec![
-                (I::bool(false), vec![I::int(1)]),
-                (I::bool(true), vec![I::int(2)]),
+                (plz(I::bool(false)), vec![plz(I::int(1))]),
+                (plz(I::bool(true)), vec![plz(I::int(2))]),
             ],
-            falseblock: vec![I::int(3)],
-        };
+            falseblock: vec![plz(I::int(3))],
+        });
         let res = lower_expr(&input);
         assert_eq!(&res, &output);
     }

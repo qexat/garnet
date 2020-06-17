@@ -169,16 +169,24 @@ fn type_matches(t1: &TypeSym, t2: &TypeSym) -> bool {
     t1 == t2
 }
 
-pub fn typecheck(cx: &mut Cx, ir: &ir::Ir) -> Result<(), TypeError> {
+pub fn typecheck(cx: &mut Cx, ir: ir::Ir<()>) -> Result<ir::Ir<TypeSym>, TypeError> {
     let symtbl = &mut Symtbl::new();
-    for decl in ir.decls.iter() {
-        typecheck_decl(cx, symtbl, decl)?;
-    }
-    Ok(())
+    let checked_decls = ir
+        .decls
+        .into_iter()
+        .map(|decl| typecheck_decl(cx, symtbl, decl))
+        .collect::<Result<Vec<ir::Decl<TypeSym>>, TypeError>>()?;
+    Ok(ir::Ir {
+        decls: checked_decls,
+    })
 }
 
 /// Typechecks a single decl
-pub fn typecheck_decl(cx: &mut Cx, symtbl: &mut Symtbl, decl: &ir::Decl) -> Result<(), TypeError> {
+pub fn typecheck_decl(
+    cx: &mut Cx,
+    symtbl: &mut Symtbl,
+    decl: ir::Decl<()>,
+) -> Result<ir::Decl<TypeSym>, TypeError> {
     match decl {
         ir::Decl::Function {
             name,
@@ -198,12 +206,14 @@ pub fn typecheck_decl(cx: &mut Cx, symtbl: &mut Symtbl, decl: &ir::Decl) -> Resu
             //
             // Oh gods, what in the name of Eris do we do if there's
             // a return statement here?
-            let last_expr_type = typecheck_exprs(cx, symtbl, body)?;
+            let typechecked_exprs = typecheck2_exprs(cx, symtbl, body)?;
+            // TODO: This only works if there are no return statements.
+            let last_expr_type = last_type_of(cx, &typechecked_exprs);
 
             if !type_matches(&signature.rettype, &last_expr_type) {
                 let msg = format!(
                     "Function {} returns {} but should return {}",
-                    cx.fetch(*name),
+                    cx.fetch(name),
                     cx.fetch_type(last_expr_type).get_name(),
                     cx.fetch_type(signature.rettype).get_name(),
                 );
@@ -211,16 +221,25 @@ pub fn typecheck_decl(cx: &mut Cx, symtbl: &mut Symtbl, decl: &ir::Decl) -> Resu
             }
 
             symtbl.pop_scope();
+            Ok(ir::Decl::Function {
+                name,
+                signature,
+                body: typechecked_exprs,
+            })
         }
         ir::Decl::Const {
             name,
             typename,
-            init: _,
+            init,
         } => {
-            symtbl.add_var(*name, typename);
+            symtbl.add_var(name, &typename);
+            Ok(ir::Decl::Const {
+                name,
+                typename,
+                init: typecheck2_expr(cx, symtbl, init)?,
+            })
         }
     }
-    Ok(())
 }
 
 /// Typecheck a vec of expr's and return the type of the last one.
