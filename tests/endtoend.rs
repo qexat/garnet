@@ -218,3 +218,10 @@ fn parse_and_compile_fn2() {
     assert_eq!(eval_program2(src, 1, 4), 5);
     assert_eq!(eval_program2(src, 0, 4), 6);
 }
+
+#[should_panic]
+#[test]
+fn omg_typechecking_works() {
+    let src = r#"fn test(x: Bool, y: I32): Bool = if x then true else y+2 end end"#;
+    assert_eq!(eval_program2(src, 1, 4), 5);
+}
