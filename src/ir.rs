@@ -85,6 +85,133 @@ impl Expr {
     }
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct TypedExpr<T> {
+    /// type
+    pub t: T,
+    /// expression
+    pub e: Expr2<T>,
+}
+
+impl<T> TypedExpr<T> {
+    pub fn map<T2>(self, new_t: T2) -> TypedExpr<T2>
+    where
+        T2: Copy,
+    {
+        TypedExpr {
+            t: new_t,
+            e: self.e.map(new_t),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum Expr2<T> {
+    Lit {
+        val: Literal,
+    },
+    Var {
+        name: VarSym,
+    },
+    BinOp {
+        op: BOp,
+        lhs: Box<TypedExpr<T>>,
+        rhs: Box<TypedExpr<T>>,
+    },
+    UniOp {
+        op: UOp,
+        rhs: Box<TypedExpr<T>>,
+    },
+    Block {
+        body: Vec<TypedExpr<T>>,
+    },
+    Let {
+        varname: VarSym,
+        typename: TypeSym,
+        init: Box<TypedExpr<T>>,
+    },
+    If {
+        cases: Vec<(TypedExpr<T>, Vec<TypedExpr<T>>)>,
+        falseblock: Vec<TypedExpr<T>>,
+    },
+    Loop {
+        body: Vec<TypedExpr<T>>,
+    },
+    Lambda {
+        signature: Signature,
+        body: Vec<TypedExpr<T>>,
+    },
+    Funcall {
+        func: Box<TypedExpr<T>>,
+        params: Vec<TypedExpr<T>>,
+    },
+    Break,
+    Return {
+        retval: Box<TypedExpr<T>>,
+    },
+}
+
+impl<T> Expr2<T> {
+    pub fn map<T2>(self, new_t: T2) -> Expr2<T2>
+    where
+        T2: Copy,
+    {
+        use Expr2 as E;
+        let map_vec =
+            |body: Vec<TypedExpr<T>>| body.into_iter().map(|e| TypedExpr::map(e, new_t)).collect();
+        match self {
+            E::Lit { val } => E::Lit { val },
+            E::Var { name } => E::Var { name },
+            E::BinOp { op, lhs, rhs } => E::BinOp {
+                op,
+                lhs: Box::new(lhs.map(new_t)),
+                rhs: Box::new(rhs.map(new_t)),
+            },
+            E::UniOp { op, rhs } => E::UniOp {
+                op,
+                rhs: Box::new(rhs.map(new_t)),
+            },
+            E::Block { body } => E::Block {
+                body: map_vec(body),
+            },
+            E::Let {
+                varname,
+                typename,
+                init,
+            } => E::Let {
+                varname,
+                typename,
+                init: Box::new(init.map(new_t)),
+            },
+            E::If { cases, falseblock } => {
+                let new_cases = cases
+                    .into_iter()
+                    .map(|(c, bod)| (c.map(new_t), map_vec(bod)))
+                    .collect();
+                E::If {
+                    cases: new_cases,
+                    falseblock: map_vec(falseblock),
+                }
+            }
+            E::Loop { body } => E::Loop {
+                body: map_vec(body),
+            },
+            E::Lambda { signature, body } => E::Lambda {
+                signature,
+                body: map_vec(body),
+            },
+            E::Funcall { func, params } => E::Funcall {
+                func: Box::new(func.map(new_t)),
+                params: map_vec(params),
+            },
+            E::Break => E::Break,
+            E::Return { retval } => E::Return {
+                retval: Box::new(retval.map(new_t)),
+            },
+        }
+    }
+}
+
 /// A top-level declaration in the source file.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Decl {
