@@ -200,7 +200,7 @@ fn compile_expr(
     instrs: &mut w::InstrSeqBuilder,
     expr: &ir::TypedExpr<TypeSym>,
 ) -> usize {
-    use ir::Expr2 as E;
+    use ir::Expr as E;
     use ir::*;
     match &expr.e {
         E::Lit { val } => match val {
@@ -427,7 +427,7 @@ mod tests {
     use walrus as w;
 
     use crate::backend::*;
-    use crate::ir::{self, plz, Expr2 as E};
+    use crate::ir::{self, plz, Expr as E};
 
     /// Test compiling a let expr and var lookup
     #[test]
@@ -458,7 +458,7 @@ mod tests {
                 typename: i32_t,
                 init: Box::new(ir::TypedExpr {
                     t: i32_t,
-                    e: ir::Expr2::int(9),
+                    e: ir::Expr::int(9),
                 }),
             },
         };
