@@ -239,7 +239,10 @@ Things that I think we CAN define context for:
    host system to produce an error.
  * Reading uninitialized data should be a compile-time error.  Manually
    eliding initialization for performance reasons just means your
-   compiler isn't good enough at avoiding it itself.
+   compiler isn't good enough at avoiding it itself.  A good
+   middle-ground might be some setup where in debug mode you can have
+   runtime checks for reading uninitialized data before it's been
+   written.
  * Order of evaluation of function arguments.
 
 Here's a list of things that I don't see a way of defining in any
