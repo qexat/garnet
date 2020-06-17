@@ -15,29 +15,28 @@ use crate::*;
 /// Backend context
 struct BCx<'a> {
     cx: &'a Cx,
-    m: RefCell<w::Module>,
+    m: w::Module,
 }
 
 impl<'a> BCx<'a> {
     pub fn new(cx: &'a Cx) -> BCx<'a> {
         let config = w::ModuleConfig::new();
-        let m = RefCell::new(w::Module::with_config(config));
+        let m = w::Module::with_config(config);
         Self { cx, m }
     }
 }
 
 /// Entry point to turn the IR into a compiled wasm module
 pub fn output(cx: &Cx, program: &ir::Ir<TypeSym>) -> Vec<u8> {
-    let bcx = BCx::new(cx);
+    let bcx = &mut BCx::new(cx);
     for decl in program.decls.iter() {
-        compile_decl(&bcx, decl);
+        compile_decl(bcx, decl);
     }
-    let mut m = bcx.m.borrow_mut();
     //m.emit_wasm_file("/home/icefox/test.wasm");
-    m.emit_wasm()
+    bcx.m.emit_wasm()
 }
 
-fn compile_decl(bcx: &BCx, decl: &ir::Decl<TypeSym>) {
+fn compile_decl(bcx: &mut BCx, decl: &ir::Decl<TypeSym>) {
     use ir::*;
     match decl {
         Decl::Function {
@@ -47,7 +46,7 @@ fn compile_decl(bcx: &BCx, decl: &ir::Decl<TypeSym>) {
         } => {
             let function_id = compile_function(bcx, signature, body);
             let name = bcx.cx.fetch(*name);
-            bcx.m.borrow_mut().exports.add(&name, function_id);
+            bcx.m.exports.add(&name, function_id);
             /*
             let sig = function_signature(cx, m, signature);
             // TODO For now we don't try to dedupe types, just add 'em as redundantly
@@ -81,7 +80,7 @@ fn compile_decl(bcx: &BCx, decl: &ir::Decl<TypeSym>) {
     }
 }
 
-fn function_signature(bcx: &BCx, sig: &ir::Signature) -> (Vec<w::ValType>, Vec<w::ValType>) {
+fn function_signature(bcx: &mut BCx, sig: &ir::Signature) -> (Vec<w::ValType>, Vec<w::ValType>) {
     let params: Vec<w::ValType> = sig
         .params
         .iter()
@@ -127,17 +126,18 @@ impl cmp::Eq for LocalVar {}
 
 /// Compile a function, specifically -- wasm needs to know about its params and such.
 fn compile_function(
-    bcx: &BCx,
+    bcx: &mut BCx,
     sig: &ir::Signature,
     body: &[ir::TypedExpr<TypeSym>],
 ) -> w::FunctionId {
     let (paramtype, rettype) = function_signature(bcx, sig);
-    let mut fb = w::FunctionBuilder::new(&mut bcx.m.borrow_mut().types, &paramtype, &rettype);
+    let mut fb = w::FunctionBuilder::new(&mut bcx.m.types, &paramtype, &rettype);
     // A simple, scope-less symbol table.
+    // TODO Wait what if two vars have the same name
     let mut locals: HashMap<VarSym, LocalVar> = HashMap::new();
     // add params
     for (pname, ptype) in sig.params.iter() {
-        let idx = bcx.m.borrow_mut().locals.add(compile_typesym(bcx, *ptype));
+        let idx = bcx.m.locals.add(compile_typesym(bcx, *ptype));
         let p = LocalVar {
             local_idx: idx,
             wasm_type: compile_typesym(bcx, *ptype),
@@ -145,17 +145,16 @@ fn compile_function(
         locals.insert(*pname, p);
     }
     // add locals
-    //bcx.m.locals.add();
     let instrs = &mut fb.func_body();
     let _ = compile_exprs(bcx, &mut locals, instrs, &body);
-    fb.finish(vec![], &mut bcx.m.borrow_mut().funcs)
+    fb.finish(vec![], &mut bcx.m.funcs)
 }
 
 /// Compile multiple exprs, making sure they don't leave unused
 /// values on the stack by adding drop's as necessary.
 /// Returns the number of values left on the stack at the end.
 fn compile_exprs(
-    bcx: &BCx,
+    bcx: &mut BCx,
     locals: &mut HashMap<VarSym, LocalVar>,
     instrs: &mut w::InstrSeqBuilder,
     exprs: &[ir::TypedExpr<TypeSym>],
@@ -195,7 +194,7 @@ fn compile_exprs(
 /// Returns how many values it leaves on the stack, so we know how many
 /// values to get rid of if the return val is ignored.
 fn compile_expr(
-    bcx: &BCx,
+    bcx: &mut BCx,
     locals: &mut HashMap<VarSym, LocalVar>,
     instrs: &mut w::InstrSeqBuilder,
     expr: &ir::TypedExpr<TypeSym>,
@@ -264,7 +263,7 @@ fn compile_expr(
         } => {
             // Declare local var storage
             let wasm_type = compile_typesym(bcx, *typename);
-            let local_idx = bcx.m.borrow_mut().locals.add(wasm_type);
+            let local_idx = bcx.m.locals.add(wasm_type);
             let l = LocalVar {
                 local_idx,
                 wasm_type,
@@ -313,7 +312,7 @@ fn compile_expr(
             // generate the code for the if-part
             // if there's another if-case, recurse.
             fn compile_ifcase(
-                bcx: &BCx,
+                bcx: &mut BCx,
                 locals: &mut HashMap<VarSym, LocalVar>,
                 cases: &[(TypedExpr<TypeSym>, Vec<TypedExpr<TypeSym>>)],
                 instrs: &mut w::InstrSeqBuilder,
@@ -339,14 +338,17 @@ fn compile_expr(
                     let (test, thenblock) = &cases[0];
                     assert_eq!(1, compile_expr(bcx, locals, instrs, &test));
                     let grr = RefCell::new(locals);
+                    let bcx = RefCell::new(bcx);
                     instrs.if_else(
                         w::ValType::I32, // TODO
                         |then| {
                             let locals = &mut grr.borrow_mut();
+                            let bcx = &mut bcx.borrow_mut();
                             compile_exprs(bcx, locals, then, &thenblock);
                         },
                         |else_| {
                             let locals = &mut grr.borrow_mut();
+                            let bcx = &mut bcx.borrow_mut();
                             compile_exprs(bcx, locals, else_, falseblock);
                         },
                     );
@@ -355,14 +357,17 @@ fn compile_expr(
                     let (test, thenblock) = &cases[0];
                     assert_eq!(1, compile_expr(bcx, locals, instrs, &test));
                     let grr = RefCell::new(locals);
+                    let bcx = RefCell::new(bcx);
                     instrs.if_else(
                         w::ValType::I32, // TODO
                         |then| {
                             let locals = &mut grr.borrow_mut();
+                            let bcx = &mut bcx.borrow_mut();
                             compile_exprs(bcx, locals, then, &thenblock);
                         },
                         |else_| {
                             let locals = &mut grr.borrow_mut();
+                            let bcx = &mut bcx.borrow_mut();
                             compile_ifcase(bcx, locals, &cases[1..], else_, falseblock);
                         },
                     );
@@ -446,7 +451,7 @@ mod tests {
                 rettype: i32_t,
             },
         );
-        let mut fb = w::FunctionBuilder::new(&mut bcx.m.borrow_mut().types, &paramtype, &rettype);
+        let mut fb = w::FunctionBuilder::new(&mut bcx.m.types, &paramtype, &rettype);
         let instrs = &mut fb.func_body();
         let locals = &mut HashMap::new();
 
