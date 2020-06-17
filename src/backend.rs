@@ -24,17 +24,6 @@ impl<'a> BCx<'a> {
         let m = w::Module::with_config(config);
         Self { cx, m }
     }
-
-    fn get_local_func(&mut self, f: w::FunctionId) -> w::InstrSeqBuilder {
-        let defined_func = self.m.funcs.get_mut(f);
-        match &mut defined_func.kind {
-            w::FunctionKind::Local(lfunc) => {
-                let fb = lfunc.builder_mut();
-                fb.func_body()
-            }
-            _ => unreachable!("We just made a function and it's not what we made!"),
-        }
-    }
 }
 
 /// Entry point to turn the IR into a compiled wasm module
@@ -79,9 +68,9 @@ fn function_signature(bcx: &mut BCx, sig: &ir::Signature) -> (Vec<w::ValType>, V
     let params: Vec<w::ValType> = sig
         .params
         .iter()
-        .map(|(_varsym, typesym)| compile_typesym(bcx, *typesym))
+        .map(|(_varsym, typesym)| compile_typesym(&bcx.cx, *typesym))
         .collect();
-    let rettype = compile_typesym(bcx, sig.rettype);
+    let rettype = compile_typesym(&bcx.cx, sig.rettype);
     (params, vec![rettype])
 }
 #[derive(Copy, Clone, Debug, PartialEq)]
@@ -126,48 +115,45 @@ fn compile_function(
     body: &[ir::TypedExpr<TypeSym>],
 ) -> w::FunctionId {
     let (paramtype, rettype) = function_signature(bcx, sig);
-    let fb = w::FunctionBuilder::new(&mut bcx.m.types, &paramtype, &rettype);
+    let mod_locals = &mut bcx.m.locals;
+
     // A simple, scope-less symbol table.
     // TODO Wait what if two vars have the same name
-    let mut locals: HashMap<VarSym, LocalVar> = HashMap::new();
+    let locals: &mut HashMap<VarSym, LocalVar> = &mut HashMap::new();
     // add params
     let mut fn_params = vec![];
     for (pname, ptype) in sig.params.iter() {
-        let idx = bcx.m.locals.add(compile_typesym(bcx, *ptype));
+        let idx = mod_locals.add(compile_typesym(&bcx.cx, *ptype));
         fn_params.push(idx);
         let p = LocalVar {
             local_idx: idx,
-            wasm_type: compile_typesym(bcx, *ptype),
+            wasm_type: compile_typesym(&bcx.cx, *ptype),
         };
         locals.insert(*pname, p);
     }
-    // add locals
     // So we have to create the function now, to get the FunctionId
     // and know what to call in case there's a recursion or such.
+    let fb = w::FunctionBuilder::new(&mut bcx.m.types, &paramtype, &rettype);
     let f_idx = fb.finish(fn_params, &mut bcx.m.funcs);
-    compile_exprs(bcx, &mut locals, f_idx, &body);
-    /*let defined_func = bcx.m.funcs.get_mut(f_idx);
+    let defined_func = bcx.m.funcs.get_mut(f_idx);
     match &mut defined_func.kind {
         w::FunctionKind::Local(lfunc) => {
-            let fb = lfunc.builder_mut();
-            let instrs = &mut fb.func_body();
-            //compile_exprs(bcx, &mut locals, instrs, &body);
+            let instrs = &mut lfunc.builder_mut().func_body();
+            let _ = compile_exprs(&bcx.cx, locals, mod_locals, instrs, &body);
         }
-        _ => unreachable!("We just made a function and it's not what we made!"),
-    };
-    */
+        _ => unreachable!("Can't happen!"),
+    }
     f_idx
-    //fb.finish(fn_params, &mut bcx.m.funcs)
 }
 
 /// Compile multiple exprs, making sure they don't leave unused
 /// values on the stack by adding drop's as necessary.
 /// Returns the number of values left on the stack at the end.
 fn compile_exprs(
-    bcx: &mut BCx,
+    cx: &Cx,
     locals: &mut HashMap<VarSym, LocalVar>,
-    //instrs: &mut w::InstrSeqBuilder,
-    function: w::FunctionId,
+    mod_locals: &mut w::ModuleLocals,
+    instrs: &mut w::InstrSeqBuilder,
     exprs: &[ir::TypedExpr<TypeSym>],
 ) {
     // The trick here is that wasm doesn't let you leave stuff on
@@ -185,21 +171,20 @@ fn compile_exprs(
     let l = exprs.len();
     match l {
         0 => (),
-        1 => compile_expr(bcx, locals, function, &exprs[0]),
+        1 => compile_expr(cx, locals, mod_locals, instrs, &exprs[0]),
         l => {
             // Compile and insert drop instructions after each
             // expr
             let exprs_prefix = &exprs[..l - 1];
             exprs_prefix.iter().for_each(|expr| {
-                compile_expr(bcx, locals, function, expr);
-                let x = stacksize(&bcx.cx, expr.t);
-                let mut instrs = bcx.get_local_func(function);
+                compile_expr(cx, locals, mod_locals, instrs, expr);
+                let x = stacksize(&cx, expr.t);
                 for _ in 0..x {
                     instrs.drop();
                 }
             });
             // Then compile the last one.
-            compile_expr(bcx, locals, function, &exprs[l - 1]);
+            compile_expr(cx, locals, mod_locals, instrs, &exprs[l - 1]);
         }
     }
 }
@@ -209,10 +194,10 @@ fn compile_exprs(
 /// Returns how many values it leaves on the stack, so we know how many
 /// values to get rid of if the return val is ignored.
 fn compile_expr(
-    bcx: &mut BCx,
+    cx: &Cx,
     locals: &mut HashMap<VarSym, LocalVar>,
-    function: w::FunctionId,
-    //instrs: &mut w::InstrSeqBuilder,
+    mod_locals: &mut w::ModuleLocals,
+    instrs: &mut w::InstrSeqBuilder,
     expr: &ir::TypedExpr<TypeSym>,
 ) {
     use ir::Expr as E;
@@ -221,11 +206,9 @@ fn compile_expr(
         E::Lit { val } => match val {
             Literal::Integer(i) => {
                 assert!(*i < (std::i32::MAX as i64));
-                let mut instrs = bcx.get_local_func(function);
                 instrs.i32_const(*i as i32);
             }
             Literal::Bool(b) => {
-                let mut instrs = bcx.get_local_func(function);
                 instrs.i32_const(if *b { 1 } else { 0 });
             }
             // noop
@@ -235,7 +218,6 @@ fn compile_expr(
             let ldef = locals
                 .get(name)
                 .expect(&format!("Unknown local {:?}; should never happen", name));
-            let mut instrs = bcx.get_local_func(function);
             instrs.local_get(ldef.local_idx);
         }
         E::BinOp { op, lhs, rhs } => {
@@ -253,32 +235,25 @@ fn compile_expr(
                     ir::BOp::Mod => w::ir::BinaryOp::I32RemS,
                 }
             }
-            compile_expr(bcx, locals, function, lhs);
-            compile_expr(bcx, locals, function, rhs);
+            compile_expr(cx, locals, mod_locals, instrs, lhs);
+            compile_expr(cx, locals, mod_locals, instrs, rhs);
             let op = compile_binop(op);
-            let mut instrs = bcx.get_local_func(function);
             instrs.binop(op);
         }
         E::UniOp { op, rhs } => match op {
             // We just implement this as 0 - thing.
             // By definition this only works on signed integers anyway.
             ir::UOp::Neg => {
-                {
-                    let mut instrs = bcx.get_local_func(function);
-                    instrs.i32_const(0);
-                }
-                compile_expr(bcx, locals, function, rhs);
-                {
-                    let mut instrs = bcx.get_local_func(function);
-                    instrs.binop(w::ir::BinaryOp::I32Sub);
-                }
+                instrs.i32_const(0);
+                compile_expr(cx, locals, mod_locals, instrs, rhs);
+                instrs.binop(w::ir::BinaryOp::I32Sub);
             }
         },
         // This is pretty much just a list of expr's by now.
         // However, functions/etc must not leave extra values
         // on the stack, so this needs to insert drop's as appropriate
         E::Block { body } => {
-            compile_exprs(bcx, locals, function, body);
+            compile_exprs(cx, locals, mod_locals, instrs, body);
         }
         E::Let {
             varname,
@@ -286,36 +261,34 @@ fn compile_expr(
             init,
         } => {
             // Declare local var storage
-            let wasm_type = compile_typesym(bcx, *typename);
-            let local_idx = bcx.m.locals.add(wasm_type);
+            let wasm_type = compile_typesym(cx, *typename);
+            let local_idx = mod_locals.add(wasm_type);
             let l = LocalVar {
                 local_idx,
                 wasm_type,
             };
             locals.insert(*varname, l);
             // Compile init expression
-            compile_expr(bcx, locals, function, init);
+            compile_expr(cx, locals, mod_locals, instrs, init);
             // Store result of expression
-            let mut instrs = bcx.get_local_func(function);
             instrs.local_set(local_idx);
         }
         E::If { cases, falseblock } => {
-            compile_ifcase(bcx, locals, expr.t, cases, function, falseblock);
+            compile_ifcase(cx, locals, mod_locals, cases, instrs, falseblock);
         }
 
         E::Loop { body } => todo!(),
         E::Lambda { signature, body } => todo!(),
         E::Funcall { func, params } => {
             for param in params {
-                compile_expr(bcx, locals, function, param);
+                compile_expr(cx, locals, mod_locals, instrs, param);
             }
             //compile_expr(
             todo!()
         }
         E::Break => todo!(),
         E::Return { retval } => {
-            compile_expr(bcx, locals, function, retval);
-            let mut instrs = bcx.get_local_func(function);
+            compile_expr(cx, locals, mod_locals, instrs, retval);
             instrs.return_();
         }
     };
@@ -328,7 +301,7 @@ fn compile_expr(
 // have those yet, so.
 fn unheck_if(ifcases: &[ast::IfCase], elsecase: &[ast::Expr]) -> Expr {
     match ifcases {
-        [] => unreachable!("If statement with no condition; should never happen"),
+        [] => panic!("If statement with no condition; should never happen"),
         [single] => {
             let nelsecase = lower_exprs(elsecase);
             If {
@@ -355,23 +328,21 @@ unheck_if(cases.as_slice(), falseblock.as_slice())
 /// generate the code for the if-part
 /// if there's another if-case, recurse.
 fn compile_ifcase(
-    bcx: &mut BCx,
+    cx: &Cx,
     locals: &mut HashMap<VarSym, LocalVar>,
-    t: TypeSym,
+    mod_locals: &mut w::ModuleLocals,
     cases: &[(ir::TypedExpr<TypeSym>, Vec<ir::TypedExpr<TypeSym>>)],
-    //instrs: &mut w::InstrSeqBuilder,
-    function: w::FunctionId,
+    instrs: &mut w::InstrSeqBuilder,
     falseblock: &[ir::TypedExpr<TypeSym>],
 ) {
     assert_ne!(cases.len(), 0);
     // First off we just compile the if test,
     // regardless of what.
     let (test, thenblock) = &cases[0];
-    compile_expr(bcx, locals, function, &test);
-    let rettype = compile_typesym(&bcx, t);
-    let mut instrs = bcx.get_local_func(function);
+    compile_expr(cx, locals, mod_locals, instrs, &test);
+    let rettype = compile_typesym(&cx, test.t);
     let grr = RefCell::new(locals);
-    let bcx = RefCell::new(bcx);
+    let mgrr = RefCell::new(mod_locals);
 
     // The redundancy here is kinda screwy, trying to refactor
     // out the closures leads to weird lifetime errors.
@@ -381,13 +352,13 @@ fn compile_ifcase(
             rettype,
             |then| {
                 let locals = &mut grr.borrow_mut();
-                let bcx = &mut bcx.borrow_mut();
-                compile_exprs(bcx, locals, then, &thenblock);
+                let mod_locals = &mut mgrr.borrow_mut();
+                compile_exprs(cx, locals, mod_locals, then, &thenblock);
             },
             |else_| {
                 let locals = &mut grr.borrow_mut();
-                let bcx = &mut bcx.borrow_mut();
-                compile_exprs(bcx, locals, else_, falseblock);
+                let mod_locals = &mut mgrr.borrow_mut();
+                compile_exprs(cx, locals, mod_locals, else_, falseblock);
             },
         );
     } else {
@@ -396,21 +367,21 @@ fn compile_ifcase(
             rettype,
             |then| {
                 let locals = &mut grr.borrow_mut();
-                let bcx = &mut bcx.borrow_mut();
-                compile_exprs(bcx, locals, then, &thenblock);
+                let mod_locals = &mut mgrr.borrow_mut();
+                compile_exprs(cx, locals, mod_locals, then, &thenblock);
             },
             |else_| {
                 let locals = &mut grr.borrow_mut();
-                let bcx = &mut bcx.borrow_mut();
-                compile_ifcase(bcx, locals, t, &cases[1..], else_, falseblock);
+                let mod_locals = &mut mgrr.borrow_mut();
+                compile_ifcase(cx, locals, mod_locals, &cases[1..], else_, falseblock);
             },
         );
     }
 }
 
-fn compile_typesym(bcx: &BCx, t: TypeSym) -> w::ValType {
-    let tdef = bcx.cx.fetch_type(t);
-    compile_type(bcx.cx, &tdef)
+fn compile_typesym(cx: &Cx, t: TypeSym) -> w::ValType {
+    let tdef = cx.fetch_type(t);
+    compile_type(cx, &tdef)
 }
 
 fn compile_type(_cx: &Cx, t: &TypeDef) -> w::ValType {
@@ -467,6 +438,7 @@ mod tests {
                 rettype: i32_t,
             },
         );
+        let mod_locals = &mut bcx.m.locals;
         let mut fb = w::FunctionBuilder::new(&mut bcx.m.types, &paramtype, &rettype);
         let instrs = &mut fb.func_body();
         let locals = &mut HashMap::new();
@@ -483,7 +455,7 @@ mod tests {
                 }),
             },
         };
-        compile_expr(bcx, locals, instrs, &expr);
+        compile_expr(cx, locals, mod_locals, instrs, &expr);
 
         assert_eq!(locals.len(), 1);
         assert!(locals.get(&varname).is_some());
@@ -493,7 +465,7 @@ mod tests {
             t: i32_t,
             e: E::Var { name: varname },
         };
-        compile_expr(bcx, locals, instrs, &expr);
+        compile_expr(cx, locals, mod_locals, instrs, &expr);
         /*
         assert_eq!(
             instrs.instrs()[0].0,
