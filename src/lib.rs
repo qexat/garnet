@@ -150,6 +150,7 @@ pub fn compile(src: &str) -> Vec<u8> {
         parser.parse()
     };
     let ir = ir::lower(&ast);
-    let wasm = backend::output(cx, &ir);
+    let checked = typeck::typecheck(cx, ir).unwrap();
+    let wasm = backend::output(cx, &checked);
     wasm
 }

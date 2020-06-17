@@ -27,17 +27,17 @@ impl<'a> BCx<'a> {
 }
 
 /// Entry point to turn the IR into a compiled wasm module
-pub fn output(cx: &Cx, program: &ir::Ir) -> Vec<u8> {
+pub fn output(cx: &Cx, program: &ir::Ir<TypeSym>) -> Vec<u8> {
     let bcx = BCx::new(cx);
     for decl in program.decls.iter() {
         compile_decl(&bcx, decl);
     }
     let mut m = bcx.m.borrow_mut();
-    m.emit_wasm_file("/home/icefox/test.wasm");
+    //m.emit_wasm_file("/home/icefox/test.wasm");
     m.emit_wasm()
 }
 
-fn compile_decl(bcx: &BCx, decl: &ir::Decl) {
+fn compile_decl(bcx: &BCx, decl: &ir::Decl<TypeSym>) {
     use ir::*;
     match decl {
         Decl::Function {
@@ -126,7 +126,11 @@ impl cmp::Ord for LocalVar {
 impl cmp::Eq for LocalVar {}
 
 /// Compile a function, specifically -- wasm needs to know about its params and such.
-fn compile_function(bcx: &BCx, sig: &ir::Signature, body: &[ir::Expr]) -> w::FunctionId {
+fn compile_function(
+    bcx: &BCx,
+    sig: &ir::Signature,
+    body: &[ir::TypedExpr<TypeSym>],
+) -> w::FunctionId {
     let (paramtype, rettype) = function_signature(bcx, sig);
     let mut fb = w::FunctionBuilder::new(&mut bcx.m.borrow_mut().types, &paramtype, &rettype);
     // A simple, scope-less symbol table.
@@ -154,7 +158,7 @@ fn compile_exprs(
     bcx: &BCx,
     locals: &mut HashMap<VarSym, LocalVar>,
     instrs: &mut w::InstrSeqBuilder,
-    exprs: &[ir::Expr],
+    exprs: &[ir::TypedExpr<TypeSym>],
 ) -> usize {
     // The trick here is that wasm doesn't let you leave stuff on
     // the stack and just ignore it forevermore.  Like, functions must
@@ -194,11 +198,11 @@ fn compile_expr(
     bcx: &BCx,
     locals: &mut HashMap<VarSym, LocalVar>,
     instrs: &mut w::InstrSeqBuilder,
-    expr: &ir::Expr,
+    expr: &ir::TypedExpr<TypeSym>,
 ) -> usize {
-    use ir::Expr as E;
+    use ir::Expr2 as E;
     use ir::*;
-    match expr {
+    match &expr.e {
         E::Lit { val } => match val {
             Literal::Integer(i) => {
                 assert!(*i < (std::i32::MAX as i64));
@@ -311,9 +315,9 @@ fn compile_expr(
             fn compile_ifcase(
                 bcx: &BCx,
                 locals: &mut HashMap<VarSym, LocalVar>,
-                cases: &[(Expr, Vec<Expr>)],
+                cases: &[(TypedExpr<TypeSym>, Vec<TypedExpr<TypeSym>>)],
                 instrs: &mut w::InstrSeqBuilder,
-                falseblock: &[Expr],
+                falseblock: &[TypedExpr<TypeSym>],
             ) -> usize {
                 let mut return_count = 1;
                 assert!(cases.len() != 0);
@@ -391,10 +395,28 @@ fn compile_typesym(bcx: &BCx, t: TypeSym) -> w::ValType {
 fn compile_type(_cx: &Cx, t: &TypeDef) -> w::ValType {
     match t {
         TypeDef::SInt(4) => w::ValType::I32,
-        TypeDef::SInt(_) => panic!("TODO"),
+        TypeDef::SInt(_) => todo!(),
         TypeDef::Bool => w::ValType::I32,
-        TypeDef::Tuple(_) => panic!("Unimplemented"),
-        TypeDef::Lambda(_, _) => panic!("Unimplemented"),
+        TypeDef::Tuple(_) => todo!(),
+        TypeDef::Lambda(_, _) => todo!(),
+    }
+}
+
+/// The number of slots a type will consume when left on the wasm stack.
+/// Not the same as words used in memory.
+/// unit = 0
+/// bool = 1
+/// I32 = 1
+/// eventually, tuple >= 1
+fn stacksize(cx: &Cx, t: TypeSym) -> usize {
+    let tdef = cx.fetch_type(t);
+    match &*tdef {
+        TypeDef::SInt(4) => 1,
+        TypeDef::SInt(_) => todo!(),
+        TypeDef::Bool => 1,
+        TypeDef::Tuple(t) if t.len() == 0 => 0,
+        TypeDef::Tuple(_) => todo!(),
+        TypeDef::Lambda(_, _) => todo!(),
     }
 }
 
@@ -405,8 +427,7 @@ mod tests {
     use walrus as w;
 
     use crate::backend::*;
-    use crate::ir::Expr as E;
-    use crate::*;
+    use crate::ir::{self, plz, Expr2 as E};
 
     /// Test compiling a let expr and var lookup
     #[test]
@@ -430,10 +451,16 @@ mod tests {
         let locals = &mut HashMap::new();
 
         // Can we compile the let?
-        let expr = E::Let {
-            varname: varname,
-            typename: i32_t,
-            init: Box::new(ir::Expr::int(9)),
+        let expr = ir::TypedExpr {
+            t: i32_t,
+            e: E::Let {
+                varname: varname,
+                typename: i32_t,
+                init: Box::new(ir::TypedExpr {
+                    t: i32_t,
+                    e: ir::Expr2::int(9),
+                }),
+            },
         };
         assert_eq!(compile_expr(bcx, locals, instrs, &expr), 0);
 
@@ -441,7 +468,10 @@ mod tests {
         assert!(locals.get(&varname).is_some());
 
         // Can we then compile the var lookup?
-        let expr = E::Var { name: varname };
+        let expr = ir::TypedExpr {
+            t: i32_t,
+            e: E::Var { name: varname },
+        };
         assert_eq!(compile_expr(bcx, locals, instrs, &expr), 1);
         /*
         assert_eq!(
