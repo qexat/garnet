@@ -234,3 +234,11 @@ fn test(x: I32): I32 = foo(x+90) end
 "#;
     assert_eq!(eval_program1(src, 1), 92);
 }
+
+#[test]
+fn eeeeeeeeeeeeefib() {
+    let src = r#"
+fn test(x: I32): I32 = test(x+1) end
+"#;
+    assert_eq!(eval_program1(src, 1), 92);
+}
