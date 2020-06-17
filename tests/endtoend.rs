@@ -46,6 +46,13 @@ fn eval_program1(src: &str, input: i32) -> i32 {
     f(input).unwrap()
 }
 
+/// Same as eval_program1 but `test` takes 2 args.
+fn eval_program2(src: &str, i1: i32, i2: i32) -> i32 {
+    let wasm = garnet::compile(src);
+    let f = compile_wasm(&wasm).get2::<i32, i32, i32>().unwrap();
+    f(i1, i2).unwrap()
+}
+
 #[test]
 fn var_lookup() {
     let mut cx = garnet::Cx::new();
@@ -200,4 +207,14 @@ fn parse_and_compile_expr() {
     assert_eq!(eval_program1(src, 3), 3);
     let src = r#"fn test(x: I32): I32 = if true then x elseif false then 5 else 3 * 2 end end"#;
     assert_eq!(eval_program1(src, 3), 3);
+}
+
+#[test]
+fn parse_and_compile_fn2() {
+    let src = r#"fn test(x: I32, y: I32): I32 = x + y end"#;
+    assert_eq!(eval_program2(src, 3, 4), 7);
+
+    let src = r#"fn test(x: Bool, y: I32): I32 = if x then y+1 else y+2 end end"#;
+    assert_eq!(eval_program2(src, 1, 4), 5);
+    assert_eq!(eval_program2(src, 0, 4), 6);
 }

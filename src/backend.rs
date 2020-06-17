@@ -47,22 +47,6 @@ fn compile_decl(bcx: &mut BCx, decl: &ir::Decl<TypeSym>) {
             let function_id = compile_function(bcx, signature, body);
             let name = bcx.cx.fetch(*name);
             bcx.m.exports.add(&name, function_id);
-            /*
-            let sig = function_signature(cx, m, signature);
-            // TODO For now we don't try to dedupe types, just add 'em as redundantly
-            // as necessary.
-            let typesec_idx = m.types.len();
-            let funcsec_idx = m.functions.len();
-            let body = compile_function(cx, signature, body);
-
-            m.code.push(body);
-            m.types.push(sig);
-            m.functions.push(typesec_idx as u32);
-            m.exports.push(s::Export {
-                name: cx.fetch(*name).to_owned(),
-                desc: s::Desc::Function(funcsec_idx as u32),
-            });
-            */
         }
         Decl::Const {
             /*
@@ -136,8 +120,10 @@ fn compile_function(
     // TODO Wait what if two vars have the same name
     let mut locals: HashMap<VarSym, LocalVar> = HashMap::new();
     // add params
+    let mut fn_params = vec![];
     for (pname, ptype) in sig.params.iter() {
         let idx = bcx.m.locals.add(compile_typesym(bcx, *ptype));
+        fn_params.push(idx);
         let p = LocalVar {
             local_idx: idx,
             wasm_type: compile_typesym(bcx, *ptype),
@@ -147,7 +133,7 @@ fn compile_function(
     // add locals
     let instrs = &mut fb.func_body();
     let _ = compile_exprs(bcx, &mut locals, instrs, &body);
-    fb.finish(vec![], &mut bcx.m.funcs)
+    fb.finish(fn_params, &mut bcx.m.funcs)
 }
 
 /// Compile multiple exprs, making sure they don't leave unused
@@ -158,7 +144,7 @@ fn compile_exprs(
     locals: &mut HashMap<VarSym, LocalVar>,
     instrs: &mut w::InstrSeqBuilder,
     exprs: &[ir::TypedExpr<TypeSym>],
-) -> usize {
+) {
     // The trick here is that wasm doesn't let you leave stuff on
     // the stack and just ignore it forevermore.  Like, functions must
     // have only their return value on the stack when they return,
@@ -167,24 +153,27 @@ fn compile_exprs(
     //
     // I considered making this a step in the IR that basically turns
     // every `foo(); bar()` into `ignore(foo()); bar()` explicitly,
-    // but how hard to ignore it is dependent on the return type and
-    // so doing it here seems easier.  IR doesn't explicitly store
-    // the return type of each expression... though maybe it should.
+    // but it seems easier for now to just drop any values left by
+    // any but the last expr.
     //
-    // Easier to do is just drop all but the results of the last expr.
+    // TODO: Revisit this sometime.
     let l = exprs.len();
     match l {
-        0 => 0,
+        0 => (),
         1 => compile_expr(bcx, locals, instrs, &exprs[0]),
         l => {
+            // Compile and insert drop instructions after each
+            // expr
             let exprs_prefix = &exprs[..l - 1];
             exprs_prefix.iter().for_each(|expr| {
-                let x = compile_expr(bcx, locals, instrs, expr);
+                compile_expr(bcx, locals, instrs, expr);
+                let x = stacksize(&bcx.cx, expr.t);
                 for _ in 0..x {
                     instrs.drop();
                 }
             });
-            compile_expr(bcx, locals, instrs, &exprs[l - 1])
+            // Then compile the last one.
+            compile_expr(bcx, locals, instrs, &exprs[l - 1]);
         }
     }
 }
@@ -198,7 +187,7 @@ fn compile_expr(
     locals: &mut HashMap<VarSym, LocalVar>,
     instrs: &mut w::InstrSeqBuilder,
     expr: &ir::TypedExpr<TypeSym>,
-) -> usize {
+) {
     use ir::Expr as E;
     use ir::*;
     match &expr.e {
@@ -206,20 +195,18 @@ fn compile_expr(
             Literal::Integer(i) => {
                 assert!(*i < (std::i32::MAX as i64));
                 instrs.i32_const(*i as i32);
-                1
             }
             Literal::Bool(b) => {
                 instrs.i32_const(if *b { 1 } else { 0 });
-                1
             }
-            Literal::Unit => 0,
+            // noop
+            Literal::Unit => (),
         },
         E::Var { name } => {
             let ldef = locals
                 .get(name)
                 .expect(&format!("Unknown local {:?}; should never happen", name));
             instrs.local_get(ldef.local_idx);
-            1
         }
         E::BinOp { op, lhs, rhs } => {
             // Currently we only have signed integers
@@ -236,26 +223,26 @@ fn compile_expr(
                     ir::BOp::Mod => w::ir::BinaryOp::I32RemS,
                 }
             }
-            assert_eq!(compile_expr(bcx, locals, instrs, lhs), 1);
-            assert_eq!(compile_expr(bcx, locals, instrs, rhs), 1);
+            compile_expr(bcx, locals, instrs, lhs);
+            compile_expr(bcx, locals, instrs, rhs);
             let op = compile_binop(op);
             instrs.binop(op);
-            1
         }
         E::UniOp { op, rhs } => match op {
             // We just implement this as 0 - thing.
             // By definition this only works on signed integers anyway.
             ir::UOp::Neg => {
                 instrs.i32_const(0);
-                assert_eq!(compile_expr(bcx, locals, instrs, rhs), 1);
+                compile_expr(bcx, locals, instrs, rhs);
                 instrs.binop(w::ir::BinaryOp::I32Sub);
-                1
             }
         },
         // This is pretty much just a list of expr's by now.
         // However, functions/etc must not leave extra values
         // on the stack, so this needs to insert drop's as appropriate
-        E::Block { body } => compile_exprs(bcx, locals, instrs, body),
+        E::Block { body } => {
+            compile_exprs(bcx, locals, instrs, body);
+        }
         E::Let {
             varname,
             typename,
@@ -273,8 +260,6 @@ fn compile_expr(
             compile_expr(bcx, locals, instrs, init);
             // Store result of expression
             instrs.local_set(local_idx);
-
-            0
         }
         /* Notes from earlier IR
         // Expand cases out into nested if ... else if ... else if ... else
@@ -304,9 +289,6 @@ fn compile_expr(
         unheck_if(cases.as_slice(), falseblock.as_slice())
         */
         E::If { cases, falseblock } => {
-            // TODO: We need to know what type the blocks return.  Hmm.
-            // Currently we only have two types, nothing and i32.
-
             // hokay, so.  For each case, we have to:
             // compile the test
             // generate the code for the if-part
@@ -317,26 +299,12 @@ fn compile_expr(
                 cases: &[(TypedExpr<TypeSym>, Vec<TypedExpr<TypeSym>>)],
                 instrs: &mut w::InstrSeqBuilder,
                 falseblock: &[TypedExpr<TypeSym>],
-            ) -> usize {
-                let mut return_count = 1;
-                assert!(cases.len() != 0);
-                /*
-                instrs.if_else(
-                    None, // TODO
-                    |then| {
-                        let locals = &mut grr1.borrow_mut();
-                        compile_exprs(bcx, locals, then, thenblock);
-                    },
-                    |else_| {
-                        let locals = &mut grr2.borrow_mut();
-                        compile_exprs(bcx, locals, else_, falseblock);
-                    },
-                );
-                */
+            ) {
+                assert_ne!(cases.len(), 0);
                 if cases.len() == 1 {
                     // We are done, just compile the test...
                     let (test, thenblock) = &cases[0];
-                    assert_eq!(1, compile_expr(bcx, locals, instrs, &test));
+                    compile_expr(bcx, locals, instrs, &test);
                     let grr = RefCell::new(locals);
                     let bcx = RefCell::new(bcx);
                     instrs.if_else(
@@ -355,7 +323,7 @@ fn compile_expr(
                 } else {
                     // Compile the first if case, then recurse with the rest of them
                     let (test, thenblock) = &cases[0];
-                    assert_eq!(1, compile_expr(bcx, locals, instrs, &test));
+                    compile_expr(bcx, locals, instrs, &test);
                     let grr = RefCell::new(locals);
                     let bcx = RefCell::new(bcx);
                     instrs.if_else(
@@ -372,24 +340,22 @@ fn compile_expr(
                         },
                     );
                 }
-                return_count
             }
-            compile_ifcase(bcx, locals, cases, instrs, falseblock)
+            compile_ifcase(bcx, locals, cases, instrs, falseblock);
         }
 
-        E::Loop { body } => 0,
-        E::Lambda { signature, body } => 0,
+        E::Loop { body } => todo!(),
+        E::Lambda { signature, body } => todo!(),
         E::Funcall { func, params } => {
             //assert_eq!(compile_expr(bcx, locals, instrs, func), 1);
-            0
+            todo!()
         }
-        E::Break => 0,
+        E::Break => todo!(),
         E::Return { retval } => {
             compile_expr(bcx, locals, instrs, retval);
             instrs.return_();
-            0
         }
-    }
+    };
 }
 
 fn compile_typesym(bcx: &BCx, t: TypeSym) -> w::ValType {
@@ -457,7 +423,7 @@ mod tests {
 
         // Can we compile the let?
         let expr = ir::TypedExpr {
-            t: i32_t,
+            t: unit_t,
             e: E::Let {
                 varname: varname,
                 typename: i32_t,
@@ -467,7 +433,7 @@ mod tests {
                 }),
             },
         };
-        assert_eq!(compile_expr(bcx, locals, instrs, &expr), 0);
+        compile_expr(bcx, locals, instrs, &expr);
 
         assert_eq!(locals.len(), 1);
         assert!(locals.get(&varname).is_some());
@@ -477,7 +443,7 @@ mod tests {
             t: i32_t,
             e: E::Var { name: varname },
         };
-        assert_eq!(compile_expr(bcx, locals, instrs, &expr), 1);
+        compile_expr(bcx, locals, instrs, &expr);
         /*
         assert_eq!(
             instrs.instrs()[0].0,
