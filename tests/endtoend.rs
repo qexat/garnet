@@ -225,3 +225,12 @@ fn omg_typechecking_works() {
     let src = r#"fn test(x: Bool, y: I32): Bool = if x then true else y+2 end end"#;
     assert_eq!(eval_program2(src, 1, 4), 5);
 }
+
+#[test]
+fn omg_funcalls_work() {
+    let src = r#"
+fn foo(x: I32): I32 = x + 1 end
+fn test(x: I32): I32 = foo(x+90) end
+"#;
+    assert_eq!(eval_program1(src, 1), 92);
+}
