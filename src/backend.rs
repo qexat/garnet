@@ -261,87 +261,8 @@ fn compile_expr(
             // Store result of expression
             instrs.local_set(local_idx);
         }
-        /* Notes from earlier IR
-        // Expand cases out into nested if ... else if ... else if ... else
-        // TODO: Really this should be lowered into a match expr, but we don't
-        // have those yet, so.
-        fn unheck_if(ifcases: &[ast::IfCase], elsecase: &[ast::Expr]) -> Expr {
-            match ifcases {
-                [] => panic!("If statement with no condition; should never happen"),
-                [single] => {
-                    let nelsecase = lower_exprs(elsecase);
-                    If {
-                        condition: Box::new(lower_expr(&*single.condition)),
-                        trueblock: lower_exprs(single.body.as_slice()),
-                        falseblock: nelsecase,
-                    }
-                }
-                [itm, rst @ ..] => {
-                    let res = unheck_if(rst, elsecase);
-                    If {
-                        condition: Box::new(lower_expr(&*itm.condition)),
-                        trueblock: lower_exprs(itm.body.as_slice()),
-                        falseblock: vec![res],
-                    }
-                }
-            }
-        }
-        unheck_if(cases.as_slice(), falseblock.as_slice())
-        */
         E::If { cases, falseblock } => {
-            // hokay, so.  For each case, we have to:
-            // compile the test
-            // generate the code for the if-part
-            // if there's another if-case, recurse.
-            fn compile_ifcase(
-                bcx: &mut BCx,
-                locals: &mut HashMap<VarSym, LocalVar>,
-                cases: &[(TypedExpr<TypeSym>, Vec<TypedExpr<TypeSym>>)],
-                instrs: &mut w::InstrSeqBuilder,
-                falseblock: &[TypedExpr<TypeSym>],
-            ) {
-                assert_ne!(cases.len(), 0);
-                if cases.len() == 1 {
-                    // We are done, just compile the test...
-                    let (test, thenblock) = &cases[0];
-                    compile_expr(bcx, locals, instrs, &test);
-                    let grr = RefCell::new(locals);
-                    let bcx = RefCell::new(bcx);
-                    instrs.if_else(
-                        w::ValType::I32, // TODO
-                        |then| {
-                            let locals = &mut grr.borrow_mut();
-                            let bcx = &mut bcx.borrow_mut();
-                            compile_exprs(bcx, locals, then, &thenblock);
-                        },
-                        |else_| {
-                            let locals = &mut grr.borrow_mut();
-                            let bcx = &mut bcx.borrow_mut();
-                            compile_exprs(bcx, locals, else_, falseblock);
-                        },
-                    );
-                } else {
-                    // Compile the first if case, then recurse with the rest of them
-                    let (test, thenblock) = &cases[0];
-                    compile_expr(bcx, locals, instrs, &test);
-                    let grr = RefCell::new(locals);
-                    let bcx = RefCell::new(bcx);
-                    instrs.if_else(
-                        w::ValType::I32, // TODO
-                        |then| {
-                            let locals = &mut grr.borrow_mut();
-                            let bcx = &mut bcx.borrow_mut();
-                            compile_exprs(bcx, locals, then, &thenblock);
-                        },
-                        |else_| {
-                            let locals = &mut grr.borrow_mut();
-                            let bcx = &mut bcx.borrow_mut();
-                            compile_ifcase(bcx, locals, &cases[1..], else_, falseblock);
-                        },
-                    );
-                }
-            }
-            compile_ifcase(bcx, locals, cases, instrs, falseblock);
+            compile_ifcase(bcx, locals, expr.t, cases, instrs, falseblock);
         }
 
         E::Loop { body } => todo!(),
@@ -356,6 +277,91 @@ fn compile_expr(
             instrs.return_();
         }
     };
+}
+
+/*
+// Notes from earlier IR
+// Expand cases out into nested if ... else if ... else if ... else
+// TODO: Really this should be lowered into a match expr, but we don't
+// have those yet, so.
+fn unheck_if(ifcases: &[ast::IfCase], elsecase: &[ast::Expr]) -> Expr {
+    match ifcases {
+        [] => panic!("If statement with no condition; should never happen"),
+        [single] => {
+            let nelsecase = lower_exprs(elsecase);
+            If {
+                condition: Box::new(lower_expr(&*single.condition)),
+                trueblock: lower_exprs(single.body.as_slice()),
+                falseblock: nelsecase,
+            }
+        }
+        [itm, rst @ ..] => {
+            let res = unheck_if(rst, elsecase);
+            If {
+                condition: Box::new(lower_expr(&*itm.condition)),
+                trueblock: lower_exprs(itm.body.as_slice()),
+                falseblock: vec![res],
+            }
+        }
+    }
+}
+unheck_if(cases.as_slice(), falseblock.as_slice())
+*/
+
+/// hokay, so.  For each case, we have to:
+/// compile the test
+/// generate the code for the if-part
+/// if there's another if-case, recurse.
+fn compile_ifcase(
+    bcx: &mut BCx,
+    locals: &mut HashMap<VarSym, LocalVar>,
+    t: TypeSym,
+    cases: &[(ir::TypedExpr<TypeSym>, Vec<ir::TypedExpr<TypeSym>>)],
+    instrs: &mut w::InstrSeqBuilder,
+    falseblock: &[ir::TypedExpr<TypeSym>],
+) {
+    assert_ne!(cases.len(), 0);
+    // First off we just compile the if test,
+    // regardless of what.
+    let (test, thenblock) = &cases[0];
+    compile_expr(bcx, locals, instrs, &test);
+    let rettype = compile_typesym(&bcx, t);
+    let grr = RefCell::new(locals);
+    let bcx = RefCell::new(bcx);
+
+    // The redundancy here is kinda screwy, trying to refactor
+    // out the closures leads to weird lifetime errors.
+    if cases.len() == 1 {
+        // We are done, just compile the test...
+        instrs.if_else(
+            rettype,
+            |then| {
+                let locals = &mut grr.borrow_mut();
+                let bcx = &mut bcx.borrow_mut();
+                compile_exprs(bcx, locals, then, &thenblock);
+            },
+            |else_| {
+                let locals = &mut grr.borrow_mut();
+                let bcx = &mut bcx.borrow_mut();
+                compile_exprs(bcx, locals, else_, falseblock);
+            },
+        );
+    } else {
+        // Compile the first if case, then recurse with the rest of them
+        instrs.if_else(
+            rettype,
+            |then| {
+                let locals = &mut grr.borrow_mut();
+                let bcx = &mut bcx.borrow_mut();
+                compile_exprs(bcx, locals, then, &thenblock);
+            },
+            |else_| {
+                let locals = &mut grr.borrow_mut();
+                let bcx = &mut bcx.borrow_mut();
+                compile_ifcase(bcx, locals, t, &cases[1..], else_, falseblock);
+            },
+        );
+    }
 }
 
 fn compile_typesym(bcx: &BCx, t: TypeSym) -> w::ValType {
