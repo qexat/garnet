@@ -339,8 +339,8 @@ fn lower_decls(decls: &[ast::Decl]) -> Vec<Decl<()>> {
 /// ...doesn't... ACTUALLY save that much typing, but...
 /// TODO: Better name.
 #[cfg(test)]
-pub(crate) fn plz(e: Expr<()>) -> TypedExpr<()> {
-    TypedExpr { t: (), e: e }
+pub(crate) fn plz(e: Expr<()>) -> Box<TypedExpr<()>> {
+    Box::new(TypedExpr { t: (), e: e })
 }
 
 #[cfg(test)]
@@ -353,8 +353,8 @@ mod tests {
     #[test]
     fn test_return_none() {
         let input = A::Return { retval: None };
-        let output = plz(I::Return {
-            retval: Box::new(plz(I::unit())),
+        let output = *plz(I::Return {
+            retval: plz(I::unit()),
         });
         let res = lower_expr(&input);
         assert_eq!(&res, &output);
@@ -366,8 +366,8 @@ mod tests {
         let input = A::Return {
             retval: Some(Box::new(A::unit())),
         };
-        let output = plz(I::Return {
-            retval: Box::new(plz(I::unit())),
+        let output = *plz(I::Return {
+            retval: plz(I::unit()),
         });
         let res = lower_expr(&input);
         assert_eq!(&res, &output);
@@ -384,9 +384,9 @@ mod tests {
             }],
             falseblock: vec![A::int(2)],
         };
-        let output = plz(I::If {
-            cases: vec![(plz(I::bool(false)), vec![plz(I::int(1))])],
-            falseblock: vec![plz(I::int(2))],
+        let output = *plz(I::If {
+            cases: vec![(*plz(I::bool(false)), vec![*plz(I::int(1))])],
+            falseblock: vec![*plz(I::int(2))],
         });
         let res = lower_expr(&input);
         assert_eq!(&res, &output);
@@ -409,12 +409,12 @@ mod tests {
             ],
             falseblock: vec![A::int(3)],
         };
-        let output = plz(I::If {
+        let output = *plz(I::If {
             cases: vec![
-                (plz(I::bool(false)), vec![plz(I::int(1))]),
-                (plz(I::bool(true)), vec![plz(I::int(2))]),
+                (*plz(I::bool(false)), vec![*plz(I::int(1))]),
+                (*plz(I::bool(true)), vec![*plz(I::int(2))]),
             ],
-            falseblock: vec![plz(I::int(3))],
+            falseblock: vec![*plz(I::int(3))],
         });
         let res = lower_expr(&input);
         assert_eq!(&res, &output);

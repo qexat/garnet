@@ -587,28 +587,28 @@ mod tests {
         use ir::*;
         // Basic addition
         {
-            let ir = plz(Expr::BinOp {
+            let ir = *plz(Expr::BinOp {
                 op: BOp::Add,
-                lhs: Box::new(plz(Expr::Lit {
+                lhs: plz(Expr::Lit {
                     val: Literal::Integer(3),
-                })),
-                rhs: Box::new(plz(Expr::Lit {
+                }),
+                rhs: plz(Expr::Lit {
                     val: Literal::Integer(4),
-                })),
+                }),
             });
             assert!(type_matches(
                 &typecheck_expr(cx, tbl, ir).unwrap().t,
                 &t_i32
             ));
 
-            let bad_ir = plz(Expr::BinOp {
+            let bad_ir = *plz(Expr::BinOp {
                 op: BOp::Add,
-                lhs: Box::new(plz(Expr::Lit {
+                lhs: plz(Expr::Lit {
                     val: Literal::Integer(3),
-                })),
-                rhs: Box::new(plz(Expr::Lit {
+                }),
+                rhs: plz(Expr::Lit {
                     val: Literal::Bool(false),
-                })),
+                }),
             });
             assert!(typecheck_expr(cx, tbl, bad_ir).is_err());
         }
@@ -623,22 +623,22 @@ mod tests {
 
         use ir::*;
         {
-            let ir = plz(Expr::UniOp {
+            let ir = *plz(Expr::UniOp {
                 op: UOp::Neg,
-                rhs: Box::new(plz(Expr::Lit {
+                rhs: plz(Expr::Lit {
                     val: Literal::Integer(4),
-                })),
+                }),
             });
             assert!(type_matches(
                 &typecheck_expr(cx, tbl, ir).unwrap().t,
                 &t_i32
             ));
 
-            let bad_ir = plz(Expr::UniOp {
+            let bad_ir = *plz(Expr::UniOp {
                 op: UOp::Neg,
-                rhs: Box::new(plz(Expr::Lit {
+                rhs: plz(Expr::Lit {
                     val: Literal::Bool(false),
-                })),
+                }),
             });
             assert!(typecheck_expr(cx, tbl, bad_ir).is_err());
         }
@@ -659,12 +659,12 @@ mod tests {
 
         use ir::*;
         {
-            let ir = plz(Expr::Let {
+            let ir = *plz(Expr::Let {
                 varname: fooname,
                 typename: t_i32.clone(),
-                init: Box::new(plz(Expr::Lit {
+                init: plz(Expr::Lit {
                     val: Literal::Integer(42),
-                })),
+                }),
             });
             assert!(type_matches(
                 &typecheck_expr(cx, tbl, ir).unwrap().t,
@@ -701,24 +701,24 @@ mod tests {
         use ir::*;
         {
             let ir = vec![
-                plz(Expr::Let {
+                *plz(Expr::Let {
                     varname: fname,
                     typename: ftype,
-                    init: Box::new(plz(Expr::Lambda {
+                    init: plz(Expr::Lambda {
                         signature: Signature {
                             params: vec![(aname, t_i32), (bname, t_i32)],
                             rettype: t_i32,
                         },
-                        body: vec![plz(Expr::BinOp {
+                        body: vec![*plz(Expr::BinOp {
                             op: BOp::Add,
-                            lhs: Box::new(plz(Expr::Var { name: aname })),
-                            rhs: Box::new(plz(Expr::Var { name: bname })),
+                            lhs: plz(Expr::Var { name: aname }),
+                            rhs: plz(Expr::Var { name: bname }),
                         })],
-                    })),
+                    }),
                 }),
-                plz(Expr::Funcall {
-                    func: Box::new(plz(Expr::Var { name: fname })),
-                    params: vec![plz(Expr::int(3)), plz(Expr::int(4))],
+                *plz(Expr::Funcall {
+                    func: plz(Expr::Var { name: fname }),
+                    params: vec![*plz(Expr::int(3)), *plz(Expr::int(4))],
                 }),
             ];
             let exprs = &typecheck_exprs(cx, tbl, ir).unwrap();
