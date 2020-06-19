@@ -262,6 +262,13 @@ fn compile_expr(
                     ir::BOp::Div => w::ir::BinaryOp::I32DivS,
                     // TODO: Check for div0?
                     ir::BOp::Mod => w::ir::BinaryOp::I32RemS,
+
+                    ir::BOp::Eq => w::ir::BinaryOp::I32Eq,
+                    ir::BOp::Neq => w::ir::BinaryOp::I32Ne,
+                    ir::BOp::Gt => w::ir::BinaryOp::I32GtS,
+                    ir::BOp::Lt => w::ir::BinaryOp::I32LtS,
+                    ir::BOp::Gte => w::ir::BinaryOp::I32GeS,
+                    ir::BOp::Lte => w::ir::BinaryOp::I32LeS,
                 }
             }
             compile_expr(cx, m, symbols, instrs, lhs);

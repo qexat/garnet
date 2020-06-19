@@ -208,6 +208,13 @@ fn bop_for(t: &Token) -> Option<ast::BOp> {
         T::Mul => Some(ast::BOp::Mul),
         T::Div => Some(ast::BOp::Div),
         T::Mod => Some(ast::BOp::Mod),
+
+        T::Equal => Some(ast::BOp::Eq),
+        T::NotEqual => Some(ast::BOp::Neq),
+        T::Gt => Some(ast::BOp::Gt),
+        T::Lt => Some(ast::BOp::Lt),
+        T::Gte => Some(ast::BOp::Gte),
+        T::Lte => Some(ast::BOp::Lte),
         _other => None,
     }
 }
@@ -671,6 +678,9 @@ fn infix_binding_power(op: &Token) -> Option<(usize, usize)> {
     match op {
         T::Mul | T::Div | T::Mod => Some((100, 101)),
         T::Plus | T::Minus => Some((90, 91)),
+        T::Lt | T::Gt | T::Lte | T::Gte => Some((80, 81)),
+        T::Equal | T::NotEqual => Some((70, 71)),
+
         _ => None,
         /*T::And | T::Or | T::Xor | T::Equal | T::NotEqual | T::Gt | T::Lt | T::Gte | T::Lte => {
             todo!()

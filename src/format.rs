@@ -73,6 +73,13 @@ fn unparse_expr(cx: &Cx, e: &Expr, indent: usize, out: &mut dyn io::Write) -> io
                 BOp::Mul => "*",
                 BOp::Div => "/",
                 BOp::Mod => "%",
+
+                BOp::Eq => "==",
+                BOp::Neq => "/=",
+                BOp::Gt => ">",
+                BOp::Lt => "<",
+                BOp::Gte => ">=",
+                BOp::Lte => "<=",
             };
             unparse_expr(cx, lhs, 0, out)?;
             write!(out, " {} ", opstr)?;
