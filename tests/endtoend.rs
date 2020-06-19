@@ -238,7 +238,11 @@ fn test(x: I32): I32 = foo(x+90) end
 #[test]
 fn eeeeeeeeeeeeefib() {
     let src = r#"
-fn test(x: I32): I32 = test(x+1) end
+fn test(x: I32): I32 =
+    if x < 2 then 1
+    else test(x - 1) + test(x - 2)
+    end
+end
 "#;
-    assert_eq!(eval_program1(src, 1), 92);
+    assert_eq!(eval_program1(src, 6), 13);
 }

@@ -382,11 +382,11 @@ fn typecheck_expr(
             let lhs = Box::new(typecheck_expr(cx, symtbl, *lhs)?);
             let rhs = Box::new(typecheck_expr(cx, symtbl, *rhs)?);
             // Currently, our only valid binops are on numbers.
-            let binop_type = op.type_of(cx);
+            let binop_type = op.input_type(cx);
             if type_matches(&lhs.t, &rhs.t) && type_matches(&binop_type, &lhs.t) {
                 Ok(ir::TypedExpr {
                     e: BinOp { op, lhs, rhs },
-                    t: binop_type,
+                    t: op.output_type(cx),
                 })
             } else {
                 Err(TypeError::BopTypeMismatch {
