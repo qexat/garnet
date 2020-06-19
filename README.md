@@ -114,12 +114,14 @@ change with time.
  * Tail call optimization is not guarenteed -- Drop impl's get in the
    way, but it should be possible to avoid that, or at least make it so
    the compiler gives a warning if it can't guarentee that
- * Lack of construct-on-heap is occasionally kinda awful.
+ * Lack of construct-on-heap is occasionally kinda awful, though far
+   more often totally unnoticable.
  * Rather mediocre support for data type reflection at either compile or
    run time, such as RTTI in general.  Also bites us in trying to make
    C-like enums, separate enum discriminants from enums or vice versa
    (which makes them awkward to compose),
  * Rust's closures are awful.
+ * On the note of boilerplate-y stuff, see <https://github.com/rustwasm/walrus/blob/121340d3113e0102707b2b07cab3e764cea1ed6b/crates/macro/src/lib.rs> for an example of a giant, complex, heavy proc macro that is used exactly once to generate a huge amount of entirely uninteresting --but nonetheless necessary-- code.  It's good that you can use a macro for it, but it's kinda less good that you need to.
 
 ## Glory points in Rust to exploit or even enhance
 
@@ -140,9 +142,21 @@ change with time.
  * Monomorphized generics -- for now?
  * Cool arbitrary/rational number types -- can be a lib.
 
+## Wishlist items
+
+ * I want to explore having a more orthogonal relationship between
+   tuples, structs, and function args.  Enums as well.
+ * It would be surprisingly appealing if there were no methods, traits,
+   or anything like that... just data structures, functions and
+   namespaces/modules.  Look at OCaml's modules for inspiration perhaps.
+ * Better methodology for boilerplate-y things like visitor patterns /
+   big ol' honkin' pattern matches would be very interesting.  Some nice
+   sugar here may be very productive, personally.
+
 # Toolchain
 
  * rustc
+ * `logos` lexer
  * custom parser (recursive descent + Pratt)
  * output wasm with `walrus`
 
