@@ -319,7 +319,7 @@ fn compile_expr(
                     let func = symbols.get_function(name).unwrap();
                     instrs.call(func);
                 }
-                _ => unimplemented!("TODO: No first class functions yet."),
+                _ => todo!("TODO: No first class functions yet."),
             }
         }
         E::Break => todo!(),
@@ -465,14 +465,12 @@ mod tests {
         let mut m = w::Module::with_config(config);
 
         let varname = cx.intern("foo");
-        let unit_t = cx.intern_type(&TypeDef::Tuple(vec![]));
-        let i32_t = cx.intern_type(&TypeDef::SInt(4));
 
         let (paramtype, rettype) = function_signature(
             cx,
             &ir::Signature {
                 params: vec![],
-                rettype: i32_t,
+                rettype: cx.i32(),
             },
         );
         let symbols = &mut Symbols::new();
@@ -481,12 +479,12 @@ mod tests {
 
         // Can we compile the let?
         let expr = ir::TypedExpr {
-            t: unit_t,
+            t: cx.unit(),
             e: E::Let {
                 varname: varname,
-                typename: i32_t,
+                typename: cx.i32(),
                 init: Box::new(ir::TypedExpr {
-                    t: i32_t,
+                    t: cx.i32(),
                     e: ir::Expr::int(9),
                 }),
             },
@@ -498,7 +496,7 @@ mod tests {
 
         // Can we then compile the var lookup?
         let expr = ir::TypedExpr {
-            t: i32_t,
+            t: cx.i32(),
             e: E::Var { name: varname },
         };
         compile_expr(cx, &mut m.locals, symbols, instrs, &expr);

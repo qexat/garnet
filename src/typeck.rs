@@ -8,10 +8,107 @@ use crate::{Cx, TypeDef, TypeSym, VarSym};
 
 #[derive(Debug, Clone)]
 pub enum TypeError {
-    UnknownType(String),
-    UnknownVar(String),
-    TypeMismatch(String),
-    InferenceFailure(String),
+    UnknownVar(VarSym),
+    ReturnMismatch {
+        fname: VarSym,
+        got: TypeSym,
+        expected: TypeSym,
+    },
+    BopTypeMismatch {
+        bop: ir::BOp,
+        got1: TypeSym,
+        got2: TypeSym,
+        expected: TypeSym,
+    },
+    UopTypeMismatch {
+        op: ir::UOp,
+        got: TypeSym,
+        expected: TypeSym,
+    },
+    LetTypeMismatch {
+        name: VarSym,
+        got: TypeSym,
+        expected: TypeSym,
+    },
+    IfTypeMismatch {
+        ifpart: TypeSym,
+        elsepart: TypeSym,
+    },
+    CondMismatch {
+        got: TypeSym,
+    },
+    ParamMismatch {
+        got: TypeSym,
+        expected: TypeSym,
+    },
+    // TODO: Needing TypeDef here instead of TypeSym is a code smell
+    CallMismatch {
+        got: TypeDef,
+    },
+}
+
+impl TypeError {
+    pub fn format(&self, cx: &Cx) -> String {
+        match self {
+            TypeError::UnknownVar(sym) => format!("Unknown var: {}", cx.fetch(*sym)),
+            TypeError::ReturnMismatch {
+                fname,
+                got,
+                expected,
+            } => format!(
+                "Function {} returns {} but should return {}",
+                cx.fetch(*fname),
+                cx.fetch_type(*got).get_name(),
+                cx.fetch_type(*expected).get_name(),
+            ),
+            TypeError::BopTypeMismatch {
+                bop,
+                got1,
+                got2,
+                expected,
+            } => format!(
+                "Invalid types for BOp {:?}: expected {}, got {} + {}",
+                bop,
+                cx.fetch_type(*expected).get_name(),
+                cx.fetch_type(*got1).get_name(),
+                cx.fetch_type(*got2).get_name()
+            ),
+            TypeError::UopTypeMismatch { op, got, expected } => format!(
+                "Invalid types for UOp {:?}: expected {}, got {}",
+                op,
+                cx.fetch_type(*expected).get_name(),
+                cx.fetch_type(*got).get_name()
+            ),
+            TypeError::LetTypeMismatch {
+                name,
+                got,
+                expected,
+            } => format!(
+                "initializer for variable {}: expected {}, got {}",
+                cx.fetch(*name),
+                cx.fetch_type(*expected).get_name(),
+                cx.fetch_type(*got).get_name()
+            ),
+            TypeError::IfTypeMismatch { ifpart, elsepart } => format!(
+                "If block return type is {}, but else block returns {}",
+                cx.fetch_type(*ifpart).get_name(),
+                cx.fetch_type(*elsepart).get_name(),
+            ),
+            TypeError::CondMismatch { got } => format!(
+                "If expr condition is {}, not bool",
+                cx.fetch_type(*got).get_name(),
+            ),
+            TypeError::ParamMismatch { got, expected } => format!(
+                "Function wanted type {} in param but got type {}",
+                cx.fetch_type(*got).get_name(),
+                cx.fetch_type(*expected).get_name()
+            ),
+            TypeError::CallMismatch { got } => format!(
+                "Tried to call function but it is not a function, it is a {}",
+                got.get_name()
+            ),
+        }
+    }
 }
 
 /// A variable binding
@@ -58,16 +155,13 @@ impl Symtbl {
     }
 
     /// Get the type of the given variable, or an error
-    ///
-    /// TODO: cx is only for error message, can we fix?
-    fn get_var(&self, cx: &Cx, name: VarSym) -> Result<TypeSym, TypeError> {
+    fn get_var(&self, name: VarSym) -> Result<TypeSym, TypeError> {
         for scope in self.syms.iter().rev() {
             if let Some(binding) = scope.get(&name) {
                 return Ok(binding.typename.clone());
             }
         }
-        let msg = format!("Unknown var: {}", cx.fetch(name));
-        Err(TypeError::UnknownVar(msg))
+        Err(TypeError::UnknownVar(name))
     }
 }
 
@@ -218,13 +312,11 @@ pub fn typecheck_decl(
             let last_expr_type = last_type_of(cx, &typechecked_exprs);
 
             if !type_matches(&signature.rettype, &last_expr_type) {
-                let msg = format!(
-                    "Function {} returns {} but should return {}",
-                    cx.fetch(name),
-                    cx.fetch_type(last_expr_type).get_name(),
-                    cx.fetch_type(signature.rettype).get_name(),
-                );
-                return Err(TypeError::TypeMismatch(msg));
+                return Err(TypeError::ReturnMismatch {
+                    fname: name,
+                    got: last_expr_type,
+                    expected: signature.rettype,
+                });
             }
 
             symtbl.pop_scope();
@@ -265,10 +357,7 @@ fn typecheck_exprs(
 /// Takes a slice of typed expr's and retursn the type of the last one.
 /// Returns unit if the slice is empty.
 fn last_type_of(cx: &Cx, exprs: &[ir::TypedExpr<TypeSym>]) -> TypeSym {
-    exprs
-        .last()
-        .map(|e| e.t)
-        .unwrap_or_else(|| cx.intern_type(&TypeDef::Tuple(vec![])))
+    exprs.last().map(|e| e.t).unwrap_or_else(|| cx.unit())
 }
 
 fn typecheck_expr(
@@ -277,8 +366,8 @@ fn typecheck_expr(
     expr: ir::TypedExpr<()>,
 ) -> Result<ir::TypedExpr<TypeSym>, TypeError> {
     use ir::Expr::*;
-    let unittype = cx.intern_type(&TypeDef::Tuple(vec![]));
-    let booltype = cx.intern_type(&TypeDef::Bool);
+    let unittype = cx.unit();
+    let booltype = cx.bool();
     match expr.e {
         Lit { val } => {
             let t = typecheck_literal(cx, &val)?;
@@ -286,7 +375,7 @@ fn typecheck_expr(
         }
 
         Var { name } => {
-            let t = symtbl.get_var(cx, name)?;
+            let t = symtbl.get_var(name)?;
             Ok(expr.map(t))
         }
         BinOp { op, lhs, rhs } => {
@@ -300,14 +389,12 @@ fn typecheck_expr(
                     t: binop_type,
                 })
             } else {
-                let msg = format!(
-                    "Invalid types for BOp {:?}: expected {}, got {} + {}",
-                    op,
-                    cx.fetch_type(binop_type).get_name(),
-                    cx.fetch_type(lhs.t).get_name(),
-                    cx.fetch_type(rhs.t).get_name()
-                );
-                Err(TypeError::TypeMismatch(msg))
+                Err(TypeError::BopTypeMismatch {
+                    bop: op,
+                    expected: binop_type,
+                    got1: lhs.t,
+                    got2: rhs.t,
+                })
             }
         }
         UniOp { op, rhs } => {
@@ -320,13 +407,11 @@ fn typecheck_expr(
                     t: uniop_type,
                 })
             } else {
-                let msg = format!(
-                    "Invalid types for UOp {:?}: expected {}, got {}",
+                Err(TypeError::UopTypeMismatch {
                     op,
-                    cx.fetch_type(uniop_type).get_name(),
-                    cx.fetch_type(rhs.t).get_name()
-                );
-                Err(TypeError::TypeMismatch(msg))
+                    expected: uniop_type,
+                    got: rhs.t,
+                })
             }
         }
         Block { body } => {
@@ -356,13 +441,11 @@ fn typecheck_expr(
                     t: unittype,
                 })
             } else {
-                let msg = format!(
-                    "initializer for variable {}: expected {}, got {}",
-                    cx.fetch(varname),
-                    cx.fetch_type(typename).get_name(),
-                    cx.fetch_type(init_type).get_name()
-                );
-                Err(TypeError::TypeMismatch(msg))
+                Err(TypeError::LetTypeMismatch {
+                    name: varname,
+                    got: init_type,
+                    expected: typename,
+                })
             }
         }
         If { cases, falseblock } => {
@@ -376,22 +459,16 @@ fn typecheck_expr(
                     let ifbody_exprs = typecheck_exprs(cx, symtbl, body)?;
                     let if_type = last_type_of(cx, &ifbody_exprs);
                     if !type_matches(&if_type, &assumed_type) {
-                        let msg = format!(
-                            "If block return type is {}, but else block returns {}",
-                            cx.fetch_type(if_type).get_name(),
-                            cx.fetch_type(assumed_type).get_name(),
-                        );
-                        return Err(TypeError::TypeMismatch(msg));
+                        return Err(TypeError::IfTypeMismatch {
+                            ifpart: if_type,
+                            elsepart: assumed_type,
+                        });
                     }
 
                     // Great, it matches
                     new_cases.push((cond_expr, ifbody_exprs));
                 } else {
-                    let msg = format!(
-                        "If expr condition is {}, not bool",
-                        cx.fetch_type(cond_expr.t).get_name(),
-                    );
-                    return Err(TypeError::TypeMismatch(msg));
+                    return Err(TypeError::CondMismatch { got: cond_expr.t });
                 }
             }
             Ok(ir::TypedExpr {
@@ -420,12 +497,12 @@ fn typecheck_expr(
             let bodytype = last_type_of(cx, &body_expr);
             // TODO: validate/unify types
             if !type_matches(&bodytype, &signature.rettype) {
-                let msg = format!(
-                    "Function returns type {:?} but should be {:?}",
-                    cx.fetch_type(bodytype),
-                    cx.fetch_type(signature.rettype)
-                );
-                return Err(TypeError::TypeMismatch(msg));
+                let function_name = cx.intern("lambda");
+                return Err(TypeError::ReturnMismatch {
+                    fname: function_name,
+                    got: bodytype,
+                    expected: signature.rettype,
+                });
             }
             symtbl.pop_scope();
             let paramtypes: Vec<TypeSym> = signature
@@ -454,12 +531,10 @@ fn typecheck_expr(
                     // Now, make sure all the function's params match what it wants
                     for (given, wanted) in given_params.iter().zip(paramtypes) {
                         if !type_matches(&given.t, &wanted) {
-                            let msg = format!(
-                                "Function wanted type {} in param but got type {}",
-                                cx.fetch_type(*wanted).get_name(),
-                                cx.fetch_type(given.t).get_name()
-                            );
-                            return Err(TypeError::TypeMismatch(msg));
+                            return Err(TypeError::ParamMismatch {
+                                got: given.t,
+                                expected: *wanted,
+                            });
                         }
                     }
                     Ok(ir::TypedExpr {
@@ -470,28 +545,19 @@ fn typecheck_expr(
                         t: **rettype,
                     })
                 }
-                other => {
-                    let msg = format!(
-                        "Tried to call function but it is not a function, it is a {}",
-                        other.get_name()
-                    );
-                    Err(TypeError::TypeMismatch(msg))
-                }
+                other => Err(TypeError::CallMismatch { got: other.clone() }),
             }
         }
         Break => Ok(expr.map(unittype)),
-        Return { .. } => unimplemented!("TODO: Never type"),
+        Return { .. } => todo!("TODO: Never type"),
     }
 }
 
 fn typecheck_literal(cx: &mut Cx, lit: &ir::Literal) -> Result<TypeSym, TypeError> {
-    let i32type = cx.intern_type(&TypeDef::SInt(4));
-    let unittype = cx.intern_type(&TypeDef::Tuple(vec![]));
-    let booltype = cx.intern_type(&TypeDef::Bool);
     match lit {
-        ir::Literal::Integer(_) => Ok(i32type),
-        ir::Literal::Bool(_) => Ok(booltype),
-        ir::Literal::Unit => Ok(unittype),
+        ir::Literal::Integer(_) => Ok(cx.i32()),
+        ir::Literal::Bool(_) => Ok(cx.bool()),
+        ir::Literal::Unit => Ok(cx.unit()),
     }
 }
 
@@ -531,25 +597,25 @@ mod tests {
         let mut t = Symtbl::new();
 
         // Make sure we can get a value
-        assert!(t.get_var(cx, t_foo).is_err());
-        assert!(t.get_var(cx, t_bar).is_err());
+        assert!(t.get_var(t_foo).is_err());
+        assert!(t.get_var(t_bar).is_err());
         t.add_var(t_foo, &t_i32);
-        assert_eq!(t.get_var(cx, t_foo).unwrap(), t_i32);
-        assert!(t.get_var(cx, t_bar).is_err());
+        assert_eq!(t.get_var(t_foo).unwrap(), t_i32);
+        assert!(t.get_var(t_bar).is_err());
 
         // Push scope, verify behavior is the same.
         t.push_scope();
-        assert_eq!(t.get_var(cx, t_foo).unwrap(), t_i32);
-        assert!(t.get_var(cx, t_bar).is_err());
+        assert_eq!(t.get_var(t_foo).unwrap(), t_i32);
+        assert!(t.get_var(t_bar).is_err());
         // Add var, make sure we can get it
         t.add_var(t_bar, &t_bool);
-        assert_eq!(t.get_var(cx, t_foo).unwrap(), t_i32);
-        assert_eq!(t.get_var(cx, t_bar).unwrap(), t_bool);
+        assert_eq!(t.get_var(t_foo).unwrap(), t_i32);
+        assert_eq!(t.get_var(t_bar).unwrap(), t_bool);
 
         // Pop scope, make sure bar is gone.
         t.pop_scope();
-        assert_eq!(t.get_var(cx, t_foo).unwrap(), t_i32);
-        assert!(t.get_var(cx, t_bar).is_err());
+        assert_eq!(t.get_var(t_foo).unwrap(), t_i32);
+        assert!(t.get_var(t_bar).is_err());
     }
 
     /// Make sure an empty symtbl gives errors
@@ -678,7 +744,7 @@ mod tests {
                 &t_unit
             ));
             // Is the variable now bound in our symbol table?
-            assert_eq!(tbl.get_var(cx, fooname).unwrap(), t_i32);
+            assert_eq!(tbl.get_var(fooname).unwrap(), t_i32);
         }
     }
 
@@ -731,7 +797,7 @@ mod tests {
             let exprs = &typecheck_exprs(cx, tbl, ir).unwrap();
             assert!(type_matches(&last_type_of(cx, exprs), &t_i32));
             // Is the variable now bound in our symbol table?
-            assert_eq!(tbl.get_var(cx, fname).unwrap(), ftype);
+            assert_eq!(tbl.get_var(fname).unwrap(), ftype);
         }
     }
 
