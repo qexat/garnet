@@ -102,7 +102,7 @@ pub enum Token {
     Ident(String),
     #[regex("true|false", |lex| lex.slice().parse())]
     Bool(bool),
-    #[regex("-?[0-9]+", |lex| lex.slice().parse())]
+    #[regex("[0-9][0-9_]*", |lex| lex.slice().parse())]
     Number(i32),
 
     // Decl stuff
@@ -739,13 +739,16 @@ mod tests {
         test_decl_is("const foo: I32 = -9", |cx| ast::Decl::Const {
             name: cx.intern("foo"),
             typename: cx.intern_type(&TypeDef::SInt(4)),
-            init: Expr::int(-9),
+            init: Expr::UniOp {
+                op: ast::UOp::Neg,
+                rhs: Box::new(Expr::int(9)),
+            },
         });
     }
 
     #[test]
     fn test_fn() {
-        test_decl_is("fn foo(x: I32): I32 = -9 end", |cx| {
+        test_decl_is("fn foo(x: I32): I32 = 9 end", |cx| {
             let i32_t = cx.intern_type(&TypeDef::SInt(4));
             ast::Decl::Function {
                 name: cx.intern("foo"),
@@ -753,7 +756,7 @@ mod tests {
                     params: vec![(cx.intern("x"), i32_t)],
                     rettype: i32_t,
                 },
-                body: vec![Expr::int(-9)],
+                body: vec![Expr::int(9)],
             }
         });
     }
@@ -781,7 +784,10 @@ const baz: {} = {}
                     ast::Decl::Const {
                         name: foosym,
                         typename: i32_t,
-                        init: Expr::int(-9),
+                        init: Expr::UniOp {
+                            op: ast::UOp::Neg,
+                            rhs: Box::new(Expr::int(9)),
+                        }
                     },
                     ast::Decl::Const {
                         name: barsym,

@@ -240,7 +240,7 @@ fn eeeeeeeeeeeeefib() {
     let src = r#"
 fn fib(x: I32): I32 =
     if x < 2 then 1
-    else fib(x - 1) + fib(x - 2)
+    else fib(x-1) + fib(x - 2)
     end
 end
 
