@@ -650,7 +650,7 @@ fn prefix_binding_power(op: &Token) -> ((), usize) {
     match op {
         T::Plus | T::Minus => ((), 110),
         // TODO T::Not => todo!(),
-        x => panic!("{:?} is not a prefix op, should never happen!", x),
+        x => unreachable!("{:?} is not a prefix op, should never happen!", x),
     }
 }
 

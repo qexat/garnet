@@ -127,6 +127,22 @@ impl Cx {
         self.types.fetch(s)
     }
 
+    /// Shortcut for getting the type symbol for I32
+    pub fn i32(&self) -> TypeSym {
+        //cx.intern_type(&TypeDef::Tuple(vec![]));
+        self.intern_type(&TypeDef::SInt(4))
+    }
+
+    /// Shortcut for getting the type symbol for Bool
+    pub fn bool(&self) -> TypeSym {
+        self.intern_type(&TypeDef::Bool)
+    }
+
+    /// Shortcut for getting the type symbol for Unit
+    pub fn unit(&self) -> TypeSym {
+        self.intern_type(&TypeDef::Tuple(vec![]))
+    }
+
     /*
     /// Returns the symbol naming the given type, or none if it's
     /// not defined.
