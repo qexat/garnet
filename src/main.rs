@@ -1,41 +1,21 @@
+use std::path::PathBuf;
+
+use structopt::StructOpt;
+
 use garnet;
-use garnet::ast;
 
-fn main() {
-    let mut cx = garnet::Cx::new();
-    //let mainsym = cx.intern("main");
-    let mainsym = cx.intern("_start");
-    let varsym = cx.intern("foo");
-    let i32_t = cx.intern_type(&garnet::TypeDef::SInt(4));
-    let ast = ast::Ast {
-        decls: vec![ast::Decl::Function {
-            name: mainsym,
-            signature: ast::Signature {
-                params: vec![],
-                rettype: i32_t,
-            },
-            //body: vec![ast::Expr::int(42)],
-            body: vec![
-                ast::Expr::Let {
-                    varname: varsym,
-                    typename: i32_t,
-                    init: Box::new(ast::Expr::int(42)),
-                },
-                ast::Expr::BinOp {
-                    op: ast::BOp::Add,
-                    lhs: Box::new(ast::Expr::Var { name: varsym }),
-                    rhs: Box::new(ast::Expr::Var { name: varsym }),
-                },
-            ],
-        }],
-    };
-    println!("AST: {:#?}", ast);
-    let ir = garnet::ir::lower(&ast);
-    //println!("That becomes: {:#?}", ir);
-    let checked = garnet::typeck::typecheck(&mut cx, ir).unwrap();
-    let wasm = garnet::backend::output(&mut cx, &checked);
-    //println!("WASM is: {:?}", wasm);
+#[derive(StructOpt, Debug)]
+struct Opt {
+    #[structopt(name = "FILE", parse(from_os_str))]
+    file: PathBuf,
+}
 
+fn main() -> std::io::Result<()> {
+    let opt = Opt::from_args();
+    let src = std::fs::read_to_string(&opt.file)?;
+    let output = garnet::compile(&src);
     // Output to file
-    std::fs::write("out.wasm", &wasm).unwrap();
+    let mut output_file = opt.file.clone();
+    output_file.set_extension("wasm");
+    std::fs::write(&output_file, &output)
 }
