@@ -506,12 +506,7 @@ fn typecheck_expr(
                 });
             }
             symtbl.pop_scope();
-            let paramtypes: Vec<TypeSym> = signature
-                .params
-                .iter()
-                .map(|(_varsym, typesym)| *typesym)
-                .collect();
-            let lambdatype = cx.intern_type(&TypeDef::Lambda(paramtypes, signature.rettype));
+            let lambdatype = signature.to_type(cx);
             Ok(ir::TypedExpr {
                 e: Lambda {
                     signature,
@@ -799,6 +794,24 @@ mod tests {
             // Is the variable now bound in our symbol table?
             assert_eq!(tbl.get_var(fname).unwrap(), ftype);
         }
+
+        {
+            use crate::parser::Parser;
+            let src = "fn foo(): fn(I32):I32 = fn(x: I32):I32 = x+1 end end";
+            let ast = Parser::new(cx, src).parse();
+            let ir = ir::lower(&ast);
+            let _ = &typecheck(cx, ir).unwrap();
+        }
+    }
+
+    #[test]
+    fn test_bogus_function() {
+        let cx = &mut crate::Cx::new();
+        use crate::parser::Parser;
+        let src = "fn foo(): fn(I32):I32 = fn(x: I32):Bool = x+1 end end";
+        let ast = Parser::new(cx, src).parse();
+        let ir = ir::lower(&ast);
+        assert!(typecheck(cx, ir).is_err());
     }
 
     /// TODO
