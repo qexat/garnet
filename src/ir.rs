@@ -192,11 +192,13 @@ pub struct Ir<T> {
     pub decls: Vec<Decl<T>>,
 }
 
+type Pass = fn(Ir<()>) -> Ir<()>;
+
 /// Transforms AST into IR, doing simplifying transformations on the way.
 pub fn lower(ast: &ast::Ast) -> Ir<()> {
-    Ir {
-        decls: lower_decls(&ast.decls),
-    }
+    let ir = lower_decls(&ast.decls);
+    let passes: &[Pass] = &[lambda_lifting, const_folding];
+    passes.iter().fold(ir, |prev_ir, f| f(prev_ir))
 }
 
 fn lower_lit(lit: &ast::Literal) -> Literal {
@@ -331,8 +333,20 @@ fn lower_decl(decl: &ast::Decl) -> Decl<()> {
     }
 }
 
-fn lower_decls(decls: &[ast::Decl]) -> Vec<Decl<()>> {
-    decls.iter().map(lower_decl).collect()
+fn lower_decls(decls: &[ast::Decl]) -> Ir<()> {
+    Ir {
+        decls: decls.iter().map(lower_decl).collect(),
+    }
+}
+
+/// A transformation pass that removes lambda expressions and turns
+/// them into function decl's.
+fn lambda_lifting(ir: Ir<()>) -> Ir<()> {
+    ir
+}
+
+fn const_folding(ir: Ir<()>) -> Ir<()> {
+    ir
 }
 
 /// Shortcut to take an Expr and wrap it with a unit type.
