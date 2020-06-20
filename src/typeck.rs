@@ -382,16 +382,17 @@ fn typecheck_expr(
             let lhs = Box::new(typecheck_expr(cx, symtbl, *lhs)?);
             let rhs = Box::new(typecheck_expr(cx, symtbl, *rhs)?);
             // Currently, our only valid binops are on numbers.
-            let binop_type = op.input_type(cx);
-            if type_matches(&lhs.t, &rhs.t) && type_matches(&binop_type, &lhs.t) {
+            let input_type = op.input_type(cx);
+            let output_type = op.output_type(cx);
+            if type_matches(&lhs.t, &rhs.t) && type_matches(&input_type, &lhs.t) {
                 Ok(ir::TypedExpr {
                     e: BinOp { op, lhs, rhs },
-                    t: op.output_type(cx),
+                    t: output_type,
                 })
             } else {
                 Err(TypeError::BopTypeMismatch {
                     bop: op,
-                    expected: binop_type,
+                    expected: input_type,
                     got1: lhs.t,
                     got2: rhs.t,
                 })
@@ -400,16 +401,17 @@ fn typecheck_expr(
         UniOp { op, rhs } => {
             let rhs = Box::new(typecheck_expr(cx, symtbl, *rhs)?);
             // Currently, our only valid binops are on numbers.
-            let uniop_type = op.type_of(cx);
-            if type_matches(&uniop_type, &rhs.t) {
+            let input_type = op.input_type(cx);
+            let output_type = op.output_type(cx);
+            if type_matches(&input_type, &rhs.t) {
                 Ok(ir::TypedExpr {
                     e: UniOp { op, rhs },
-                    t: uniop_type,
+                    t: output_type,
                 })
             } else {
                 Err(TypeError::UopTypeMismatch {
                     op,
-                    expected: uniop_type,
+                    expected: input_type,
                     got: rhs.t,
                 })
             }
