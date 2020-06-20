@@ -94,6 +94,11 @@ impl TypeDef {
 /// Compilation context.  Contains things like symbol tables.
 /// Probably keeps most stages of compilation around to do
 /// things like output error messages or whatever?
+///
+/// Really this is just an interner for symbols now, and
+/// the original plan of bundling it up into a special context
+/// type for each step of compilation hasn't really worked out
+/// (at least for wasm with `walrus`.  Maybe rename it?
 pub struct Cx {
     /// Interned symbols
     syms: intern::Interner<VarSym, String>,

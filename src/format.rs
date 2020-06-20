@@ -80,6 +80,10 @@ fn unparse_expr(cx: &Cx, e: &Expr, indent: usize, out: &mut dyn io::Write) -> io
                 BOp::Lt => "<",
                 BOp::Gte => ">=",
                 BOp::Lte => "<=",
+
+                BOp::And => "and",
+                BOp::Or => "or",
+                BOp::Xor => "xor",
             };
             unparse_expr(cx, lhs, 0, out)?;
             write!(out, " {} ", opstr)?;

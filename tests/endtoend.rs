@@ -38,8 +38,14 @@ fn compile_wasm(bytes: &[u8]) -> w::Func {
         .expect("Test function needs to be called 'test'")
 }
 
+fn eval_program0(src: &str) -> i32 {
+    let wasm = garnet::compile(src);
+    let f = compile_wasm(&wasm).get0::<i32>().unwrap();
+    f().unwrap()
+}
+
 /// Takes a program defining a function with 1 arg named 'test',
-/// that returns 1 arg, and makes sure they match.
+/// returns its result
 fn eval_program1(src: &str, input: i32) -> i32 {
     let wasm = garnet::compile(src);
     let f = compile_wasm(&wasm).get1::<i32, i32>().unwrap();
@@ -244,9 +250,37 @@ fn fib(x: I32): I32 =
     end
 end
 
-fn test(x: I32): I32 =
+fn test(): I32 =
     fib(7)
 end
 "#;
-    assert_eq!(eval_program1(src, 6), 21);
+    assert_eq!(eval_program0(src), 21);
+}
+
+/// Test truth tables of logical operators.
+#[test]
+fn truth() {
+    let tests = vec![
+        // and
+        ("fn test(): Bool = true and true end", 1),
+        ("fn test(): Bool = true and false end", 0),
+        ("fn test(): Bool = false and true end", 0),
+        ("fn test(): Bool = false and false end", 0),
+        // or
+        ("fn test(): Bool = true or true end", 1),
+        ("fn test(): Bool = true or false end", 1),
+        ("fn test(): Bool = false or true end", 1),
+        ("fn test(): Bool = false or false end", 0),
+        // xor
+        ("fn test(): Bool = true xor true end", 0),
+        ("fn test(): Bool = true xor false end", 1),
+        ("fn test(): Bool = false xor true end", 1),
+        ("fn test(): Bool = false xor false end", 0),
+        // not
+        ("fn test(): Bool = not true end", 0),
+        ("fn test(): Bool = not false end", 1),
+    ];
+    for (inp, outp) in &tests {
+        assert_eq!(eval_program0(*inp), *outp);
+    }
 }

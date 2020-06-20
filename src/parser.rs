@@ -177,8 +177,6 @@ pub enum Token {
     #[token("<=")]
     Lte,
 
-    //Op(Operator),
-
     // We save comment strings so we can use this same
     // parser as a reformatter or such.
     // TODO: How do we skip these in the parser?
@@ -215,14 +213,19 @@ fn bop_for(t: &Token) -> Option<ast::BOp> {
         T::Lt => Some(ast::BOp::Lt),
         T::Gte => Some(ast::BOp::Gte),
         T::Lte => Some(ast::BOp::Lte),
+
+        T::And => Some(ast::BOp::And),
+        T::Or => Some(ast::BOp::Or),
+        T::Xor => Some(ast::BOp::Xor),
         _other => None,
     }
 }
 
-fn _uop_for(t: &Token) -> Option<ast::UOp> {
+fn uop_for(t: &Token) -> Option<ast::UOp> {
     match t {
         //T::Plus => Some(ast::UOp::Plus),
         T::Minus => Some(ast::UOp::Neg),
+        T::Not => Some(ast::UOp::Not),
         _other => None,
     }
 }
@@ -460,18 +463,6 @@ impl<'cx, 'input> Parser<'cx, 'input> {
             T::Loop => self.parse_loop(),
             T::Do => self.parse_block(),
             T::Fn => self.parse_lambda(),
-
-            // Unary prefix ops
-            T::Minus => {
-                self.drop();
-                let ((), r_bp) = prefix_binding_power(&T::Minus);
-                let rhs = self.parse_expr(r_bp)?;
-                ast::Expr::UniOp {
-                    op: ast::UOp::Neg,
-                    rhs: Box::new(rhs),
-                }
-            }
-            // Parenthesized expr's
             T::LParen => {
                 self.drop();
                 let lhs = self.parse_expr(0)?;
@@ -479,6 +470,19 @@ impl<'cx, 'input> Parser<'cx, 'input> {
                 lhs
             }
 
+            // Unary prefix ops
+            //T::Minus => {
+            x if uop_for(&x).is_some() => {
+                self.drop();
+                let ((), r_bp) = prefix_binding_power(&x);
+                let op = uop_for(&x).expect("Should never happen");
+                let rhs = self.parse_expr(r_bp)?;
+                ast::Expr::UniOp {
+                    op: op,
+                    rhs: Box::new(rhs),
+                }
+            }
+            // Parenthesized expr's
             _x => return None,
         };
         // Parse a prefix, postfix or infix expression with a given
@@ -655,7 +659,7 @@ impl<'cx, 'input> Parser<'cx, 'input> {
 /// from the get-go with prefix operators.
 fn prefix_binding_power(op: &Token) -> ((), usize) {
     match op {
-        T::Plus | T::Minus => ((), 110),
+        T::Plus | T::Minus | T::Not => ((), 110),
         // TODO T::Not => todo!(),
         x => unreachable!("{:?} is not a prefix op, should never happen!", x),
     }
@@ -680,6 +684,9 @@ fn infix_binding_power(op: &Token) -> Option<(usize, usize)> {
         T::Plus | T::Minus => Some((90, 91)),
         T::Lt | T::Gt | T::Lte | T::Gte => Some((80, 81)),
         T::Equal | T::NotEqual => Some((70, 71)),
+        T::And => Some((60, 61)),
+        // Logical xor has same precedence as or, I guess?  It's sorta an odd duck.
+        T::Or | T::Xor => Some((50, 51)),
 
         _ => None,
         /*T::And | T::Or | T::Xor | T::Equal | T::NotEqual | T::Gt | T::Lt | T::Gte | T::Lte => {

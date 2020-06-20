@@ -17,25 +17,36 @@ pub enum Literal {
 /// Binary operation
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub enum BOp {
+    // Math
     Add,
     Sub,
     Mul,
     Div,
     Mod,
 
+    // Comparison
     Eq,
     Neq,
     Gt,
     Lt,
     Gte,
     Lte,
+
+    //Logic
+    And,
+    Or,
+    Xor,
 }
 
 impl BOp {
     /// Returns the type that the bin op operates on.
     /// TODO: We need something for what type they return, too...
     pub fn input_type(&self, cx: &mut crate::Cx) -> TypeSym {
-        cx.i32()
+        use BOp::*;
+        match self {
+            And | Or | Xor => cx.bool(),
+            _ => cx.i32(),
+        }
     }
 
     /// What the resultant type of the binop is
@@ -44,6 +55,7 @@ impl BOp {
         match self {
             Add | Sub | Mul | Div | Mod => cx.i32(),
             Eq | Neq | Gt | Lt | Gte | Lte => cx.bool(),
+            And | Or | Xor => cx.bool(),
         }
     }
 }
@@ -52,13 +64,27 @@ impl BOp {
 #[derive(Debug, Clone, PartialEq)]
 pub enum UOp {
     Neg,
+    Not,
 }
 
 impl UOp {
     /// Returns the type that the unary op operates on.
     /// Currently, only numbers.
-    pub fn type_of(&self, cx: &mut crate::Cx) -> TypeSym {
-        cx.i32()
+    pub fn input_type(&self, cx: &mut crate::Cx) -> TypeSym {
+        use UOp::*;
+        match self {
+            Neg => cx.i32(),
+            Not => cx.bool(),
+        }
+    }
+
+    /// What the resultant type of the uop is
+    pub fn output_type(&self, cx: &mut crate::Cx) -> TypeSym {
+        use UOp::*;
+        match self {
+            Neg => cx.i32(),
+            Not => cx.bool(),
+        }
     }
 }
 

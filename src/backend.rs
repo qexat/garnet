@@ -269,6 +269,10 @@ fn compile_expr(
                     ir::BOp::Lt => w::ir::BinaryOp::I32LtS,
                     ir::BOp::Gte => w::ir::BinaryOp::I32GeS,
                     ir::BOp::Lte => w::ir::BinaryOp::I32LeS,
+
+                    ir::BOp::And => w::ir::BinaryOp::I32And,
+                    ir::BOp::Or => w::ir::BinaryOp::I32Or,
+                    ir::BOp::Xor => w::ir::BinaryOp::I32Xor,
                 }
             }
             compile_expr(cx, m, symbols, instrs, lhs);
@@ -283,6 +287,10 @@ fn compile_expr(
                 instrs.i32_const(0);
                 compile_expr(cx, m, symbols, instrs, rhs);
                 instrs.binop(w::ir::BinaryOp::I32Sub);
+            }
+            ir::UOp::Not => {
+                compile_expr(cx, m, symbols, instrs, rhs);
+                instrs.unop(w::ir::UnaryOp::I32Eqz);
             }
         },
         // This is pretty much just a list of expr's by now.

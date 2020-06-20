@@ -152,6 +152,8 @@ change with time.
  * Better methodology for boilerplate-y things like visitor patterns /
    big ol' honkin' pattern matches would be very interesting.  Some nice
    sugar here may be very productive, personally.
+ * Consider some sort of templates or macros -- <https://dlang.org/spec/template.html>
+   or just use Handlebars :P
 
 # Toolchain
 
