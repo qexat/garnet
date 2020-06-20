@@ -69,12 +69,13 @@ fn_signature = fn_args [":" typename]
 typename =
   | "I32"
   | "Bool"
+  | "fn" "(" [typename {"," typename} [","]] ")" [":" typename]
   // Tuples with curly braces like Erlang seem less ambiguous than the more traditional parens...
   // I hope that will let us get away without semicolons.
-  | "{" [typename {"," typename}] "}"
+  | "{" "}"
+  // | "{" [typename {"," typename}] "}"
   // Fixed-size arrays
-  | "[" typename ";" INTEGER} "]"
-  // | "fn" fn_signature
+  // | "[" typename ";" INTEGER} "]"
   // TODO: Generics?
   // | ID "[" typename {"," typename} "]"
   // slices can just then be slice[...]
@@ -397,7 +398,7 @@ impl<'cx, 'input> Parser<'cx, 'input> {
             self.expect(T::Colon);
             self.parse_type()
         } else {
-            self.cx.intern_type(&TypeDef::Tuple(vec![]))
+            self.cx.unit()
         };
         ast::Signature { params, rettype }
     }
@@ -416,6 +417,35 @@ impl<'cx, 'input> Parser<'cx, 'input> {
             self.expect(T::Colon);
             let tname = self.parse_type();
             args.push((name, tname));
+
+            if self.peek_is(T::Comma) {
+                self.expect(T::Comma);
+            } else {
+                break;
+            }
+        }
+        self.expect(T::RParen);
+        args
+    }
+
+    fn parse_fn_type(&mut self) -> TypeDef {
+        let params = self.parse_fn_type_args();
+        let rettype = if self.peek_is(T::Colon) {
+            self.expect(T::Colon);
+            self.parse_type()
+        } else {
+            self.cx.unit()
+        };
+        TypeDef::Lambda(params, rettype)
+    }
+
+    fn parse_fn_type_args(&mut self) -> Vec<TypeSym> {
+        let mut args = vec![];
+        self.expect(T::LParen);
+
+        while !self.peek_is(T::RParen) {
+            let tname = self.parse_type();
+            args.push(tname);
 
             if self.peek_is(T::Comma) {
                 self.expect(T::Comma);
@@ -639,13 +669,17 @@ impl<'cx, 'input> Parser<'cx, 'input> {
         match self.lex.next() {
             Some((T::Ident(s), span)) => match s.as_ref() {
                 // TODO: This is a bit too hardwired tbh...
-                "I32" => self.cx.intern_type(&TypeDef::SInt(4)),
-                "Bool" => self.cx.intern_type(&TypeDef::Bool),
+                "I32" => self.cx.i32(),
+                "Bool" => self.cx.bool(),
                 _ => self.error(Some((T::Ident(s), span))),
             },
             Some((T::LBrace, _span)) => {
                 self.expect(T::RBrace);
-                self.cx.intern_type(&TypeDef::Tuple(vec![]))
+                self.cx.unit()
+            }
+            Some((T::Fn, _span)) => {
+                let fntype = self.parse_fn_type();
+                self.cx.intern_type(&fntype)
             }
             other => self.error(other),
         }
@@ -780,9 +814,9 @@ const baz: {} = {}
         let foosym = cx.intern("foo");
         let barsym = cx.intern("bar");
         let bazsym = cx.intern("baz");
-        let i32_t = cx.intern_type(&TypeDef::SInt(4));
-        let bool_t = cx.intern_type(&TypeDef::Bool);
-        let unit_t = cx.intern_type(&TypeDef::Tuple(vec![]));
+        let i32_t = cx.i32();
+        let bool_t = cx.bool();
+        let unit_t = cx.unit();
         let d = p.parse();
         assert_eq!(
             d,
@@ -831,6 +865,7 @@ const baz: {} = {}
             "(x: I32, y: Bool):Bool",
             "(x: I32, y: Bool,)",
             "(x: I32, y: Bool,):Bool",
+            "(f: fn(I32):I32, x: I32):Bool",
         ];
         test_parse_with(|p| p.parse_fn_signature(), &valid_args)
     }

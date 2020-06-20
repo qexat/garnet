@@ -64,7 +64,7 @@ pub enum TypeDef {
     Bool,
     /// We can infer types for tuples
     Tuple(Vec<TypeSym>),
-    Lambda(Vec<TypeSym>, Box<TypeSym>),
+    Lambda(Vec<TypeSym>, TypeSym),
     /*
     /// TODO: AUGJDKSFLJDSFSLAF
     /// This is basically a type that has been named but we
@@ -74,7 +74,7 @@ pub enum TypeDef {
 }
 
 impl TypeDef {
-    pub fn get_name(&self) -> Cow<'static, str> {
+    pub fn get_name(&self, cx: &Cx) -> Cow<'static, str> {
         match self {
             TypeDef::SInt(4) => Cow::Borrowed("I32"),
             TypeDef::SInt(s) => panic!("Undefined integer size {}!", s),
@@ -86,7 +86,31 @@ impl TypeDef {
                     panic!("Can't yet define tuple {:?}", v)
                 }
             }
-            TypeDef::Lambda(params, _rettype) => panic!("Can't yet name lambda {:?}", params),
+            TypeDef::Lambda(params, rettype) => {
+                let mut t = String::from("fn(");
+                let p_strs = params
+                    .iter()
+                    .map(|ptype| {
+                        let ptype_def = cx.fetch_type(*ptype);
+                        ptype_def.get_name(cx)
+                    })
+                    .collect::<Vec<_>>();
+                t += &p_strs.join(", ");
+
+                t += ")";
+                let ret_def = cx.fetch_type(*rettype);
+                match &*ret_def {
+                    TypeDef::Tuple(x) if x.len() == 0 => {
+                        // pass, implicitly return unit
+                    }
+                    x => {
+                        let type_str = x.get_name(cx);
+                        t += ": ";
+                        t += &type_str;
+                    }
+                }
+                Cow::Owned(t)
+            }
         }
     }
 }
@@ -134,7 +158,6 @@ impl Cx {
 
     /// Shortcut for getting the type symbol for I32
     pub fn i32(&self) -> TypeSym {
-        //cx.intern_type(&TypeDef::Tuple(vec![]));
         self.intern_type(&TypeDef::SInt(4))
     }
 
@@ -147,19 +170,6 @@ impl Cx {
     pub fn unit(&self) -> TypeSym {
         self.intern_type(&TypeDef::Tuple(vec![]))
     }
-
-    /*
-    /// Returns the symbol naming the given type, or none if it's
-    /// not defined.
-    pub fn get_typename(&mut self, name: &str) -> Option<TypeSym> {
-        let s = self.types.intern(name);
-        if self.types.contains_key(&s) {
-            Some(s)
-        } else {
-            None
-        }
-    }
-    */
 }
 
 /// Main driver function.
@@ -171,7 +181,23 @@ pub fn compile(src: &str) -> Vec<u8> {
         parser.parse()
     };
     let ir = ir::lower(&ast);
-    let checked = typeck::typecheck(cx, ir).unwrap();
+    let checked =
+        typeck::typecheck(cx, ir).unwrap_or_else(|e| panic!("Type check error: {}", e.format(cx)));
     let wasm = backend::output(cx, &checked);
     wasm
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    /// Make sure outputting a lambda's name gives us something we expect.
+    #[test]
+    fn check_name_format() {
+        let cx = Cx::new();
+        let args = vec![cx.i32(), cx.bool()];
+        let def = TypeDef::Lambda(args, cx.i32());
+        let gotten_name = def.get_name(&cx);
+        let desired_name = "fn(I32, Bool): I32";
+        assert_eq!(&gotten_name, desired_name);
+    }
 }

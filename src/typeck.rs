@@ -58,8 +58,8 @@ impl TypeError {
             } => format!(
                 "Function {} returns {} but should return {}",
                 cx.fetch(*fname),
-                cx.fetch_type(*got).get_name(),
-                cx.fetch_type(*expected).get_name(),
+                cx.fetch_type(*got).get_name(cx),
+                cx.fetch_type(*expected).get_name(cx),
             ),
             TypeError::BopTypeMismatch {
                 bop,
@@ -69,15 +69,15 @@ impl TypeError {
             } => format!(
                 "Invalid types for BOp {:?}: expected {}, got {} + {}",
                 bop,
-                cx.fetch_type(*expected).get_name(),
-                cx.fetch_type(*got1).get_name(),
-                cx.fetch_type(*got2).get_name()
+                cx.fetch_type(*expected).get_name(cx),
+                cx.fetch_type(*got1).get_name(cx),
+                cx.fetch_type(*got2).get_name(cx)
             ),
             TypeError::UopTypeMismatch { op, got, expected } => format!(
                 "Invalid types for UOp {:?}: expected {}, got {}",
                 op,
-                cx.fetch_type(*expected).get_name(),
-                cx.fetch_type(*got).get_name()
+                cx.fetch_type(*expected).get_name(cx),
+                cx.fetch_type(*got).get_name(cx)
             ),
             TypeError::LetTypeMismatch {
                 name,
@@ -86,26 +86,26 @@ impl TypeError {
             } => format!(
                 "initializer for variable {}: expected {}, got {}",
                 cx.fetch(*name),
-                cx.fetch_type(*expected).get_name(),
-                cx.fetch_type(*got).get_name()
+                cx.fetch_type(*expected).get_name(cx),
+                cx.fetch_type(*got).get_name(cx)
             ),
             TypeError::IfTypeMismatch { ifpart, elsepart } => format!(
                 "If block return type is {}, but else block returns {}",
-                cx.fetch_type(*ifpart).get_name(),
-                cx.fetch_type(*elsepart).get_name(),
+                cx.fetch_type(*ifpart).get_name(cx),
+                cx.fetch_type(*elsepart).get_name(cx),
             ),
             TypeError::CondMismatch { got } => format!(
                 "If expr condition is {}, not bool",
-                cx.fetch_type(*got).get_name(),
+                cx.fetch_type(*got).get_name(cx),
             ),
             TypeError::ParamMismatch { got, expected } => format!(
                 "Function wanted type {} in param but got type {}",
-                cx.fetch_type(*got).get_name(),
-                cx.fetch_type(*expected).get_name()
+                cx.fetch_type(*got).get_name(cx),
+                cx.fetch_type(*expected).get_name(cx)
             ),
             TypeError::CallMismatch { got } => format!(
                 "Tried to call function but it is not a function, it is a {}",
-                got.get_name()
+                got.get_name(cx)
             ),
         }
     }
@@ -289,8 +289,7 @@ pub fn typecheck_decl(
         } => {
             // Add function to global scope
             let type_params = signature.params.iter().map(|(_name, t)| *t).collect();
-            let function_type =
-                cx.intern_type(&TypeDef::Lambda(type_params, Box::new(signature.rettype)));
+            let function_type = cx.intern_type(&TypeDef::Lambda(type_params, signature.rettype));
             symtbl.add_var(name, &function_type);
 
             // Push scope, typecheck and add params to symbol table
@@ -512,8 +511,7 @@ fn typecheck_expr(
                 .iter()
                 .map(|(_varsym, typesym)| *typesym)
                 .collect();
-            let lambdatype =
-                cx.intern_type(&TypeDef::Lambda(paramtypes, Box::new(signature.rettype)));
+            let lambdatype = cx.intern_type(&TypeDef::Lambda(paramtypes, signature.rettype));
             Ok(ir::TypedExpr {
                 e: Lambda {
                     signature,
@@ -544,7 +542,7 @@ fn typecheck_expr(
                             func: Box::new(f),
                             params: given_params,
                         },
-                        t: **rettype,
+                        t: *rettype,
                     })
                 }
                 other => Err(TypeError::CallMismatch { got: other.clone() }),
@@ -573,9 +571,9 @@ mod tests {
     fn test_typecheck_lit() {
         use ir;
         let cx = &mut crate::Cx::new();
-        let t_i32 = cx.intern_type(&TypeDef::SInt(4));
-        let t_bool = cx.intern_type(&TypeDef::Bool);
-        let t_unit = cx.intern_type(&TypeDef::Tuple(vec![]));
+        let t_i32 = cx.i32();
+        let t_bool = cx.bool();
+        let t_unit = cx.unit();
 
         assert_eq!(
             typecheck_literal(cx, &ir::Literal::Integer(9)).unwrap(),
@@ -594,8 +592,8 @@ mod tests {
         let cx = &mut crate::Cx::new();
         let t_foo = cx.intern("foo");
         let t_bar = cx.intern("bar");
-        let t_i32 = cx.intern_type(&TypeDef::SInt(4));
-        let t_bool = cx.intern_type(&TypeDef::Bool);
+        let t_i32 = cx.i32();
+        let t_bool = cx.bool();
         let mut t = Symtbl::new();
 
         // Make sure we can get a value
@@ -633,9 +631,9 @@ mod tests {
     #[test]
     fn test_type_lit() {
         let cx = &mut crate::Cx::new();
-        let t_i32 = cx.intern_type(&TypeDef::SInt(4));
-        let t_bool = cx.intern_type(&TypeDef::Bool);
-        let t_unit = cx.intern_type(&TypeDef::Tuple(vec![]));
+        let t_i32 = cx.i32();
+        let t_bool = cx.bool();
+        let t_unit = cx.unit();
 
         let l1 = ir::Literal::Integer(3);
         let l1t = typecheck_literal(cx, &l1).unwrap();
@@ -728,8 +726,8 @@ mod tests {
     fn test_let() {
         let cx = &mut crate::Cx::new();
         let tbl = &mut Symtbl::new();
-        let t_i32 = cx.intern_type(&TypeDef::SInt(4));
-        let t_unit = cx.intern_type(&TypeDef::Tuple(vec![]));
+        let t_i32 = cx.i32();
+        let t_unit = cx.unit();
         let fooname = cx.intern("foo");
 
         use ir::*;
@@ -771,7 +769,7 @@ mod tests {
         let fname = cx.intern("foo");
         let aname = cx.intern("a");
         let bname = cx.intern("b");
-        let ftype = cx.intern_type(&TypeDef::Lambda(vec![t_i32, t_i32], Box::new(t_i32)));
+        let ftype = cx.intern_type(&TypeDef::Lambda(vec![t_i32, t_i32], t_i32));
 
         use ir::*;
         {
