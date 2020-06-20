@@ -927,6 +927,7 @@ const baz: {} = {}
         let valid_args = vec![
             "fn(x:I32):I32 = x end",
             "fn(x:I32, i:Bool) = x end",
+            "fn(f:fn(I32):I32, x:I32) = f(x) end",
             "fn() = {} end",
             "fn() = end",
         ];
@@ -951,6 +952,12 @@ const baz: {} = {}
             "x()",
         ];
         test_parse_with(|p| p.parse_expr(0), &valid_args);
+    }
+
+    #[test]
+    fn parse_fn_lambda() {
+        let valid_args = vec!["fn apply_one(f: fn(I32):I32, x: I32): I32 = f(x) end"];
+        test_parse_with(|p| p.parse_decl().unwrap(), &valid_args);
     }
 
     #[test]

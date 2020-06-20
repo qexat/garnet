@@ -101,6 +101,15 @@ pub struct Signature {
     pub rettype: TypeSym,
 }
 
+impl Signature {
+    /// Returns a lambda typedef representing the signatue
+    pub(crate) fn to_type(&self, cx: &crate::Cx) -> TypeSym {
+        let args = self.params.iter().map(|(_v, t)| *t).collect();
+        let t = TypeDef::Lambda(args, self.rettype);
+        cx.intern_type(&t)
+    }
+}
+
 /// Any expression.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Expr {
