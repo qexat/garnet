@@ -31,7 +31,7 @@ fn unparse_decl(cx: &Cx, d: &Decl, out: &mut dyn io::Write) -> io::Result<()> {
             init,
         } => {
             let name = cx.fetch(*name);
-            let tname = cx.fetch_type(*typename).get_name();
+            let tname = cx.fetch_type(*typename).get_name(cx);
             write!(out, "const {}: {} = ", name, tname)?;
             unparse_expr(cx, init, 0, out)?;
             writeln!(out)
@@ -43,11 +43,11 @@ fn unparse_sig(cx: &Cx, sig: &Signature, out: &mut dyn io::Write) -> io::Result<
     write!(out, "(")?;
     for (name, typename) in sig.params.iter() {
         let name = cx.fetch(*name);
-        let tname = cx.fetch_type(*typename).get_name();
+        let tname = cx.fetch_type(*typename).get_name(cx);
         write!(out, "{}: {}", name, tname)?;
     }
     write!(out, "): ")?;
-    let rettype = cx.fetch_type(sig.rettype).get_name();
+    let rettype = cx.fetch_type(sig.rettype).get_name(cx);
     write!(out, "{}", rettype)
 }
 fn unparse_expr(cx: &Cx, e: &Expr, indent: usize, out: &mut dyn io::Write) -> io::Result<()> {
@@ -102,7 +102,7 @@ fn unparse_expr(cx: &Cx, e: &Expr, indent: usize, out: &mut dyn io::Write) -> io
             init,
         } => {
             let name = cx.fetch(*varname);
-            let tname = cx.fetch_type(*typename).get_name();
+            let tname = cx.fetch_type(*typename).get_name(cx);
             write!(out, "let {}: {} = ", name, tname)?;
             unparse_expr(cx, init, 0, out)?;
             writeln!(out)
