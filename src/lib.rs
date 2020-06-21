@@ -10,6 +10,7 @@ pub mod format;
 pub mod intern;
 pub mod ir;
 pub mod parser;
+pub mod passes;
 pub mod typeck;
 
 /// The interned name of a type
@@ -181,8 +182,9 @@ pub fn compile(src: &str) -> Vec<u8> {
         parser.parse()
     };
     let ir = ir::lower(&ast);
-    let checked =
-        typeck::typecheck(cx, ir).unwrap_or_else(|e| panic!("Type check error: {}", e.format(cx)));
+    let transformed_ir = passes::run_passes(cx, ir);
+    let checked = typeck::typecheck(cx, transformed_ir)
+        .unwrap_or_else(|e| panic!("Type check error: {}", e.format(cx)));
     let wasm = backend::output(cx, &checked);
     wasm
 }

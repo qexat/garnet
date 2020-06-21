@@ -145,15 +145,19 @@ change with time.
 ## Wishlist items
 
  * I want to explore having a more orthogonal relationship between
-   tuples, structs, and function args.  Enums as well.
+   tuples, structs, and function args.  Enums as well.  See
+   <https://todo.sr.ht/~icefox/garnet/7>
+ * Better methodology for boilerplate-y things like visitor patterns /
+   big ol' honkin' pattern matches would be very interesting.  Some nice
+   sugar here may be very productive, personally.  Also
+   <https://todo.sr.ht/~icefox/garnet/7>
  * It would be surprisingly appealing if there were no methods, traits,
    or anything like that... just data structures, functions and
    namespaces/modules.  Look at OCaml's modules for inspiration perhaps.
- * Better methodology for boilerplate-y things like visitor patterns /
-   big ol' honkin' pattern matches would be very interesting.  Some nice
-   sugar here may be very productive, personally.
- * Consider some sort of templates or macros -- <https://dlang.org/spec/template.html>
-   or just use Handlebars :P
+   See <https://todo.sr.ht/~icefox/garnet/8>
+ * Consider some sort of templates or macros -- <https://dlang.org/spec/template.html>?
+   or just use Handlebars :P.
+   Also see <https://todo.sr.ht/~icefox/garnet/8>
 
 # Toolchain
 
