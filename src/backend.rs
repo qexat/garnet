@@ -20,11 +20,45 @@ pub fn output(cx: &Cx, program: &ir::Ir<TypeSym>) -> Vec<u8> {
     for decl in program.decls.iter() {
         predeclare_decl(&cx, m, symbols, decl);
     }
+    make_heckin_function_table(m, symbols);
     for decl in program.decls.iter() {
         compile_decl(&cx, m, symbols, decl);
     }
     //m.emit_wasm_file("/home/icefox/test.wasm");
     m.emit_wasm()
+}
+
+/// Ok, so.  To use indirect function calls, ie calling through a pointer,
+/// we need to declare a table in our module.  Then we need to make an
+/// element section full of our function id's, to init that table with.
+fn make_heckin_function_table(m: &mut w::Module, symbols: &mut Symbols) {
+    let mut table_members = vec![];
+    for scope in &mut symbols.bindings {
+        for binding in scope.values_mut() {
+            if let Binding::Function(f) = binding {
+                // Set the function's table index to its position in the table.
+                f.table_offset = table_members.len();
+                table_members.push(Some(f.id));
+            }
+        }
+    }
+
+    let table_size = table_members.len() as u32;
+    let table = m
+        .tables
+        .add_local(table_size, Some(table_size), w::ValType::Funcref);
+    symbols.function_table = Some(table);
+    // Add elements segment...
+    // What the heck is ElementKind::Active?  I don't see this shit anywhere in the spec.
+    // TODO: Rummage through github design issues, see if we're doing it right.
+    m.elements.add(
+        w::ElementKind::Active {
+            table,
+            offset: w::InitExpr::Value(w::ir::Value::I32(0).into()),
+        },
+        w::ValType::Funcref,
+        table_members,
+    );
 }
 
 /// Goes through top-level decl's and adds them all to the top scope of the symbol table,
@@ -50,8 +84,14 @@ fn predeclare_decl(cx: &Cx, m: &mut w::Module, symbols: &mut Symbols, decl: &ir:
             let fb = w::FunctionBuilder::new(&mut m.types, &paramtype, &rettype);
             let fn_param_types: Vec<_> = fn_params.iter().map(|local| local.id).collect();
             let f_id = fb.finish(fn_param_types, &mut m.funcs);
+            // get the function type out grumble grumble
+            let f_ty = if let w::FunctionKind::Local(ref l) = m.funcs.get(f_id).kind {
+                l.ty()
+            } else {
+                unreachable!("We just declared a function to be local and now it's not local");
+            };
 
-            symbols.new_function(*name, f_id, &fn_params);
+            symbols.new_function(*name, f_id, f_ty, &fn_params);
             let name_str = cx.fetch(*name);
             let function_def = symbols.get_function(*name).unwrap();
             m.exports.add(&name_str, function_def.id);
@@ -132,7 +172,13 @@ impl LocalVar {
 struct Function {
     name: VarSym,
     id: w::FunctionId,
+    type_id: w::TypeId,
     params: Vec<LocalVar>,
+    /// The location of the function in the function table
+    /// We use a dummy table offset of 0 when we don't know,
+    /// but that's also a valid offset, so we're just gonna
+    /// suck it for now.
+    table_offset: usize,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -151,12 +197,14 @@ enum Binding {
 /// A scoped symbol table containing everything what's in the wasm module.
 struct Symbols {
     bindings: Vec<HashMap<VarSym, Binding>>,
+    function_table: Option<w::TableId>,
 }
 
 impl Symbols {
     fn new() -> Self {
         Self {
             bindings: vec![HashMap::default()],
+            function_table: None,
         }
     }
     fn push_scope(&mut self) {
@@ -177,30 +225,45 @@ impl Symbols {
     }
 
     /// Insert a new function ID into the top scope
-    fn new_function(&mut self, name: VarSym, id: w::FunctionId, params: &[LocalVar]) {
+    fn new_function(
+        &mut self,
+        name: VarSym,
+        id: w::FunctionId,
+        type_id: w::TypeId,
+        params: &[LocalVar],
+    ) {
         self.bindings.last_mut().unwrap().insert(
             name,
             Binding::Function(Function {
                 name,
                 id,
+                type_id,
                 params: params.to_owned(),
+                table_offset: 0,
             }),
         );
     }
 
     fn get_local(&mut self, name: VarSym) -> Option<&LocalVar> {
-        for scope in self.bindings.iter().rev() {
-            if let Some(Binding::Local(x)) = scope.get(&name) {
-                return Some(x);
-            }
+        if let Some(Binding::Local(f)) = self.get(name) {
+            return Some(f);
+        } else {
+            None
         }
-        None
     }
 
     fn get_function(&mut self, name: VarSym) -> Option<&Function> {
+        if let Some(Binding::Function(f)) = self.get(name) {
+            return Some(f);
+        } else {
+            None
+        }
+    }
+
+    fn get(&self, name: VarSym) -> Option<&Binding> {
         for scope in self.bindings.iter().rev() {
-            if let Some(Binding::Function(f)) = scope.get(&name) {
-                return Some(f);
+            if let Some(v) = scope.get(&name) {
+                return Some(v);
             }
         }
         None
@@ -258,7 +321,7 @@ fn compile_function(
             for local in func.params.iter() {
                 symbols.add_local(*local);
             }
-            compile_exprs(&cx, &mut m.locals, symbols, instrs, &body);
+            compile_exprs(&cx, &mut m.locals, &mut m.types, symbols, instrs, &body);
             symbols.pop_scope();
         }
         _ => unreachable!("Can't happen!"),
@@ -272,6 +335,7 @@ fn compile_function(
 fn compile_exprs(
     cx: &Cx,
     m: &mut w::ModuleLocals,
+    t: &mut w::ModuleTypes,
     symbols: &mut Symbols,
     instrs: &mut w::InstrSeqBuilder,
     exprs: &[ir::TypedExpr<TypeSym>],
@@ -291,20 +355,20 @@ fn compile_exprs(
     let l = exprs.len();
     match l {
         0 => (),
-        1 => compile_expr(cx, m, symbols, instrs, &exprs[0]),
+        1 => compile_expr(cx, m, t, symbols, instrs, &exprs[0]),
         l => {
             // Compile and insert drop instructions after each
             // expr
             let exprs_prefix = &exprs[..l - 1];
             exprs_prefix.iter().for_each(|expr| {
-                compile_expr(cx, m, symbols, instrs, expr);
+                compile_expr(cx, m, t, symbols, instrs, expr);
                 let x = stacksize(&cx, expr.t);
                 for _ in 0..x {
                     instrs.drop();
                 }
             });
             // Then compile the last one.
-            compile_expr(cx, m, symbols, instrs, &exprs[l - 1]);
+            compile_expr(cx, m, t, symbols, instrs, &exprs[l - 1]);
         }
     }
 }
@@ -316,6 +380,7 @@ fn compile_exprs(
 fn compile_expr(
     cx: &Cx,
     m: &mut w::ModuleLocals,
+    t: &mut w::ModuleTypes,
     symbols: &mut Symbols,
     instrs: &mut w::InstrSeqBuilder,
     expr: &ir::TypedExpr<TypeSym>,
@@ -366,8 +431,8 @@ fn compile_expr(
                     ir::BOp::Xor => w::ir::BinaryOp::I32Xor,
                 }
             }
-            compile_expr(cx, m, symbols, instrs, lhs);
-            compile_expr(cx, m, symbols, instrs, rhs);
+            compile_expr(cx, m, t, symbols, instrs, lhs);
+            compile_expr(cx, m, t, symbols, instrs, rhs);
             let op = compile_binop(op);
             instrs.binop(op);
         }
@@ -376,11 +441,11 @@ fn compile_expr(
             // By definition this only works on signed integers anyway.
             ir::UOp::Neg => {
                 instrs.i32_const(0);
-                compile_expr(cx, m, symbols, instrs, rhs);
+                compile_expr(cx, m, t, symbols, instrs, rhs);
                 instrs.binop(w::ir::BinaryOp::I32Sub);
             }
             ir::UOp::Not => {
-                compile_expr(cx, m, symbols, instrs, rhs);
+                compile_expr(cx, m, t, symbols, instrs, rhs);
                 instrs.unop(w::ir::UnaryOp::I32Eqz);
             }
         },
@@ -388,7 +453,7 @@ fn compile_expr(
         // However, functions/etc must not leave extra values
         // on the stack, so this needs to insert drop's as appropriate
         E::Block { body } => {
-            compile_exprs(cx, m, symbols, instrs, body);
+            compile_exprs(cx, m, t, symbols, instrs, body);
         }
         E::Let {
             varname,
@@ -399,12 +464,12 @@ fn compile_expr(
             let local = LocalVar::new(cx, m, *varname, *typename);
             symbols.add_local(local);
             // Compile init expression
-            compile_expr(cx, m, symbols, instrs, init);
+            compile_expr(cx, m, t, symbols, instrs, init);
             // Store result of expression
             instrs.local_set(local.id);
         }
         E::If { cases, falseblock } => {
-            compile_ifcase(cx, m, symbols, cases, instrs, falseblock);
+            compile_ifcase(cx, m, t, symbols, cases, instrs, falseblock);
         }
 
         E::Loop { .. } => todo!(),
@@ -423,12 +488,21 @@ fn compile_expr(
                     t: _,
                 } => {
                     for param in params {
-                        compile_expr(cx, m, symbols, instrs, param);
+                        compile_expr(cx, m, t, symbols, instrs, param);
                     }
-                    if let Some(func) = symbols.get_function(name) {
-                    instrs.call(func.id);
-                    } else {
-                        unreachable!("Backend could not resolve declared function {}!", cx.fetch(name));
+                    match symbols.get(name) {
+                        Some(Binding::Function(f)) => {
+                            instrs.call(f.id);
+                        }
+                        Some(Binding::Local(l)) => {
+                            // Call indirect; load local val, get the function table id, and call
+                            // it
+                            let function_type = t.find(&[], &[]).expect("Shouldn't happen");
+                            let table_id = symbols.function_table.expect("Can't happen");
+                            instrs.local_get(l.id);
+                            instrs.call_indirect(function_type, table_id);
+                        }
+                        _ => unreachable!("Backend could not resolve declared function {}!", cx.fetch(name))
                     }
                 }
                 _ => panic!("A funcall got something other than a var, which means a lambda somewhere hasn't been lowered"),
@@ -436,7 +510,7 @@ fn compile_expr(
         }
         E::Break => todo!(),
         E::Return { retval } => {
-            compile_expr(cx, m, symbols, instrs, retval);
+            compile_expr(cx, m, t, symbols, instrs, retval);
             instrs.return_();
         }
     };
@@ -478,6 +552,7 @@ unheck_if(cases.as_slice(), falseblock.as_slice())
 fn compile_ifcase(
     cx: &Cx,
     m: &mut w::ModuleLocals,
+    t: &mut w::ModuleTypes,
     symbols: &mut Symbols,
     cases: &[(ir::TypedExpr<TypeSym>, Vec<ir::TypedExpr<TypeSym>>)],
     instrs: &mut w::InstrSeqBuilder,
@@ -487,10 +562,11 @@ fn compile_ifcase(
     // First off we just compile the if test,
     // regardless of what.
     let (test, thenblock) = &cases[0];
-    compile_expr(cx, m, symbols, instrs, &test);
+    compile_expr(cx, m, t, symbols, instrs, &test);
     let rettype = compile_typesym(&cx, test.t);
     let grr = RefCell::new(symbols);
     let mgrr = RefCell::new(m);
+    let tgrr = RefCell::new(t);
 
     // The redundancy here is kinda screwy, trying to refactor
     // out the closures leads to weird lifetime errors.
@@ -501,12 +577,14 @@ fn compile_ifcase(
             |then| {
                 let symbols = &mut grr.borrow_mut();
                 let m = &mut mgrr.borrow_mut();
-                compile_exprs(cx, m, symbols, then, &thenblock);
+                let t = &mut tgrr.borrow_mut();
+                compile_exprs(cx, m, t, symbols, then, &thenblock);
             },
             |else_| {
                 let symbols = &mut grr.borrow_mut();
                 let m = &mut mgrr.borrow_mut();
-                compile_exprs(cx, m, symbols, else_, falseblock);
+                let t = &mut tgrr.borrow_mut();
+                compile_exprs(cx, m, t, symbols, else_, falseblock);
             },
         );
     } else {
@@ -516,12 +594,14 @@ fn compile_ifcase(
             |then| {
                 let symbols = &mut grr.borrow_mut();
                 let m = &mut mgrr.borrow_mut();
-                compile_exprs(cx, m, symbols, then, &thenblock);
+                let t = &mut tgrr.borrow_mut();
+                compile_exprs(cx, m, t, symbols, then, &thenblock);
             },
             |else_| {
                 let symbols = &mut grr.borrow_mut();
                 let m = &mut mgrr.borrow_mut();
-                compile_ifcase(cx, m, symbols, &cases[1..], else_, falseblock);
+                let t = &mut tgrr.borrow_mut();
+                compile_ifcase(cx, m, t, symbols, &cases[1..], else_, falseblock);
             },
         );
     }
@@ -603,7 +683,7 @@ mod tests {
                 }),
             },
         };
-        compile_expr(cx, &mut m.locals, symbols, instrs, &expr);
+        compile_expr(cx, &mut m.locals, &mut m.types, symbols, instrs, &expr);
 
         assert_eq!(symbols.bindings.last().unwrap().len(), 1);
         assert!(symbols.get_local(varname).is_some());
@@ -613,7 +693,7 @@ mod tests {
             t: cx.i32(),
             e: E::Var { name: varname },
         };
-        compile_expr(cx, &mut m.locals, symbols, instrs, &expr);
+        compile_expr(cx, &mut m.locals, &mut m.types, symbols, instrs, &expr);
         /*
         assert_eq!(
             instrs.instrs()[0].0,
