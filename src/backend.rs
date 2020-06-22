@@ -64,52 +64,98 @@ fn function_signature(cx: &Cx, sig: &ir::Signature) -> (Vec<w::ValType>, Vec<w::
 }
 #[derive(Copy, Clone, Debug, PartialEq)]
 struct LocalVar {
-    local_idx: w::LocalId,
+    name: VarSym,
+    id: w::LocalId,
     wasm_type: w::ValType,
 }
 
+impl LocalVar {
+    /// Creates a new local var, including wasm ID,
+    /// without inserting it into the symbol table.
+    fn new(cx: &Cx, locals: &mut w::ModuleLocals, name: VarSym, type_: TypeSym) -> LocalVar {
+        let id = locals.add(compile_typesym(cx, type_));
+        let p = LocalVar {
+            name,
+            id,
+            wasm_type: compile_typesym(cx, type_),
+        };
+        p
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+enum Binding {
+    Local(LocalVar),
+
+    GlobalVar {
+        name: VarSym,
+        //local_idx: w::LocalId,
+        wasm_type: w::ValType,
+    },
+
+    Function {
+        name: VarSym,
+        id: w::FunctionId,
+        params: Vec<LocalVar>,
+    },
+}
+
+/// A scoped symbol table containing everything what's in the wasm module.
 struct Symbols {
-    globals: HashMap<VarSym, LocalVar>,
-    /// A simple, scope-less symbol table.
-    /// TODO Wait what if two local vars have the same name in the same scope.  Shadowing?
-    locals: HashMap<VarSym, LocalVar>,
-    functions: HashMap<VarSym, w::FunctionId>,
+    bindings: Vec<HashMap<VarSym, Binding>>,
 }
 
 impl Symbols {
     fn new() -> Self {
         Self {
-            globals: HashMap::default(),
-            locals: HashMap::default(),
-            functions: HashMap::default(),
+            bindings: vec![HashMap::default()],
         }
     }
-    fn new_local(
-        &mut self,
-        cx: &Cx,
-        locals: &mut w::ModuleLocals,
-        name: VarSym,
-        type_: TypeSym,
-    ) -> w::LocalId {
-        let idx = locals.add(compile_typesym(cx, type_));
-        let p = LocalVar {
-            local_idx: idx,
-            wasm_type: compile_typesym(cx, type_),
-        };
-        self.locals.insert(name, p);
-        idx
+    fn push_scope(&mut self) {
+        self.bindings.push(HashMap::default());
+    }
+    fn pop_scope(&mut self) {
+        assert!(self.bindings.len() > 1);
+        self.bindings.pop();
     }
 
-    fn new_function(&mut self, name: VarSym, id: w::FunctionId) {
-        self.functions.insert(name, id);
+    /// Add an already-existing local binding to the top of the current scope.
+    /// Create a new binding with LocalVar::new()
+    fn add_local(&mut self, local: LocalVar) {
+        self.bindings
+            .last_mut()
+            .unwrap()
+            .insert(local.name, Binding::Local(local));
+    }
+
+    /// Insert a new function ID into the top scope
+    fn new_function(&mut self, name: VarSym, id: w::FunctionId, params: &[LocalVar]) {
+        self.bindings.last_mut().unwrap().insert(
+            name,
+            Binding::Function {
+                name,
+                id,
+                params: params.to_owned(),
+            },
+        );
     }
 
     fn get_local(&mut self, name: VarSym) -> Option<&LocalVar> {
-        self.locals.get(&name)
+        for scope in self.bindings.iter().rev() {
+            if let Some(Binding::Local(x)) = scope.get(&name) {
+                return Some(x);
+            }
+        }
+        None
     }
 
     fn get_function(&mut self, name: VarSym) -> Option<w::FunctionId> {
-        self.functions.get(&name).cloned()
+        for scope in self.bindings.iter().rev() {
+            if let Some(Binding::Function { id, .. }) = scope.get(&name) {
+                return Some(*id);
+            }
+        }
+        None
     }
 }
 
@@ -129,14 +175,14 @@ impl<'a> SymbolNode<'a> {
 /// Order by local index
 impl cmp::PartialOrd for LocalVar {
     fn partial_cmp(&self, other: &Self) -> Option<cmp::Ordering> {
-        Some(self.local_idx.cmp(&other.local_idx))
+        Some(self.id.cmp(&other.id))
     }
 }
 
 /// Order by local index
 impl cmp::Ord for LocalVar {
     fn cmp(&self, other: &Self) -> cmp::Ordering {
-        self.local_idx.cmp(&other.local_idx)
+        self.id.cmp(&other.id)
     }
 }
 
@@ -154,25 +200,33 @@ fn compile_function(
     let (paramtype, rettype) = function_signature(cx, sig);
 
     // add params
+    // We do some shenanigans with scope here to create the locals and then
     let mut fn_params = vec![];
     for (pname, ptype) in sig.params.iter() {
-        let idx = symbols.new_local(cx, &mut m.locals, *pname, *ptype);
-        fn_params.push(idx);
+        fn_params.push(LocalVar::new(cx, &mut m.locals, *pname, *ptype));
     }
     // So we have to create the function now, to get the FunctionId
     // and know what to call in case there's a recursion or such.
     let fb = w::FunctionBuilder::new(&mut m.types, &paramtype, &rettype);
-    let f_idx = fb.finish(fn_params, &mut m.funcs);
-    symbols.new_function(name, f_idx);
-    let defined_func = m.funcs.get_mut(f_idx);
+    let fn_param_types: Vec<_> = fn_params.iter().map(|local| local.id).collect();
+    let f_id = fb.finish(fn_param_types, &mut m.funcs);
+
+    symbols.new_function(name, f_id, &fn_params);
+    let defined_func = m.funcs.get_mut(f_id);
     match &mut defined_func.kind {
         w::FunctionKind::Local(lfunc) => {
             let instrs = &mut lfunc.builder_mut().func_body();
-            let _ = compile_exprs(&cx, &mut m.locals, symbols, instrs, &body);
+            // Handle scoping and add input params to it.
+            symbols.push_scope();
+            for local in fn_params.iter() {
+                symbols.add_local(*local);
+            }
+            compile_exprs(&cx, &mut m.locals, symbols, instrs, &body);
+            symbols.pop_scope();
         }
         _ => unreachable!("Can't happen!"),
     }
-    f_idx
+    f_id
 }
 
 /// Compile multiple exprs, making sure they don't leave unused
@@ -247,7 +301,7 @@ fn compile_expr(
             let ldef = symbols
                 .get_local(*name)
                 .expect(&format!("Unknown local {:?}; should never happen", name));
-            instrs.local_get(ldef.local_idx);
+            instrs.local_get(ldef.id);
         }
         E::BinOp { op, lhs, rhs } => {
             // Currently we only have signed integers
@@ -305,11 +359,12 @@ fn compile_expr(
             init,
         } => {
             // Declare local var storage
-            let local_idx = symbols.new_local(cx, m, *varname, *typename);
+            let local = LocalVar::new(cx, m, *varname, *typename);
+            symbols.add_local(local);
             // Compile init expression
             compile_expr(cx, m, symbols, instrs, init);
             // Store result of expression
-            instrs.local_set(local_idx);
+            instrs.local_set(local.id);
         }
         E::If { cases, falseblock } => {
             compile_ifcase(cx, m, symbols, cases, instrs, falseblock);
@@ -500,7 +555,7 @@ mod tests {
         let expr = ir::TypedExpr {
             t: cx.unit(),
             e: E::Let {
-                varname: varname,
+                varname,
                 typename: cx.i32(),
                 init: Box::new(ir::TypedExpr {
                     t: cx.i32(),
@@ -510,7 +565,7 @@ mod tests {
         };
         compile_expr(cx, &mut m.locals, symbols, instrs, &expr);
 
-        assert_eq!(symbols.locals.len(), 1);
+        assert_eq!(symbols.bindings.last().unwrap().len(), 1);
         assert!(symbols.get_local(varname).is_some());
 
         // Can we then compile the var lookup?
