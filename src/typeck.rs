@@ -3,7 +3,7 @@
 
 use std::collections::HashMap;
 
-use crate::ir::{self};
+use crate::ir;
 use crate::{Cx, TypeDef, TypeSym, VarSym};
 
 #[derive(Debug, Clone)]
@@ -265,6 +265,7 @@ fn type_matches(t1: &TypeSym, t2: &TypeSym) -> bool {
 
 pub fn typecheck(cx: &mut Cx, ir: ir::Ir<()>) -> Result<ir::Ir<TypeSym>, TypeError> {
     let symtbl = &mut Symtbl::new();
+    ir.decls.iter().for_each(|d| predeclare_decl(cx, symtbl, d));
     let checked_decls = ir
         .decls
         .into_iter()
@@ -275,8 +276,26 @@ pub fn typecheck(cx: &mut Cx, ir: ir::Ir<()>) -> Result<ir::Ir<TypeSym>, TypeErr
     })
 }
 
+/// Scan through all decl's and add any bindings to the symbol table,
+/// so we don't need to do anything with forward references.
+fn predeclare_decl(cx: &mut Cx, symtbl: &mut Symtbl, decl: &ir::Decl<()>) {
+    match decl {
+        ir::Decl::Function {
+            name, signature, ..
+        } => {
+            // Add function to global scope
+            let type_params = signature.params.iter().map(|(_name, t)| *t).collect();
+            let function_type = cx.intern_type(&TypeDef::Lambda(type_params, signature.rettype));
+            symtbl.add_var(*name, &function_type);
+        }
+        ir::Decl::Const { name, typename, .. } => {
+            symtbl.add_var(*name, typename);
+        }
+    }
+}
+
 /// Typechecks a single decl
-pub fn typecheck_decl(
+fn typecheck_decl(
     cx: &mut Cx,
     symtbl: &mut Symtbl,
     decl: ir::Decl<()>,
@@ -288,9 +307,10 @@ pub fn typecheck_decl(
             body,
         } => {
             // Add function to global scope
-            let type_params = signature.params.iter().map(|(_name, t)| *t).collect();
-            let function_type = cx.intern_type(&TypeDef::Lambda(type_params, signature.rettype));
-            symtbl.add_var(name, &function_type);
+            // No longer necessary, we scan and add all decl's ahead of time.
+            //let type_params = signature.params.iter().map(|(_name, t)| *t).collect();
+            //let function_type = cx.intern_type(&TypeDef::Lambda(type_params, signature.rettype));
+            //symtbl.add_var(name, &function_type);
 
             // Push scope, typecheck and add params to symbol table
             symtbl.push_scope();
@@ -330,7 +350,8 @@ pub fn typecheck_decl(
             typename,
             init,
         } => {
-            symtbl.add_var(name, &typename);
+            // No longer necessary, we scan and add all decl's ahead of time.
+            //symtbl.add_var(name, &typename);
             Ok(ir::Decl::Const {
                 name,
                 typename,
