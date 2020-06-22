@@ -59,6 +59,11 @@ where
     pub fn fetch(&self, sym: Ky) -> Rc<Val> {
         self.data.borrow()[sym.into()].clone()
     }
+
+    /// Number of symbols held.
+    pub fn count(&self) -> usize {
+        self.data.borrow().len()
+    }
 }
 
 #[cfg(test)]
