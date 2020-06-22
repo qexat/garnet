@@ -84,14 +84,16 @@ fn predeclare_decl(cx: &Cx, m: &mut w::Module, symbols: &mut Symbols, decl: &ir:
             let fb = w::FunctionBuilder::new(&mut m.types, &paramtype, &rettype);
             let fn_param_types: Vec<_> = fn_params.iter().map(|local| local.id).collect();
             let f_id = fb.finish(fn_param_types, &mut m.funcs);
+            /*
             // get the function type out grumble grumble
             let f_ty = if let w::FunctionKind::Local(ref l) = m.funcs.get(f_id).kind {
                 l.ty()
             } else {
                 unreachable!("We just declared a function to be local and now it's not local");
             };
+            */
 
-            symbols.new_function(*name, f_id, f_ty, &fn_params);
+            symbols.new_function(*name, f_id, &fn_params);
             let name_str = cx.fetch(*name);
             let function_def = symbols.get_function(*name).unwrap();
             m.exports.add(&name_str, function_def.id);
@@ -138,6 +140,19 @@ fn compile_decl(cx: &Cx, m: &mut w::Module, symbols: &mut Symbols, decl: &ir::De
         }
 }
 
+fn lambda_signature(
+    cx: &Cx,
+    params: &[TypeSym],
+    ret: TypeSym,
+) -> (Vec<w::ValType>, Vec<w::ValType>) {
+    let params: Vec<w::ValType> = params
+        .iter()
+        .map(|typesym| compile_typesym(&cx, *typesym))
+        .collect();
+    let rettype = compile_typesym(&cx, ret);
+    (params, vec![rettype])
+}
+
 fn function_signature(cx: &Cx, sig: &ir::Signature) -> (Vec<w::ValType>, Vec<w::ValType>) {
     let params: Vec<w::ValType> = sig
         .params
@@ -147,6 +162,7 @@ fn function_signature(cx: &Cx, sig: &ir::Signature) -> (Vec<w::ValType>, Vec<w::
     let rettype = compile_typesym(&cx, sig.rettype);
     (params, vec![rettype])
 }
+
 #[derive(Copy, Clone, Debug, PartialEq)]
 struct LocalVar {
     name: VarSym,
@@ -172,7 +188,7 @@ impl LocalVar {
 struct Function {
     name: VarSym,
     id: w::FunctionId,
-    type_id: w::TypeId,
+    //type_id: w::TypeId,
     params: Vec<LocalVar>,
     /// The location of the function in the function table
     /// We use a dummy table offset of 0 when we don't know,
@@ -229,7 +245,7 @@ impl Symbols {
         &mut self,
         name: VarSym,
         id: w::FunctionId,
-        type_id: w::TypeId,
+        //type_id: w::TypeId,
         params: &[LocalVar],
     ) {
         self.bindings.last_mut().unwrap().insert(
@@ -237,7 +253,7 @@ impl Symbols {
             Binding::Function(Function {
                 name,
                 id,
-                type_id,
+                //type_id,
                 params: params.to_owned(),
                 table_offset: 0,
             }),
@@ -400,10 +416,18 @@ fn compile_expr(
             Literal::Unit => (),
         },
         E::Var { name } => {
-            let ldef = symbols
-                .get_local(*name)
-                .expect(&format!("Unknown local {:?}; should never happen", name));
-            instrs.local_get(ldef.id);
+            match symbols
+                .get(*name)
+                .expect(&format!("Unknown var {:?}; should never happen", name))
+            {
+                Binding::Local(ldef) => {
+                    instrs.local_get(ldef.id);
+                }
+                Binding::Function(fdef) => {
+                    instrs.i32_const(fdef.table_offset as i32);
+                }
+                x => todo!("Globals"),
+            }
         }
         E::BinOp { op, lhs, rhs } => {
             // Currently we only have signed integers
@@ -497,7 +521,12 @@ fn compile_expr(
                         Some(Binding::Local(l)) => {
                             // Call indirect; load local val, get the function table id, and call
                             // it
-                            let function_type = t.find(&[], &[]).expect("Shouldn't happen");
+                            let expr_type = &*cx.fetch_type(func.t);
+                            let (params_types, return_types) = match expr_type {
+                                TypeDef::Lambda(params, ret) => lambda_signature(cx, params, *ret),
+                                _ => unreachable!("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+                            };
+                            let function_type = t.find(&params_types, &return_types).expect("Shouldn't happen");
                             let table_id = symbols.function_table.expect("Can't happen");
                             instrs.local_get(l.id);
                             instrs.call_indirect(function_type, table_id);
