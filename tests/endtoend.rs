@@ -255,6 +255,20 @@ fn test(): I32 =
 end
 "#;
     assert_eq!(eval_program0(src), 21);
+    // Test function name resolution works without
+    // forward decl's too
+    let src = r#"
+fn test(): I32 =
+    fib(7)
+end
+
+fn fib(x: I32): I32 =
+    if x < 2 then 1
+    else fib(x-1) + fib(x - 2)
+    end
+end
+"#;
+    assert_eq!(eval_program0(src), 21);
 }
 
 /// Test truth tables of logical operators.
@@ -288,6 +302,14 @@ fn truth() {
 /// Test lambda shenanigans
 #[test]
 fn lambda() {
+    /*
+
+    fn test(): I32 =
+        let f: fn(I32): I32 = fn(x: I32): I32 = x * 9 end
+        let result: I32 = apply(f, 10)
+        result
+    end
+         */
     let src = r#"
 fn apply(f: fn(I32): I32, arg: I32): I32 =
     f(arg)

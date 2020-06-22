@@ -18,24 +18,43 @@ pub fn output(cx: &Cx, program: &ir::Ir<TypeSym>) -> Vec<u8> {
     let m = &mut w::Module::with_config(config);
     let symbols = &mut Symbols::new();
     for decl in program.decls.iter() {
+        predeclare_decl(&cx, m, symbols, decl);
+    }
+    for decl in program.decls.iter() {
         compile_decl(&cx, m, symbols, decl);
     }
     //m.emit_wasm_file("/home/icefox/test.wasm");
     m.emit_wasm()
 }
 
-fn compile_decl(cx: &Cx, m: &mut w::Module, symbols: &mut Symbols, decl: &ir::Decl<TypeSym>) {
+/// Goes through top-level decl's and adds them all to the top scope of the symbol table,
+/// so we don't need to do forward declarations in our source.
+fn predeclare_decl(cx: &Cx, m: &mut w::Module, symbols: &mut Symbols, decl: &ir::Decl<TypeSym>) {
     use ir::*;
     match decl {
         Decl::Function {
             name,
             signature,
-            body,
+            ..
         } => {
-            compile_function(cx, m, symbols, *name, signature, body);
+            dbg!("Predeclaring function", cx.fetch(*name));
+            let (paramtype, rettype) = function_signature(cx, signature);
+            // add params
+            // We do some shenanigans with scope here to create the locals and then
+            let mut fn_params = vec![];
+            for (pname, ptype) in signature.params.iter() {
+                fn_params.push(LocalVar::new(cx, &mut m.locals, *pname, *ptype));
+            }
+            // So we have to create the function now, to get the FunctionId
+            // and know what to call in case there's a recursion or such.
+            let fb = w::FunctionBuilder::new(&mut m.types, &paramtype, &rettype);
+            let fn_param_types: Vec<_> = fn_params.iter().map(|local| local.id).collect();
+            let f_id = fb.finish(fn_param_types, &mut m.funcs);
+
+            symbols.new_function(*name, f_id, &fn_params);
             let name_str = cx.fetch(*name);
-            let function_id = symbols.get_function(*name).unwrap();
-            m.exports.add(&name_str, function_id);
+            let function_def = symbols.get_function(*name).unwrap();
+            m.exports.add(&name_str, function_def.id);
         }
         Decl::Const {
             /*
@@ -51,6 +70,32 @@ fn compile_decl(cx: &Cx, m: &mut w::Module, symbols: &mut Symbols, decl: &ir::De
             //let wasm_type = compile_typesym(cx, *typename);
         }
     }
+}
+
+fn compile_decl(cx: &Cx, m: &mut w::Module, symbols: &mut Symbols, decl: &ir::Decl<TypeSym>) {
+    use ir::*;
+    match decl {
+            Decl::Function {
+                name,
+                body,
+                ..
+            } => {
+                compile_function(cx, m, symbols, *name, body);
+            }
+            Decl::Const {
+                /*
+                name,
+                typename,
+                init,
+                */
+                ..
+            } => {
+                // Okay this is actually harder than it looks because
+                // wasm only lets globals be value types.
+                // ...and if it's really const then why do we need it anyway
+                //let wasm_type = compile_typesym(cx, *typename);
+            }
+        }
 }
 
 fn function_signature(cx: &Cx, sig: &ir::Signature) -> (Vec<w::ValType>, Vec<w::ValType>) {
@@ -84,6 +129,13 @@ impl LocalVar {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+struct Function {
+    name: VarSym,
+    id: w::FunctionId,
+    params: Vec<LocalVar>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
 enum Binding {
     Local(LocalVar),
 
@@ -93,11 +145,7 @@ enum Binding {
         wasm_type: w::ValType,
     },
 
-    Function {
-        name: VarSym,
-        id: w::FunctionId,
-        params: Vec<LocalVar>,
-    },
+    Function(Function),
 }
 
 /// A scoped symbol table containing everything what's in the wasm module.
@@ -132,11 +180,11 @@ impl Symbols {
     fn new_function(&mut self, name: VarSym, id: w::FunctionId, params: &[LocalVar]) {
         self.bindings.last_mut().unwrap().insert(
             name,
-            Binding::Function {
+            Binding::Function(Function {
                 name,
                 id,
                 params: params.to_owned(),
-            },
+            }),
         );
     }
 
@@ -149,10 +197,10 @@ impl Symbols {
         None
     }
 
-    fn get_function(&mut self, name: VarSym) -> Option<w::FunctionId> {
+    fn get_function(&mut self, name: VarSym) -> Option<&Function> {
         for scope in self.bindings.iter().rev() {
-            if let Some(Binding::Function { id, .. }) = scope.get(&name) {
-                return Some(*id);
+            if let Some(Binding::Function(f)) = scope.get(&name) {
+                return Some(f);
             }
         }
         None
@@ -194,31 +242,20 @@ fn compile_function(
     m: &mut w::Module,
     symbols: &mut Symbols,
     name: VarSym,
-    sig: &ir::Signature,
     body: &[ir::TypedExpr<TypeSym>],
 ) -> w::FunctionId {
-    let (paramtype, rettype) = function_signature(cx, sig);
-
-    // add params
-    // We do some shenanigans with scope here to create the locals and then
-    let mut fn_params = vec![];
-    for (pname, ptype) in sig.params.iter() {
-        fn_params.push(LocalVar::new(cx, &mut m.locals, *pname, *ptype));
-    }
-    // So we have to create the function now, to get the FunctionId
-    // and know what to call in case there's a recursion or such.
-    let fb = w::FunctionBuilder::new(&mut m.types, &paramtype, &rettype);
-    let fn_param_types: Vec<_> = fn_params.iter().map(|local| local.id).collect();
-    let f_id = fb.finish(fn_param_types, &mut m.funcs);
-
-    symbols.new_function(name, f_id, &fn_params);
-    let defined_func = m.funcs.get_mut(f_id);
+    // This should already be here due to the function being predeclared.
+    let func = symbols
+        .get_function(name)
+        .expect("Function was not predeclared, should never happen")
+        .clone();
+    let defined_func = m.funcs.get_mut(func.id);
     match &mut defined_func.kind {
         w::FunctionKind::Local(lfunc) => {
             let instrs = &mut lfunc.builder_mut().func_body();
             // Handle scoping and add input params to it.
             symbols.push_scope();
-            for local in fn_params.iter() {
+            for local in func.params.iter() {
                 symbols.add_local(*local);
             }
             compile_exprs(&cx, &mut m.locals, symbols, instrs, &body);
@@ -226,7 +263,7 @@ fn compile_function(
         }
         _ => unreachable!("Can't happen!"),
     }
-    f_id
+    func.id
 }
 
 /// Compile multiple exprs, making sure they don't leave unused
@@ -370,7 +407,7 @@ fn compile_expr(
             compile_ifcase(cx, m, symbols, cases, instrs, falseblock);
         }
 
-        E::Loop { body } => todo!(),
+        E::Loop { .. } => todo!(),
         E::Lambda { .. } => {
             panic!("A lambda somewhere has not been lifted into a separate function.  Should never happen!");
         }
@@ -388,8 +425,11 @@ fn compile_expr(
                     for param in params {
                         compile_expr(cx, m, symbols, instrs, param);
                     }
-                    let func = symbols.get_function(name).unwrap();
-                    instrs.call(func);
+                    if let Some(func) = symbols.get_function(name) {
+                    instrs.call(func.id);
+                    } else {
+                        unreachable!("Backend could not resolve declared function {}!", cx.fetch(name));
+                    }
                 }
                 _ => panic!("A funcall got something other than a var, which means a lambda somewhere hasn't been lowered"),
             }
