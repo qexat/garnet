@@ -171,6 +171,15 @@ impl Cx {
     pub fn unit(&self) -> TypeSym {
         self.intern_type(&TypeDef::Tuple(vec![]))
     }
+
+    /// Generate a new unique symbol including the given string
+    /// Useful for some optimziations and intermediate names and such.
+    ///
+    /// Starts with a `@` which currently cannot appear in any identifier.
+    pub fn gensym(&self, s: &str) -> VarSym {
+        let sym = format!("@{}_{}", s, self.syms.count());
+        self.intern(sym)
+    }
 }
 
 /// Main driver function.
@@ -182,9 +191,9 @@ pub fn compile(src: &str) -> Vec<u8> {
         parser.parse()
     };
     let ir = ir::lower(&ast);
-    let transformed_ir = passes::run_passes(cx, ir);
-    let checked = typeck::typecheck(cx, transformed_ir)
-        .unwrap_or_else(|e| panic!("Type check error: {}", e.format(cx)));
+    let ir = passes::run_passes(cx, ir);
+    let checked =
+        typeck::typecheck(cx, ir).unwrap_or_else(|e| panic!("Type check error: {}", e.format(cx)));
     let wasm = backend::output(cx, &checked);
     wasm
 }

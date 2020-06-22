@@ -284,3 +284,20 @@ fn truth() {
         assert_eq!(eval_program0(*inp), *outp);
     }
 }
+
+/// Test lambda shenanigans
+#[test]
+fn lambda() {
+    let src = r#"
+fn apply(f: fn(I32): I32, arg: I32): I32 =
+    f(arg)
+end
+
+fn test(): I32 =
+    let f: fn(I32): I32 = fn(x: I32): I32 = x * 9 end
+    let result: I32 = apply(f, 10)
+    result
+end
+"#;
+    assert_eq!(eval_program0(src), 90);
+}
