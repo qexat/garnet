@@ -17,51 +17,11 @@ pub fn output(cx: &Cx, program: &ir::Ir<TypeSym>) -> Vec<u8> {
     let config = w::ModuleConfig::new();
     let m = &mut w::Module::with_config(config);
     let symbols = &mut Symbols::new();
-    populate_globals(cx, m, symbols, &program.decls);
     for decl in program.decls.iter() {
-        compile_decl(cx, m, symbols, decl);
+        compile_decl(&cx, m, symbols, decl);
     }
     //m.emit_wasm_file("/home/icefox/test.wasm");
     m.emit_wasm()
-}
-
-/// Passes over top-level declarations and shoves them into the symbol table, so we
-/// can refer to them later instead of needing forward references.
-fn populate_globals(
-    cx: &Cx,
-    m: &mut w::Module,
-    symbols: &mut Symbols,
-    decls: &[ir::Decl<TypeSym>],
-) {
-    for decl in decls {
-        match decl {
-            ir::Decl::Function {
-                name,
-                signature,
-                body,
-            } => {
-                // We have to actually heckin' create the function type and basically
-                // allocate a location for it, and then stick that location into our
-                // symbol table and look it up again when we're actually compiling the function.
-
-                let (paramtype, rettype) = function_signature(cx, signature);
-                // add params
-                let mut fn_params = vec![];
-                for (pname, ptype) in signature.params.iter() {
-                    let idx = symbols.new_local(cx, &mut m.locals, *pname, *ptype);
-                    fn_params.push(idx);
-                }
-                // So we have to create the function now, to get the FunctionId
-                // and know what to call in case there's a recursion or such.
-                let fb = w::FunctionBuilder::new(&mut m.types, &paramtype, &rettype);
-                let f_idx = fb.finish(fn_params, &mut m.funcs);
-                symbols.new_function(*name, f_idx);
-            }
-            ir::Decl::Const { name, .. } => {
-                symbols.predeclare_const(*name);
-            }
-        }
-    }
 }
 
 fn compile_decl(cx: &Cx, m: &mut w::Module, symbols: &mut Symbols, decl: &ir::Decl<TypeSym>) {
@@ -108,23 +68,19 @@ struct LocalVar {
     wasm_type: w::ValType,
 }
 
-struct FunctionInfo {
-    id: w::FunctionId,
-    params: HashMap<VarSym, LocalVar>,
-}
-
 struct Symbols {
-    consts: HashMap<VarSym, Option<LocalVar>>,
+    globals: HashMap<VarSym, LocalVar>,
     /// A simple, scope-less symbol table.
-    locals: Vec<HashMap<VarSym, LocalVar>>,
+    /// TODO Wait what if two local vars have the same name in the same scope.  Shadowing?
+    locals: HashMap<VarSym, LocalVar>,
     functions: HashMap<VarSym, w::FunctionId>,
 }
 
 impl Symbols {
     fn new() -> Self {
         Self {
-            consts: HashMap::default(),
-            locals: vec![],
+            globals: HashMap::default(),
+            locals: HashMap::default(),
             functions: HashMap::default(),
         }
     }
@@ -140,42 +96,11 @@ impl Symbols {
             local_idx: idx,
             wasm_type: compile_typesym(cx, type_),
         };
-        self.locals.last().unwrap().insert(name, p);
+        self.locals.insert(name, p);
         idx
     }
-    fn push_scope(&mut self) {
-        self.locals.push(HashMap::default());
-    }
 
-    fn pop_scope(&mut self) {
-        self.locals.pop();
-    }
-
-    fn predeclare_const(&mut self, name: VarSym) {
-        self.consts.insert(name, None);
-    }
-
-    fn new_function(&mut self, name: VarSym, m: &mut w::Module) -> w::FunctionId {
-
-        self.locals.last().unwrap().insert(name, p);
-
-                let mut fn_params = vec![];
-                for (pname, ptype) in signature.params.iter() {
-        let idx = m.locals.add(compile_typesym(cx, type_));
-        let p = LocalVar {
-            local_idx: idx,
-            wasm_type: compile_typesym(cx, type_),
-        };
-                    fn_params.push(idx);
-                }
-                // So we have to create the function now, to get the FunctionId
-                // and know what to call in case there's a recursion or such.
-                let fb = w::FunctionBuilder::new(&mut m.types, &paramtype, &rettype);
-                let f_idx = fb.finish(fn_params, &mut m.funcs);
-        let info = FunctionInfo {
-            id,
-            params:
-        }
+    fn new_function(&mut self, name: VarSym, id: w::FunctionId) {
         self.functions.insert(name, id);
     }
 
@@ -185,10 +110,6 @@ impl Symbols {
 
     fn get_function(&mut self, name: VarSym) -> Option<w::FunctionId> {
         self.functions.get(&name).cloned()
-    }
-
-    fn _get_const(&mut self, name: VarSym) -> Option<&Option<LocalVar>> {
-        self.consts.get(&name)
     }
 }
 
@@ -230,7 +151,6 @@ fn compile_function(
     sig: &ir::Signature,
     body: &[ir::TypedExpr<TypeSym>],
 ) -> w::FunctionId {
-    /*
     let (paramtype, rettype) = function_signature(cx, sig);
 
     // add params
@@ -242,11 +162,8 @@ fn compile_function(
     // So we have to create the function now, to get the FunctionId
     // and know what to call in case there's a recursion or such.
     let fb = w::FunctionBuilder::new(&mut m.types, &paramtype, &rettype);
-    */
-    let f_idx = symbols
-        .get_function(name)
-        .expect("Unknown function, can never happen");
-
+    let f_idx = fb.finish(fn_params, &mut m.funcs);
+    symbols.new_function(name, f_idx);
     let defined_func = m.funcs.get_mut(f_idx);
     match &mut defined_func.kind {
         w::FunctionKind::Local(lfunc) => {
@@ -419,7 +336,7 @@ fn compile_expr(
                     let func = symbols.get_function(name).unwrap();
                     instrs.call(func);
                 }
-                _ => todo!("TODO: No first class functions yet."),
+                _ => panic!("A funcall got something other than a var, which means a lambda somewhere hasn't been lowered"),
             }
         }
         E::Break => todo!(),
