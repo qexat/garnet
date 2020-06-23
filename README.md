@@ -236,6 +236,7 @@ MIT
  * <https://en.wikipedia.org/wiki/Operator-precedence_parser>
  * <https://play.rust-lang.org/?version=stable&mode=debug&edition=2018&gist=174ca95a8b938168764846e97d5e9a2c>
  * <https://www.evanmiller.org/statistical-shortcomings-in-standard-math-libraries.html>
+ * <https://thume.ca/2019/07/14/a-tour-of-metaprogramming-models-for-generics/>
 
 # Random notes
 
