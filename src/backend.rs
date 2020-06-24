@@ -628,12 +628,10 @@ fn stacksize(cx: &Cx, t: TypeSym) -> usize {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
-
     use walrus as w;
 
     use crate::backend::*;
-    use crate::ir::{self, plz, Expr as E};
+    use crate::ir::{self, Expr as E};
 
     /// Test compiling a let expr and var lookup
     #[test]

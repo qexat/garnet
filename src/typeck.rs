@@ -144,7 +144,7 @@ impl Symtbl {
 
     /// Add a variable to the top level of the scope.
     /// Allows shadowing.
-    fn add_var(&mut self, name: VarSym, typedef: &TypeSym) {
+    fn add_var(&mut self, name: VarSym, typedef: TypeSym) {
         let tbl = self
             .syms
             .last_mut()
@@ -262,7 +262,7 @@ impl Cx {
 /// Currently we have no covariance or contravariance, so this is pretty simple.
 /// Currently it's just, if the symbols match, the types match.
 /// The symbols matching by definition means the structures match.
-fn type_matches(t1: &TypeSym, t2: &TypeSym) -> bool {
+fn type_matches(t1: TypeSym, t2: TypeSym) -> bool {
     t1 == t2
 }
 
@@ -289,10 +289,10 @@ fn predeclare_decl(cx: &mut Cx, symtbl: &mut Symtbl, decl: &ir::Decl<()>) {
             // Add function to global scope
             let type_params = signature.params.iter().map(|(_name, t)| *t).collect();
             let function_type = cx.intern_type(&TypeDef::Lambda(type_params, signature.rettype));
-            symtbl.add_var(*name, &function_type);
+            symtbl.add_var(*name, function_type);
         }
         ir::Decl::Const { name, typename, .. } => {
-            symtbl.add_var(*name, typename);
+            symtbl.add_var(*name, *typename);
         }
     }
 }
@@ -313,7 +313,7 @@ fn typecheck_decl(
             symtbl.push_scope();
             // TODO: How to handle return statements, hm?
             for (pname, ptype) in signature.params.iter() {
-                symtbl.add_var(*pname, ptype);
+                symtbl.add_var(*pname, *ptype);
             }
 
             // This is squirrelly; basically, we want to return unit
@@ -327,7 +327,7 @@ fn typecheck_decl(
             // TODO: This only works if there are no return statements.
             let last_expr_type = last_type_of(cx, &typechecked_exprs);
 
-            if !type_matches(&signature.rettype, &last_expr_type) {
+            if !type_matches(signature.rettype, last_expr_type) {
                 return Err(TypeError::ReturnMismatch {
                     fname: name,
                     got: last_expr_type,
@@ -398,7 +398,7 @@ fn typecheck_expr(
             // Currently, our only valid binops are on numbers.
             let input_type = op.input_type(cx);
             let output_type = op.output_type(cx);
-            if type_matches(&lhs.t, &rhs.t) && type_matches(&input_type, &lhs.t) {
+            if type_matches(lhs.t, rhs.t) && type_matches(input_type, lhs.t) {
                 Ok(ir::TypedExpr {
                     e: BinOp { op, lhs, rhs },
                     t: output_type,
@@ -417,7 +417,7 @@ fn typecheck_expr(
             // Currently, our only valid binops are on numbers.
             let input_type = op.input_type(cx);
             let output_type = op.output_type(cx);
-            if type_matches(&input_type, &rhs.t) {
+            if type_matches(input_type, rhs.t) {
                 Ok(ir::TypedExpr {
                     e: UniOp { op, rhs },
                     t: output_type,
@@ -445,9 +445,9 @@ fn typecheck_expr(
         } => {
             let init_expr = typecheck_expr(cx, symtbl, *init)?;
             let init_type = init_expr.t;
-            if type_matches(&init_type, &typename) {
+            if type_matches(init_type, typename) {
                 // Add var to symbol table, proceed
-                symtbl.add_var(varname, &typename);
+                symtbl.add_var(varname, typename);
                 Ok(ir::TypedExpr {
                     e: Let {
                         varname,
@@ -470,11 +470,11 @@ fn typecheck_expr(
             let mut new_cases = vec![];
             for (cond, body) in cases {
                 let cond_expr = typecheck_expr(cx, symtbl, cond)?;
-                if type_matches(&cond_expr.t, &booltype) {
+                if type_matches(cond_expr.t, booltype) {
                     // Proceed to typecheck arms
                     let ifbody_exprs = typecheck_exprs(cx, symtbl, body)?;
                     let if_type = last_type_of(cx, &ifbody_exprs);
-                    if !type_matches(&if_type, &assumed_type) {
+                    if !type_matches(if_type, assumed_type) {
                         return Err(TypeError::IfTypeMismatch {
                             ifpart: if_type,
                             elsepart: assumed_type,
@@ -507,12 +507,12 @@ fn typecheck_expr(
             symtbl.push_scope();
             // add params to symbol table
             for (paramname, paramtype) in signature.params.iter() {
-                symtbl.add_var(*paramname, paramtype);
+                symtbl.add_var(*paramname, *paramtype);
             }
             let body_expr = typecheck_exprs(cx, symtbl, body)?;
             let bodytype = last_type_of(cx, &body_expr);
             // TODO: validate/unify types
-            if !type_matches(&bodytype, &signature.rettype) {
+            if !type_matches(bodytype, signature.rettype) {
                 let function_name = cx.intern("lambda");
                 return Err(TypeError::ReturnMismatch {
                     fname: function_name,
@@ -540,7 +540,7 @@ fn typecheck_expr(
                 TypeDef::Lambda(paramtypes, rettype) => {
                     // Now, make sure all the function's params match what it wants
                     for (given, wanted) in given_params.iter().zip(paramtypes) {
-                        if !type_matches(&given.t, &wanted) {
+                        if !type_matches(given.t, *wanted) {
                             return Err(TypeError::ParamMismatch {
                                 got: given.t,
                                 expected: *wanted,
@@ -609,7 +609,7 @@ mod tests {
         // Make sure we can get a value
         assert!(t.get_var(t_foo).is_err());
         assert!(t.get_var(t_bar).is_err());
-        t.add_var(t_foo, &t_i32);
+        t.add_var(t_foo, t_i32);
         assert_eq!(t.get_var(t_foo).unwrap(), t_i32);
         assert!(t.get_var(t_bar).is_err());
 
@@ -618,7 +618,7 @@ mod tests {
         assert_eq!(t.get_var(t_foo).unwrap(), t_i32);
         assert!(t.get_var(t_bar).is_err());
         // Add var, make sure we can get it
-        t.add_var(t_bar, &t_bool);
+        t.add_var(t_bar, t_bool);
         assert_eq!(t.get_var(t_foo).unwrap(), t_i32);
         assert_eq!(t.get_var(t_bar).unwrap(), t_bool);
 
@@ -651,13 +651,13 @@ mod tests {
         let l2t = typecheck_literal(cx, &l2).unwrap();
         let l3 = ir::Literal::Unit;
         let l3t = typecheck_literal(cx, &l3).unwrap();
-        assert!(!type_matches(&l1t, &l2t));
-        assert!(!type_matches(&l1t, &l3t));
-        assert!(!type_matches(&l2t, &l3t));
+        assert!(!type_matches(l1t, l2t));
+        assert!(!type_matches(l1t, l3t));
+        assert!(!type_matches(l2t, l3t));
 
-        assert!(type_matches(&l1t, &t_i32));
-        assert!(type_matches(&l2t, &t_bool));
-        assert!(type_matches(&l3t, &t_unit));
+        assert!(type_matches(l1t, t_i32));
+        assert!(type_matches(l2t, t_bool));
+        assert!(type_matches(l3t, t_unit));
     }
 
     /// Test binop typechecks
@@ -679,10 +679,7 @@ mod tests {
                     val: Literal::Integer(4),
                 }),
             });
-            assert!(type_matches(
-                &typecheck_expr(cx, tbl, ir).unwrap().t,
-                &t_i32
-            ));
+            assert!(type_matches(typecheck_expr(cx, tbl, ir).unwrap().t, t_i32));
 
             let bad_ir = *plz(Expr::BinOp {
                 op: BOp::Add,
@@ -712,10 +709,7 @@ mod tests {
                     val: Literal::Integer(4),
                 }),
             });
-            assert!(type_matches(
-                &typecheck_expr(cx, tbl, ir).unwrap().t,
-                &t_i32
-            ));
+            assert!(type_matches(typecheck_expr(cx, tbl, ir).unwrap().t, t_i32));
 
             let bad_ir = *plz(Expr::UniOp {
                 op: UOp::Neg,
@@ -749,10 +743,7 @@ mod tests {
                     val: Literal::Integer(42),
                 }),
             });
-            assert!(type_matches(
-                &typecheck_expr(cx, tbl, ir).unwrap().t,
-                &t_unit
-            ));
+            assert!(type_matches(typecheck_expr(cx, tbl, ir).unwrap().t, t_unit));
             // Is the variable now bound in our symbol table?
             assert_eq!(tbl.get_var(fooname).unwrap(), t_i32);
         }
@@ -805,7 +796,7 @@ mod tests {
                 }),
             ];
             let exprs = &typecheck_exprs(cx, tbl, ir).unwrap();
-            assert!(type_matches(&last_type_of(cx, exprs), &t_i32));
+            assert!(type_matches(last_type_of(cx, exprs), t_i32));
             // Is the variable now bound in our symbol table?
             assert_eq!(tbl.get_var(fname).unwrap(), ftype);
         }
