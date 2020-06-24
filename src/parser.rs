@@ -17,7 +17,7 @@ But don't go ham sacrificing familiarity for How It Should Be
 Keyword-delimited blocks instead of curly braces
 and/or/not keywords for logical operators instead of ||, && etc
 Keep | and & and ~ for binary operations
-TODO: Make sure trailing commas are always allowed
+Make sure trailing commas are always allowed
 
 
 Deliberate choices so that we don't go ham:
@@ -188,17 +188,6 @@ pub enum Token {
     #[regex(r"[ \t\n\f]+", logos::skip)]
     Error,
 }
-
-/*
-#[derive(Debug, PartialEq, Clone)]
-pub struct Operator {
-        T::Plus => ast::BOp::Add,
-        T::Minus => ast::BOp::Sub,
-        T::Mul => ast::BOp::Mul,
-        T::Div => ast::BOp::Div,
-        T::Mod => ast::BOp::Mod,
-}
-*/
 
 fn bop_for(t: &Token) -> Option<ast::BOp> {
     match t {
@@ -405,9 +394,6 @@ impl<'cx, 'input> Parser<'cx, 'input> {
 
     /// sig = ident ":" typename
     /// fn_args = "(" [sig {"," sig} [","]] ")"
-    ///
-    /// ...the while loop's break isn't really
-    /// expressible in EBNF's {}, is it...
     fn parse_fn_args(&mut self) -> Vec<(VarSym, TypeSym)> {
         let mut args = vec![];
         self.expect(T::LParen);
@@ -493,6 +479,7 @@ impl<'cx, 'input> Parser<'cx, 'input> {
             T::Loop => self.parse_loop(),
             T::Do => self.parse_block(),
             T::Fn => self.parse_lambda(),
+            // Parenthesized expr's
             T::LParen => {
                 self.drop();
                 let lhs = self.parse_expr(0)?;
@@ -501,7 +488,6 @@ impl<'cx, 'input> Parser<'cx, 'input> {
             }
 
             // Unary prefix ops
-            //T::Minus => {
             x if uop_for(&x).is_some() => {
                 self.drop();
                 let ((), r_bp) = prefix_binding_power(&x);
@@ -512,7 +498,7 @@ impl<'cx, 'input> Parser<'cx, 'input> {
                     rhs: Box::new(rhs),
                 }
             }
-            // Parenthesized expr's
+            // Something else not a valid expr
             _x => return None,
         };
         // Parse a prefix, postfix or infix expression with a given
@@ -642,6 +628,7 @@ impl<'cx, 'input> Parser<'cx, 'input> {
         }
     }
 
+    /// loop = "loop" {expr} "end"
     fn parse_loop(&mut self) -> ast::Expr {
         self.expect(T::Loop);
         let body = self.parse_exprs();
@@ -649,6 +636,7 @@ impl<'cx, 'input> Parser<'cx, 'input> {
         ast::Expr::Loop { body }
     }
 
+    /// block = "block" {expr} "end"
     fn parse_block(&mut self) -> ast::Expr {
         self.expect(T::Do);
         let body = self.parse_exprs();
@@ -656,6 +644,7 @@ impl<'cx, 'input> Parser<'cx, 'input> {
         ast::Expr::Block { body }
     }
 
+    /// lambda = "fn" "(" ...args... ")" [":" typename] = {exprs} "end"
     fn parse_lambda(&mut self) -> ast::Expr {
         self.expect(T::Fn);
         let signature = self.parse_fn_signature();
@@ -694,7 +683,6 @@ impl<'cx, 'input> Parser<'cx, 'input> {
 fn prefix_binding_power(op: &Token) -> ((), usize) {
     match op {
         T::Plus | T::Minus | T::Not => ((), 110),
-        // TODO T::Not => todo!(),
         x => unreachable!("{:?} is not a prefix op, should never happen!", x),
     }
 }
@@ -702,6 +690,7 @@ fn prefix_binding_power(op: &Token) -> ((), usize) {
 /// Specifies binding power of postfix operators.
 fn postfix_binding_power(op: &Token) -> Option<(usize, ())> {
     match op {
+        // "(" opening function call args
         T::LParen => Some((120, ())),
         _x => None,
     }
@@ -723,10 +712,6 @@ fn infix_binding_power(op: &Token) -> Option<(usize, usize)> {
         T::Or | T::Xor => Some((50, 51)),
 
         _ => None,
-        /*T::And | T::Or | T::Xor | T::Equal | T::NotEqual | T::Gt | T::Lt | T::Gte | T::Lte => {
-            todo!()
-        }
-        */
     }
 }
 

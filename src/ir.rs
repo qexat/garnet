@@ -1,9 +1,7 @@
-//! Intermediate representation, basically what you get after all the typechecking and other kinds
-//! of checking happen.  Slightly simplified over the AST -- basically the result of a
-//! lowering/desugaring pass.  This might give us a nice place to do other simple
-//! optimization-like things like constant folding, dead code detection, etc.
-//!
-//! An IR is always assumed to be a valid program, since it has passed all the checking stuff.
+//! Intermediate representation, basically what you get after immediate parsing and where
+//! all the typechecking and other kinds of checking happen.  Slightly simplified over the AST --
+//! basically the result of a lowering/desugaring pass.  This might give us a nice place to do
+//! other simple optimization-like things like constant folding, dead code detection, etc.
 //!
 //! So... do we want it to be an expression tree like AST is, or SSA form, or a control-
 //! flow graph, or what?  Ponder this, since different things are easy to do on different
@@ -17,27 +15,10 @@ use crate::ast::{self};
 pub use crate::ast::{BOp, IfCase, Literal, Signature, UOp};
 use crate::{TypeSym, VarSym};
 
-impl<T> Expr<T> {
-    /// Shortcut function for making literal bools
-    pub const fn bool(b: bool) -> Self {
-        Self::Lit {
-            val: Literal::Bool(b),
-        }
-    }
-
-    /// Shortcut function for making literal integers
-    pub const fn int(i: i64) -> Self {
-        Self::Lit {
-            val: Literal::Integer(i),
-        }
-    }
-
-    /// Shortcut function for making literal unit
-    pub const fn unit() -> Self {
-        Self::Lit { val: Literal::Unit }
-    }
-}
-
+/// An expression with an optional type annotation.
+/// Currently will be () for something that hasn't been
+/// typechecked, or a TypeSym with the appropriate type
+/// after type checking has been done.
 #[derive(Debug, Clone, PartialEq)]
 pub struct TypedExpr<T> {
     /// type
@@ -49,9 +30,9 @@ pub struct TypedExpr<T> {
 impl<T> TypedExpr<T> {
     /// TODO: This is less useful than it should be,
     /// I was kinda imagining it as a general purpose
-    /// transformer but it can only correctly transform
+    /// transformer/visitor but it can only correctly transform
     /// leaf nodes.  Hnyrn.
-    pub fn map<T2>(self, new_t: T2) -> TypedExpr<T2>
+    pub(crate) fn map<T2>(self, new_t: T2) -> TypedExpr<T2>
     where
         T2: Copy,
     {
@@ -62,6 +43,7 @@ impl<T> TypedExpr<T> {
     }
 }
 
+/// An expression.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Expr<T> {
     Lit {
@@ -109,7 +91,28 @@ pub enum Expr<T> {
 }
 
 impl<T> Expr<T> {
-    pub fn map<T2>(self, new_t: T2) -> Expr<T2>
+    /// Shortcut function for making literal bools
+    pub const fn bool(b: bool) -> Self {
+        Self::Lit {
+            val: Literal::Bool(b),
+        }
+    }
+
+    /// Shortcut function for making literal integers
+    pub const fn int(i: i64) -> Self {
+        Self::Lit {
+            val: Literal::Integer(i),
+        }
+    }
+
+    /// Shortcut function for making literal unit
+    pub const fn unit() -> Self {
+        Self::Lit { val: Literal::Unit }
+    }
+
+    /// Again, general purpose visitor that's only
+    /// actually used in a couple places...
+    pub(crate) fn map<T2>(self, new_t: T2) -> Expr<T2>
     where
         T2: Copy,
     {
@@ -170,6 +173,7 @@ impl<T> Expr<T> {
 }
 
 /// A top-level declaration in the source file.
+/// Like TypedExpr, contains a type annotation.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Decl<T> {
     Function {
@@ -184,7 +188,7 @@ pub enum Decl<T> {
     },
 }
 
-/// A compilable chunk of AST.
+/// A compilable chunk of IR.
 ///
 /// Currently, basically a compilation unit.
 #[derive(Debug, Clone, Default)]
@@ -305,6 +309,7 @@ fn lower_exprs(exprs: &[ast::Expr]) -> Vec<TypedExpr<()>> {
     exprs.iter().map(lower_expr).collect()
 }
 
+/// Lower an AST decl to IR.
 fn lower_decl(decl: &ast::Decl) -> Decl<()> {
     use ast::Decl as D;
     match decl {
@@ -335,7 +340,9 @@ fn lower_decls(decls: &[ast::Decl]) -> Ir<()> {
     }
 }
 
-/// Shortcut to take an Expr and wrap it with a unit type.
+/// Shortcut to take an Expr and wrap it
+/// in a TypedExpr with a unit type.
+///
 /// TODO: Better name?
 pub(crate) fn plz(e: Expr<()>) -> Box<TypedExpr<()>> {
     Box::new(TypedExpr { t: (), e: e })

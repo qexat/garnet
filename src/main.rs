@@ -1,8 +1,7 @@
 use std::path::PathBuf;
 
-use pico_args;
-
 use garnet;
+use pico_args;
 
 struct Opt {
     files: Vec<PathBuf>,
@@ -20,11 +19,11 @@ fn help() {
 
 fn main() -> std::io::Result<()> {
     let opt = parse_args();
-    // Output to file
     if opt.files.len() == 0 {
         help();
         return Ok(());
     }
+    // Output to file
     for file in opt.files {
         let src = std::fs::read_to_string(&file)?;
         let output = garnet::compile(&src);

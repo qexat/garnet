@@ -15,8 +15,8 @@ where
     Val: Eq + Hash,
     Ky: From<usize> + Into<usize> + Copy + Clone,
 {
-    /// We store two copies of the string, because I don't want to bother with unsafe,
-    /// so.  It's fine for now.
+    /// We just Rc the value type, which is fine.
+    /// This saves us the trouble of returning copies of it anyway.
     data: RefCell<Vec<Rc<Val>>>,
     map: RefCell<HashMap<Rc<Val>, Ky>>,
 }

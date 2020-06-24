@@ -1,5 +1,5 @@
 //! Typechecking and other semantic checking.
-//! Operates on the frontend IR.
+//! Operates on the IR.
 
 use std::collections::HashMap;
 
@@ -41,9 +41,8 @@ pub enum TypeError {
         got: TypeSym,
         expected: TypeSym,
     },
-    // TODO: Needing TypeDef here instead of TypeSym is a code smell
     CallMismatch {
-        got: TypeDef,
+        got: TypeSym,
     },
 }
 
@@ -105,7 +104,7 @@ impl TypeError {
             ),
             TypeError::CallMismatch { got } => format!(
                 "Tried to call function but it is not a function, it is a {}",
-                got.get_name(cx)
+                cx.fetch_type(*got).get_name(cx)
             ),
         }
     }
@@ -130,6 +129,9 @@ impl Symtbl {
         }
     }
 
+    /// TODO:
+    /// To think about: Take a lambda and call it with the new scope,
+    /// so we can never forget to pop it?
     fn push_scope(&mut self) {
         self.syms.push(HashMap::new());
     }
@@ -258,7 +260,8 @@ impl Cx {
 /// Does t1 equal t2?
 ///
 /// Currently we have no covariance or contravariance, so this is pretty simple.
-/// Currently it's just, if the structures match, the types match.
+/// Currently it's just, if the symbols match, the types match.
+/// The symbols matching by definition means the structures match.
 fn type_matches(t1: &TypeSym, t2: &TypeSym) -> bool {
     t1 == t2
 }
@@ -306,15 +309,8 @@ fn typecheck_decl(
             signature,
             body,
         } => {
-            // Add function to global scope
-            // No longer necessary, we scan and add all decl's ahead of time.
-            //let type_params = signature.params.iter().map(|(_name, t)| *t).collect();
-            //let function_type = cx.intern_type(&TypeDef::Lambda(type_params, signature.rettype));
-            //symtbl.add_var(name, &function_type);
-
             // Push scope, typecheck and add params to symbol table
             symtbl.push_scope();
-            // TODO: Add the function itself!
             // TODO: How to handle return statements, hm?
             for (pname, ptype) in signature.params.iter() {
                 symtbl.add_var(*pname, ptype);
@@ -326,6 +322,7 @@ fn typecheck_decl(
             //
             // Oh gods, what in the name of Eris do we do if there's
             // a return statement here?
+            // Use a Never type, it seems.
             let typechecked_exprs = typecheck_exprs(cx, symtbl, body)?;
             // TODO: This only works if there are no return statements.
             let last_expr_type = last_type_of(cx, &typechecked_exprs);
@@ -349,20 +346,16 @@ fn typecheck_decl(
             name,
             typename,
             init,
-        } => {
-            // No longer necessary, we scan and add all decl's ahead of time.
-            //symtbl.add_var(name, &typename);
-            Ok(ir::Decl::Const {
-                name,
-                typename,
-                init: typecheck_expr(cx, symtbl, init)?,
-            })
-        }
+        } => Ok(ir::Decl::Const {
+            name,
+            typename,
+            init: typecheck_expr(cx, symtbl, init)?,
+        }),
     }
 }
 
-/// Typecheck a vec of expr's and return the type of the last one.
-/// If the vec is empty, return unit.
+/// Typecheck a vec of expr's and returns them, with type annotations
+/// attached.
 fn typecheck_exprs(
     cx: &mut Cx,
     symtbl: &mut Symtbl,
@@ -374,12 +367,13 @@ fn typecheck_exprs(
         .collect()
 }
 
-/// Takes a slice of typed expr's and retursn the type of the last one.
+/// Takes a slice of typed expr's and returns the type of the last one.
 /// Returns unit if the slice is empty.
 fn last_type_of(cx: &Cx, exprs: &[ir::TypedExpr<TypeSym>]) -> TypeSym {
     exprs.last().map(|e| e.t).unwrap_or_else(|| cx.unit())
 }
 
+/// Actually typecheck a single expr
 fn typecheck_expr(
     cx: &mut Cx,
     symtbl: &mut Symtbl,
@@ -561,7 +555,7 @@ fn typecheck_expr(
                         t: *rettype,
                     })
                 }
-                other => Err(TypeError::CallMismatch { got: other.clone() }),
+                _other => Err(TypeError::CallMismatch { got: f.t }),
             }
         }
         Break => Ok(expr.map(unittype)),

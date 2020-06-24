@@ -4,28 +4,6 @@
 use garnet::{self, ast};
 use wasmtime as w;
 
-/* TODO: Hmmm, this is awkward 'cause of all the interning.
- * How do we do this nicely without parsing?
-fn compile_garnet(ast: &ir::Ast) -> Vec<u8> {
-    let mut cx = garnet::Cx::new();
-    let mainsym = cx.intern("test");
-    let varsym = cx.intern("a");
-    let i32_t = cx.intern_type(&garnet::TypeDef::SInt(4));
-    let ast = ast::Ast {
-        decls: vec![ast::Decl::Function {
-            name: mainsym,
-            signature: ast::Signature {
-                params: vec![(varsym, i32_t)],
-                rettype: i32_t,
-            },
-            body: vec![ast::Expr::Var { name: varsym }],
-        }],
-    };
-    let ir = garnet::ir::lower(&ast);
-    garnet::backend::output(&mut cx, &ir)
-}
-*/
-
 fn compile_wasm(bytes: &[u8]) -> w::Func {
     // Set up settings and compile bytes
     let store = w::Store::default();
@@ -38,21 +16,22 @@ fn compile_wasm(bytes: &[u8]) -> w::Func {
         .expect("Test function needs to be called 'test'")
 }
 
+/// Takes a program defining a function named `test` with 1 arg,
+/// returns its result
 fn eval_program0(src: &str) -> i32 {
     let wasm = garnet::compile(src);
     let f = compile_wasm(&wasm).get0::<i32>().unwrap();
     f().unwrap()
 }
 
-/// Takes a program defining a function with 1 arg named 'test',
-/// returns its result
+/// Same as eval_program0 but `test` takes 1 args.
 fn eval_program1(src: &str, input: i32) -> i32 {
     let wasm = garnet::compile(src);
     let f = compile_wasm(&wasm).get1::<i32, i32>().unwrap();
     f(input).unwrap()
 }
 
-/// Same as eval_program1 but `test` takes 2 args.
+/// Same as eval_program0 but `test` takes 2 args.
 fn eval_program2(src: &str, i1: i32, i2: i32) -> i32 {
     let wasm = garnet::compile(src);
     let f = compile_wasm(&wasm).get2::<i32, i32, i32>().unwrap();
@@ -302,14 +281,6 @@ fn truth() {
 /// Test lambda shenanigans
 #[test]
 fn lambda() {
-    /*
-
-    fn test(): I32 =
-        let f: fn(I32): I32 = fn(x: I32): I32 = x * 9 end
-        let result: I32 = apply(f, 10)
-        result
-    end
-         */
     let src = r#"
 fn apply(f: fn(I32): I32, arg: I32): I32 =
     f(arg)
@@ -322,4 +293,17 @@ fn test(): I32 =
 end
 "#;
     assert_eq!(eval_program0(src), 90);
+
+    let src = r#"
+fn test(): I32 =
+    if true then
+        fn(): I32 = 1 end
+    else
+        fn(): I32 = 10 end
+    end
+    ()
+end
+"#;
+
+    assert_eq!(eval_program0(src), 1);
 }

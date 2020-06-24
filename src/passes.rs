@@ -81,6 +81,7 @@ fn compile_expr(
 }
 */
 
+/// Lambda lift a single expr.
 fn lambda_lift_expr(cx: &Cx, expr: TypedExpr<()>, output_funcs: &mut Vec<D<()>>) -> TypedExpr<()> {
     let result = match expr.e {
         E::BinOp { op, lhs, rhs } => {
@@ -159,6 +160,7 @@ fn lambda_lift_expr(cx: &Cx, expr: TypedExpr<()>, output_funcs: &mut Vec<D<()>>)
     *plz(result)
 }
 
+/// Lambda lift a list of expr's
 fn lambda_lift_exprs(
     cx: &Cx,
     exprs: Vec<TypedExpr<()>>,
