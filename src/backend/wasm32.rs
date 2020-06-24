@@ -12,7 +12,7 @@ use crate::ir;
 use crate::*;
 
 /// Entry point to turn the IR into a compiled wasm module
-pub fn output(cx: &Cx, program: &ir::Ir<TypeSym>) -> Vec<u8> {
+pub(super) fn output(cx: &Cx, program: &ir::Ir<TypeSym>) -> Vec<u8> {
     let config = w::ModuleConfig::new();
     let m = &mut w::Module::with_config(config);
     let symbols = &mut Symbols::new();
@@ -630,7 +630,7 @@ fn stacksize(cx: &Cx, t: TypeSym) -> usize {
 mod tests {
     use walrus as w;
 
-    use crate::backend::*;
+    use crate::backend::wasm32::*;
     use crate::ir::{self, Expr as E};
 
     /// Test compiling a let expr and var lookup
