@@ -50,6 +50,18 @@ fn unparse_sig(cx: &Cx, sig: &Signature, out: &mut dyn io::Write) -> io::Result<
     let rettype = cx.fetch_type(sig.rettype).get_name(cx);
     write!(out, "{}", rettype)
 }
+
+fn unparse_exprs(
+    cx: &Cx,
+    exprs: &[Expr],
+    indent: usize,
+    out: &mut dyn io::Write,
+) -> io::Result<()> {
+    for expr in exprs {
+        unparse_expr(cx, expr, indent, out)?;
+    }
+    Ok(())
+}
 fn unparse_expr(cx: &Cx, e: &Expr, indent: usize, out: &mut dyn io::Write) -> io::Result<()> {
     use Expr as E;
     for _ in 0..(indent * INDENT_SIZE) {
@@ -65,7 +77,14 @@ fn unparse_expr(cx: &Cx, e: &Expr, indent: usize, out: &mut dyn io::Write) -> io
             let name = cx.fetch(*name);
             write!(out, "{}", name)
         }
-        E::UniOp { .. } => todo!(),
+        E::UniOp { op, rhs } => {
+            let opstr = match op {
+                UOp::Neg => "-",
+                UOp::Not => "not ",
+            };
+            write!(out, "{}", opstr)?;
+            unparse_expr(cx, rhs, 0, out)
+        }
         E::BinOp { op, lhs, rhs } => {
             let opstr = match op {
                 BOp::Add => "+",
@@ -107,9 +126,40 @@ fn unparse_expr(cx: &Cx, e: &Expr, indent: usize, out: &mut dyn io::Write) -> io
             unparse_expr(cx, init, 0, out)?;
             writeln!(out)
         }
-        E::If { .. } => todo!(),
-        E::Loop { .. } => todo!(),
-        E::Lambda { .. } => todo!(),
+        E::If { cases, falseblock } => {
+            assert!(cases.len() > 1);
+            let first_case = &cases[0];
+            write!(out, "if ")?;
+            unparse_expr(cx, &*first_case.condition, 0, out)?;
+            writeln!(out, "then")?;
+            unparse_exprs(cx, &first_case.body, indent + 1, out)?;
+
+            for case in &cases[1..] {
+                write!(out, "elseif ")?;
+                unparse_expr(cx, &case.condition, 0, out)?;
+                writeln!(out, "then")?;
+                unparse_exprs(cx, &case.body, indent + 1, out)?;
+            }
+            if falseblock.len() > 0 {
+                writeln!(out, "else")?;
+                unparse_exprs(cx, falseblock, indent + 1, out)?;
+            }
+            writeln!(out, "end")
+        }
+        E::Loop { body } => {
+            writeln!(out, "loop")?;
+            unparse_exprs(cx, body, indent + 1, out)?;
+            writeln!(out, "")?;
+            writeln!(out, "end")
+        }
+        E::Lambda { signature, body } => {
+            write!(out, "fn(")?;
+            unparse_sig(cx, signature, out)?;
+            writeln!(out, " =")?;
+            unparse_exprs(cx, body, indent + 1, out)?;
+            writeln!(out, "")?;
+            writeln!(out, "end")
+        }
         E::Funcall { func, params } => {
             unparse_expr(cx, func, 0, out)?;
             write!(out, "(")?;
@@ -160,4 +210,6 @@ end
         let output_str = String::from_utf8(output.into_inner()).unwrap();
         assert_eq!(src, output_str);
     }
+
+    // TODO: moar tests
 }
