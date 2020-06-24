@@ -45,6 +45,7 @@ impl From<VarSym> for usize {
     }
 }
 
+/// Info tag for type inference
 pub enum TypeInfo {
     /// Unknown type not inferred yet
     Unknown,
@@ -75,6 +76,10 @@ pub enum TypeDef {
 }
 
 impl TypeDef {
+    /// Get a string for the name of the given type.
+    ///
+    /// TODO: We need a good way to go the other way around as well,
+    /// for built-in types like I32 and Bool.
     pub fn get_name(&self, cx: &Cx) -> Cow<'static, str> {
         match self {
             TypeDef::SInt(4) => Cow::Borrowed("I32"),
@@ -116,14 +121,12 @@ impl TypeDef {
     }
 }
 
-/// Compilation context.  Contains things like symbol tables.
-/// Probably keeps most stages of compilation around to do
-/// things like output error messages or whatever?
+/// Compilation context.
 ///
 /// Really this is just an interner for symbols now, and
 /// the original plan of bundling it up into a special context
 /// type for each step of compilation hasn't really worked out
-/// (at least for wasm with `walrus`.  Maybe rename it?
+/// (at least for wasm with `walrus`.  TODO: Maybe rename it?
 pub struct Cx {
     /// Interned symbols
     syms: intern::Interner<VarSym, String>,
@@ -140,19 +143,22 @@ impl Cx {
         s
     }
 
-    /// Shortcut for getting an interned symbol.
+    /// Intern the symbol.
     pub fn intern(&self, s: impl AsRef<str>) -> VarSym {
         self.syms.intern(&s.as_ref().to_owned())
     }
 
+    /// Get the string for a variable symbol
     pub fn fetch(&self, s: VarSym) -> Rc<String> {
         self.syms.fetch(s)
     }
 
+    /// Intern a type defintion.
     pub fn intern_type(&self, s: &TypeDef) -> TypeSym {
         self.types.intern(&s)
     }
 
+    /// Get the TypeDef for a type symbol
     pub fn fetch_type(&self, s: TypeSym) -> Rc<TypeDef> {
         self.types.fetch(s)
     }
@@ -184,6 +190,9 @@ impl Cx {
 
 /// Main driver function.
 /// Compile a given source string to wasm.
+///
+/// Parse -> lower to IR -> run transformation passes
+/// -> typecheck -> compile to wasm
 pub fn compile(src: &str) -> Vec<u8> {
     let cx = &mut Cx::new();
     let ast = {

@@ -40,7 +40,6 @@ pub enum BOp {
 
 impl BOp {
     /// Returns the type that the bin op operates on.
-    /// TODO: We need something for what type they return, too...
     pub fn input_type(&self, cx: &mut crate::Cx) -> TypeSym {
         use BOp::*;
         match self {
@@ -88,6 +87,8 @@ impl UOp {
     }
 }
 
+/// An arm in an `if ... elseif ... elseif ...` chain.
+/// Includes the initial `if`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct IfCase {
     pub condition: Box<Expr>,
@@ -102,7 +103,7 @@ pub struct Signature {
 }
 
 impl Signature {
-    /// Returns a lambda typedef representing the signatue
+    /// Returns a lambda typedef representing the signature
     pub(crate) fn to_type(&self, cx: &crate::Cx) -> TypeSym {
         let args = self.params.iter().map(|(_v, t)| *t).collect();
         let t = TypeDef::Lambda(args, self.rettype);
@@ -111,6 +112,7 @@ impl Signature {
 }
 
 /// Any expression.
+/// So, basically anything not a top-level type decl.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Expr {
     Lit {
@@ -207,5 +209,3 @@ pub enum Decl {
 pub struct Ast {
     pub decls: Vec<Decl>,
 }
-
-impl Ast {}

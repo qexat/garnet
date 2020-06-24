@@ -4,7 +4,6 @@
 //! and maybe bootstrap stuff if we feel like it.
 
 use std::cell::RefCell;
-use std::cmp;
 use std::collections::HashMap;
 
 use walrus as w;
@@ -24,7 +23,6 @@ pub fn output(cx: &Cx, program: &ir::Ir<TypeSym>) -> Vec<u8> {
     for decl in program.decls.iter() {
         compile_decl(&cx, m, symbols, decl);
     }
-    //m.emit_wasm_file("/home/icefox/test.wasm");
     m.emit_wasm()
 }
 
@@ -51,6 +49,7 @@ fn make_heckin_function_table(m: &mut w::Module, symbols: &mut Symbols) {
     // Add elements segment...
     // What the heck is ElementKind::Active?  I don't see this shit anywhere in the spec.
     // TODO: Rummage through github design issues, see if we're doing it right.
+    // This seems to execute fine, at least.
     m.elements.add(
         w::ElementKind::Active {
             table,
@@ -84,14 +83,6 @@ fn predeclare_decl(cx: &Cx, m: &mut w::Module, symbols: &mut Symbols, decl: &ir:
             let fb = w::FunctionBuilder::new(&mut m.types, &paramtype, &rettype);
             let fn_param_types: Vec<_> = fn_params.iter().map(|local| local.id).collect();
             let f_id = fb.finish(fn_param_types, &mut m.funcs);
-            /*
-            // get the function type out grumble grumble
-            let f_ty = if let w::FunctionKind::Local(ref l) = m.funcs.get(f_id).kind {
-                l.ty()
-            } else {
-                unreachable!("We just declared a function to be local and now it's not local");
-            };
-            */
 
             symbols.new_function(*name, f_id, &fn_params);
             let name_str = cx.fetch(*name);
@@ -140,6 +131,8 @@ fn compile_decl(cx: &Cx, m: &mut w::Module, symbols: &mut Symbols, decl: &ir::De
         }
 }
 
+/// Generate walrus types representing the wasm representations of
+/// a lambda's type.
 fn lambda_signature(
     cx: &Cx,
     params: &[TypeSym],
@@ -153,14 +146,14 @@ fn lambda_signature(
     (params, vec![rettype])
 }
 
+/// Same as `lambda_signature` but takes a `Signature`, which is part of
+/// an expression, not a type.  Just calls `lambda_signature()` under the hood.
 fn function_signature(cx: &Cx, sig: &ir::Signature) -> (Vec<w::ValType>, Vec<w::ValType>) {
-    let params: Vec<w::ValType> = sig
-        .params
-        .iter()
-        .map(|(_varsym, typesym)| compile_typesym(&cx, *typesym))
-        .collect();
-    let rettype = compile_typesym(&cx, sig.rettype);
-    (params, vec![rettype])
+    if let TypeDef::Lambda(params, ret) = &*cx.fetch_type(sig.to_type(cx)) {
+        lambda_signature(cx, params, *ret)
+    } else {
+        unreachable!("Should never happen");
+    }
 }
 
 #[derive(Copy, Clone, Debug, PartialEq)]
@@ -188,7 +181,6 @@ impl LocalVar {
 struct Function {
     name: VarSym,
     id: w::FunctionId,
-    //type_id: w::TypeId,
     params: Vec<LocalVar>,
     /// The location of the function in the function table
     /// We use a dummy table offset of 0 when we don't know,
@@ -223,6 +215,7 @@ impl Symbols {
             function_table: None,
         }
     }
+    /// TODO: See notes on IR symbol table scopes too.
     fn push_scope(&mut self) {
         self.bindings.push(HashMap::default());
     }
@@ -260,6 +253,7 @@ impl Symbols {
         );
     }
 
+    /// Get a reference to a local var, if it exists.
     fn get_local(&mut self, name: VarSym) -> Option<&LocalVar> {
         if let Some(Binding::Local(f)) = self.get(name) {
             return Some(f);
@@ -268,6 +262,7 @@ impl Symbols {
         }
     }
 
+    /// Get a reference to a function, if it exists
     fn get_function(&mut self, name: VarSym) -> Option<&Function> {
         if let Some(Binding::Function(f)) = self.get(name) {
             return Some(f);
@@ -276,6 +271,7 @@ impl Symbols {
         }
     }
 
+    /// Get a reference to an arbitrary binding.
     fn get(&self, name: VarSym) -> Option<&Binding> {
         for scope in self.bindings.iter().rev() {
             if let Some(v) = scope.get(&name) {
@@ -286,36 +282,8 @@ impl Symbols {
     }
 }
 
-/*
-enum SymbolNode<'a> {
-    Nil,
-    Symbol(VarSym, LocalVar, &'a SymbolNode<'a>),
-}
-
-impl<'a> SymbolNode<'a> {
-    fn add(s: VarSym, local: LocalVar, prev: &'a SymbolNode) -> SymbolNode<'a> {
-        SymbolNode::Symbol(s, local, prev)
-    }
-}
-*/
-
-/// Order by local index
-impl cmp::PartialOrd for LocalVar {
-    fn partial_cmp(&self, other: &Self) -> Option<cmp::Ordering> {
-        Some(self.id.cmp(&other.id))
-    }
-}
-
-/// Order by local index
-impl cmp::Ord for LocalVar {
-    fn cmp(&self, other: &Self) -> cmp::Ordering {
-        self.id.cmp(&other.id)
-    }
-}
-
-impl cmp::Eq for LocalVar {}
-
 /// Compile a function, specifically -- wasm needs to know about its params and such.
+/// The function should already be predeclared.
 fn compile_function(
     cx: &Cx,
     m: &mut w::Module,
@@ -340,7 +308,7 @@ fn compile_function(
             compile_exprs(&cx, &mut m.locals, &mut m.types, symbols, instrs, &body);
             symbols.pop_scope();
         }
-        _ => unreachable!("Can't happen!"),
+        _ => unreachable!("Function source is not local, can't happen!"),
     }
     func.id
 }
@@ -391,8 +359,9 @@ fn compile_exprs(
 
 /// Generates code to evaluate the given expr, inserting the instructions into
 /// the given instruction list, leaving values on the stack.
-/// Returns how many values it leaves on the stack, so we know how many
-/// values to get rid of if the return val is ignored.
+///
+/// How many values are left on the stack is determined by the return type
+/// attached to the input `TypedExpr`.
 fn compile_expr(
     cx: &Cx,
     m: &mut w::ModuleLocals,
@@ -409,6 +378,7 @@ fn compile_expr(
                 assert!(*i < (std::i32::MAX as i64));
                 instrs.i32_const(*i as i32);
             }
+            // Turn bools into integers.
             Literal::Bool(b) => {
                 instrs.i32_const(if *b { 1 } else { 0 });
             }
@@ -426,7 +396,7 @@ fn compile_expr(
                 Binding::Function(fdef) => {
                     instrs.i32_const(fdef.table_offset as i32);
                 }
-                x => todo!("Globals"),
+                _ => todo!("Globals"),
             }
         }
         E::BinOp { op, lhs, rhs } => {
@@ -475,7 +445,8 @@ fn compile_expr(
         },
         // This is pretty much just a list of expr's by now.
         // However, functions/etc must not leave extra values
-        // on the stack, so this needs to insert drop's as appropriate
+        // on the stack, so this needs to use compile_exprs()
+        // to insert drop's as appropriate
         E::Block { body } => {
             compile_exprs(cx, m, t, symbols, instrs, body);
         }
@@ -498,14 +469,14 @@ fn compile_expr(
 
         E::Loop { .. } => todo!(),
         E::Lambda { .. } => {
-            panic!("A lambda somewhere has not been lifted into a separate function.  Should never happen!");
+            unreachable!("A lambda somewhere has not been lifted into a separate function.  Should never happen!");
         }
         E::Funcall { func, params } => {
-            // OKAY.  SO.  Wasm does NOT do function calls through pointers on the stack.
-            // The call is built into the instruction.  So, we can NOT do the functional-language
-            // thing and trivially treat function pointers like any other type.
-            // There IS the call_indirect instruction but it's kinda awful and shouldn't
-            // be necessary currently, so.
+            // OKAY.  SO.  Wasm does NOT do normal function calls through pointers on the stack.
+            // The call is built into the instruction.
+            //
+            // So, to have function pointers we MUST use the `call_indirect` instruction,
+            // which takes an index to a table entry on the stack.  So
             match **func {
                 ir::TypedExpr {
                     e: E::Var { name },
@@ -515,9 +486,17 @@ fn compile_expr(
                         compile_expr(cx, m, t, symbols, instrs, param);
                     }
                     match symbols.get(name) {
+                        // If our var name goes directly to a function binding, it's easy, we can
+                        // do a direct call.
                         Some(Binding::Function(f)) => {
                             instrs.call(f.id);
                         }
+                        // Otherwise, it goes to a variable, so we have to look up the value for
+                        // that and fetch it, which gives us a table index, then do an indirect
+                        // call to that.
+                        //
+                        // This variable should always exist 'cause we've done our lambda lifting,
+                        // so basically all lambda expressions have already been evaluated.
                         Some(Binding::Local(l)) => {
                             // Call indirect; load local val, get the function table id, and call
                             // it
@@ -534,7 +513,7 @@ fn compile_expr(
                         _ => unreachable!("Backend could not resolve declared function {}!", cx.fetch(name))
                     }
                 }
-                _ => panic!("A funcall got something other than a var, which means a lambda somewhere hasn't been lowered"),
+                _ => unreachable!("A funcall got something other than a var, which means a lambda somewhere hasn't been lowered"),
             }
         }
         E::Break => todo!(),
@@ -544,35 +523,6 @@ fn compile_expr(
         }
     };
 }
-
-/*
-// Notes from earlier IR
-// Expand cases out into nested if ... else if ... else if ... else
-// TODO: Really this should be lowered into a match expr, but we don't
-// have those yet, so.
-fn unheck_if(ifcases: &[ast::IfCase], elsecase: &[ast::Expr]) -> Expr {
-    match ifcases {
-        [] => panic!("If statement with no condition; should never happen"),
-        [single] => {
-            let nelsecase = lower_exprs(elsecase);
-            If {
-                condition: Box::new(lower_expr(&*single.condition)),
-                trueblock: lower_exprs(single.body.as_slice()),
-                falseblock: nelsecase,
-            }
-        }
-        [itm, rst @ ..] => {
-            let res = unheck_if(rst, elsecase);
-            If {
-                condition: Box::new(lower_expr(&*itm.condition)),
-                trueblock: lower_exprs(itm.body.as_slice()),
-                falseblock: vec![res],
-            }
-        }
-    }
-}
-unheck_if(cases.as_slice(), falseblock.as_slice())
-*/
 
 /// hokay, so.  For each case, we have to:
 /// compile the test
@@ -636,11 +586,15 @@ fn compile_ifcase(
     }
 }
 
+/// Takes a `TypeSym`, looks it up, and gives us the
+/// corresponding wasm type.
 fn compile_typesym(cx: &Cx, t: TypeSym) -> w::ValType {
     let tdef = cx.fetch_type(t);
     compile_type(cx, &tdef)
 }
 
+/// Takes a `TypeDef` and turns it into the appropriate
+/// wasm type.
 fn compile_type(_cx: &Cx, t: &TypeDef) -> w::ValType {
     match t {
         TypeDef::SInt(4) => w::ValType::I32,
@@ -657,6 +611,7 @@ fn compile_type(_cx: &Cx, t: &TypeDef) -> w::ValType {
 /// unit = 0
 /// bool = 1
 /// I32 = 1
+/// lambda = 1 (table index)
 /// eventually, tuple >= 1
 fn stacksize(cx: &Cx, t: TypeSym) -> usize {
     let tdef = cx.fetch_type(t);

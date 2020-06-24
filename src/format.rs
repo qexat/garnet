@@ -65,7 +65,7 @@ fn unparse_expr(cx: &Cx, e: &Expr, indent: usize, out: &mut dyn io::Write) -> io
             let name = cx.fetch(*name);
             write!(out, "{}", name)
         }
-        E::UniOp { op, rhs } => todo!(),
+        E::UniOp { .. } => todo!(),
         E::BinOp { op, lhs, rhs } => {
             let opstr = match op {
                 BOp::Add => "+",
@@ -107,9 +107,9 @@ fn unparse_expr(cx: &Cx, e: &Expr, indent: usize, out: &mut dyn io::Write) -> io
             unparse_expr(cx, init, 0, out)?;
             writeln!(out)
         }
-        E::If { cases, falseblock } => todo!(),
-        E::Loop { body } => todo!(),
-        E::Lambda { signature, body } => todo!(),
+        E::If { .. } => todo!(),
+        E::Loop { .. } => todo!(),
+        E::Lambda { .. } => todo!(),
         E::Funcall { func, params } => {
             unparse_expr(cx, func, 0, out)?;
             write!(out, "(")?;
