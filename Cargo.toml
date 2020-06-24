@@ -4,10 +4,6 @@ version = "0.1.0"
 authors = ["Simon Heath <icefox@dreamquest.io>"]
 edition = "2018"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-[profile.dev]
-panic = "abort"
-
 [dependencies]
 walrus = {version = "0.17", default-features = false}
 logos = "0.11"
