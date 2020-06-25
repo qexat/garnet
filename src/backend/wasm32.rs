@@ -477,19 +477,19 @@ fn compile_expr(
             //
             // So, to have function pointers we MUST use the `call_indirect` instruction,
             // which takes an index to a table entry on the stack.  So
-            match **func {
-                ir::TypedExpr {
-                    e: E::Var { name },
-                    t: _,
-                } => {
-                    for param in params {
-                        compile_expr(cx, m, t, symbols, instrs, param);
-                    }
-                    match symbols.get(name) {
+            //
+            // First, evaluate the args.
+            for param in params {
+                compile_expr(cx, m, t, symbols, instrs, param);
+            }
+            match &func.e {
+                E::Var { name } => {
+                    match symbols.get(*name) {
                         // If our var name goes directly to a function binding, it's easy, we can
-                        // do a direct call.
+                        // do a direct call. and we're done.
                         Some(Binding::Function(f)) => {
                             instrs.call(f.id);
+                            return;
                         }
                         // Otherwise, it goes to a variable, so we have to look up the value for
                         // that and fetch it, which gives us a table index, then do an indirect
@@ -498,23 +498,33 @@ fn compile_expr(
                         // This variable should always exist 'cause we've done our lambda lifting,
                         // so basically all lambda expressions have already been evaluated.
                         Some(Binding::Local(l)) => {
-                            // Call indirect; load local val, get the function table id, and call
-                            // it
-                            let expr_type = &*cx.fetch_type(func.t);
-                            let (params_types, return_types) = match expr_type {
-                                TypeDef::Lambda(params, ret) => lambda_signature(cx, params, *ret),
-                                _ => unreachable!("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
-                            };
-                            let function_type = t.find(&params_types, &return_types).expect("Shouldn't happen");
-                            let table_id = symbols.function_table.expect("Can't happen");
                             instrs.local_get(l.id);
-                            instrs.call_indirect(function_type, table_id);
                         }
-                        _ => unreachable!("Backend could not resolve declared function {}!", cx.fetch(name))
+                        _ => unreachable!(
+                            "Backend could not resolve declared function {}!",
+                            cx.fetch(*name)
+                        ),
                     }
                 }
-                _ => unreachable!("A funcall got something other than a var, which means a lambda somewhere hasn't been lowered"),
+                _expr => {
+                    // We got some other expr, compile it and do an indirect call 'cause it heckin'
+                    // better be a function
+                    compile_expr(cx, m, t, symbols, instrs, func);
+                }
             }
+            // If we've gotten here we're doing an indirect call, and we've already emitted
+            // whatever instructions leave the function table id on the stack.  So, we just
+            // look up the function type, and call it.
+            let expr_type = &*cx.fetch_type(func.t);
+            let (params_types, return_types) = match expr_type {
+                TypeDef::Lambda(params, ret) => lambda_signature(cx, params, *ret),
+                _ => unreachable!("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+            };
+            let function_type = t
+                .find(&params_types, &return_types)
+                .expect("Shouldn't happen");
+            let table_id = symbols.function_table.expect("Can't happen");
+            instrs.call_indirect(function_type, table_id);
         }
         E::Break => todo!(),
         E::Return { retval } => {
