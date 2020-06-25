@@ -2,7 +2,6 @@ use std::path::PathBuf;
 
 use garnet;
 use gumdrop::Options;
-use pico_args;
 
 #[derive(Debug, Options)]
 struct Opt {
