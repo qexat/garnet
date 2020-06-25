@@ -451,7 +451,6 @@ version = "0.1.0"
 dependencies = [
  "gumdrop",
  "logos",
- "pico-args",
  "walrus",
  "wasmtime",
 ]
@@ -727,12 +726,6 @@ name = "opaque-debug"
 version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2839e79665f131bdb5782e51f2c6c9599c133c6098982a54c794358bf432529c"
-
-[[package]]
-name = "pico-args"
-version = "0.3.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6a71836ceac43f0349e3bd964f5bb902f7b003916f32a4ad00354dafc447fa8f"
 
 [[package]]
 name = "plain"
