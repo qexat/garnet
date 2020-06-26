@@ -306,7 +306,9 @@ fn lower_expr(expr: &ast::Expr) -> TypedExpr<()> {
         E::Return { retval: Some(e) } => Return {
             retval: Box::new(lower_expr(e)),
         },
-        E::TupleCtor { body } => todo!(),
+        E::TupleCtor { body } => Expr::TupleCtor {
+            body: lower_exprs(body),
+        },
     };
     TypedExpr { t: (), e: new_exp }
 }

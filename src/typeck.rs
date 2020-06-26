@@ -560,7 +560,15 @@ fn typecheck_expr(
         }
         Break => Ok(expr.map(unittype)),
         Return { .. } => todo!("TODO: Never type"),
-        TupleCtor { .. } => todo!("Tuple constructor"),
+        TupleCtor { body } => {
+            let body_exprs = typecheck_exprs(cx, symtbl, body)?;
+            let body_typesyms = body_exprs.iter().map(|te| te.t).collect();
+            let body_type = TypeDef::Tuple(body_typesyms);
+            Ok(ir::TypedExpr {
+                t: cx.intern_type(&body_type),
+                e: TupleCtor { body: body_exprs },
+            })
+        }
     }
 }
 

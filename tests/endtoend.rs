@@ -307,3 +307,15 @@ end
 
     assert_eq!(eval_program0(src), 1);
 }
+
+/// Test tuple constructors
+#[test]
+fn tuples() {
+    let src = r#"
+fn test(): I32 =
+    let t: {I32, Bool} = {3, false}
+    3
+end
+"#;
+    assert_eq!(eval_program0(src), 3);
+}
