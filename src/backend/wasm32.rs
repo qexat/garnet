@@ -529,7 +529,9 @@ fn compile_expr(
             compile_expr(cx, m, t, symbols, instrs, retval);
             instrs.return_();
         }
-        E::TupleCtor { .. } => todo!(),
+        E::TupleCtor { body } => {
+            compile_exprs(cx, m, t, symbols, instrs, body);
+        }
     };
 }
 
@@ -628,8 +630,7 @@ fn stacksize(cx: &Cx, t: TypeSym) -> usize {
         TypeDef::SInt(4) => 1,
         TypeDef::SInt(_) => todo!(),
         TypeDef::Bool => 1,
-        TypeDef::Tuple(t) if t.len() == 0 => 0,
-        TypeDef::Tuple(_) => todo!(),
+        TypeDef::Tuple(ts) => ts.iter().map(|t| stacksize(cx, *t)).sum(),
         // Essentially a pointer to a function
         TypeDef::Lambda(_, _) => 1,
     }

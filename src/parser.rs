@@ -447,6 +447,23 @@ impl<'cx, 'input> Parser<'cx, 'input> {
         args
     }
 
+    fn parse_tuple_type(&mut self) -> TypeDef {
+        let mut body = vec![];
+        while !self.peek_is(T::RBrace) {
+            //while let Some(expr) = self.parse_type() {
+            let t = self.parse_type();
+            body.push(t);
+
+            if self.peek_is(T::Comma) {
+                self.expect(T::Comma);
+            } else {
+                break;
+            }
+        }
+        self.expect(T::RBrace);
+        TypeDef::Tuple(body)
+    }
+
     fn parse_exprs(&mut self) -> Vec<ast::Expr> {
         let mut exprs = vec![];
         while let Some(e) = self.parse_expr(0) {
@@ -547,6 +564,8 @@ impl<'cx, 'input> Parser<'cx, 'input> {
     fn parse_function_args(&mut self) -> Vec<ast::Expr> {
         let mut params = vec![];
         self.expect(T::LParen);
+        // TODO: Refactor out this pattern somehow?
+        // There's now three places it's used and it's only going to grow.
         while let Some(expr) = self.parse_expr(0) {
             params.push(expr);
             if !self.peek_is(T::Comma) {
@@ -681,8 +700,8 @@ impl<'cx, 'input> Parser<'cx, 'input> {
                 _ => self.error(Some((T::Ident(s), span))),
             },
             Some((T::LBrace, _span)) => {
-                self.expect(T::RBrace);
-                self.cx.unit()
+                let tuptype = self.parse_tuple_type();
+                self.cx.intern_type(&tuptype)
             }
             Some((T::Fn, _span)) => {
                 let fntype = self.parse_fn_type();
@@ -1106,7 +1125,7 @@ const baz: {} = {}
     }
 
     #[test]
-    fn parse_tuples() {
+    fn parse_tuple_values() {
         test_expr_is("{}", |_cx| Expr::unit());
         test_expr_is("{1,2,3}", |_cx| Expr::TupleCtor {
             body: vec![Expr::int(1), Expr::int(2), Expr::int(3)],
@@ -1121,5 +1140,17 @@ const baz: {} = {}
                 Expr::int(3),
             ],
         });
+    }
+
+    #[test]
+    fn parse_tuple_types() {
+        let valid_args = &[
+            "{}",
+            "{I32}",
+            "{I32,}",
+            "{Bool, Bool, I32}",
+            "{Bool, {}, I32}",
+        ][..];
+        test_parse_with(|p| p.parse_type(), &valid_args)
     }
 }
