@@ -560,6 +560,7 @@ fn typecheck_expr(
         }
         Break => Ok(expr.map(unittype)),
         Return { .. } => todo!("TODO: Never type"),
+        TupleCtor { .. } => todo!("Tuple constructor"),
     }
 }
 
@@ -567,9 +568,10 @@ fn typecheck_literal(cx: &mut Cx, lit: &ir::Literal) -> Result<TypeSym, TypeErro
     match lit {
         ir::Literal::Integer(_) => Ok(cx.i32()),
         ir::Literal::Bool(_) => Ok(cx.bool()),
-        ir::Literal::Unit => Ok(cx.unit()),
     }
 }
+
+//fn typecheck_tuple_ctr(cx: &mut Cx, body: &[ir::Expr
 
 #[cfg(test)]
 mod tests {
@@ -583,7 +585,6 @@ mod tests {
         let cx = &mut crate::Cx::new();
         let t_i32 = cx.i32();
         let t_bool = cx.bool();
-        let t_unit = cx.unit();
 
         assert_eq!(
             typecheck_literal(cx, &ir::Literal::Integer(9)).unwrap(),
@@ -593,7 +594,6 @@ mod tests {
             typecheck_literal(cx, &ir::Literal::Bool(false)).unwrap(),
             t_bool
         );
-        assert_eq!(typecheck_literal(cx, &ir::Literal::Unit).unwrap(), t_unit);
     }
 
     /// Test symbol table
@@ -643,21 +643,15 @@ mod tests {
         let cx = &mut crate::Cx::new();
         let t_i32 = cx.i32();
         let t_bool = cx.bool();
-        let t_unit = cx.unit();
 
         let l1 = ir::Literal::Integer(3);
         let l1t = typecheck_literal(cx, &l1).unwrap();
         let l2 = ir::Literal::Bool(true);
         let l2t = typecheck_literal(cx, &l2).unwrap();
-        let l3 = ir::Literal::Unit;
-        let l3t = typecheck_literal(cx, &l3).unwrap();
         assert!(!type_matches(l1t, l2t));
-        assert!(!type_matches(l1t, l3t));
-        assert!(!type_matches(l2t, l3t));
 
         assert!(type_matches(l1t, t_i32));
         assert!(type_matches(l2t, t_bool));
-        assert!(type_matches(l3t, t_unit));
     }
 
     /// Test binop typechecks
@@ -823,4 +817,15 @@ mod tests {
     /// TODO
     #[test]
     fn test_return() {}
+
+    #[test]
+    fn test_tuples() {
+        use ir::*;
+        let cx = &mut crate::Cx::new();
+        let tbl = &mut Symtbl::new();
+        assert_eq!(
+            typecheck_expr(cx, tbl, *plz(ir::Expr::unit())).unwrap().t,
+            cx.unit()
+        );
+    }
 }

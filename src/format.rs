@@ -71,7 +71,6 @@ fn unparse_expr(cx: &Cx, e: &Expr, indent: usize, out: &mut dyn io::Write) -> io
         E::Lit { val } => match val {
             Literal::Integer(i) => write!(out, "{}", i),
             Literal::Bool(b) => write!(out, "{}", b),
-            Literal::Unit => write!(out, "{{}}"),
         },
         E::Var { name } => {
             let name = cx.fetch(*name);
@@ -176,6 +175,14 @@ fn unparse_expr(cx: &Cx, e: &Expr, indent: usize, out: &mut dyn io::Write) -> io
             writeln!(out)
         }
         E::Return { retval: None } => writeln!(out, "return"),
+        E::TupleCtor { body } => {
+            write!(out, "{{")?;
+            for e in body {
+                unparse_expr(cx, e, 0, out)?;
+                write!(out, ", ")?;
+            }
+            write!(out, "}}")
+        }
     }
 }
 

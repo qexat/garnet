@@ -382,8 +382,6 @@ fn compile_expr(
             Literal::Bool(b) => {
                 instrs.i32_const(if *b { 1 } else { 0 });
             }
-            // noop
-            Literal::Unit => (),
         },
         E::Var { name } => {
             match symbols
@@ -531,6 +529,7 @@ fn compile_expr(
             compile_expr(cx, m, t, symbols, instrs, retval);
             instrs.return_();
         }
+        E::TupleCtor { .. } => todo!(),
     };
 }
 

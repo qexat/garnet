@@ -47,6 +47,10 @@ value =
   | UNIT
   | ident
 
+constructor =
+  // Tuple constructor
+  | "{" [expr {"," expr} [","] "}"
+
 expr =
   | let
   | if
@@ -54,6 +58,7 @@ expr =
   | block
   | funcall
   | lambda
+  | constructor
 
 // Currently, type inference is not a thing
 let = "let" ident ":" typename "=" expr
@@ -72,12 +77,11 @@ typename =
   | "fn" "(" [typename {"," typename} [","]] ")" [":" typename]
   // Tuples with curly braces like Erlang seem less ambiguous than the more traditional parens...
   // I hope that will let us get away without semicolons.
-  | "{" "}"
-  // | "{" [typename {"," typename}] "}"
+  | "{" [typename {"," typename}] [","] "}"
   // Fixed-size arrays
   // | "[" typename ";" INTEGER} "]"
   // TODO: Generics?
-  // | ID "[" typename {"," typename} "]"
+  // | ID "[" typename {"," typename} [","] "]"
   // slices can just then be slice[...]
 
 // Things to add, roughly in order
@@ -465,11 +469,7 @@ impl<'cx, 'input> Parser<'cx, 'input> {
             }
             T::Number(_) => ast::Expr::int(self.expect_number() as i64),
             // Tuple literal
-            T::LBrace => {
-                self.drop();
-                self.expect(T::RBrace);
-                ast::Expr::unit()
-            }
+            T::LBrace => self.parse_constructor(),
             T::Ident(_) => {
                 let ident = self.expect_ident();
                 ast::Expr::Var { name: ident }
@@ -652,6 +652,24 @@ impl<'cx, 'input> Parser<'cx, 'input> {
         let body = self.parse_exprs();
         self.expect(T::End);
         ast::Expr::Lambda { signature, body }
+    }
+
+    /// let = "let" ident ":" typename "=" expr
+    /// tuple constructor = "{" [expr {"," expr} [","] "}"
+    fn parse_constructor(&mut self) -> ast::Expr {
+        self.expect(T::LBrace);
+        let mut body = vec![];
+        while let Some(expr) = self.parse_expr(0) {
+            body.push(expr);
+
+            if self.peek_is(T::Comma) {
+                self.expect(T::Comma);
+            } else {
+                break;
+            }
+        }
+        self.expect(T::RBrace);
+        ast::Expr::TupleCtor { body }
     }
 
     fn parse_type(&mut self) -> TypeSym {
@@ -1084,6 +1102,24 @@ const baz: {} = {}
                 rhs: Box::new(Expr::int(2)),
             }),
             rhs: Box::new(Expr::int(3)),
+        });
+    }
+
+    #[test]
+    fn parse_tuples() {
+        test_expr_is("{}", |_cx| Expr::unit());
+        test_expr_is("{1,2,3}", |_cx| Expr::TupleCtor {
+            body: vec![Expr::int(1), Expr::int(2), Expr::int(3)],
+        });
+        test_expr_is("{1,2,{1,2,3},3}", |_cx| Expr::TupleCtor {
+            body: vec![
+                Expr::int(1),
+                Expr::int(2),
+                Expr::TupleCtor {
+                    body: vec![Expr::int(1), Expr::int(2), Expr::int(3)],
+                },
+                Expr::int(3),
+            ],
         });
     }
 }
