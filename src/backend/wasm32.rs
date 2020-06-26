@@ -91,10 +91,10 @@ fn predeclare_decl(cx: &Cx, m: &mut w::Module, symbols: &mut Symbols, decl: &ir:
         }
         Decl::Const {
             /*
-            name,
-            typename,
-            init,
-            */
+               name,
+               typename,
+               init,
+               */
             ..
         } => {
             // Okay this is actually harder than it looks because
@@ -108,27 +108,27 @@ fn predeclare_decl(cx: &Cx, m: &mut w::Module, symbols: &mut Symbols, decl: &ir:
 fn compile_decl(cx: &Cx, m: &mut w::Module, symbols: &mut Symbols, decl: &ir::Decl<TypeSym>) {
     use ir::*;
     match decl {
-            Decl::Function {
-                name,
-                body,
-                ..
-            } => {
-                compile_function(cx, m, symbols, *name, body);
-            }
-            Decl::Const {
-                /*
-                name,
-                typename,
-                init,
-                */
-                ..
-            } => {
-                // Okay this is actually harder than it looks because
-                // wasm only lets globals be value types.
-                // ...and if it's really const then why do we need it anyway
-                //let wasm_type = compile_typesym(cx, *typename);
-            }
+        Decl::Function {
+            name,
+            body,
+            ..
+        } => {
+            compile_function(cx, m, symbols, *name, body);
         }
+        Decl::Const {
+            /*
+               name,
+               typename,
+               init,
+               */
+            ..
+        } => {
+            // Okay this is actually harder than it looks because
+            // wasm only lets globals be value types.
+            // ...and if it's really const then why do we need it anyway
+            //let wasm_type = compile_typesym(cx, *typename);
+        }
+    }
 }
 
 /// Generate walrus types representing the wasm representations of
@@ -141,9 +141,10 @@ fn lambda_signature(
     let params: Vec<w::ValType> = params
         .iter()
         .map(|typesym| compile_typesym(&cx, *typesym))
+        .flatten()
         .collect();
     let rettype = compile_typesym(&cx, ret);
-    (params, vec![rettype])
+    (params, rettype)
 }
 
 /// Same as `lambda_signature` but takes a `Signature`, which is part of
@@ -167,11 +168,12 @@ impl LocalVar {
     /// Creates a new local var, including wasm ID,
     /// without inserting it into the symbol table.
     fn new(cx: &Cx, locals: &mut w::ModuleLocals, name: VarSym, type_: TypeSym) -> LocalVar {
-        let id = locals.add(compile_typesym(cx, type_));
+        // TODO: Locals consisting of more than one value...
+        let id = locals.add(compile_typesym(cx, type_)[0]);
         let p = LocalVar {
             name,
             id,
-            wasm_type: compile_typesym(cx, type_),
+            wasm_type: compile_typesym(cx, type_)[0],
         };
         p
     }
@@ -599,21 +601,21 @@ fn compile_ifcase(
 
 /// Takes a `TypeSym`, looks it up, and gives us the
 /// corresponding wasm type.
-fn compile_typesym(cx: &Cx, t: TypeSym) -> w::ValType {
+fn compile_typesym(cx: &Cx, t: TypeSym) -> Vec<w::ValType> {
     let tdef = cx.fetch_type(t);
     compile_type(cx, &tdef)
 }
 
 /// Takes a `TypeDef` and turns it into the appropriate
 /// wasm type.
-fn compile_type(_cx: &Cx, t: &TypeDef) -> w::ValType {
+fn compile_type(cx: &Cx, t: &TypeDef) -> Vec<w::ValType> {
     match t {
-        TypeDef::SInt(4) => w::ValType::I32,
+        TypeDef::SInt(4) => vec![w::ValType::I32],
         TypeDef::SInt(_) => todo!(),
-        TypeDef::Bool => w::ValType::I32,
-        TypeDef::Tuple(_) => todo!(),
+        TypeDef::Bool => vec![w::ValType::I32],
+        TypeDef::Tuple(ts) => ts.iter().map(|t| compile_typesym(cx, t)).collect(),
         // Essentially a pointer to a function
-        TypeDef::Lambda(_, _) => w::ValType::I32,
+        TypeDef::Lambda(_, _) => vec![w::ValType::I32],
     }
 }
 
@@ -688,10 +690,10 @@ mod tests {
         compile_expr(cx, &mut m.locals, &mut m.types, symbols, instrs, &expr);
         /*
         assert_eq!(
-            instrs.instrs()[0].0,
-            w::ir::Instr::Const(w::ir::Const {
-                value: w::ir::Value::I32(9)
-            })
+        instrs.instrs()[0].0,
+        w::ir::Instr::Const(w::ir::Const {
+        value: w::ir::Value::I32(9)
+        })
         );
         */
         /*
@@ -711,9 +713,9 @@ mod tests {
         let isns = &mut vec![];
 
         let expr = ir::Expr::BinOp {
-            op: ir::BOp::Sub,
-            lhs: Box::new(ir::Expr::int(9)),
-            rhs: Box::new(ir::Expr::int(-3)),
+        op: ir::BOp::Sub,
+        lhs: Box::new(ir::Expr::int(9)),
+        rhs: Box::new(ir::Expr::int(-3)),
         };
 
         compile_expr(cx, locals, isns, &expr);
