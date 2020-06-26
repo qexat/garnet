@@ -81,6 +81,7 @@ fn compile_expr(
 }
 */
 
+/* TODO: Try again to make this work
 fn walks<T1, T2>(
     cx: &Cx,
     exprs: Vec<TypedExpr<T1>>,
@@ -89,11 +90,15 @@ fn walks<T1, T2>(
     exprs.into_iter().map(|e| walk(cx, e, f)).collect()
 }
 
+/// The idea is that you pass it a function that matches on some expr types
+/// and overrides them, and on the rest it just falls through to this which
+/// walks the tree.
 fn walk<T1, T2>(
     cx: &Cx,
-    expr: TypedExpr<()>,
+    expr: TypedExpr<T1>,
     f: impl Fn(&Cx, TypedExpr<T1>) -> TypedExpr<T2>,
-) -> TypedExpr<()> {
+) -> TypedExpr<T2> {
+    f(cx, expr)
     let result = match expr.e {
         E::BinOp { op, lhs, rhs } => {
             let nlhs = walk(cx, *lhs, f);
@@ -162,10 +167,9 @@ fn walk<T1, T2>(
                 body: walks(cx, body, f),
             }
         }
-        x => x,
     };
-    *plz(result)
 }
+*/
 
 /// Lambda lift a single expr.
 fn lambda_lift_expr(cx: &Cx, expr: TypedExpr<()>, output_funcs: &mut Vec<D<()>>) -> TypedExpr<()> {
