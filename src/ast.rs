@@ -11,7 +11,6 @@ use crate::{TypeDef, TypeSym, VarSym};
 pub enum Literal {
     Integer(i64),
     Bool(bool),
-    Unit,
 }
 
 /// Binary operation
@@ -157,6 +156,10 @@ pub enum Expr {
     Return {
         retval: Option<Box<Expr>>,
     },
+    /// Tuple constructor
+    TupleCtor {
+        body: Vec<Expr>,
+    },
 }
 
 impl Expr {
@@ -175,8 +178,8 @@ impl Expr {
     }
 
     /// Shortcut function for making literal unit
-    pub const fn unit() -> Expr {
-        Expr::Lit { val: Literal::Unit }
+    pub fn unit() -> Expr {
+        Expr::TupleCtor { body: vec![] }
     }
 
     /// Shortcuts for making vars

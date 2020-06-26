@@ -88,6 +88,9 @@ pub enum Expr<T> {
     Return {
         retval: Box<TypedExpr<T>>,
     },
+    TupleCtor {
+        body: Vec<TypedExpr<T>>,
+    },
 }
 
 impl<T> Expr<T> {
@@ -106,8 +109,8 @@ impl<T> Expr<T> {
     }
 
     /// Shortcut function for making literal unit
-    pub const fn unit() -> Self {
-        Self::Lit { val: Literal::Unit }
+    pub fn unit() -> Self {
+        Self::TupleCtor { body: vec![] }
     }
 
     /// Again, general purpose visitor that's only
@@ -167,6 +170,9 @@ impl<T> Expr<T> {
             E::Break => E::Break,
             E::Return { retval } => E::Return {
                 retval: Box::new(retval.map(new_t)),
+            },
+            E::TupleCtor { body } => E::TupleCtor {
+                body: map_vec(body),
             },
         }
     }
@@ -300,6 +306,7 @@ fn lower_expr(expr: &ast::Expr) -> TypedExpr<()> {
         E::Return { retval: Some(e) } => Return {
             retval: Box::new(lower_expr(e)),
         },
+        E::TupleCtor { body } => todo!(),
     };
     TypedExpr { t: (), e: new_exp }
 }
