@@ -556,6 +556,8 @@ fn compile_ifcase(
     let (test, thenblock) = &cases[0];
     compile_expr(cx, m, t, symbols, instrs, &test);
     let rettype = compile_typesym(&cx, test.t);
+    let rettype = get_instrseqtype(t, &rettype);
+
     let grr = RefCell::new(symbols);
     let mgrr = RefCell::new(m);
     let tgrr = RefCell::new(t);
@@ -613,9 +615,28 @@ fn compile_type(cx: &Cx, t: &TypeDef) -> Vec<w::ValType> {
         TypeDef::SInt(4) => vec![w::ValType::I32],
         TypeDef::SInt(_) => todo!(),
         TypeDef::Bool => vec![w::ValType::I32],
-        TypeDef::Tuple(ts) => ts.iter().map(|t| compile_typesym(cx, t)).collect(),
+        TypeDef::Tuple(ts) => ts
+            .iter()
+            .map(|t| compile_typesym(cx, *t))
+            .flatten()
+            .collect(),
         // Essentially a pointer to a function
         TypeDef::Lambda(_, _) => vec![w::ValType::I32],
+    }
+}
+
+/// Get/create an instrseqtype, which may be a single valtype or a a typeid
+/// representing multiple.
+fn get_instrseqtype(t: &mut w::ModuleTypes, def: &[w::ValType]) -> w::ir::InstrSeqType {
+    if def.len() > 2 {
+        w::ir::InstrSeqType::Simple(def.into_iter().cloned().next())
+    } else {
+        let typeid = if let Some(t) = t.find(&[], def) {
+            t
+        } else {
+            t.add(&[], def)
+        };
+        w::ir::InstrSeqType::MultiValue(typeid)
     }
 }
 
