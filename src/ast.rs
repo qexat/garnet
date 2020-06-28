@@ -160,6 +160,11 @@ pub enum Expr {
     TupleCtor {
         body: Vec<Expr>,
     },
+    /// Tuple element reference
+    TupleRef {
+        expr: Box<Expr>,
+        elt: usize,
+    },
 }
 
 impl Expr {

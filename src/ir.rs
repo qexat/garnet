@@ -91,6 +91,10 @@ pub enum Expr<T> {
     TupleCtor {
         body: Vec<TypedExpr<T>>,
     },
+    TupleRef {
+        expr: Box<TypedExpr<T>>,
+        elt: usize,
+    },
 }
 
 impl<T> Expr<T> {
@@ -173,6 +177,10 @@ impl<T> Expr<T> {
             },
             E::TupleCtor { body } => E::TupleCtor {
                 body: map_vec(body),
+            },
+            E::TupleRef { expr, elt } => E::TupleRef {
+                expr: Box::new(expr.map(new_t)),
+                elt,
             },
         }
     }
@@ -308,6 +316,10 @@ fn lower_expr(expr: &ast::Expr) -> TypedExpr<()> {
         },
         E::TupleCtor { body } => Expr::TupleCtor {
             body: lower_exprs(body),
+        },
+        E::TupleRef { expr, elt } => Expr::TupleRef {
+            expr: Box::new(lower_expr(expr)),
+            elt: *elt,
         },
     };
     TypedExpr { t: (), e: new_exp }
