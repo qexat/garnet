@@ -70,7 +70,6 @@ fn predeclare_decl(cx: &Cx, m: &mut w::Module, symbols: &mut Symbols, decl: &ir:
             signature,
             ..
         } => {
-            dbg!("Predeclaring function", cx.fetch(*name));
             let (paramtype, rettype) = function_signature(cx, signature);
             // add params
             // We do some shenanigans with scope here to create the locals and then
@@ -533,6 +532,41 @@ fn compile_expr(
         }
         E::TupleCtor { body } => {
             compile_exprs(cx, m, t, symbols, instrs, body);
+        }
+        E::TupleRef {
+            expr: tuple_expr,
+            elt,
+        } => {
+            // This is a pretty lame way to do it, but an optimization
+            // pass to make it better is something that should happen before.
+
+            // Compile init expression
+            compile_expr(cx, m, t, symbols, instrs, &*tuple_expr);
+            let tuple_type = match &*cx.fetch_type(tuple_expr.t) {
+                TypeDef::Tuple(x) => x.clone(),
+                _ => unreachable!(),
+            };
+            let tuple_len = tuple_type.len();
+            // Drop however many values are above the element we want,
+            // This is a little ghetto to avoid underflows.
+            if *elt > 0 {
+                for _ in 0..(elt - 1) {
+                    instrs.drop();
+                }
+            }
+
+            // copy the element into a new local,
+            let varname = cx.gensym("tupleref");
+            let local = LocalVar::new(cx, m, varname, expr.t);
+            symbols.add_local(local);
+            instrs.local_set(local.id);
+
+            // drop all the things under it,
+            for _ in (elt + 1)..tuple_len {
+                instrs.drop();
+            }
+            // and fetch the local.
+            instrs.local_get(local.id);
         }
     };
 }

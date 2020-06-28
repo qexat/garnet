@@ -314,8 +314,16 @@ fn tuples() {
     let src = r#"
 fn test(): I32 =
     let t: {I32, Bool} = {3, false}
-    3
+    t.0
 end
 "#;
     assert_eq!(eval_program0(src), 3);
+
+    let src = r#"
+fn test(): I32 =
+    let t: {I32, Bool} = {3, false}
+    t.0
+end
+"#;
+    //assert_eq!(eval_program0(src), 3);
 }
