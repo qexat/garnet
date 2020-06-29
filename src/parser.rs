@@ -59,6 +59,9 @@ expr =
   | funcall
   | lambda
   | constructor
+  | binop
+  | prefixop
+  | postfixop
 
 // Currently, type inference is not a thing
 let = "let" ident ":" typename "=" expr
@@ -149,6 +152,8 @@ pub enum Token {
     RBrace,
     #[token(",")]
     Comma,
+    #[token(".")]
+    Period,
 
     // Operators
     #[token("+")]
@@ -328,7 +333,7 @@ impl<'cx, 'input> Parser<'cx, 'input> {
     }
 
     /// Consumes a number and returns it.
-    fn expect_number(&mut self) -> i32 {
+    fn expect_int(&mut self) -> i32 {
         match self.lex.next() {
             Some((T::Number(s), _span)) => s,
             Some((tok, span)) => {
@@ -484,7 +489,7 @@ impl<'cx, 'input> Parser<'cx, 'input> {
                 self.drop();
                 ast::Expr::bool(b)
             }
-            T::Number(_) => ast::Expr::int(self.expect_number() as i64),
+            T::Number(_) => ast::Expr::int(self.expect_int() as i64),
             // Tuple literal
             T::LBrace => self.parse_constructor(),
             T::Ident(_) => {
@@ -531,10 +536,24 @@ impl<'cx, 'input> Parser<'cx, 'input> {
                 if l_bp < min_bp {
                     break;
                 }
-                let params = self.parse_function_args();
-                lhs = ast::Expr::Funcall {
-                    func: Box::new(lhs),
-                    params,
+                lhs = match op_token {
+                    T::LParen => {
+                        let params = self.parse_function_args();
+                        ast::Expr::Funcall {
+                            func: Box::new(lhs),
+                            params,
+                        }
+                    }
+                    T::Period => {
+                        self.expect(T::Period);
+                        let elt = self.expect_int();
+                        assert!(elt > -1);
+                        ast::Expr::TupleRef {
+                            expr: Box::new(lhs),
+                            elt: elt as usize,
+                        }
+                    }
+                    _ => return None,
                 };
                 continue;
             }
@@ -729,6 +748,8 @@ fn postfix_binding_power(op: &Token) -> Option<(usize, ())> {
     match op {
         // "(" opening function call args
         T::LParen => Some((120, ())),
+        // "." for tuple/struct references.
+        T::Period => Some((130, ())),
         _x => None,
     }
 }

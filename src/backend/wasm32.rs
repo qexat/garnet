@@ -70,7 +70,6 @@ fn predeclare_decl(cx: &Cx, m: &mut w::Module, symbols: &mut Symbols, decl: &ir:
             signature,
             ..
         } => {
-            dbg!("Predeclaring function", cx.fetch(*name));
             let (paramtype, rettype) = function_signature(cx, signature);
             // add params
             // We do some shenanigans with scope here to create the locals and then
@@ -532,7 +531,47 @@ fn compile_expr(
             instrs.return_();
         }
         E::TupleCtor { body } => {
-            compile_exprs(cx, m, t, symbols, instrs, body);
+            // We can't use compile_exprs() here because it drops the intermediate
+            // values and we want to keep them.
+            for expr in body {
+                compile_expr(cx, m, t, symbols, instrs, expr);
+            }
+        }
+        E::TupleRef {
+            expr: tuple_expr,
+            elt,
+        } => {
+            // This is a pretty lame way to do it, but an optimization
+            // pass to make it better is something that should happen before.
+
+            // Compile init expression
+            compile_expr(cx, m, t, symbols, instrs, &*tuple_expr);
+            let tuple_type = match &*cx.fetch_type(tuple_expr.t) {
+                TypeDef::Tuple(x) => x.clone(),
+                _ => unreachable!(),
+            };
+            let tuple_len = tuple_type.len();
+            // Drop however many values are above the element we want,
+            // these are all the things after it in the tuple.
+            // This is a little ghetto to avoid underflows.
+            for _ in (elt + 1)..tuple_len {
+                instrs.drop();
+            }
+
+            // copy the element into a new local,
+            let varname = cx.gensym("tupleref");
+            let local = LocalVar::new(cx, m, varname, expr.t);
+            symbols.add_local(local);
+            instrs.local_set(local.id);
+
+            // drop all the things under it,
+            if *elt > 0 {
+                for _ in 0..(elt - 1) {
+                    instrs.drop();
+                }
+            }
+            // and fetch the local.
+            instrs.local_get(local.id);
         }
     };
 }
@@ -556,6 +595,8 @@ fn compile_ifcase(
     let (test, thenblock) = &cases[0];
     compile_expr(cx, m, t, symbols, instrs, &test);
     let rettype = compile_typesym(&cx, test.t);
+    let rettype = get_instrseqtype(t, &rettype);
+
     let grr = RefCell::new(symbols);
     let mgrr = RefCell::new(m);
     let tgrr = RefCell::new(t);
@@ -613,9 +654,28 @@ fn compile_type(cx: &Cx, t: &TypeDef) -> Vec<w::ValType> {
         TypeDef::SInt(4) => vec![w::ValType::I32],
         TypeDef::SInt(_) => todo!(),
         TypeDef::Bool => vec![w::ValType::I32],
-        TypeDef::Tuple(ts) => ts.iter().map(|t| compile_typesym(cx, t)).collect(),
+        TypeDef::Tuple(ts) => ts
+            .iter()
+            .map(|t| compile_typesym(cx, *t))
+            .flatten()
+            .collect(),
         // Essentially a pointer to a function
         TypeDef::Lambda(_, _) => vec![w::ValType::I32],
+    }
+}
+
+/// Get/create an instrseqtype, which may be a single valtype or a a typeid
+/// representing multiple.
+fn get_instrseqtype(t: &mut w::ModuleTypes, def: &[w::ValType]) -> w::ir::InstrSeqType {
+    if def.len() > 2 {
+        w::ir::InstrSeqType::Simple(def.into_iter().cloned().next())
+    } else {
+        let typeid = if let Some(t) = t.find(&[], def) {
+            t
+        } else {
+            t.add(&[], def)
+        };
+        w::ir::InstrSeqType::MultiValue(typeid)
     }
 }
 
