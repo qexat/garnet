@@ -81,27 +81,33 @@ impl TypeDef {
     /// TODO: We need a good way to go the other way around as well,
     /// for built-in types like I32 and Bool.
     pub fn get_name(&self, cx: &Cx) -> Cow<'static, str> {
+        let join_types_with_commas = |lst: &[TypeSym]| {
+            let p_strs = lst
+                .iter()
+                .map(|ptype| {
+                    let ptype_def = cx.fetch_type(*ptype);
+                    ptype_def.get_name(cx)
+                })
+                .collect::<Vec<_>>();
+            p_strs.join(", ")
+        };
         match self {
             TypeDef::SInt(4) => Cow::Borrowed("I32"),
             TypeDef::SInt(s) => panic!("Undefined integer size {}!", s),
             TypeDef::Bool => Cow::Borrowed("Bool"),
             TypeDef::Tuple(v) => {
                 if v.len() == 0 {
-                    Cow::Borrowed("()")
+                    Cow::Borrowed("{}")
                 } else {
-                    panic!("Can't yet define tuple {:?}", v)
+                    let mut res = String::from("{");
+                    res += &join_types_with_commas(v);
+                    res += "}";
+                    Cow::Owned(res)
                 }
             }
             TypeDef::Lambda(params, rettype) => {
                 let mut t = String::from("fn(");
-                let p_strs = params
-                    .iter()
-                    .map(|ptype| {
-                        let ptype_def = cx.fetch_type(*ptype);
-                        ptype_def.get_name(cx)
-                    })
-                    .collect::<Vec<_>>();
-                t += &p_strs.join(", ");
+                t += &join_types_with_commas(params);
 
                 t += ")";
                 let ret_def = cx.fetch_type(*rettype);

@@ -452,6 +452,7 @@ dependencies = [
  "gumdrop",
  "logos",
  "walrus",
+ "wasmprinter",
  "wasmtime",
 ]
 
@@ -1108,6 +1109,16 @@ name = "wasmparser"
 version = "0.55.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "af931e2e1960c53f4a28b063fec4cacd036f35acbec8ff3a4739125b17382a87"
+
+[[package]]
+name = "wasmprinter"
+version = "0.2.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c93ba310101ec5ee980db66b47b3d276577c8310df1570e19994347137650454"
+dependencies = [
+ "anyhow",
+ "wasmparser 0.55.0",
+]
 
 [[package]]
 name = "wasmtime"
