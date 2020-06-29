@@ -2,11 +2,14 @@
 /// or currently from AST,
 /// and ensure that they give the output we want.
 use garnet::{self, ast};
+use wasmprinter;
 use wasmtime as w;
 
 fn compile_wasm(bytes: &[u8]) -> w::Func {
     // Set up settings and compile bytes
     let store = w::Store::default();
+    let s = wasmprinter::print_bytes(bytes).unwrap();
+    println!("Wasm:\n{}", s);
     let module = w::Module::new(&store, bytes).expect("Unvalid module");
     // Create runtime env
     let instance = w::Instance::new(&module, &[]).expect("Could not instantiate module");
@@ -310,20 +313,24 @@ end
 
 /// Test tuple constructors
 #[test]
-fn tuples() {
+fn tuples1() {
     let src = r#"
 fn test(): I32 =
-    let t: {I32, Bool} = {3, false}
+    let t: {I32, I32, Bool} = {3, 5, false}
     t.0
 end
 "#;
     assert_eq!(eval_program0(src), 3);
+}
 
+#[test]
+fn tuples2() {
     let src = r#"
+
 fn test(): I32 =
-    let t: {I32, Bool} = {3, false}
-    t.0
+    let x: {I32, I32} = {10, 11}
+    x.0 + x.1
 end
 "#;
-    //assert_eq!(eval_program0(src), 3);
+    assert_eq!(eval_program0(src), 21);
 }

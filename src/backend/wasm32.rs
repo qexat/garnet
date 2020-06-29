@@ -531,7 +531,11 @@ fn compile_expr(
             instrs.return_();
         }
         E::TupleCtor { body } => {
-            compile_exprs(cx, m, t, symbols, instrs, body);
+            // We can't use compile_exprs() here because it drops the intermediate
+            // values and we want to keep them.
+            for expr in body {
+                compile_expr(cx, m, t, symbols, instrs, expr);
+            }
         }
         E::TupleRef {
             expr: tuple_expr,
@@ -548,11 +552,10 @@ fn compile_expr(
             };
             let tuple_len = tuple_type.len();
             // Drop however many values are above the element we want,
+            // these are all the things after it in the tuple.
             // This is a little ghetto to avoid underflows.
-            if *elt > 0 {
-                for _ in 0..(elt - 1) {
-                    instrs.drop();
-                }
+            for _ in (elt + 1)..tuple_len {
+                instrs.drop();
             }
 
             // copy the element into a new local,
@@ -562,8 +565,10 @@ fn compile_expr(
             instrs.local_set(local.id);
 
             // drop all the things under it,
-            for _ in (elt + 1)..tuple_len {
-                instrs.drop();
+            if *elt > 0 {
+                for _ in 0..(elt - 1) {
+                    instrs.drop();
+                }
             }
             // and fetch the local.
             instrs.local_get(local.id);
