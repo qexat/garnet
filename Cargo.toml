@@ -12,3 +12,4 @@ gumdrop = "0.8"
 [dev-dependencies]
 # Use wasmtime to evaluate results of end-to-end tests.
 wasmtime = "0.16"
+wasmprinter = "0.2"

@@ -44,6 +44,9 @@ pub enum TypeError {
     CallMismatch {
         got: TypeSym,
     },
+    TupleRefMismatch {
+        got: TypeSym,
+    },
 }
 
 impl TypeError {
@@ -104,6 +107,10 @@ impl TypeError {
             ),
             TypeError::CallMismatch { got } => format!(
                 "Tried to call function but it is not a function, it is a {}",
+                cx.fetch_type(*got).get_name(cx)
+            ),
+            TypeError::TupleRefMismatch { got } => format!(
+                "Tried to reference tuple but didn't get a tuple, got {}",
                 cx.fetch_type(*got).get_name(cx)
             ),
         }
@@ -568,6 +575,23 @@ fn typecheck_expr(
                 t: cx.intern_type(&body_type),
                 e: TupleCtor { body: body_exprs },
             })
+        }
+        TupleRef { expr, elt } => {
+            let body_expr = typecheck_expr(cx, symtbl, *expr)?;
+            let expr_typedef = cx.fetch_type(body_expr.t);
+            if let TypeDef::Tuple(typesyms) = &*expr_typedef {
+                // TODO
+                assert!(elt < typesyms.len());
+                Ok(ir::TypedExpr {
+                    t: typesyms[elt],
+                    e: TupleRef {
+                        expr: Box::new(body_expr),
+                        elt: elt,
+                    },
+                })
+            } else {
+                Err(TypeError::TupleRefMismatch { got: body_expr.t })
+            }
         }
     }
 }
