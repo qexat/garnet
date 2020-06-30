@@ -453,6 +453,7 @@ fn compile_expr(
             varname,
             typename,
             init,
+            ..
         } => {
             // Declare local var storage
             let local = LocalVar::new(cx, m, *varname, *typename);

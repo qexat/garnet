@@ -68,6 +68,7 @@ pub enum Expr<T> {
         varname: VarSym,
         typename: TypeSym,
         init: Box<TypedExpr<T>>,
+        mutable: bool,
     },
     If {
         cases: Vec<(TypedExpr<T>, Vec<TypedExpr<T>>)>,
@@ -145,10 +146,12 @@ impl<T> Expr<T> {
                 varname,
                 typename,
                 init,
+                mutable,
             } => E::Let {
                 varname,
                 typename,
                 init: Box::new(init.map(new_t)),
+                mutable,
             },
             E::If { cases, falseblock } => {
                 let new_cases = cases
@@ -266,12 +269,14 @@ fn lower_expr(expr: &ast::Expr) -> TypedExpr<()> {
             varname,
             typename,
             init,
+            mutable,
         } => {
             let ninit = Box::new(lower_expr(init));
             Let {
                 varname: *varname,
                 typename: typename.clone(),
                 init: ninit,
+                mutable: *mutable,
             }
         }
         E::If { cases, falseblock } => {

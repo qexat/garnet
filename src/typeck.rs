@@ -122,6 +122,7 @@ impl TypeError {
 pub struct VarBinding {
     name: VarSym,
     typename: TypeSym,
+    mutable: bool,
 }
 
 /// Symbol table.  Stores the scope stack and variable bindings.
@@ -151,7 +152,7 @@ impl Symtbl {
 
     /// Add a variable to the top level of the scope.
     /// Allows shadowing.
-    fn add_var(&mut self, name: VarSym, typedef: TypeSym) {
+    fn add_var(&mut self, name: VarSym, typedef: TypeSym, mutable: bool) {
         let tbl = self
             .syms
             .last_mut()
@@ -159,6 +160,7 @@ impl Symtbl {
         let binding = VarBinding {
             name,
             typename: typedef.clone(),
+            mutable,
         };
         tbl.insert(name, binding);
     }
@@ -296,10 +298,10 @@ fn predeclare_decl(cx: &mut Cx, symtbl: &mut Symtbl, decl: &ir::Decl<()>) {
             // Add function to global scope
             let type_params = signature.params.iter().map(|(_name, t)| *t).collect();
             let function_type = cx.intern_type(&TypeDef::Lambda(type_params, signature.rettype));
-            symtbl.add_var(*name, function_type);
+            symtbl.add_var(*name, function_type, false);
         }
         ir::Decl::Const { name, typename, .. } => {
-            symtbl.add_var(*name, *typename);
+            symtbl.add_var(*name, *typename, false);
         }
     }
 }
@@ -320,7 +322,7 @@ fn typecheck_decl(
             symtbl.push_scope();
             // TODO: How to handle return statements, hm?
             for (pname, ptype) in signature.params.iter() {
-                symtbl.add_var(*pname, *ptype);
+                symtbl.add_var(*pname, *ptype, false);
             }
 
             // This is squirrelly; basically, we want to return unit
@@ -449,17 +451,19 @@ fn typecheck_expr(
             varname,
             typename,
             init,
+            mutable,
         } => {
             let init_expr = typecheck_expr(cx, symtbl, *init)?;
             let init_type = init_expr.t;
             if type_matches(init_type, typename) {
                 // Add var to symbol table, proceed
-                symtbl.add_var(varname, typename);
+                symtbl.add_var(varname, typename, mutable);
                 Ok(ir::TypedExpr {
                     e: Let {
                         varname,
                         typename,
                         init: Box::new(init_expr),
+                        mutable,
                     },
                     t: unittype,
                 })
@@ -514,7 +518,7 @@ fn typecheck_expr(
             symtbl.push_scope();
             // add params to symbol table
             for (paramname, paramtype) in signature.params.iter() {
-                symtbl.add_var(*paramname, *paramtype);
+                symtbl.add_var(*paramname, *paramtype, false);
             }
             let body_expr = typecheck_exprs(cx, symtbl, body)?;
             let bodytype = last_type_of(cx, &body_expr);

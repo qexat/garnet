@@ -197,10 +197,12 @@ fn lambda_lift_expr(cx: &Cx, expr: TypedExpr<()>, output_funcs: &mut Vec<D<()>>)
             varname,
             typename,
             init,
+            mutable,
         } => E::Let {
             varname,
             typename,
             init: Box::new(lambda_lift_expr(cx, *init, output_funcs)),
+            mutable,
         },
         E::If { cases, falseblock } => {
             let new_cases = cases
