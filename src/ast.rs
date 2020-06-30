@@ -136,6 +136,7 @@ pub enum Expr {
         varname: VarSym,
         typename: TypeSym,
         init: Box<Expr>,
+        mutable: bool,
     },
     If {
         cases: Vec<IfCase>,

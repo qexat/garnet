@@ -122,6 +122,8 @@ pub enum Token {
     // Keywords
     #[token("let")]
     Let,
+    #[token("mut")]
+    Mut,
     #[token(":")]
     Colon,
     #[token("=")]
@@ -607,6 +609,12 @@ impl<'cx, 'input> Parser<'cx, 'input> {
     /// let = "let" ident ":" typename "=" expr
     fn parse_let(&mut self) -> ast::Expr {
         self.expect(T::Let);
+        let mutable = if self.peek_is(T::Mut) {
+            self.expect(T::Mut);
+            true
+        } else {
+            false
+        };
         let varname = self.expect_ident();
         self.expect(T::Colon);
         let typename = self.parse_type();
@@ -619,6 +627,7 @@ impl<'cx, 'input> Parser<'cx, 'input> {
             varname,
             typename,
             init,
+            mutable,
         }
     }
 

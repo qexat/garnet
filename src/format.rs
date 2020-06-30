@@ -118,10 +118,15 @@ fn unparse_expr(cx: &Cx, e: &Expr, indent: usize, out: &mut dyn io::Write) -> io
             varname,
             typename,
             init,
+            mutable,
         } => {
             let name = cx.fetch(*varname);
             let tname = cx.fetch_type(*typename).get_name(cx);
-            write!(out, "let {}: {} = ", name, tname)?;
+            write!(out, "let ")?;
+            if *mutable {
+                write!(out, "mut ")?;
+            }
+            write!(out, "{}: {} = ", name, tname)?;
             unparse_expr(cx, init, 0, out)?;
             writeln!(out)
         }
