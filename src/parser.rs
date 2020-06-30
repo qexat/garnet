@@ -186,6 +186,8 @@ pub enum Token {
     Gte,
     #[token("<=")]
     Lte,
+    #[token("^")]
+    Carat,
 
     // We save comment strings so we can use this same
     // parser as a reformatter or such.
@@ -553,6 +555,12 @@ impl<'cx, 'input> Parser<'cx, 'input> {
                             elt: elt as usize,
                         }
                     }
+                    T::Carat => {
+                        self.expect(T::Carat);
+                        ast::Expr::Deref {
+                            expr: Box::new(lhs),
+                        }
+                    }
                     _ => return None,
                 };
                 continue;
@@ -750,6 +758,8 @@ fn postfix_binding_power(op: &Token) -> Option<(usize, ())> {
         T::LParen => Some((120, ())),
         // "." for tuple/struct references.
         T::Period => Some((130, ())),
+        // "^" for pointer derefs.  TODO: Check precedence?
+        T::Carat => Some((105, ())),
         _x => None,
     }
 }
@@ -1173,5 +1183,11 @@ const baz: {} = {}
             "{Bool, {}, I32}",
         ][..];
         test_parse_with(|p| p.parse_type(), &valid_args)
+    }
+
+    #[test]
+    fn parse_deref() {
+        let valid_args = &["x^", "10^", "z^.0", "z.0^", "(1+2*3)^"][..];
+        test_parse_with(|p| p.parse_expr(0), &valid_args)
     }
 }

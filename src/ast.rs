@@ -165,6 +165,9 @@ pub enum Expr {
         expr: Box<Expr>,
         elt: usize,
     },
+    Deref {
+        expr: Box<Expr>,
+    },
 }
 
 impl Expr {

@@ -187,6 +187,10 @@ fn unparse_expr(cx: &Cx, e: &Expr, indent: usize, out: &mut dyn io::Write) -> io
             unparse_expr(cx, &*expr, indent, out)?;
             write!(out, ".{}", elt)
         }
+        E::Deref { expr } => {
+            unparse_expr(cx, &*expr, indent, out)?;
+            write!(out, "^")
+        }
     }
 }
 
