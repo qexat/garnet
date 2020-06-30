@@ -4,7 +4,6 @@
 //! and maybe bootstrap stuff if we feel like it.
 
 use std::cell::RefCell;
-use std::collections::HashMap;
 
 use walrus as w;
 
@@ -32,7 +31,7 @@ pub(super) fn output(cx: &Cx, program: &ir::Ir<TypeSym>) -> Vec<u8> {
 fn make_heckin_function_table(m: &mut w::Module, symbols: &mut Symbols) {
     let mut table_members = vec![];
     for scope in &mut symbols.bindings {
-        for binding in scope.values_mut() {
+        for (_name, binding) in scope.iter_mut() {
             if let Binding::Function(f) = binding {
                 // Set the function's table index to its position in the table.
                 f.table_offset = table_members.len();
@@ -205,20 +204,25 @@ enum Binding {
 
 /// A scoped symbol table containing everything what's in the wasm module.
 struct Symbols {
-    bindings: Vec<HashMap<VarSym, Binding>>,
+    /// We just use a Vec for each scope, and a stack of them,
+    /// and search backwards when looking for a var.  We could use
+    /// a linked list instead without needing a stack, but heck.
+    /// Can't use std's HashMap, since we allow shadowing and
+    /// want to conceal old bindings, not annihilate them.
+    bindings: Vec<Vec<(VarSym, Binding)>>,
     function_table: Option<w::TableId>,
 }
 
 impl Symbols {
     fn new() -> Self {
         Self {
-            bindings: vec![HashMap::default()],
+            bindings: vec![vec![]],
             function_table: None,
         }
     }
     /// TODO: See notes on IR symbol table scopes too.
     fn push_scope(&mut self) {
-        self.bindings.push(HashMap::default());
+        self.bindings.push(vec![]);
     }
     fn pop_scope(&mut self) {
         assert!(self.bindings.len() > 1);
@@ -231,7 +235,7 @@ impl Symbols {
         self.bindings
             .last_mut()
             .unwrap()
-            .insert(local.name, Binding::Local(local));
+            .push((local.name, Binding::Local(local)));
     }
 
     /// Insert a new function ID into the top scope
@@ -242,7 +246,7 @@ impl Symbols {
         //type_id: w::TypeId,
         params: &[LocalVar],
     ) {
-        self.bindings.last_mut().unwrap().insert(
+        self.bindings.last_mut().unwrap().push((
             name,
             Binding::Function(Function {
                 name,
@@ -251,7 +255,7 @@ impl Symbols {
                 params: params.to_owned(),
                 table_offset: 0,
             }),
-        );
+        ));
     }
 
     /// Get a reference to a local var, if it exists.
@@ -275,7 +279,7 @@ impl Symbols {
     /// Get a reference to an arbitrary binding.
     fn get(&self, name: VarSym) -> Option<&Binding> {
         for scope in self.bindings.iter().rev() {
-            if let Some(v) = scope.get(&name) {
+            if let Some((_name, v)) = scope.iter().rev().find(|(varname, _)| *varname == name) {
                 return Some(v);
             }
         }
@@ -732,6 +736,7 @@ mod tests {
             e: E::Let {
                 varname,
                 typename: cx.i32(),
+                mutable: false,
                 init: Box::new(ir::TypedExpr {
                     t: cx.i32(),
                     e: ir::Expr::int(9),
