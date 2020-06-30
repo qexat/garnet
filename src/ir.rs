@@ -321,6 +321,7 @@ fn lower_expr(expr: &ast::Expr) -> TypedExpr<()> {
             expr: Box::new(lower_expr(expr)),
             elt: *elt,
         },
+        E::Deref { .. } => todo!(),
     };
     TypedExpr { t: (), e: new_exp }
 }
