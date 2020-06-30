@@ -1,8 +1,6 @@
 //! Typechecking and other semantic checking.
 //! Operates on the IR.
 
-use std::collections::HashMap;
-
 use crate::ir;
 use crate::{Cx, TypeDef, TypeSym, VarSym};
 
@@ -126,22 +124,22 @@ pub struct VarBinding {
 }
 
 /// Symbol table.  Stores the scope stack and variable bindings.
+/// Kinda dumb structure, but simple, and using a HashMap is trickier
+/// 'cause we allow shadowing bindings.
 pub struct Symtbl {
-    syms: Vec<HashMap<VarSym, VarBinding>>,
+    syms: Vec<Vec<(VarSym, VarBinding)>>,
 }
 
 impl Symtbl {
     pub fn new() -> Self {
-        Self {
-            syms: vec![HashMap::new()],
-        }
+        Self { syms: vec![vec![]] }
     }
 
     /// TODO:
     /// To think about: Take a lambda and call it with the new scope,
     /// so we can never forget to pop it?
     fn push_scope(&mut self) {
-        self.syms.push(HashMap::new());
+        self.syms.push(vec![]);
     }
 
     fn pop_scope(&mut self) {
@@ -162,13 +160,15 @@ impl Symtbl {
             typename: typedef.clone(),
             mutable,
         };
-        tbl.insert(name, binding);
+        tbl.push((name, binding));
     }
 
     /// Get the type of the given variable, or an error
     fn get_var(&self, name: VarSym) -> Result<TypeSym, TypeError> {
         for scope in self.syms.iter().rev() {
-            if let Some(binding) = scope.get(&name) {
+            if let Some((_varname, binding)) =
+                scope.iter().rev().find(|(varname, _)| name == *varname)
+            {
                 return Ok(binding.typename.clone());
             }
         }
@@ -645,7 +645,7 @@ mod tests {
         // Make sure we can get a value
         assert!(t.get_var(t_foo).is_err());
         assert!(t.get_var(t_bar).is_err());
-        t.add_var(t_foo, t_i32);
+        t.add_var(t_foo, t_i32, false);
         assert_eq!(t.get_var(t_foo).unwrap(), t_i32);
         assert!(t.get_var(t_bar).is_err());
 
@@ -654,7 +654,7 @@ mod tests {
         assert_eq!(t.get_var(t_foo).unwrap(), t_i32);
         assert!(t.get_var(t_bar).is_err());
         // Add var, make sure we can get it
-        t.add_var(t_bar, t_bool);
+        t.add_var(t_bar, t_bool, false);
         assert_eq!(t.get_var(t_foo).unwrap(), t_i32);
         assert_eq!(t.get_var(t_bar).unwrap(), t_bool);
 
@@ -662,6 +662,12 @@ mod tests {
         t.pop_scope();
         assert_eq!(t.get_var(t_foo).unwrap(), t_i32);
         assert!(t.get_var(t_bar).is_err());
+
+        // Make sure we can shadow a value
+        t.add_var(t_foo, t_i32, false);
+        t.add_var(t_foo, t_bool, false);
+        assert_eq!(t.get_var(t_foo).unwrap(), t_bool);
+        // TODO: Check to make sure the shadowed var is still there.
     }
 
     /// Make sure an empty symtbl gives errors
@@ -772,6 +778,7 @@ mod tests {
                 init: plz(Expr::Lit {
                     val: Literal::Integer(42),
                 }),
+                mutable: false,
             });
             assert!(type_matches(typecheck_expr(cx, tbl, ir).unwrap().t, t_unit));
             // Is the variable now bound in our symbol table?
@@ -808,6 +815,7 @@ mod tests {
                 *plz(Expr::Let {
                     varname: fname,
                     typename: ftype,
+                    mutable: false,
                     init: plz(Expr::Lambda {
                         signature: Signature {
                             params: vec![(aname, t_i32), (bname, t_i32)],
