@@ -96,6 +96,10 @@ pub enum Expr<T> {
         expr: Box<TypedExpr<T>>,
         elt: usize,
     },
+    Assign {
+        lhs: Box<TypedExpr<T>>,
+        rhs: Box<TypedExpr<T>>,
+    },
 }
 
 impl<T> Expr<T> {
@@ -184,6 +188,10 @@ impl<T> Expr<T> {
             E::TupleRef { expr, elt } => E::TupleRef {
                 expr: Box::new(expr.map(new_t)),
                 elt,
+            },
+            E::Assign { lhs, rhs } => E::Assign {
+                lhs: Box::new(lhs.map(new_t)),
+                rhs: Box::new(rhs.map(new_t)),
             },
         }
     }
@@ -327,6 +335,10 @@ fn lower_expr(expr: &ast::Expr) -> TypedExpr<()> {
             elt: *elt,
         },
         E::Deref { .. } => todo!(),
+        E::Assign { lhs, rhs } => Expr::Assign {
+            lhs: Box::new(lower_expr(lhs)),
+            rhs: Box::new(lower_expr(rhs)),
+        },
     };
     TypedExpr { t: (), e: new_exp }
 }
