@@ -569,18 +569,24 @@ impl<'cx, 'input> Parser<'cx, 'input> {
             }
             // Is our token an infix op?
             if let Some((l_bp, r_bp)) = infix_binding_power(&op_token) {
-                let bop = bop_for(&op_token).unwrap();
-
                 if l_bp < min_bp {
                     break;
                 }
                 self.drop();
-                //dbg!(&lhs, &op, self.lex.peek());
                 let rhs = self.parse_expr(r_bp).unwrap();
-                lhs = ast::Expr::BinOp {
-                    op: bop,
-                    lhs: Box::new(lhs),
-                    rhs: Box::new(rhs),
+                lhs = if op_token == T::Equals {
+                    ast::Expr::Assign {
+                        lhs: Box::new(lhs),
+                        rhs: Box::new(rhs),
+                    }
+                } else {
+                    let bop = bop_for(&op_token).unwrap();
+                    //dbg!(&lhs, &op, self.lex.peek());
+                    ast::Expr::BinOp {
+                        op: bop,
+                        lhs: Box::new(lhs),
+                        rhs: Box::new(rhs),
+                    }
                 };
                 continue;
             }
@@ -787,6 +793,8 @@ fn infix_binding_power(op: &Token) -> Option<(usize, usize)> {
         T::And => Some((60, 61)),
         // Logical xor has same precedence as or, I guess?  It's sorta an odd duck.
         T::Or | T::Xor => Some((50, 51)),
+        // Assignment
+        T::Equals => Some((10, 11)),
 
         _ => None,
     }

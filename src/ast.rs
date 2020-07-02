@@ -169,6 +169,11 @@ pub enum Expr {
     Deref {
         expr: Box<Expr>,
     },
+    /// Separate from a BinOp because its typechecking rules are different.
+    Assign {
+        lhs: Box<Expr>,
+        rhs: Box<Expr>,
+    },
 }
 
 impl Expr {
