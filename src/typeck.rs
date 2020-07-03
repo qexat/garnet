@@ -45,6 +45,14 @@ pub enum TypeError {
     TupleRefMismatch {
         got: TypeSym,
     },
+    TypeMismatch {
+        expr_name: String,
+        got: TypeSym,
+        expected: TypeSym,
+    },
+    MutabilityMismatch {
+        expr_name: String,
+    },
 }
 
 impl TypeError {
@@ -111,6 +119,19 @@ impl TypeError {
                 "Tried to reference tuple but didn't get a tuple, got {}",
                 cx.fetch_type(*got).get_name(cx)
             ),
+            TypeError::TypeMismatch {
+                expr_name,
+                expected,
+                got,
+            } => format!(
+                "Type mismatch in '{}' expresssion, expected {} but got {}",
+                expr_name,
+                cx.fetch_type(*expected).get_name(cx),
+                cx.fetch_type(*got).get_name(cx)
+            ),
+            TypeError::MutabilityMismatch { expr_name } => {
+                format!("Mutability mismatch in '{}' expresssion", expr_name)
+            }
         }
     }
 }
@@ -165,11 +186,16 @@ impl Symtbl {
 
     /// Get the type of the given variable, or an error
     fn get_var(&self, name: VarSym) -> Result<TypeSym, TypeError> {
+        Ok(self.get_binding(name)?.typename.clone())
+    }
+
+    /// Get the binding of the given variable, or an error
+    fn get_binding(&self, name: VarSym) -> Result<&VarBinding, TypeError> {
         for scope in self.syms.iter().rev() {
             if let Some((_varname, binding)) =
                 scope.iter().rev().find(|(varname, _)| name == *varname)
             {
-                return Ok(binding.typename.clone());
+                return Ok(binding);
             }
         }
         Err(TypeError::UnknownVar(name))
@@ -597,6 +623,48 @@ fn typecheck_expr(
                 Err(TypeError::TupleRefMismatch { got: body_expr.t })
             }
         }
+        Assign { lhs, rhs } => {
+            let lhs_expr = typecheck_expr(cx, symtbl, *lhs)?;
+            let rhs_expr = typecheck_expr(cx, symtbl, *rhs)?;
+            // So the rules for assignments are, it's good only:
+            // If the lhs is an lvalue (just variable or tuple ref currently)
+            // (This basically comes down to "somewhere with a location"...)
+            // If the lhs is mutable
+            // If the types of lhs and rhs match.
+            if !is_mutable_lvalue(symtbl, &lhs_expr.e)? {
+                Err(TypeError::MutabilityMismatch {
+                    expr_name: String::from("assignment"),
+                })
+            } else if !type_matches(lhs_expr.t, rhs_expr.t) {
+                Err(TypeError::TypeMismatch {
+                    expr_name: String::from("assignment"),
+                    expected: lhs_expr.t,
+                    got: rhs_expr.t,
+                })
+            } else {
+                Ok(ir::TypedExpr {
+                    t: cx.unit(),
+                    e: Assign {
+                        lhs: Box::new(lhs_expr),
+                        rhs: Box::new(rhs_expr),
+                    },
+                })
+            }
+        }
+    }
+}
+
+/// So, what is an lvalue?
+/// Well, it's a variable,
+/// or it's an lvalue in a deref expr or tupleref
+fn is_mutable_lvalue<T>(symtbl: &Symtbl, expr: &ir::Expr<T>) -> Result<bool, TypeError> {
+    match expr {
+        ir::Expr::Var { name } => {
+            let v = symtbl.get_binding(*name)?;
+            Ok(v.mutable)
+        }
+        ir::Expr::TupleRef { expr, .. } => is_mutable_lvalue(symtbl, &expr.e),
+        _ => Ok(false),
     }
 }
 
@@ -849,13 +917,10 @@ mod tests {
     }
 
     #[test]
+    #[should_panic]
     fn test_bogus_function() {
-        let cx = &mut crate::Cx::new();
-        use crate::parser::Parser;
         let src = "fn foo(): fn(I32):I32 = fn(x: I32):Bool = x+1 end end";
-        let ast = Parser::new(cx, src).parse();
-        let ir = ir::lower(&ast);
-        assert!(typecheck(cx, ir).is_err());
+        typecheck_src(src);
     }
 
     /// TODO
@@ -871,5 +936,50 @@ mod tests {
             typecheck_expr(cx, tbl, *plz(ir::Expr::unit())).unwrap().t,
             cx.unit()
         );
+    }
+
+    fn typecheck_src(src: &str) {
+        let cx = &mut crate::Cx::new();
+        use crate::parser::Parser;
+        let ast = Parser::new(cx, src).parse();
+        let ir = ir::lower(&ast);
+        let _ = &typecheck(cx, ir).unwrap();
+    }
+
+    #[test]
+    fn test_assign() {
+        let src = r#"fn foo() =
+    let mut x: I32 = 10
+    x = 11
+end"#;
+        typecheck_src(src);
+    }
+
+    #[test]
+    fn test_assign2() {
+        let src = r#"fn foo() =
+    let mut x: {I32, I32} = {10, 12}
+    x.0 = 11
+end"#;
+        typecheck_src(src);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_bad_assign1() {
+        let src = r#"fn foo() =
+    let x: I32 = 10
+    x = 11
+end"#;
+        typecheck_src(src);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_bad_assign2() {
+        let src = r#"fn foo() =
+    {1,2,3}.3 = 11
+end"#;
+        typecheck_src(src);
     }
 }
