@@ -547,7 +547,12 @@ fn compile_expr(
             elt,
         } => {
             // This is a pretty lame way to do it, but an optimization
-            // pass to make it better is something that should happen before.
+            // pass to make it better is something that should happen before
+            // this.  Might be easier to save the tuple to locals,
+            // decomposing it in the process,
+            // and pick the relevant value out of those?
+            //
+            // eh, it comes down to a pattern match in the end...
 
             // Compile init expression
             compile_expr(cx, m, t, symbols, instrs, &*tuple_expr);
@@ -577,6 +582,9 @@ fn compile_expr(
             }
             // and fetch the local.
             instrs.local_get(local.id);
+        }
+        E::Assign { lhs, rhs } => {
+            todo!();
         }
     };
 }
