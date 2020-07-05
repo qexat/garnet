@@ -173,6 +173,7 @@ Things to consider:
  * codespan (for error reporting)
  * logos (for lexer)
  * lasso or `string-interner` (for string interning)
+ * `ryu` for parsing floats
 
 ## Backend thoughts
 

@@ -6,11 +6,11 @@
 const CONTINUATION_BIT: U8 = 1 << 7
 const SIGN_BIT: U8 = 1 << 6
 
-fn low_bits_of_byte(byte: U8): u8 =
+fn low_bits_of_byte(byte: U8): U8 =
     byte & ~CONTINUATION_BIT
 end
 
-fn low_bits_of_U64(val: u64): u64 =
+fn low_bits_of_u64(val: U64): U64 =
     let byte: U8 = val & 0xFF
     low_bits_of_byte(byte)
 end

@@ -346,3 +346,33 @@ end
 "#;
     assert_eq!(eval_program0(src), 20);
 }
+
+#[test]
+fn asssign_tuples() {
+    let src = r#"
+
+fn test(): I32 =
+    let x: {I32, I32} = {10, 11}
+    let mut y: {I32, I32} = {20, 21}
+    y = x
+    y.0
+end
+"#;
+    assert_eq!(eval_program0(src), 20);
+}
+
+#[test]
+fn return_tuples() {
+    let src = r#"
+
+fn foo(): {I32, I32} =
+    {10, 20}
+end
+
+fn test(): I32 =
+    let x: {I32, I32} = foo()
+    x.1
+end
+"#;
+    assert_eq!(eval_program0(src), 20);
+}
