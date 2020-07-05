@@ -583,9 +583,24 @@ fn compile_expr(
             // and fetch the local.
             instrs.local_get(local.id);
         }
-        E::Assign { lhs, rhs } => {
-            todo!();
-        }
+        E::Assign { lhs, rhs } => match &lhs.e {
+            ir::Expr::Var { name } => {
+                // Well, this at least is easy
+                compile_expr(cx, m, t, symbols, instrs, &*rhs);
+                match symbols
+                    .get(*name)
+                    .expect(&format!("Unknown var {:?}; should never happen", name))
+                {
+                    Binding::Local(ldef) => {
+                        instrs.local_set(ldef.id);
+                    }
+                    Binding::Function(_) => unreachable!(),
+                    _ => todo!("Globals"),
+                }
+            }
+            ir::Expr::TupleRef { .. } => todo!("FDSA"),
+            _ => unreachable!(),
+        },
     };
 }
 
