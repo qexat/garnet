@@ -10,11 +10,52 @@ use walrus as w;
 use crate::ir;
 use crate::*;
 
+/// Initialize a wasm module with a few utility things.
+/// Note that these are basically globals, so if someday we want to
+/// link multiple wasm modules together and have them interoperate
+/// we'll need to rework how this functions.  Basically make a
+/// runtime lib with stuff that multiple Garnet modules can share.
+///
+/// For now we just make sure it has a chunk of memory we can use
+/// as a stack.
+///
+/// Returns the stack pointer and stack top pointer
+fn init_module(m: &mut w::Module) -> (w::GlobalId, w::GlobalId) {
+    // Memories start out zeroed, so that's nice.
+    // We just have a 1 mb stack for now.
+    const INIT_SIZE: u32 = 1024 * 1024 * 1;
+    m.memories.add_local(false, INIT_SIZE, None);
+
+    // We start the stack 64 bytes past
+    // 0 to leave some spare space so that address 0 is never
+    // used for anything.
+    //
+    // TODO: Set the memory at 0 to 0xDEADBEEF or something
+    // else distinctive as a warning?  Eh, maybe someday.
+    const STACK_BOTTOM: i32 = 64;
+
+    // Add a global to the module to act as stack pointer
+    // And also one to point at the stack top.
+
+    let sp = m.globals.add_local(
+        w::ValType::I32,
+        true,
+        w::InitExpr::Value(w::ir::Value::I32(STACK_BOTTOM)),
+    );
+    let st = m.globals.add_local(
+        w::ValType::I32,
+        false,
+        w::InitExpr::Value(w::ir::Value::I32(INIT_SIZE as i32)),
+    );
+    (sp, st)
+}
+
 /// Entry point to turn the IR into a compiled wasm module
 pub(super) fn output(cx: &Cx, program: &ir::Ir<TypeSym>) -> Vec<u8> {
     let config = w::ModuleConfig::new();
     let m = &mut w::Module::with_config(config);
-    let symbols = &mut Symbols::new();
+    let (sp, st) = init_module(m);
+    let symbols = &mut Symbols::new(sp, st);
     for decl in program.decls.iter() {
         predeclare_decl(&cx, m, symbols, decl);
     }
@@ -211,13 +252,20 @@ struct Symbols {
     /// want to conceal old bindings, not annihilate them.
     bindings: Vec<Vec<(VarSym, Binding)>>,
     function_table: Option<w::TableId>,
+
+    /// Stack pointer
+    sp: w::GlobalId,
+    /// Stack top
+    st: w::GlobalId,
 }
 
 impl Symbols {
-    fn new() -> Self {
+    fn new(sp: w::GlobalId, st: w::GlobalId) -> Self {
         Self {
             bindings: vec![vec![]],
             function_table: None,
+            sp,
+            st,
         }
     }
     /// TODO: See notes on IR symbol table scopes too.
@@ -459,6 +507,13 @@ fn compile_expr(
             init,
             ..
         } => {
+            // Ok, so there's two possible things happening here.
+            // If the variable is a single value, we can just
+            // shove it into a local variable.
+            // However, if it is multiple values, we need to
+            // spill it onto the stack and make a local that
+            // stores the address to it.
+
             // Declare local var storage
             let local = LocalVar::new(cx, m, *varname, *typename);
             symbols.add_local(local);
