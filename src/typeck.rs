@@ -258,25 +258,22 @@ impl InferenceCx {
 
     /// Make the types of two terms equivalent, or produce an error if they're in conflict
     /// TODO: Figure out how to use this
+    /// https://play.rust-lang.org/?version=stable&mode=debug&edition=2018&gist=ba1adacd8659de0587af68cb0e55a471
     pub fn unify(&self, a: &TypeInfo, b: &TypeInfo) -> Result<(), TypeError> {
         use TypeInfo::*;
         match (a, b) {
             // Follow references
-            (Ref(a), _) => self.unify(&*self.fetch(a), b),
-            (_, Ref(b)) => self.unify(a, &*self.fetch(b)),
+            (Ref(a), _) => self.unify(&*self.fetch(*a), b),
+            (_, Ref(b)) => self.unify(a, &*self.fetch(*b)),
 
             // When we don't know about a type, assume they match and
             // make the one know nothing about refer to the one we may
             // know something about
-            (Unknown, _) => Ok(()),
-            (_, Unknown) => Ok(()),
+            (Unknown, _) => todo!(),
+            (_, Unknown) => todo!(),
 
             (Known(t1), Known(t2)) if t1 == t2 => Ok(()),
-            (Known(t1), Known(t2)) => Err(TypeError::TypeMismatch {
-                expr_name: String::from("inference"),
-                expected: t1,
-                got: t2,
-            }),
+            (Known(_t1), Known(_t2)) => todo!("Inference failed: Type mismatch"),
 
             /*
             // Primitives are easy to unify
@@ -302,46 +299,22 @@ impl InferenceCx {
             }
             */
             // No attempt to match was successful, error.
-            (t1, t2) => panic!("Could not unify types"),
+            (t1, t2) => todo!("Inference failed: Could not unify types"),
+        }
+    }
+
+    /// Attempt to reconstruct a concrete type from a symbol.  This may
+    /// fail if we don't have enough info to figure out what the type is.
+    pub fn reconstruct(&self, sym: InfoSym) -> Result<TypeSym, TypeError> {
+        let t = &*self.fetch(sym);
+        use TypeInfo::*;
+        match t {
+            Unknown => todo!("No type?"),
+            Ref(id) => self.reconstruct(*id),
+            Known(sym) => Ok(*sym),
         }
     }
 }
-
-/*
-/// Attempt to reconstruct a concrete type from a symbol.  This may
-/// fail if we don't have enough info to figure out what the type is.
-pub fn reconstruct(&self, sym: TypeSym) -> Result<TypeDef, TypeError> {
-    let t = self.unintern_type(sym).clone();
-    use TypeDef::*;
-    match t {
-        Unknown => Err(TypeError::InferenceFailure(format!(
-            "No type for {:?}",
-            sym
-        ))),
-        Ref(id) => self.reconstruct(id),
-        SInt(i) => Ok(SInt(i)),
-        Bool => Ok(Bool),
-        Lambda(p, r) => {
-            let mut ts = vec![];
-            for ty in p {
-                ts.push(self.reconstruct(ty)?);
-            }
-            let _rettype = self.reconstruct(*r)?;
-            //Ok(Lambda(ts, rettype))
-
-            Ok(Bool)
-        }
-        Tuple(t) => {
-            let mut ts = vec![];
-            for ty in t {
-                ts.push(self.reconstruct(ty)?);
-            }
-            //Ok(Tuple(ts))
-            Ok(Bool)
-        }
-    }
-}
-*/
 
 /// Does t1 equal t2?
 ///

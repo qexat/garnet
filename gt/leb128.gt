@@ -1,0 +1,124 @@
+-- An implementation of the leb128 variable-length integer encoding.
+-- Useful for wasm (and apparently dwarf).
+--
+-- Cruelly torn from https://github.com/gimli-rs/leb128
+
+const CONTINUATION_BIT: U8 = 1 << 7
+const SIGN_BIT: U8 = 1 << 6
+
+fn low_bits_of_byte(byte: U8): u8 =
+    byte & ~CONTINUATION_BIT
+end
+
+fn low_bits_of_U64(val: u64): u64 =
+    let byte: U8 = val & 0xFF
+    low_bits_of_byte(byte)
+end
+
+enum ReadError =
+    Overflow
+end
+
+fn read_unsigned(r: Read): Result[U64, ReadError] =
+    let mut result: U64 = 0
+    let mut shift: U32 = 0
+    loop
+        let mut buf: Arr[U8] = [0]
+        r.read_exact(&mut buf)
+
+        if shift == 63 and buf[0] != 0x00 and buf[0] != 0x01 then
+            return Err(ReadError.Overflow)
+        end
+
+        let low_bits = low_bits_of_byte(buf[0]) as U64
+        result = result | (low_bits << shift)
+
+        if buf[0] & CONTINUATION_BIT == 0 then
+            return Ok(result)
+        end
+
+        shift = shift + 7
+    end
+end
+
+
+fn read_signed(r: Read): Result[I64, ReadError] =
+    let mut result = 0;
+    let mut shift = 0;
+    let size = 64;
+    let mut byte: U8 = 0;
+
+    loop
+        let mut buf: Arr[U8] = [0]
+        r.read_exact(&mut buf)?
+
+        byte = buf[0]
+        if shift == 63 and byte != 0x00 and byte != 0x7f then
+            return Err(Error::Overflow)
+        end
+
+        let low_bits = low_bits_of_byte(byte) as I64;
+        result = result | low_bits << shift
+        shift += 7
+
+        if byte & CONTINUATION_BIT == 0 then
+            break
+        end
+    end
+
+    if shift < size and (SIGN_BIT & byte) == SIGN_BIT then
+        -- Sign extend the result.
+        result = result | ~0 << shift
+    end
+
+    Ok(result)
+end
+
+
+fn write_unsigned(w: Write, val: U64): Result[usize, IoError] =
+    let mut val = val
+    let mut bytes_written = 0
+    loop
+        let mut byte = low_bits_of_u64(val)
+        val >>= 7
+        if val != 0 then
+            -- More bytes to come, so set the continuation bit.
+            byte |= CONTINUATION_BIT
+        end
+
+        let buf = [byte]
+        w.write_all(&buf)?
+        bytes_written += 1
+
+        if val == 0 then
+            return Ok(bytes_written)
+        end
+    end
+end
+
+fn signed(w: Write, val: I64): Result[usize, IoError] =
+    let mut val = val
+    let mut bytes_written = 0
+    loop
+        let mut byte = val as U8
+        -- Keep the sign bit for testing
+        val >>= 6
+        let done = val == 0 or val == -1
+        if done then
+            byte &= !CONTINUATION_BIT
+        else
+            -- Remove the sign bit
+            val >>= 1
+            -- More bytes to come, so set the continuation bit.
+            byte |= CONTINUATION_BIT
+        end
+
+        let buf = [byte]
+        w.write_all(&buf)?
+        bytes_written += 1
+
+        if done then
+            return Ok(bytes_written)
+        end
+    end
+end
