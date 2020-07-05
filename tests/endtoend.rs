@@ -334,3 +334,15 @@ end
 "#;
     assert_eq!(eval_program0(src), 21);
 }
+
+#[test]
+fn assignment() {
+    let src = r#"
+fn test(): I32 =
+    let mut x: I32 = 10
+    x = 20
+    x
+end
+"#;
+    assert_eq!(eval_program0(src), 20);
+}

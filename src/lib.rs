@@ -45,18 +45,6 @@ impl From<VarSym> for usize {
     }
 }
 
-/// Info tag for type inference
-pub enum TypeInfo {
-    /// Unknown type not inferred yet
-    Unknown,
-    /// Reference saying "this type is the same as that one",
-    /// which may still be unknown.
-    /// TODO: Symbol type needs to change.
-    Ref(TypeSym),
-    /// Known type.
-    Known(TypeDef),
-}
-
 /// For now this is what we use as a type...
 /// This doesn't include the name, just the properties of it.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]

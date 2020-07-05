@@ -1,6 +1,9 @@
 //! Typechecking and other semantic checking.
 //! Operates on the IR.
 
+use std::rc::Rc;
+
+use crate::intern;
 use crate::ir;
 use crate::{Cx, TypeDef, TypeSym, VarSym};
 
@@ -202,16 +205,65 @@ impl Symtbl {
     }
 }
 
-impl Cx {
-    /*
+/// The interned value of a type inference ref
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+pub struct InfoSym(pub usize);
+
+impl From<usize> for InfoSym {
+    fn from(i: usize) -> InfoSym {
+        InfoSym(i)
+    }
+}
+
+impl From<InfoSym> for usize {
+    fn from(i: InfoSym) -> usize {
+        i.0
+    }
+}
+
+/// Info tag for type inference
+#[derive(Debug, Hash, Clone, PartialEq, Eq)]
+pub enum TypeInfo {
+    /// Unknown type not inferred yet
+    Unknown,
+    /// Reference saying "this type is the same as that one",
+    /// which may still be unknown.
+    /// TODO: Symbol type needs to change.
+    Ref(InfoSym),
+    /// Known type.
+    Known(TypeSym),
+}
+
+struct InferenceCx {
+    types: intern::Interner<InfoSym, TypeInfo>,
+}
+
+impl InferenceCx {
+    pub fn new() -> Self {
+        let s = Self {
+            types: intern::Interner::new(),
+        };
+        s
+    }
+
+    /// Intern the symbol.
+    pub fn intern(&self, ti: &TypeInfo) -> InfoSym {
+        self.types.intern(&ti.clone())
+    }
+
+    /// Get the string for a variable symbol
+    pub fn fetch(&self, s: InfoSym) -> Rc<TypeInfo> {
+        self.types.fetch(s)
+    }
+
     /// Make the types of two terms equivalent, or produce an error if they're in conflict
     /// TODO: Figure out how to use this
-    pub fn unify(&mut self, a: TypeInfo, b: TypeInfo) -> Result<(), TypeError> {
+    pub fn unify(&self, a: &TypeInfo, b: &TypeInfo) -> Result<(), TypeError> {
         use TypeInfo::*;
         match (a, b) {
             // Follow references
-            (Ref(a), _) => self.unify(a, b),
-            (_, Ref(b)) => self.unify(a, b),
+            (Ref(a), _) => self.unify(&*self.fetch(a), b),
+            (_, Ref(b)) => self.unify(a, &*self.fetch(b)),
 
             // When we don't know about a type, assume they match and
             // make the one know nothing about refer to the one we may
@@ -220,10 +272,11 @@ impl Cx {
             (_, Unknown) => Ok(()),
 
             (Known(t1), Known(t2)) if t1 == t2 => Ok(()),
-            (Known(t1), Known(t2)) => Err(TypeError::TypeMismatch(format!(
-                "type mismatch: {} != {}",
-                t1, t2
-            ))),
+            (Known(t1), Known(t2)) => Err(TypeError::TypeMismatch {
+                expr_name: String::from("inference"),
+                expected: t1,
+                got: t2,
+            }),
 
             /*
             // Primitives are easy to unify
@@ -249,48 +302,46 @@ impl Cx {
             }
             */
             // No attempt to match was successful, error.
-            (a, b) => Err(TypeError::InferenceFailure(format!(
-                "Could not unify types: {:?} and {:?}",
-                a, b
-            ))),
+            (t1, t2) => panic!("Could not unify types"),
         }
     }
-
-    /// Attempt to reconstruct a concrete type from a symbol.  This may
-    /// fail if we don't have enough info to figure out what the type is.
-    pub fn reconstruct(&self, sym: TypeSym) -> Result<TypeDef, TypeError> {
-        let t = self.unintern_type(sym).clone();
-        use TypeDef::*;
-        match t {
-            Unknown => Err(TypeError::InferenceFailure(format!(
-                "No type for {:?}",
-                sym
-            ))),
-            Ref(id) => self.reconstruct(id),
-            SInt(i) => Ok(SInt(i)),
-            Bool => Ok(Bool),
-            Lambda(p, r) => {
-                let mut ts = vec![];
-                for ty in p {
-                    ts.push(self.reconstruct(ty)?);
-                }
-                let _rettype = self.reconstruct(*r)?;
-                //Ok(Lambda(ts, rettype))
-
-                Ok(Bool)
-            }
-            Tuple(t) => {
-                let mut ts = vec![];
-                for ty in t {
-                    ts.push(self.reconstruct(ty)?);
-                }
-                //Ok(Tuple(ts))
-                Ok(Bool)
-            }
-        }
-    }
-    */
 }
+
+/*
+/// Attempt to reconstruct a concrete type from a symbol.  This may
+/// fail if we don't have enough info to figure out what the type is.
+pub fn reconstruct(&self, sym: TypeSym) -> Result<TypeDef, TypeError> {
+    let t = self.unintern_type(sym).clone();
+    use TypeDef::*;
+    match t {
+        Unknown => Err(TypeError::InferenceFailure(format!(
+            "No type for {:?}",
+            sym
+        ))),
+        Ref(id) => self.reconstruct(id),
+        SInt(i) => Ok(SInt(i)),
+        Bool => Ok(Bool),
+        Lambda(p, r) => {
+            let mut ts = vec![];
+            for ty in p {
+                ts.push(self.reconstruct(ty)?);
+            }
+            let _rettype = self.reconstruct(*r)?;
+            //Ok(Lambda(ts, rettype))
+
+            Ok(Bool)
+        }
+        Tuple(t) => {
+            let mut ts = vec![];
+            for ty in t {
+                ts.push(self.reconstruct(ty)?);
+            }
+            //Ok(Tuple(ts))
+            Ok(Bool)
+        }
+    }
+}
+*/
 
 /// Does t1 equal t2?
 ///
@@ -674,8 +725,6 @@ fn typecheck_literal(cx: &mut Cx, lit: &ir::Literal) -> Result<TypeSym, TypeErro
         ir::Literal::Bool(_) => Ok(cx.bool()),
     }
 }
-
-//fn typecheck_tuple_ctr(cx: &mut Cx, body: &[ir::Expr
 
 #[cfg(test)]
 mod tests {
