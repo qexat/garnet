@@ -53,6 +53,7 @@ pub enum Branch {
 pub struct Block {
     id: BB,
     body: Vec<Instr>,
+    /// What the ending instruction of the basic block is
     terminator: Branch,
 }
 
@@ -65,13 +66,14 @@ pub enum Instr {
 pub enum Op {
     // Values
     ValI32(i32),
+    ValUnit,
 
     // Operators
     AddI32(Var, Var),
     SubI32(Var, Var),
     MulI32(Var, Var),
     DivI32(Var, Var),
-    NegI32(Var),
+    ModI32(Var, Var),
     NotI32(Var),
 
     // Memory
@@ -80,9 +82,9 @@ pub enum Op {
     StoreI32(Var),
 
     // Control flow
-    // TODO: phi can take any number of args
-    Phi(BB, BB),
-    Call(Var, VarSym, Vec<Var>),
+    Phi(Vec<BB>),
+    Call(VarSym, Vec<Var>),
+    CallIndirect(Var, Vec<Var>),
 }
 
 pub struct FuncBuilder {
@@ -92,7 +94,7 @@ pub struct FuncBuilder {
 }
 
 impl FuncBuilder {
-    pub fn new(func_name: VarSym, params: &[TypeSym], rettype: TypeSym) -> Self {
+    pub fn new(func_name: VarSym, params: &[(VarSym, TypeSym)], rettype: TypeSym) -> Self {
         let mut res = Self {
             func: Func {
                 name: func_name,
@@ -103,7 +105,7 @@ impl FuncBuilder {
             next_var: 0,
             next_bb: 0,
         };
-        let new_params = params.iter().map(|t| (res.next_var(), *t)).collect();
+        let new_params = params.iter().map(|(_v, t)| (res.next_var(), *t)).collect();
         res.func.params = new_params;
         res
     }
@@ -147,32 +149,99 @@ pub fn lower_decl(cx: &Cx, decl: &ir::Decl<TypeSym>) {
             signature,
             body,
         } => {
-            // TODO: Map param names somehow...
-            let params: Vec<_> = signature.params.iter().map(|(name, ty)| *ty).collect();
-            let mut fb = FuncBuilder::new(*name, params.as_ref(), signature.rettype);
+            let mut fb = FuncBuilder::new(*name, signature.params.as_ref(), signature.rettype);
             todo!()
         }
         _ => todo!(),
     }
 }
+fn lower_exprs(
+    cx: &Cx,
+    fb: &mut FuncBuilder,
+    bb: &mut Block,
+    exprs: &[ir::TypedExpr<TypeSym>],
+) -> Option<Var> {
+    let mut last = None;
+    for e in exprs {
+        last = Some(lower_expr(cx, fb, bb, e));
+    }
+    last
+}
 
-fn lower_expr(cx: &Cx, fb: &mut FuncBuilder, bb: &mut Block, expr: &ir::TypedExpr<TypeSym>) {
+fn lower_expr(cx: &Cx, fb: &mut FuncBuilder, bb: &mut Block, expr: &ir::TypedExpr<TypeSym>) -> Var {
     use ir::Expr as E;
     use ir::*;
     match &expr.e {
-        E::Lit { val } => match val {
-            Literal::Integer(i) => {
-                assert!(*i < (std::i32::MAX as i64));
-                let op = Op::ValI32(*i as i32);
-                fb.assign(bb, op);
+        E::Lit { val } => {
+            let v = match val {
+                Literal::Integer(i) => {
+                    assert!(*i < (std::i32::MAX as i64));
+                    *i
+                }
+                // Turn bools into integers.
+                Literal::Bool(b) => {
+                    if *b {
+                        1
+                    } else {
+                        0
+                    }
+                }
+            };
+            let op = Op::ValI32(v as i32);
+            fb.assign(bb, op)
+        }
+
+        E::Var { .. } => todo!(),
+        E::BinOp { op, lhs, rhs } => {
+            let v1 = lower_expr(cx, fb, bb, &*lhs);
+            let v2 = lower_expr(cx, fb, bb, &*rhs);
+            let o = match op {
+                ir::BOp::Add => Op::AddI32,
+                ir::BOp::Sub => Op::SubI32,
+                ir::BOp::Mul => Op::MulI32,
+                // TODO: Check for div0?
+                ir::BOp::Div => Op::DivI32,
+                // TODO: Check for div0?
+                ir::BOp::Mod => Op::ModI32,
+                _ => todo!(),
+            }(v1, v2);
+            fb.assign(bb, o)
+        }
+        E::UniOp { op, rhs } => match op {
+            // Turn -x into 0 - x
+            ir::UOp::Neg => {
+                let v1 = fb.assign(bb, Op::ValI32(0));
+                let v2 = lower_expr(cx, fb, bb, &*rhs);
+                let op = Op::SubI32(v1, v2);
+                fb.assign(bb, op)
             }
-            // Turn bools into integers.
-            Literal::Bool(b) => {
-                let op = Op::ValI32(if *b { 1 } else { 0 });
-                fb.assign(bb, op);
+            ir::UOp::Not => {
+                let v = lower_expr(cx, fb, bb, &*rhs);
+                let op = Op::NotI32(v);
+                fb.assign(bb, op)
             }
         },
+        E::Block { body } => {
+            // If the body is empty, just make an unreachable value
+            // that is used nowhere
+            // If it is used as something other than unit then
+            // this (hopefully) doesn't typecheck.
+            lower_exprs(cx, fb, bb, &*body).unwrap_or_else(|| fb.assign(bb, Op::ValUnit))
+        }
+        /* NOT AWAKE ENOUGH FOR THIS
+        E::If { cases, falseblock } => {
+            let mut bbs = vec![];
+            let mut next_bb = fb.next_block();
+            for (case, body) in cases {
+                let case_res = lower_expr(cx, fb, bb, case);
+                let mut new_bb = fb.next_block();
+                bbs.push(new_bb.id);
 
+                let res = lower_exprs(cx, fb, bb, &*body).unwrap_or_else(|| fb.assign(bb, Op::ValUnit))
+                new_bb.terminator = Branch::Jump(res, next_bb);
+            }
+        }
+        */
         _ => todo!(),
     }
 }
