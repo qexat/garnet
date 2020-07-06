@@ -24,7 +24,9 @@ fn init_module(m: &mut w::Module) -> (w::GlobalId, w::GlobalId) {
     // Memories start out zeroed, so that's nice.
     // We just have a 1 mb stack for now.
     const INIT_SIZE: u32 = 1024 * 1024 * 1;
-    m.memories.add_local(false, INIT_SIZE, None);
+    // This number is in pages, and wasm memory uses 64 kb pages.
+    const PAGE_SIZE: u32 = 64 * 1024;
+    m.memories.add_local(false, INIT_SIZE / PAGE_SIZE, None);
 
     // We start the stack 64 bytes past
     // 0 to leave some spare space so that address 0 is never
@@ -45,7 +47,7 @@ fn init_module(m: &mut w::Module) -> (w::GlobalId, w::GlobalId) {
     let st = m.globals.add_local(
         w::ValType::I32,
         false,
-        w::InitExpr::Value(w::ir::Value::I32(INIT_SIZE as i32)),
+        w::InitExpr::Value(w::ir::Value::I32((INIT_SIZE * PAGE_SIZE) as i32)),
     );
     (sp, st)
 }
@@ -804,7 +806,8 @@ mod tests {
                 rettype: cx.i32(),
             },
         );
-        let symbols = &mut Symbols::new();
+        let (sp, st) = super::init_module(&mut m);
+        let symbols = &mut Symbols::new(sp, st);
         let mut fb = w::FunctionBuilder::new(&mut m.types, &paramtype, &rettype);
         let instrs = &mut fb.func_body();
 
