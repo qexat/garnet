@@ -258,6 +258,9 @@ impl InferenceCx {
 
     /// Make the types of two terms equivalent, or produce an error if they're in conflict
     /// TODO: Figure out how to use this
+    /// Aha, can we just make this another pass right before typechecking, fill out the IR tree
+    /// with InfoSym rather than TypeSym or such, and then go from there?
+    /// That might work!
     /// https://play.rust-lang.org/?version=stable&mode=debug&edition=2018&gist=ba1adacd8659de0587af68cb0e55a471
     pub fn unify(&self, a: &TypeInfo, b: &TypeInfo) -> Result<(), TypeError> {
         use TypeInfo::*;

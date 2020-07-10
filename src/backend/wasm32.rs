@@ -47,7 +47,7 @@ fn init_module(m: &mut w::Module) -> (w::GlobalId, w::GlobalId) {
     let st = m.globals.add_local(
         w::ValType::I32,
         false,
-        w::InitExpr::Value(w::ir::Value::I32((INIT_SIZE * PAGE_SIZE) as i32)),
+        w::InitExpr::Value(w::ir::Value::I32(INIT_SIZE as i32)),
     );
     (sp, st)
 }
