@@ -12,6 +12,7 @@ pub mod ir;
 pub mod lir;
 pub mod parser;
 pub mod passes;
+mod scope;
 pub mod typeck;
 
 /// The interned name of a type

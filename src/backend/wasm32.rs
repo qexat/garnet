@@ -8,6 +8,7 @@ use std::cell::RefCell;
 use walrus as w;
 
 use crate::ir;
+use crate::scope;
 use crate::*;
 
 /// Initialize a wasm module with a few utility things.
@@ -47,7 +48,7 @@ fn init_module(m: &mut w::Module) -> (w::GlobalId, w::GlobalId) {
     let st = m.globals.add_local(
         w::ValType::I32,
         false,
-        w::InitExpr::Value(w::ir::Value::I32((INIT_SIZE * PAGE_SIZE) as i32)),
+        w::InitExpr::Value(w::ir::Value::I32(INIT_SIZE as i32)),
     );
     (sp, st)
 }
@@ -73,7 +74,7 @@ pub(super) fn output(cx: &Cx, program: &ir::Ir<TypeSym>) -> Vec<u8> {
 /// element section full of our function id's, to init that table with.
 fn make_heckin_function_table(m: &mut w::Module, symbols: &mut Symbols) {
     let mut table_members = vec![];
-    for scope in &mut symbols.bindings {
+    for scope in &mut symbols.bindings.bindings {
         for (_name, binding) in scope.iter_mut() {
             if let Binding::Function(f) = binding {
                 // Set the function's table index to its position in the table.
@@ -252,7 +253,7 @@ struct Symbols {
     /// a linked list instead without needing a stack, but heck.
     /// Can't use std's HashMap, since we allow shadowing and
     /// want to conceal old bindings, not annihilate them.
-    bindings: Vec<Vec<(VarSym, Binding)>>,
+    bindings: scope::Symbols<VarSym, Binding>,
     function_table: Option<w::TableId>,
 
     /// Stack pointer
@@ -264,7 +265,7 @@ struct Symbols {
 impl Symbols {
     fn new(sp: w::GlobalId, st: w::GlobalId) -> Self {
         Self {
-            bindings: vec![vec![]],
+            bindings: scope::Symbols::default(),
             function_table: None,
             sp,
             st,
@@ -272,20 +273,16 @@ impl Symbols {
     }
     /// TODO: See notes on IR symbol table scopes too.
     fn push_scope(&mut self) {
-        self.bindings.push(vec![]);
+        self.bindings.push_scope();
     }
     fn pop_scope(&mut self) {
-        assert!(self.bindings.len() > 1);
-        self.bindings.pop();
+        self.bindings.pop_scope();
     }
 
     /// Add an already-existing local binding to the top of the current scope.
     /// Create a new binding with LocalVar::new()
     fn add_local(&mut self, local: LocalVar) {
-        self.bindings
-            .last_mut()
-            .unwrap()
-            .push((local.name, Binding::Local(local)));
+        self.bindings.add(local.name, Binding::Local(local));
     }
 
     /// Insert a new function ID into the top scope
@@ -296,7 +293,7 @@ impl Symbols {
         //type_id: w::TypeId,
         params: &[LocalVar],
     ) {
-        self.bindings.last_mut().unwrap().push((
+        self.bindings.add(
             name,
             Binding::Function(Function {
                 name,
@@ -305,7 +302,7 @@ impl Symbols {
                 params: params.to_owned(),
                 table_offset: 0,
             }),
-        ));
+        );
     }
 
     /// Get a reference to a local var, if it exists.
@@ -328,12 +325,7 @@ impl Symbols {
 
     /// Get a reference to an arbitrary binding.
     fn get(&self, name: VarSym) -> Option<&Binding> {
-        for scope in self.bindings.iter().rev() {
-            if let Some((_name, v)) = scope.iter().rev().find(|(varname, _)| *varname == name) {
-                return Some(v);
-            }
-        }
-        None
+        self.bindings.get(name)
     }
 }
 
@@ -826,7 +818,7 @@ mod tests {
         };
         compile_expr(cx, &mut m.locals, &mut m.types, symbols, instrs, &expr);
 
-        assert_eq!(symbols.bindings.last().unwrap().len(), 1);
+        assert_eq!(symbols.bindings.bindings.last().unwrap().len(), 1);
         assert!(symbols.get_local(varname).is_some());
 
         // Can we then compile the var lookup?
