@@ -228,20 +228,54 @@ fn lower_expr(cx: &Cx, fb: &mut FuncBuilder, bb: &mut Block, expr: &ir::TypedExp
             // this (hopefully) doesn't typecheck.
             lower_exprs(cx, fb, bb, &*body).unwrap_or_else(|| fb.assign(bb, Op::ValUnit))
         }
-        /* NOT AWAKE ENOUGH FOR THIS
+        E::Let {
+            varname,
+            typename,
+            init,
+            mutable,
+        } => todo!(),
         E::If { cases, falseblock } => {
-            let mut bbs = vec![];
-            let mut next_bb = fb.next_block();
-            for (case, body) in cases {
-                let case_res = lower_expr(cx, fb, bb, case);
-                let mut new_bb = fb.next_block();
-                bbs.push(new_bb.id);
+            /* NOT AWAKE ENOUGH FOR THIS
+                let mut bbs = vec![];
+                let mut next_bb = fb.next_block();
+                for (case, body) in cases {
+                    let case_res = lower_expr(cx, fb, bb, case);
+                    let mut new_bb = fb.next_block();
+                    bbs.push(new_bb.id);
 
-                let res = lower_exprs(cx, fb, bb, &*body).unwrap_or_else(|| fb.assign(bb, Op::ValUnit))
-                new_bb.terminator = Branch::Jump(res, next_bb);
+                    let res = lower_exprs(cx, fb, bb, &*body).unwrap_or_else(|| fb.assign(bb, Op::ValUnit))
+                    new_bb.terminator = Branch::Jump(res, next_bb);
+                }
+                ....
+                fb.assign(bb, Op::Phi(bbs));
+            */
+            todo!()
+        }
+        E::Loop { body } => todo!(),
+        E::Lambda { .. } => {
+            panic!("Unlifted lambda, should never happen?");
+        }
+        E::Funcall { func, params } => {
+            // First, evaluate the args.
+
+            let param_vars = params.iter().map(|e| lower_expr(cx, fb, bb, e)).collect();
+            match &func.e {
+                E::Var { name } => {
+                    let var = todo!();
+                    fb.assign(bb, Op::Call(var, param_vars))
+                }
+                _expr => {
+                    // We got some other expr, compile it and do an indirect call 'cause it heckin'
+                    // better be a function
+                    let v = lower_expr(cx, fb, bb, &func);
+                    fb.assign(bb, Op::CallIndirect(v, param_vars))
+                }
             }
         }
-        */
-        _ => todo!(),
+        E::Break => todo!(),
+        E::Return { retval } => todo!(),
+        E::TupleCtor { body } => todo!(),
+        E::TupleRef { expr, elt } => todo!(),
+        E::Assign { lhs, rhs } => todo!(),
     }
 }
