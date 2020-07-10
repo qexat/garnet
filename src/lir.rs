@@ -37,11 +37,19 @@ pub struct Lir {
     funcs: Vec<Func>,
 }
 
+#[derive(Debug, Clone)]
+pub struct VarBinding {
+    name: VarSym,
+    typename: TypeSym,
+    mutable: bool,
+    var: Var,
+}
+
 /// A function
 #[derive(Debug)]
 pub struct Func {
     name: VarSym,
-    params: Vec<(Var, TypeSym)>,
+    params: Vec<(VarSym, TypeSym, Var)>,
     returns: TypeSym,
     body: HashMap<BB, Block>,
     /// The first basic block to execute.
@@ -49,6 +57,8 @@ pub struct Func {
     /// explicit here might make things easier
     /// to rearrange down the line.
     entry: BB,
+
+    locals: Vec<VarBinding>,
 }
 
 /// The various ways we can end a basic block
@@ -135,11 +145,15 @@ impl FuncBuilder {
                 returns: rettype,
                 body: HashMap::new(),
                 entry: BB(0),
+                locals: vec![],
             },
             next_var: 0,
             next_bb: 0,
         };
-        let new_params = params.iter().map(|(_v, t)| (res.next_var(), *t)).collect();
+        let new_params = params
+            .iter()
+            .map(|(v, t)| (*v, *t, res.next_var()))
+            .collect();
         let first_block = res.next_block();
         res.func.params = new_params;
         res.func.entry = first_block.id;
@@ -178,13 +192,24 @@ impl FuncBuilder {
         id
     }
 
+    /*
     /// Gets a mutable reference to a given block.
     fn get_block(&mut self, bb: BB) -> &mut Block {
         self.func.body.get_mut(&bb).expect("Should never fail")
     }
+    */
 
     fn build(self) -> Func {
         self.func
+    }
+
+    fn add_var(&mut self, name: VarSym, ty: TypeSym, v: Var, mutable: bool) {
+        self.func.locals.push(VarBinding {
+            name,
+            typename: ty,
+            mutable,
+            var: v,
+        });
     }
 
     /// Build a new instruction
@@ -297,7 +322,11 @@ fn lower_expr(cx: &Cx, fb: &mut FuncBuilder, bb: &mut Block, expr: &TExpr) -> Va
             typename,
             init,
             mutable,
-        } => todo!(),
+        } => {
+            let v = lower_expr(cx, fb, bb, &*init);
+            fb.add_var(*varname, *typename, v, *mutable);
+            v
+        }
         E::If { cases, falseblock } => {
             // For a single if expr, we make this structure:
             // start:
