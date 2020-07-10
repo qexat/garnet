@@ -1,10 +1,8 @@
 //! Typechecking and other semantic checking.
 //! Operates on the IR.
 
-use std::rc::Rc;
-
-use crate::intern;
 use crate::ir;
+use crate::scope;
 use crate::{Cx, TypeDef, TypeSym, VarSym};
 
 #[derive(Debug, Clone)]
@@ -147,44 +145,32 @@ pub struct VarBinding {
     mutable: bool,
 }
 
+/*
 /// Symbol table.  Stores the scope stack and variable bindings.
 /// Kinda dumb structure, but simple, and using a HashMap is trickier
 /// 'cause we allow shadowing bindings.
+///
 pub struct Symtbl {
-    syms: Vec<Vec<(VarSym, VarBinding)>>,
+    syms: scope::Symbols<VarSym, VarBinding>,
 }
+
+*/
+type Symtbl = scope::Symbols<VarSym, VarBinding>;
 
 impl Symtbl {
     pub fn new() -> Self {
-        Self { syms: vec![vec![]] }
-    }
-
-    /// TODO:
-    /// To think about: Take a lambda and call it with the new scope,
-    /// so we can never forget to pop it?
-    fn push_scope(&mut self) {
-        self.syms.push(vec![]);
-    }
-
-    fn pop_scope(&mut self) {
-        self.syms
-            .pop()
-            .expect("Scope underflow; should not happen!");
+        Self::default()
     }
 
     /// Add a variable to the top level of the scope.
     /// Allows shadowing.
     fn add_var(&mut self, name: VarSym, typedef: TypeSym, mutable: bool) {
-        let tbl = self
-            .syms
-            .last_mut()
-            .expect("Scope underflow while adding var; should not happen");
         let binding = VarBinding {
             name,
             typename: typedef.clone(),
             mutable,
         };
-        tbl.push((name, binding));
+        self.add(name, binding);
     }
 
     /// Get the type of the given variable, or an error
@@ -194,12 +180,8 @@ impl Symtbl {
 
     /// Get the binding of the given variable, or an error
     fn get_binding(&self, name: VarSym) -> Result<&VarBinding, TypeError> {
-        for scope in self.syms.iter().rev() {
-            if let Some((_varname, binding)) =
-                scope.iter().rev().find(|(varname, _)| name == *varname)
-            {
-                return Ok(binding);
-            }
+        if let Some(binding) = self.get(name) {
+            return Ok(binding);
         }
         Err(TypeError::UnknownVar(name))
     }
@@ -221,6 +203,7 @@ impl From<InfoSym> for usize {
     }
 }
 
+/*
 /// Info tag for type inference
 #[derive(Debug, Hash, Clone, PartialEq, Eq)]
 pub enum TypeInfo {
@@ -318,6 +301,7 @@ impl InferenceCx {
         }
     }
 }
+*/
 
 /// Does t1 equal t2?
 ///
