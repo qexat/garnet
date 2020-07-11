@@ -1,6 +1,7 @@
 use crate::ir;
 use crate::{Cx, TypeSym};
 
+mod lwasm32;
 mod wasm32;
 
 #[derive(Copy, Clone, Debug)]
