@@ -14,6 +14,12 @@
 //!    its value
 //!
 //! So I'm going to try to make an SSA IR and see how it feels.
+//!
+//! Okay, so apparently the easy way is to start with everything
+//! compound in memory: structs, tuples, etc and everything
+//! manipulating them through pointers.  Then you have a pass
+//! to go through and scoot them into registers as the opportunity
+//! provides.
 
 use std::collections::HashMap;
 
@@ -34,31 +40,31 @@ pub struct BB(usize);
 /// A single struct containing all the bits necessary for a LIR module.
 #[derive(Debug, Default)]
 pub struct Lir {
-    funcs: Vec<Func>,
+    pub funcs: Vec<Func>,
 }
 
 #[derive(Debug, Clone)]
 pub struct VarBinding {
-    name: VarSym,
-    typename: TypeSym,
-    mutable: bool,
-    var: Var,
+    pub name: VarSym,
+    pub typename: TypeSym,
+    pub mutable: bool,
+    pub var: Var,
 }
 
 /// A function
 #[derive(Debug)]
 pub struct Func {
-    name: VarSym,
-    params: Vec<(VarSym, TypeSym, Var)>,
-    returns: TypeSym,
-    body: HashMap<BB, Block>,
+    pub name: VarSym,
+    pub params: Vec<(VarSym, TypeSym, Var)>,
+    pub returns: TypeSym,
+    pub body: HashMap<BB, Block>,
     /// The first basic block to execute.
     /// Could implicitly be 0, but making it
     /// explicit here might make things easier
     /// to rearrange down the line.
-    entry: BB,
+    pub entry: BB,
 
-    locals: Vec<VarBinding>,
+    pub locals: Vec<VarBinding>,
 }
 
 /// The various ways we can end a basic block
@@ -80,10 +86,10 @@ pub enum Branch {
 /// The actual type of a basic block
 #[derive(Debug)]
 pub struct Block {
-    id: BB,
-    body: Vec<Instr>,
+    pub id: BB,
+    pub body: Vec<Instr>,
     /// What the ending instruction of the basic block is
-    terminator: Branch,
+    pub terminator: Branch,
 }
 
 impl Block {
@@ -120,7 +126,12 @@ pub enum Op {
     // Memory
     AddrOf(Var),
     LoadI32(Var),
-    StoreI32(Var),
+    /// Loads address + offset
+    LoadOffsetI32(Var, Var),
+    /// Address, value
+    StoreI32(Var, Var),
+    /// Loads address + offset
+    StoreOffsetI32(Var, Var),
 
     // Control flow
     Phi(Vec<BB>),
@@ -212,6 +223,15 @@ impl FuncBuilder {
         });
     }
 
+    fn get_var(&self, name: VarSym) -> &VarBinding {
+        self.func
+            .locals
+            .iter()
+            .rev()
+            .find(|v| v.name == name)
+            .expect("Should never happen")
+    }
+
     /// Build a new instruction
     /// apparently currently the only option is Assign?
     ///
@@ -280,7 +300,11 @@ fn lower_expr(cx: &Cx, fb: &mut FuncBuilder, bb: &mut Block, expr: &TExpr) -> Va
             fb.assign(bb, op)
         }
 
-        E::Var { .. } => todo!(),
+        E::Var { name } => {
+            let _v = fb.get_var(*name);
+            todo!()
+            //fb.assign(
+        }
         E::BinOp { op, lhs, rhs } => {
             let v1 = lower_expr(cx, fb, bb, &*lhs);
             let v2 = lower_expr(cx, fb, bb, &*rhs);
