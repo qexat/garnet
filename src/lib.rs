@@ -9,7 +9,7 @@ pub mod backend;
 pub mod format;
 pub mod intern;
 pub mod ir;
-pub mod lir;
+//pub mod lir;
 pub mod parser;
 pub mod passes;
 mod scope;

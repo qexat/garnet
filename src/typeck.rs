@@ -662,6 +662,8 @@ fn typecheck_expr(
                 })
             }
         }
+        Deref { .. } => todo!(),
+        Ref { .. } => todo!(),
     }
 }
 
