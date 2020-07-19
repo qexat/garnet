@@ -100,6 +100,12 @@ pub enum Expr<T> {
         lhs: Box<TypedExpr<T>>,
         rhs: Box<TypedExpr<T>>,
     },
+    Deref {
+        expr: Box<TypedExpr<T>>,
+    },
+    Ref {
+        expr: Box<TypedExpr<T>>,
+    },
 }
 
 impl<T> Expr<T> {
@@ -192,6 +198,12 @@ impl<T> Expr<T> {
             E::Assign { lhs, rhs } => E::Assign {
                 lhs: Box::new(lhs.map(new_t)),
                 rhs: Box::new(rhs.map(new_t)),
+            },
+            E::Deref { expr } => E::Deref {
+                expr: Box::new(expr.map(new_t)),
+            },
+            E::Ref { expr } => E::Ref {
+                expr: Box::new(expr.map(new_t)),
             },
         }
     }
@@ -334,8 +346,12 @@ fn lower_expr(expr: &ast::Expr) -> TypedExpr<()> {
             expr: Box::new(lower_expr(expr)),
             elt: *elt,
         },
-        E::Deref { .. } => todo!(),
-        E::Ref { .. } => todo!(),
+        E::Deref { expr } => Expr::Deref {
+            expr: Box::new(lower_expr(expr)),
+        },
+        E::Ref { expr } => Expr::Ref {
+            expr: Box::new(lower_expr(expr)),
+        },
         E::Assign { lhs, rhs } => Expr::Assign {
             lhs: Box::new(lower_expr(lhs)),
             rhs: Box::new(lower_expr(rhs)),

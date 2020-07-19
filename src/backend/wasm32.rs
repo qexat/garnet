@@ -651,6 +651,8 @@ fn compile_expr(
             ir::Expr::TupleRef { .. } => todo!("FDSA"),
             _ => unreachable!(),
         },
+        E::Deref { .. } => todo!(),
+        E::Ref { .. } => todo!(),
     };
 }
 
