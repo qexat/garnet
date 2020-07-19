@@ -297,6 +297,18 @@ fn lambda_lifting(cx: &Cx, ir: Ir<()>) -> Ir<()> {
     }
 }
 
+/// Takes an IR containing compound types (currently just tuples)
+/// treated as value types, and turns it into one containing
+/// only reference types -- ie, anything with subdividable
+/// fields and/or bigger than a machine register (effectively
+/// 64-bits for wasm) is only referred to through a pointer.
+///
+/// We might be able to get rid of TupleRef's by turning
+/// them into pointer arithmatic, too.
+fn pointerification(cx: &Cx, ir: Ir<TypeSym>) -> Ir<TypeSym> {
+    todo!()
+}
+
 /*
 /// This isn't quite right, it returns true if ANY part of the subexpr
 /// is const...
