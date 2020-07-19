@@ -11,147 +11,6 @@ use crate::lir;
 use crate::scope;
 use crate::*;
 
-/// Initialize a wasm module with a few utility things.
-/// Note that these are basically globals, so if someday we want to
-/// link multiple wasm modules together and have them interoperate
-/// we'll need to rework how this functions.  Basically make a
-/// runtime lib with stuff that multiple Garnet modules can share.
-///
-/// For now we just make sure it has a chunk of memory we can use
-/// as a stack.
-///
-/// Returns the stack pointer and stack top pointer
-fn init_module(m: &mut w::Module) -> (w::GlobalId, w::GlobalId) {
-    // Memories start out zeroed, so that's nice.
-    // We just have a 1 mb stack for now.
-    const INIT_SIZE: u32 = 1024 * 1024 * 1;
-    // This number is in pages, and wasm memory uses 64 kb pages.
-    const PAGE_SIZE: u32 = 64 * 1024;
-    m.memories.add_local(false, INIT_SIZE / PAGE_SIZE, None);
-
-    // We start the stack 64 bytes past
-    // 0 to leave some spare space so that address 0 is never
-    // used for anything.
-    //
-    // TODO: Set the memory at 0 to 0xDEADBEEF or something
-    // else distinctive as a warning?  Eh, maybe someday.
-    const STACK_BOTTOM: i32 = 64;
-
-    // Add a global to the module to act as stack pointer
-    // And also one to point at the stack top.
-
-    let sp = m.globals.add_local(
-        w::ValType::I32,
-        true,
-        w::InitExpr::Value(w::ir::Value::I32(STACK_BOTTOM)),
-    );
-    let st = m.globals.add_local(
-        w::ValType::I32,
-        false,
-        w::InitExpr::Value(w::ir::Value::I32(INIT_SIZE as i32)),
-    );
-    (sp, st)
-}
-
-/// Entry point to turn the IR into a compiled wasm module
-pub(super) fn output(cx: &Cx, lir: &lir::Lir) -> Vec<u8> {
-    let config = w::ModuleConfig::new();
-    let m = &mut w::Module::with_config(config);
-    let (sp, st) = init_module(m);
-    let symbols = &mut Symbols::new(sp, st);
-    for func in lir.funcs.iter() {
-        predeclare_func(&cx, m, symbols, func);
-    }
-    make_heckin_function_table(m, symbols);
-    for func in lir.funcs.iter() {
-        compile_func(&cx, m, symbols, func.name, &func);
-    }
-    m.emit_wasm()
-}
-
-/// Ok, so.  To use indirect function calls, ie calling through a pointer,
-/// we need to declare a table in our module.  Then we need to make an
-/// element section full of our function id's, to init that table with.
-fn make_heckin_function_table(m: &mut w::Module, symbols: &mut Symbols) {
-    let mut table_members = vec![];
-    for scope in &mut symbols.bindings.bindings {
-        for (_name, binding) in scope.iter_mut() {
-            if let Binding::Function(f) = binding {
-                // Set the function's table index to its position in the table.
-                f.table_offset = table_members.len();
-                table_members.push(Some(f.id));
-            }
-        }
-    }
-
-    let table_size = table_members.len() as u32;
-    let table = m
-        .tables
-        .add_local(table_size, Some(table_size), w::ValType::Funcref);
-    symbols.function_table = Some(table);
-    // Add elements segment...
-    // What the heck is ElementKind::Active?  I don't see this shit anywhere in the spec.
-    // TODO: Rummage through github design issues, see if we're doing it right.
-    // This seems to execute fine, at least.
-    m.elements.add(
-        w::ElementKind::Active {
-            table,
-            offset: w::InitExpr::Value(w::ir::Value::I32(0).into()),
-        },
-        w::ValType::Funcref,
-        table_members,
-    );
-}
-
-/// Goes through top-level decl's and adds them all to the top scope of the symbol table,
-/// so we don't need to do forward declarations in our source.
-fn predeclare_func(cx: &Cx, m: &mut w::Module, symbols: &mut Symbols, func: &lir::Func) {
-    use lir::*;
-    let (paramtype, rettype) = function_signature(cx, signature);
-    // add params
-    // We do some shenanigans with scope here to create the locals and then
-    let mut fn_params = vec![];
-    for (pname, ptype, _var) in func.params.iter() {
-        fn_params.push(LocalVar::new(cx, &mut m.locals, *pname, *ptype));
-    }
-    // So we have to create the function now, to get the FunctionId
-    // and know what to call in case there's a recursion or such.
-    let fb = w::FunctionBuilder::new(&mut m.types, &paramtype, &rettype);
-    let fn_param_types: Vec<_> = fn_params.iter().map(|local| local.id).collect();
-    let f_id = fb.finish(fn_param_types, &mut m.funcs);
-
-    symbols.new_function(func.name, f_id, &fn_params);
-    let name_str = cx.fetch(func.name);
-    let function_def = symbols.get_function(func.name).unwrap();
-    m.exports.add(&name_str, function_def.id);
-}
-
-/// Generate walrus types representing the wasm representations of
-/// a lambda's type.
-fn lambda_signature(
-    cx: &Cx,
-    params: &[TypeSym],
-    ret: TypeSym,
-) -> (Vec<w::ValType>, Vec<w::ValType>) {
-    let params: Vec<w::ValType> = params
-        .iter()
-        .map(|typesym| compile_typesym(&cx, *typesym))
-        .flatten()
-        .collect();
-    let rettype = compile_typesym(&cx, ret);
-    (params, rettype)
-}
-
-/// Same as `lambda_signature` but takes a `Signature`, which is part of
-/// an expression, not a type.  Just calls `lambda_signature()` under the hood.
-fn function_signature(cx: &Cx, sig: &ir::Signature) -> (Vec<w::ValType>, Vec<w::ValType>) {
-    if let TypeDef::Lambda(params, ret) = &*cx.fetch_type(sig.to_type(cx)) {
-        lambda_signature(cx, params, *ret)
-    } else {
-        unreachable!("Should never happen");
-    }
-}
-
 #[derive(Copy, Clone, Debug, PartialEq)]
 struct LocalVar {
     name: VarSym,
@@ -282,18 +141,167 @@ impl Symbols {
     }
 }
 
+/// Initialize a wasm module with a few utility things.
+/// Note that these are basically globals, so if someday we want to
+/// link multiple wasm modules together and have them interoperate
+/// we'll need to rework how this functions.  Basically make a
+/// runtime lib with stuff that multiple Garnet modules can share.
+///
+/// For now we just make sure it has a chunk of memory we can use
+/// as a stack.
+///
+/// Returns the stack pointer and stack top pointer
+fn init_module(m: &mut w::Module) -> (w::GlobalId, w::GlobalId) {
+    // Memories start out zeroed, so that's nice.
+    // We just have a 1 mb stack for now.
+    const INIT_SIZE: u32 = 1024 * 1024 * 1;
+    // This number is in pages, and wasm memory uses 64 kb pages.
+    const PAGE_SIZE: u32 = 64 * 1024;
+    m.memories.add_local(false, INIT_SIZE / PAGE_SIZE, None);
+
+    // We start the stack 64 bytes past
+    // 0 to leave some spare space so that address 0 is never
+    // used for anything.
+    //
+    // TODO: Set the memory at 0 to 0xDEADBEEF or something
+    // else distinctive as a warning?  Eh, maybe someday.
+    const STACK_BOTTOM: i32 = 64;
+
+    // Add a global to the module to act as stack pointer
+    // And also one to point at the stack top.
+
+    let sp = m.globals.add_local(
+        w::ValType::I32,
+        true,
+        w::InitExpr::Value(w::ir::Value::I32(STACK_BOTTOM)),
+    );
+    let st = m.globals.add_local(
+        w::ValType::I32,
+        false,
+        w::InitExpr::Value(w::ir::Value::I32(INIT_SIZE as i32)),
+    );
+    (sp, st)
+}
+
+/// Entry point to turn the IR into a compiled wasm module
+pub(super) fn output(cx: &Cx, lir: &lir::Lir) -> Vec<u8> {
+    let config = w::ModuleConfig::new();
+    let m = &mut w::Module::with_config(config);
+    let (sp, st) = init_module(m);
+    let symbols = &mut Symbols::new(sp, st);
+    for func in lir.funcs.iter() {
+        predeclare_func(&cx, m, symbols, func);
+    }
+    make_heckin_function_table(m, symbols);
+    for func in lir.funcs.iter() {
+        compile_func(&cx, m, symbols, func);
+    }
+    m.emit_wasm()
+}
+
+/// Ok, so.  To use indirect function calls, ie calling through a pointer,
+/// we need to declare a table in our module.  Then we need to make an
+/// element section full of our function id's, to init that table with.
+fn make_heckin_function_table(m: &mut w::Module, symbols: &mut Symbols) {
+    let mut table_members = vec![];
+    for scope in &mut symbols.bindings.bindings {
+        for (_name, binding) in scope.iter_mut() {
+            if let Binding::Function(f) = binding {
+                // Set the function's table index to its position in the table.
+                f.table_offset = table_members.len();
+                table_members.push(Some(f.id));
+            }
+        }
+    }
+
+    let table_size = table_members.len() as u32;
+    let table = m
+        .tables
+        .add_local(table_size, Some(table_size), w::ValType::Funcref);
+    symbols.function_table = Some(table);
+    // Add elements segment...
+    // What the heck is ElementKind::Active?  I don't see this shit anywhere in the spec.
+    // TODO: Rummage through github design issues, see if we're doing it right.
+    // This seems to execute fine, at least.
+    m.elements.add(
+        w::ElementKind::Active {
+            table,
+            offset: w::InitExpr::Value(w::ir::Value::I32(0).into()),
+        },
+        w::ValType::Funcref,
+        table_members,
+    );
+}
+
+/// Takes a `TypeSym`, looks it up, and gives us the
+/// corresponding wasm type.
+fn compile_typesym(cx: &Cx, t: TypeSym) -> Vec<w::ValType> {
+    let tdef = cx.fetch_type(t);
+    compile_type(cx, &tdef)
+}
+
+/// Takes a `TypeDef` and turns it into the appropriate
+/// wasm type.
+fn compile_type(cx: &Cx, t: &TypeDef) -> Vec<w::ValType> {
+    match t {
+        TypeDef::SInt(4) => vec![w::ValType::I32],
+        TypeDef::SInt(_) => todo!(),
+        TypeDef::Bool => vec![w::ValType::I32],
+        TypeDef::Tuple(ts) => ts
+            .iter()
+            .map(|t| compile_typesym(cx, *t))
+            .flatten()
+            .collect(),
+        // Essentially a pointer to a function
+        TypeDef::Lambda(_, _) => vec![w::ValType::I32],
+    }
+}
+
+/// Get/create an instrseqtype, which may be a single valtype or a a typeid
+/// representing multiple.
+fn get_instrseqtype(t: &mut w::ModuleTypes, def: &[w::ValType]) -> w::ir::InstrSeqType {
+    if def.len() > 2 {
+        w::ir::InstrSeqType::Simple(def.into_iter().cloned().next())
+    } else {
+        let typeid = if let Some(t) = t.find(&[], def) {
+            t
+        } else {
+            t.add(&[], def)
+        };
+        w::ir::InstrSeqType::MultiValue(typeid)
+    }
+}
+
+/// The number of slots a type will consume when left on the wasm stack.
+/// Not the same as words used in memory.
+/// unit = 0
+/// bool = 1
+/// I32 = 1
+/// lambda = 1 (table index)
+/// eventually, tuple >= 1
+fn stacksize(cx: &Cx, t: TypeSym) -> usize {
+    let tdef = cx.fetch_type(t);
+    match &*tdef {
+        TypeDef::SInt(4) => 1,
+        TypeDef::SInt(_) => todo!(),
+        TypeDef::Bool => 1,
+        TypeDef::Tuple(ts) => ts.iter().map(|t| stacksize(cx, *t)).sum(),
+        // Essentially a pointer to a function
+        TypeDef::Lambda(_, _) => 1,
+    }
+}
+
 /// Compile a function, specifically -- wasm needs to know about its params and such.
 /// The function should already be predeclared.
 fn compile_func(
     cx: &Cx,
     m: &mut w::Module,
     symbols: &mut Symbols,
-    name: VarSym,
-    body: &[ir::TypedExpr<TypeSym>],
+    func: &lir::Func,
 ) -> w::FunctionId {
     // This should already be here due to the function being predeclared.
     let func = symbols
-        .get_function(name)
+        .get_function(func.name)
         .expect("Function was not predeclared, should never happen")
         .clone();
     let defined_func = m.funcs.get_mut(func.id);
@@ -305,12 +313,109 @@ fn compile_func(
             for local in func.params.iter() {
                 symbols.add_local(*local);
             }
-            compile_exprs(&cx, &mut m.locals, &mut m.types, symbols, instrs, &body);
+            //compile_exprs(&cx, &mut m.locals, &mut m.types, symbols, instrs, &func);
             symbols.pop_scope();
         }
         _ => unreachable!("Function source is not local, can't happen!"),
     }
     func.id
+}
+
+fn compile_exprs(
+    cx: &Cx,
+    m: &mut w::ModuleLocals,
+    t: &mut w::ModuleTypes,
+    symbols: &mut Symbols,
+    instrs: &mut w::InstrSeqBuilder,
+    exprs: &[ir::TypedExpr<TypeSym>],
+) {
+    todo!()
+    /*
+    // The trick here is that wasm doesn't let you leave stuff on
+    // the stack and just ignore it forevermore.  Like, functions must
+    // have only their return value on the stack when they return,
+    // stuff like that.  So we need to explicitly get rid of the
+    // things we ignore.
+    //
+    // I considered making this a step in the IR that basically turns
+    // every `foo(); bar()` into `ignore(foo()); bar()` explicitly,
+    // but it seems easier for now to just drop any values left by
+    // any but the last expr.
+    //
+    // TODO: Revisit this sometime.
+    let l = exprs.len();
+    match l {
+        0 => (),
+        1 => compile_expr(cx, m, t, symbols, instrs, &exprs[0]),
+        l => {
+            // Compile and insert drop instructions after each
+            // expr
+            let exprs_prefix = &exprs[..l - 1];
+            exprs_prefix.iter().for_each(|expr| {
+                compile_expr(cx, m, t, symbols, instrs, expr);
+                let x = stacksize(&cx, expr.t);
+                for _ in 0..x {
+                    instrs.drop();
+                }
+            });
+            // Then compile the last one.
+            compile_expr(cx, m, t, symbols, instrs, &exprs[l - 1]);
+        }
+    }
+        */
+}
+
+/// Goes through top-level decl's and adds them all to the top scope of the symbol table,
+/// so we don't need to do forward declarations in our source.
+fn predeclare_func(cx: &Cx, m: &mut w::Module, symbols: &mut Symbols, func: &lir::Func) {
+    todo!()
+    /*
+    use lir::*;
+    let (paramtype, rettype) = function_signature(cx, signature);
+    // add params
+    // We do some shenanigans with scope here to create the locals and then
+    let mut fn_params = vec![];
+    for (pname, ptype, _var) in func.params.iter() {
+        fn_params.push(LocalVar::new(cx, &mut m.locals, *pname, *ptype));
+    }
+    // So we have to create the function now, to get the FunctionId
+    // and know what to call in case there's a recursion or such.
+    let fb = w::FunctionBuilder::new(&mut m.types, &paramtype, &rettype);
+    let fn_param_types: Vec<_> = fn_params.iter().map(|local| local.id).collect();
+    let f_id = fb.finish(fn_param_types, &mut m.funcs);
+
+    symbols.new_function(func.name, f_id, &fn_params);
+    let name_str = cx.fetch(func.name);
+    let function_def = symbols.get_function(func.name).unwrap();
+    m.exports.add(&name_str, function_def.id);
+    */
+}
+
+/*
+/// Generate walrus types representing the wasm representations of
+/// a lambda's type.
+fn lambda_signature(
+    cx: &Cx,
+    params: &[TypeSym],
+    ret: TypeSym,
+) -> (Vec<w::ValType>, Vec<w::ValType>) {
+    let params: Vec<w::ValType> = params
+        .iter()
+        .map(|typesym| compile_typesym(&cx, *typesym))
+        .flatten()
+        .collect();
+    let rettype = compile_typesym(&cx, ret);
+    (params, rettype)
+}
+
+/// Same as `lambda_signature` but takes a `Signature`, which is part of
+/// an expression, not a type.  Just calls `lambda_signature()` under the hood.
+fn function_signature(cx: &Cx, sig: &ir::Signature) -> (Vec<w::ValType>, Vec<w::ValType>) {
+    if let TypeDef::Lambda(params, ret) = &*cx.fetch_type(sig.to_type(cx)) {
+        lambda_signature(cx, params, *ret)
+    } else {
+        unreachable!("Should never happen");
+    }
 }
 
 /// Compile multiple exprs, making sure they don't leave unused
@@ -670,64 +775,6 @@ fn compile_ifcase(
     }
 }
 
-/// Takes a `TypeSym`, looks it up, and gives us the
-/// corresponding wasm type.
-fn compile_typesym(cx: &Cx, t: TypeSym) -> Vec<w::ValType> {
-    let tdef = cx.fetch_type(t);
-    compile_type(cx, &tdef)
-}
-
-/// Takes a `TypeDef` and turns it into the appropriate
-/// wasm type.
-fn compile_type(cx: &Cx, t: &TypeDef) -> Vec<w::ValType> {
-    match t {
-        TypeDef::SInt(4) => vec![w::ValType::I32],
-        TypeDef::SInt(_) => todo!(),
-        TypeDef::Bool => vec![w::ValType::I32],
-        TypeDef::Tuple(ts) => ts
-            .iter()
-            .map(|t| compile_typesym(cx, *t))
-            .flatten()
-            .collect(),
-        // Essentially a pointer to a function
-        TypeDef::Lambda(_, _) => vec![w::ValType::I32],
-    }
-}
-
-/// Get/create an instrseqtype, which may be a single valtype or a a typeid
-/// representing multiple.
-fn get_instrseqtype(t: &mut w::ModuleTypes, def: &[w::ValType]) -> w::ir::InstrSeqType {
-    if def.len() > 2 {
-        w::ir::InstrSeqType::Simple(def.into_iter().cloned().next())
-    } else {
-        let typeid = if let Some(t) = t.find(&[], def) {
-            t
-        } else {
-            t.add(&[], def)
-        };
-        w::ir::InstrSeqType::MultiValue(typeid)
-    }
-}
-
-/// The number of slots a type will consume when left on the wasm stack.
-/// Not the same as words used in memory.
-/// unit = 0
-/// bool = 1
-/// I32 = 1
-/// lambda = 1 (table index)
-/// eventually, tuple >= 1
-fn stacksize(cx: &Cx, t: TypeSym) -> usize {
-    let tdef = cx.fetch_type(t);
-    match &*tdef {
-        TypeDef::SInt(4) => 1,
-        TypeDef::SInt(_) => todo!(),
-        TypeDef::Bool => 1,
-        TypeDef::Tuple(ts) => ts.iter().map(|t| stacksize(cx, *t)).sum(),
-        // Essentially a pointer to a function
-        TypeDef::Lambda(_, _) => 1,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use walrus as w;
@@ -817,3 +864,4 @@ mod tests {
         */
     }
 }
+*/
