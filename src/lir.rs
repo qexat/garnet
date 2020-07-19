@@ -333,6 +333,7 @@ fn lower_expr(cx: &Cx, fb: &mut FuncBuilder, bb: &mut Block, expr: &TExpr) -> Va
                 let op = Op::NotI32(v);
                 fb.assign(bb, op)
             }
+            _ => todo!(),
         },
         E::Block { body } => {
             // If the body is empty, just make an unreachable value

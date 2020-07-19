@@ -254,6 +254,7 @@ fn compile_type(cx: &Cx, t: &TypeDef) -> Vec<w::ValType> {
             .collect(),
         // Essentially a pointer to a function
         TypeDef::Lambda(_, _) => vec![w::ValType::I32],
+        TypeDef::Ptr(_) => vec![w::ValType::I32],
     }
 }
 
@@ -288,6 +289,7 @@ fn stacksize(cx: &Cx, t: TypeSym) -> usize {
         TypeDef::Tuple(ts) => ts.iter().map(|t| stacksize(cx, *t)).sum(),
         // Essentially a pointer to a function
         TypeDef::Lambda(_, _) => 1,
+        TypeDef::Ptr(_) => 1,
     }
 }
 
@@ -300,25 +302,31 @@ fn compile_func(
     func: &lir::Func,
 ) -> w::FunctionId {
     // This should already be here due to the function being predeclared.
-    let func = symbols
+    let wasm_func = symbols
         .get_function(func.name)
         .expect("Function was not predeclared, should never happen")
         .clone();
-    let defined_func = m.funcs.get_mut(func.id);
+    let defined_func = m.funcs.get_mut(wasm_func.id);
     match &mut defined_func.kind {
         w::FunctionKind::Local(lfunc) => {
             let instrs = &mut lfunc.builder_mut().func_body();
             // Handle scoping and add input params to it.
             symbols.push_scope();
-            for local in func.params.iter() {
+            for local in wasm_func.params.iter() {
                 symbols.add_local(*local);
             }
-            //compile_exprs(&cx, &mut m.locals, &mut m.types, symbols, instrs, &func);
+            for (id, block) in func.body.iter() {
+                // Compile basic block.
+                // ...this is actually tricky 'cause wasm doesn't really have arbitrary jumps.
+                // So you can't really arbitrarily reorder basic blocks.
+                // So how the heck do you compile SSA IR to it?
+                todo!();
+            }
             symbols.pop_scope();
         }
         _ => unreachable!("Function source is not local, can't happen!"),
     }
-    func.id
+    wasm_func.id
 }
 
 fn compile_exprs(
