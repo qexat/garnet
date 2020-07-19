@@ -203,6 +203,20 @@ pub fn compile(src: &str) -> Vec<u8> {
     wasm
 }
 
+pub fn compile_lir(src: &str) -> Vec<u8> {
+    let cx = &mut Cx::new();
+    let ast = {
+        let mut parser = parser::Parser::new(cx, src);
+        parser.parse()
+    };
+    let ir = ir::lower(&ast);
+    let ir = passes::run_passes(cx, ir);
+    let checked =
+        typeck::typecheck(cx, ir).unwrap_or_else(|e| panic!("Type check error: {}", e.format(cx)));
+    let wasm = backend::output(backend::Backend::LirWasm32, cx, &checked);
+    wasm
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
