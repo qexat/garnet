@@ -487,6 +487,7 @@ fn compile_expr(
                 compile_expr(cx, m, t, symbols, instrs, rhs);
                 instrs.unop(w::ir::UnaryOp::I32Eqz);
             }
+            _ => todo!(),
         },
         // This is pretty much just a list of expr's by now.
         // However, functions/etc must not leave extra values
@@ -738,6 +739,7 @@ fn compile_type(cx: &Cx, t: &TypeDef) -> Vec<w::ValType> {
             .collect(),
         // Essentially a pointer to a function
         TypeDef::Lambda(_, _) => vec![w::ValType::I32],
+        TypeDef::Ptr(_) => vec![w::ValType::I32],
     }
 }
 
@@ -772,6 +774,7 @@ fn stacksize(cx: &Cx, t: TypeSym) -> usize {
         TypeDef::Tuple(ts) => ts.iter().map(|t| stacksize(cx, *t)).sum(),
         // Essentially a pointer to a function
         TypeDef::Lambda(_, _) => 1,
+        TypeDef::Ptr(_) => 1,
     }
 }
 

@@ -63,6 +63,8 @@ impl BOp {
 pub enum UOp {
     Neg,
     Not,
+    Ref,
+    Deref,
 }
 
 impl UOp {
@@ -73,6 +75,8 @@ impl UOp {
         match self {
             Neg => cx.i32(),
             Not => cx.bool(),
+            Ref => todo!(),
+            Deref => todo!(),
         }
     }
 
@@ -82,6 +86,8 @@ impl UOp {
         match self {
             Neg => cx.i32(),
             Not => cx.bool(),
+            Ref => todo!(),
+            Deref => todo!(),
         }
     }
 }
@@ -165,6 +171,9 @@ pub enum Expr {
     TupleRef {
         expr: Box<Expr>,
         elt: usize,
+    },
+    Ref {
+        expr: Box<Expr>,
     },
     Deref {
         expr: Box<Expr>,

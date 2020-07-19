@@ -190,6 +190,8 @@ pub enum Token {
     Lte,
     #[token("^")]
     Carat,
+    #[token("&")]
+    Ampersand,
 
     // We save comment strings so we can use this same
     // parser as a reformatter or such.
@@ -229,6 +231,8 @@ fn uop_for(t: &Token) -> Option<ast::UOp> {
         //T::Plus => Some(ast::UOp::Plus),
         T::Minus => Some(ast::UOp::Neg),
         T::Not => Some(ast::UOp::Not),
+        T::Carat => Some(ast::UOp::Deref),
+        T::Ampersand => Some(ast::UOp::Ref),
         _other => None,
     }
 }
@@ -557,6 +561,12 @@ impl<'cx, 'input> Parser<'cx, 'input> {
                             elt: elt as usize,
                         }
                     }
+                    T::Ampersand => {
+                        self.expect(T::Ampersand);
+                        ast::Expr::Ref {
+                            expr: Box::new(lhs),
+                        }
+                    }
                     T::Carat => {
                         self.expect(T::Carat);
                         ast::Expr::Deref {
@@ -775,6 +785,7 @@ fn postfix_binding_power(op: &Token) -> Option<(usize, ())> {
         T::Period => Some((130, ())),
         // "^" for pointer derefs.  TODO: Check precedence?
         T::Carat => Some((105, ())),
+        T::Ampersand => Some((105, ())),
         _x => None,
     }
 }
@@ -1205,6 +1216,12 @@ const baz: {} = {}
     #[test]
     fn parse_deref() {
         let valid_args = &["x^", "10^", "z^.0", "z.0^", "(1+2*3)^"][..];
+        test_parse_with(|p| p.parse_expr(0), &valid_args)
+    }
+
+    #[test]
+    fn parse_ref() {
+        let valid_args = &["x&", "10^&", "z&^.0", "z.0^&&", "(1+2*3)&"][..];
         test_parse_with(|p| p.parse_expr(0), &valid_args)
     }
 }

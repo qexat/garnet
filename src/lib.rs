@@ -57,6 +57,7 @@ pub enum TypeDef {
     /// We can infer types for tuples
     Tuple(Vec<TypeSym>),
     Lambda(Vec<TypeSym>, TypeSym),
+    Ptr(Box<TypeSym>),
     /*
     /// TODO: AUGJDKSFLJDSFSLAF
     /// This is basically a type that has been named but we
@@ -112,6 +113,11 @@ impl TypeDef {
                     }
                 }
                 Cow::Owned(t)
+            }
+            TypeDef::Ptr(t) => {
+                let inner_name = cx.fetch_type(**t).get_name(cx);
+                let s = format!("{}^", inner_name);
+                Cow::Owned(s)
             }
         }
     }

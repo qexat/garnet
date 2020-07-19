@@ -80,6 +80,8 @@ fn unparse_expr(cx: &Cx, e: &Expr, indent: usize, out: &mut dyn io::Write) -> io
             let opstr = match op {
                 UOp::Neg => "-",
                 UOp::Not => "not ",
+                UOp::Ref => "&",
+                UOp::Deref => "^",
             };
             write!(out, "{}", opstr)?;
             unparse_expr(cx, rhs, 0, out)
@@ -191,6 +193,10 @@ fn unparse_expr(cx: &Cx, e: &Expr, indent: usize, out: &mut dyn io::Write) -> io
         E::TupleRef { expr, elt } => {
             unparse_expr(cx, &*expr, indent, out)?;
             write!(out, ".{}", elt)
+        }
+        E::Ref { expr } => {
+            unparse_expr(cx, &*expr, indent, out)?;
+            write!(out, "&")
         }
         E::Deref { expr } => {
             unparse_expr(cx, &*expr, indent, out)?;
