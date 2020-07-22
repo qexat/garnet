@@ -221,6 +221,15 @@ impl LocalVar {
     }
 }
 
+/// A variable/value that resides in memory instead of
+/// on the value stack or in a local or global slot.
+#[derive(Copy, Clone, Debug, PartialEq)]
+struct MemVar {
+    name: VarSym,
+    mem_addr: i32,
+    mem_size: usize,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 struct Function {
     name: VarSym,
@@ -236,6 +245,7 @@ struct Function {
 #[derive(Clone, Debug, PartialEq)]
 enum Binding {
     Local(LocalVar),
+    Mem(MemVar),
 
     GlobalVar {
         name: VarSym,

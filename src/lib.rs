@@ -9,7 +9,7 @@ pub mod backend;
 pub mod format;
 pub mod intern;
 pub mod ir;
-//pub mod lir;
+pub mod lir;
 pub mod parser;
 pub mod passes;
 mod scope;
@@ -205,7 +205,7 @@ pub fn compile(src: &str) -> Vec<u8> {
     let ir = passes::run_passes(cx, ir);
     let checked =
         typeck::typecheck(cx, ir).unwrap_or_else(|e| panic!("Type check error: {}", e.format(cx)));
-    let wasm = backend::output(backend::Backend::Wasm32, cx, &checked);
+    let wasm = backend::output(backend::Backend::LirWasm32, cx, &checked);
     wasm
 }
 

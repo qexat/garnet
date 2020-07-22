@@ -64,7 +64,13 @@ pub struct Func {
     /// to rearrange down the line.
     pub entry: BB,
 
+    /// Total list of local variable declarations
     pub locals: Vec<VarBinding>,
+
+    /// Layout of stack frame, sorted by address
+    /// Each item is symbol, size-in-bytes
+    /// TODO: ...goddammit pointer size changes with platform.
+    pub frame_layout: Vec<(VarSym, usize)>,
 }
 
 /// The various ways we can end a basic block
@@ -98,6 +104,30 @@ impl Block {
     fn last_value(&self) -> Option<Var> {
         match self.body.last()? {
             Instr::Assign(var, _) => Some(*var),
+        }
+    }
+}
+
+pub enum Block2 {
+    /// A normal compound statement returning
+    /// the last value in it
+    Block { body: Vec<Instr> },
+    /// Structured if statement
+    If {
+        cases: Vec<(Block2, Block2)>,
+        falseblock: Box<Block2>,
+    },
+}
+
+impl Block2 {
+    /// Shortcut for retrieving the last value stored in the block.
+    /// Returns None if the block is empty.
+    fn last_value(&self) -> Option<Var> {
+        match self {
+            Self::Block { body } => match body.last()? {
+                Instr::Assign(var, _) => Some(*var),
+            },
+            _ => None,
         }
     }
 }
@@ -157,6 +187,8 @@ impl FuncBuilder {
                 body: HashMap::new(),
                 entry: BB(0),
                 locals: vec![],
+
+                frame_layout: vec![],
             },
             next_var: 0,
             next_bb: 0,
@@ -523,6 +555,8 @@ fn lower_expr(cx: &Cx, fb: &mut FuncBuilder, bb: &mut Block, expr: &TExpr) -> Va
         E::TupleCtor { body } => todo!(),
         E::TupleRef { expr, elt } => todo!(),
         E::Assign { lhs, rhs } => todo!(),
+        E::Ref { .. } => todo!(),
+        E::Deref { .. } => todo!(),
     }
 }
 
