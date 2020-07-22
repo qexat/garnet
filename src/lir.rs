@@ -108,30 +108,6 @@ impl Block {
     }
 }
 
-pub enum Block2 {
-    /// A normal compound statement returning
-    /// the last value in it
-    Block { body: Vec<Instr> },
-    /// Structured if statement
-    If {
-        cases: Vec<(Block2, Block2)>,
-        falseblock: Box<Block2>,
-    },
-}
-
-impl Block2 {
-    /// Shortcut for retrieving the last value stored in the block.
-    /// Returns None if the block is empty.
-    fn last_value(&self) -> Option<Var> {
-        match self {
-            Self::Block { body } => match body.last()? {
-                Instr::Assign(var, _) => Some(*var),
-            },
-            _ => None,
-        }
-    }
-}
-
 /// an IR instruction
 #[derive(Debug)]
 pub enum Instr {

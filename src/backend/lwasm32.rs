@@ -320,6 +320,13 @@ fn compile_func(
                 // ...this is actually tricky 'cause wasm doesn't really have arbitrary jumps.
                 // So you can't really arbitrarily reorder basic blocks.
                 // So how the heck do you compile SSA IR to it?
+                // Ok, so if the block ends in a Branch, it's leading into an If statement.
+                // And the blocks involved in its branch are by definition the if and else
+                // parts of it and must branch to the end of it.
+                //
+                // That means a loop is just a cycle in the graph, which is its own kinda
+                // thing but should be doable since traversing the graph should be easy.
+                // Also we don't even have loops yet, so, nbd.
                 todo!();
             }
             symbols.pop_scope();
@@ -327,50 +334,6 @@ fn compile_func(
         _ => unreachable!("Function source is not local, can't happen!"),
     }
     wasm_func.id
-}
-
-fn compile_exprs(
-    cx: &Cx,
-    m: &mut w::ModuleLocals,
-    t: &mut w::ModuleTypes,
-    symbols: &mut Symbols,
-    instrs: &mut w::InstrSeqBuilder,
-    exprs: &[ir::TypedExpr<TypeSym>],
-) {
-    todo!()
-    /*
-    // The trick here is that wasm doesn't let you leave stuff on
-    // the stack and just ignore it forevermore.  Like, functions must
-    // have only their return value on the stack when they return,
-    // stuff like that.  So we need to explicitly get rid of the
-    // things we ignore.
-    //
-    // I considered making this a step in the IR that basically turns
-    // every `foo(); bar()` into `ignore(foo()); bar()` explicitly,
-    // but it seems easier for now to just drop any values left by
-    // any but the last expr.
-    //
-    // TODO: Revisit this sometime.
-    let l = exprs.len();
-    match l {
-        0 => (),
-        1 => compile_expr(cx, m, t, symbols, instrs, &exprs[0]),
-        l => {
-            // Compile and insert drop instructions after each
-            // expr
-            let exprs_prefix = &exprs[..l - 1];
-            exprs_prefix.iter().for_each(|expr| {
-                compile_expr(cx, m, t, symbols, instrs, expr);
-                let x = stacksize(&cx, expr.t);
-                for _ in 0..x {
-                    instrs.drop();
-                }
-            });
-            // Then compile the last one.
-            compile_expr(cx, m, t, symbols, instrs, &exprs[l - 1]);
-        }
-    }
-        */
 }
 
 /// Goes through top-level decl's and adds them all to the top scope of the symbol table,
