@@ -315,19 +315,42 @@ fn compile_func(
             for local in wasm_func.params.iter() {
                 symbols.add_local(*local);
             }
-            for (id, block) in func.body.iter() {
-                // Compile basic block.
-                // ...this is actually tricky 'cause wasm doesn't really have arbitrary jumps.
-                // So you can't really arbitrarily reorder basic blocks.
-                // So how the heck do you compile SSA IR to it?
-                // Ok, so if the block ends in a Branch, it's leading into an If statement.
-                // And the blocks involved in its branch are by definition the if and else
-                // parts of it and must branch to the end of it.
-                //
-                // That means a loop is just a cycle in the graph, which is its own kinda
-                // thing but should be doable since traversing the graph should be easy.
-                // Also we don't even have loops yet, so, nbd.
-                todo!();
+
+            // Compile basic block.
+            // ...this is actually tricky 'cause wasm doesn't really have arbitrary jumps.
+            // So you can't really arbitrarily reorder basic blocks.
+            // So how the heck do you compile SSA IR to it?
+            // Ok, so if the block ends in a Branch, it's leading into an If statement.
+            // And the blocks involved in its branch are by definition the if and else
+            // parts of it and must branch to the end of it.
+            //
+            // That means a loop is just a cycle in the graph, which is its own kinda
+            // thing but should be doable since traversing the graph should be easy.
+            // Also we don't even have loops yet, so, nbd.
+            let current_bb = &func.body[&func.entry];
+            for instr in &current_bb.body {
+                match instr {
+                    // For nowwwwww I suppose we just assign
+                    // everything to local vars!
+                    lir::Instr::Assign(var, op) => {
+                        use lir::Op::*;
+                        match op {
+                            ValI32(v) => {
+                                instrs.i32_const(*v);
+                            }
+                            _ => todo!(),
+                        }
+                    }
+                }
+                // Great, now we have some kind of value atop the stack, save it to a local.
+                // TODO: Figure out type of data from instruction...?
+                let typename = cx.i32();
+                // we don't add the local to the symbol table 'cause it doesn't have a name
+                // attached to it
+                let id = m.locals.add(compile_typesym(cx, typename)[0]);
+
+                // Store result of expression
+                instrs.local_set(id);
             }
             symbols.pop_scope();
         }
