@@ -30,7 +30,7 @@ use crate::{Cx, TypeSym, VarSym};
 type TExpr = ir::TypedExpr<TypeSym>;
 
 /// A var/virtual register, just a number
-#[derive(Debug, Copy, Clone, PartialEq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct Var(usize);
 
 /// Basic block ID.
@@ -55,6 +55,7 @@ pub struct VarBinding {
 #[derive(Debug)]
 pub struct Func {
     pub name: VarSym,
+    pub signature: ir::Signature,
     pub params: Vec<(VarSym, TypeSym, Var)>,
     pub returns: TypeSym,
     pub body: HashMap<BB, Block>,
@@ -158,6 +159,10 @@ impl FuncBuilder {
         let mut res = Self {
             func: Func {
                 name: func_name,
+                signature: ir::Signature {
+                    params: Vec::from(params),
+                    rettype: rettype,
+                },
                 params: vec![],
                 returns: rettype,
                 body: HashMap::new(),
@@ -266,6 +271,7 @@ fn lower_decl(cx: &Cx, lir: &mut Lir, decl: &ir::Decl<TypeSym>) {
             signature,
             body,
         } => {
+            // TODO HERE: Add arguments to symbol table!
             let mut fb = FuncBuilder::new(*name, signature.params.as_ref(), signature.rettype);
             let mut first_block = fb.next_block();
             let last_var = lower_exprs(cx, &mut fb, &mut first_block, body);
@@ -309,6 +315,7 @@ fn lower_expr(cx: &Cx, fb: &mut FuncBuilder, bb: &mut Block, expr: &TExpr) -> Va
         }
 
         E::Var { name } => {
+            dbg!("getting var {}", name);
             let _v = fb.get_var(*name);
             todo!()
             //fb.assign(
@@ -357,6 +364,7 @@ fn lower_expr(cx: &Cx, fb: &mut FuncBuilder, bb: &mut Block, expr: &TExpr) -> Va
             mutable,
         } => {
             let v = lower_expr(cx, fb, bb, &*init);
+            dbg!("Adding var {}", varname);
             fb.add_var(*varname, *typename, v, *mutable);
             v
         }

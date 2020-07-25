@@ -3,7 +3,7 @@
 //! For now, we're going to output WASM.  That should let us get interesting output
 //! and maybe bootstrap stuff if we feel like it.
 
-use std::cell::RefCell;
+use std::collections::HashMap;
 
 use walrus as w;
 
@@ -67,6 +67,9 @@ struct Symbols {
     /// want to conceal old bindings, not annihilate them.
     bindings: scope::Symbols<VarSym, Binding>,
     function_table: Option<w::TableId>,
+    /// We just turn all our SSA Var's into wasm locals,
+    /// and store the association here.
+    temporaries: HashMap<lir::Var, w::LocalId>,
 
     /// Stack pointer
     sp: w::GlobalId,
@@ -79,6 +82,7 @@ impl Symbols {
         Self {
             bindings: scope::Symbols::default(),
             function_table: None,
+            temporaries: HashMap::new(),
             sp,
             st,
         }
@@ -340,17 +344,32 @@ fn compile_func(
                             }
                             _ => todo!(),
                         }
+
+                        // Great, now we have some kind of value atop the stack, save it to a local.
+                        // TODO: Figure out type of data from instruction...?
+                        let typename = cx.i32();
+                        // we don't add the local to the symbol table 'cause it doesn't have a name
+                        // attached to it
+                        let id = m.locals.add(compile_typesym(cx, typename)[0]);
+
+                        // Store result of expression
+                        instrs.local_set(id);
+                        // Associate the SSA Var with the wasm LocalId
+                        symbols.temporaries.insert(*var, id);
                     }
                 }
-                // Great, now we have some kind of value atop the stack, save it to a local.
-                // TODO: Figure out type of data from instruction...?
-                let typename = cx.i32();
-                // we don't add the local to the symbol table 'cause it doesn't have a name
-                // attached to it
-                let id = m.locals.add(compile_typesym(cx, typename)[0]);
+            }
 
-                // Store result of expression
-                instrs.local_set(id);
+            match &current_bb.terminator {
+                lir::Branch::Return(Some(var)) => {
+                    let local_var = symbols.temporaries.get(var).expect(
+                        "SSA var does not exist or has no wasm localid binding, shouldn't happen",
+                    );
+                    instrs.local_get(*local_var);
+                    instrs.return_();
+                }
+                lir::Branch::Return(None) => todo!("return none"),
+                _ => todo!("return something else"),
             }
             symbols.pop_scope();
         }
@@ -362,10 +381,7 @@ fn compile_func(
 /// Goes through top-level decl's and adds them all to the top scope of the symbol table,
 /// so we don't need to do forward declarations in our source.
 fn predeclare_func(cx: &Cx, m: &mut w::Module, symbols: &mut Symbols, func: &lir::Func) {
-    todo!()
-    /*
-    use lir::*;
-    let (paramtype, rettype) = function_signature(cx, signature);
+    let (paramtype, rettype) = function_signature(cx, &func.signature);
     // add params
     // We do some shenanigans with scope here to create the locals and then
     let mut fn_params = vec![];
@@ -382,10 +398,8 @@ fn predeclare_func(cx: &Cx, m: &mut w::Module, symbols: &mut Symbols, func: &lir
     let name_str = cx.fetch(func.name);
     let function_def = symbols.get_function(func.name).unwrap();
     m.exports.add(&name_str, function_def.id);
-    */
 }
 
-/*
 /// Generate walrus types representing the wasm representations of
 /// a lambda's type.
 fn lambda_signature(
@@ -412,6 +426,7 @@ fn function_signature(cx: &Cx, sig: &ir::Signature) -> (Vec<w::ValType>, Vec<w::
     }
 }
 
+/*
 /// Compile multiple exprs, making sure they don't leave unused
 /// values on the stack by adding drop's as necessary.
 /// Returns the number of values left on the stack at the end.
