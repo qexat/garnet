@@ -56,7 +56,7 @@ pub struct VarBinding {
 pub struct Func {
     pub name: VarSym,
     pub signature: ir::Signature,
-    pub params: Vec<(VarSym, TypeSym, Var)>,
+    pub params: Vec<VarBinding>,
     pub returns: TypeSym,
     pub body: HashMap<BB, Block>,
     /// The first basic block to execute.
@@ -104,7 +104,7 @@ impl Block {
     /// Returns None if the block is empty.
     fn last_value(&self) -> Option<Var> {
         match self.body.last()? {
-            Instr::Assign(var, _) => Some(*var),
+            Instr::Assign(var, _, _) => Some(*var),
         }
     }
 }
@@ -112,7 +112,7 @@ impl Block {
 /// an IR instruction
 #[derive(Debug)]
 pub enum Instr {
-    Assign(Var, Op),
+    Assign(Var, TypeSym, Op),
 }
 
 /// Operations/rvalues
@@ -123,22 +123,20 @@ pub enum Op {
     ValUnit,
 
     // Operators
-    AddI32(Var, Var),
-    SubI32(Var, Var),
-    MulI32(Var, Var),
-    DivI32(Var, Var),
-    ModI32(Var, Var),
-    NotI32(Var),
+    BinOpI32(ir::BOp, Var, Var),
+    UniOpI32(ir::UOp, Var),
 
     // Memory
+    GetLocal(VarSym),
+    SetLocal(VarSym, Var),
     AddrOf(Var),
     LoadI32(Var),
     /// Loads address + offset
     LoadOffsetI32(Var, Var),
     /// Address, value
     StoreI32(Var, Var),
-    /// Loads address + offset
-    StoreOffsetI32(Var, Var),
+    /// Store address + offset
+    StoreOffsetI32(Var, Var, Var),
 
     // Control flow
     Phi(Vec<BB>),
@@ -176,7 +174,12 @@ impl FuncBuilder {
         };
         let new_params = params
             .iter()
-            .map(|(v, t)| (*v, *t, res.next_var()))
+            .map(|(v, t)| VarBinding {
+                name: *v,
+                typename: *t,
+                mutable: false,
+                var: res.next_var(),
+            })
             .collect();
         let first_block = res.next_block();
         res.func.params = new_params;
@@ -242,15 +245,21 @@ impl FuncBuilder {
             .iter()
             .rev()
             .find(|v| v.name == name)
-            .expect("Should never happen")
+            .unwrap_or_else(|| {
+                self.func
+                    .params
+                    .iter()
+                    .find(|v| v.name == name)
+                    .expect("Unknown var in LIR, should never happen")
+            })
     }
 
     /// Build a new instruction
     /// apparently currently the only option is Assign?
     ///
-    fn assign(&mut self, bb: &mut Block, op: Op) -> Var {
+    fn assign(&mut self, bb: &mut Block, typ: TypeSym, op: Op) -> Var {
         let v = self.next_var();
-        let instr = Instr::Assign(v, op);
+        let instr = Instr::Assign(v, typ, op);
         bb.body.push(instr);
         v
     }
@@ -311,42 +320,31 @@ fn lower_expr(cx: &Cx, fb: &mut FuncBuilder, bb: &mut Block, expr: &TExpr) -> Va
                 }
             };
             let op = Op::ValI32(v as i32);
-            fb.assign(bb, op)
+            fb.assign(bb, expr.t, op)
         }
 
         E::Var { name } => {
-            dbg!("getting var {}", name);
-            let _v = fb.get_var(*name);
-            todo!()
-            //fb.assign(
+            let op = Op::GetLocal(*name);
+            fb.assign(bb, expr.t, op)
         }
         E::BinOp { op, lhs, rhs } => {
             let v1 = lower_expr(cx, fb, bb, &*lhs);
             let v2 = lower_expr(cx, fb, bb, &*rhs);
-            let o = match op {
-                ir::BOp::Add => Op::AddI32,
-                ir::BOp::Sub => Op::SubI32,
-                ir::BOp::Mul => Op::MulI32,
-                // TODO: Check for div0?
-                ir::BOp::Div => Op::DivI32,
-                // TODO: Check for div0?
-                ir::BOp::Mod => Op::ModI32,
-                _ => todo!(),
-            }(v1, v2);
-            fb.assign(bb, o)
+            let o = Op::BinOpI32(*op, v1, v2);
+            fb.assign(bb, expr.t, o)
         }
         E::UniOp { op, rhs } => match op {
             // Turn -x into 0 - x
             ir::UOp::Neg => {
-                let v1 = fb.assign(bb, Op::ValI32(0));
+                let v1 = fb.assign(bb, cx.i32(), Op::ValI32(0));
                 let v2 = lower_expr(cx, fb, bb, &*rhs);
-                let op = Op::SubI32(v1, v2);
-                fb.assign(bb, op)
+                let op = Op::BinOpI32(ir::BOp::Sub, v1, v2);
+                fb.assign(bb, expr.t, op)
             }
             ir::UOp::Not => {
                 let v = lower_expr(cx, fb, bb, &*rhs);
-                let op = Op::NotI32(v);
-                fb.assign(bb, op)
+                let op = Op::UniOpI32(ir::UOp::Not, v);
+                fb.assign(bb, expr.t, op)
             }
             _ => todo!(),
         },
@@ -355,7 +353,7 @@ fn lower_expr(cx: &Cx, fb: &mut FuncBuilder, bb: &mut Block, expr: &TExpr) -> Va
             // that is used nowhere
             // If it is used as something other than unit then
             // this (hopefully) doesn't typecheck.
-            lower_exprs(cx, fb, bb, &*body).unwrap_or_else(|| fb.assign(bb, Op::ValUnit))
+            lower_exprs(cx, fb, bb, &*body).unwrap_or_else(|| fb.assign(bb, cx.unit(), Op::ValUnit))
         }
         E::Let {
             varname,
@@ -366,7 +364,7 @@ fn lower_expr(cx: &Cx, fb: &mut FuncBuilder, bb: &mut Block, expr: &TExpr) -> Va
             let v = lower_expr(cx, fb, bb, &*init);
             dbg!("Adding var {}", varname);
             fb.add_var(*varname, *typename, v, *mutable);
-            v
+            fb.assign(bb, cx.unit(), Op::ValUnit)
         }
         E::If { cases, falseblock } => {
             // For a single if expr, we make this structure:
@@ -465,9 +463,9 @@ fn lower_expr(cx: &Cx, fb: &mut FuncBuilder, bb: &mut Block, expr: &TExpr) -> Va
 
                     let cond_result = lower_expr(cx, fb, cond_bb, &cond);
                     let body_result = lower_exprs(cx, fb, body_bb, &ifbody)
-                        .unwrap_or_else(|| fb.assign(body_bb, Op::ValUnit));
+                        .unwrap_or_else(|| fb.assign(body_bb, cx.unit(), Op::ValUnit));
                     let else_result = lower_exprs(cx, fb, else_body_bb, elsebody)
-                        .unwrap_or_else(|| fb.assign(else_body_bb, Op::ValUnit));
+                        .unwrap_or_else(|| fb.assign(else_body_bb, cx.unit(), Op::ValUnit));
 
                     // Wire all the BB's together
                     cond_bb.terminator = Branch::Branch(cond_result, body_bb.id, else_body_bb.id);
@@ -487,7 +485,7 @@ fn lower_expr(cx: &Cx, fb: &mut FuncBuilder, bb: &mut Block, expr: &TExpr) -> Va
 
                     let cond_result = lower_expr(cx, fb, cond_bb, &cond);
                     let body_result = lower_exprs(cx, fb, body_bb, &ifbody)
-                        .unwrap_or_else(|| fb.assign(body_bb, Op::ValUnit));
+                        .unwrap_or_else(|| fb.assign(body_bb, cx.unit(), Op::ValUnit));
 
                     // Wire together BB's
                     cond_bb.terminator = Branch::Branch(cond_result, body_bb.id, next_bb);
@@ -503,11 +501,11 @@ fn lower_expr(cx: &Cx, fb: &mut FuncBuilder, bb: &mut Block, expr: &TExpr) -> Va
                 recursive_build_bbs(cx, fb, end_bb.id, cases, falseblock, &mut accm);
 
             // Add a phi instruction combining all the branch results
-            let last_result = fb.assign(end_bb, Op::Phi(accm));
+            let last_result = fb.assign(end_bb, expr.t, Op::Phi(accm));
             // Connect the first BB to the start of the if block
             let last_value = bb
                 .last_value()
-                .unwrap_or_else(|| fb.assign(bb, Op::ValUnit));
+                .unwrap_or_else(|| fb.assign(bb, cx.unit(), Op::ValUnit));
             bb.terminator = Branch::Jump(last_value, first_cond_bb);
 
             // TODO: How do we make this also say "here is the next BB to work with"?
@@ -519,18 +517,15 @@ fn lower_expr(cx: &Cx, fb: &mut FuncBuilder, bb: &mut Block, expr: &TExpr) -> Va
         }
         E::Funcall { func, params } => {
             // First, evaluate the args.
-
             let param_vars = params.iter().map(|e| lower_expr(cx, fb, bb, e)).collect();
+            // Then, issue the instruction depending on the type of call.
             match &func.e {
-                E::Var { name } => {
-                    let var = todo!();
-                    fb.assign(bb, Op::Call(var, param_vars))
-                }
+                E::Var { name } => fb.assign(bb, expr.t, Op::Call(*name, param_vars)),
                 _expr => {
                     // We got some other expr, compile it and do an indirect call 'cause it heckin'
                     // better be a function
                     let v = lower_expr(cx, fb, bb, &func);
-                    fb.assign(bb, Op::CallIndirect(v, param_vars))
+                    fb.assign(bb, expr.t, Op::CallIndirect(v, param_vars))
                 }
             }
         }
