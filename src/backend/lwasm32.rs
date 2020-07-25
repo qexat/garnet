@@ -121,6 +121,11 @@ impl Symbols {
         );
     }
 
+    /// Look up a temporary value, ie an SSA "register"
+    fn get_temp(&self, var: lir::Var) -> w::LocalId {
+        *self.temporaries.get(&var).expect("Could not get temporary")
+    }
+
     /// Get a reference to a local var, if it exists.
     fn get_local(&mut self, name: VarSym) -> Option<&LocalVar> {
         if let Some(Binding::Local(f)) = self.get(name) {
@@ -336,13 +341,94 @@ fn compile_func(
                 match instr {
                     // For nowwwwww I suppose we just assign
                     // everything to local vars!
-                    lir::Instr::Assign(var, op) => {
+                    lir::Instr::Assign(var, optype, op) => {
                         use lir::Op::*;
                         match op {
                             ValI32(v) => {
                                 instrs.i32_const(*v);
                             }
-                            _ => todo!(),
+                            ValUnit => {
+                                // noop
+                            }
+                            GetLocal(name) => {
+                                let local = symbols
+                                    .get_local(*name)
+                                    .expect("Local not found, should never happen");
+
+                                instrs.local_get(local.id);
+                            }
+                            SetLocal(name, val) => {
+                                let local_id = symbols
+                                    .get_local(*name)
+                                    .expect("Local not found, should never happen")
+                                    .id;
+
+                                let val_slot = symbols.get_temp(*val);
+                                instrs.local_get(val_slot);
+                                instrs.local_set(local_id);
+                            }
+                            BinOpI32(op, v1, v2) => {
+                                let val1_slot = symbols.get_temp(*v1);
+                                instrs.local_get(val1_slot);
+                                let val2_slot = symbols.get_temp(*v2);
+                                instrs.local_get(val2_slot);
+                                let bop = compile_binop(op);
+                                instrs.binop(bop);
+                            }
+                            UniOpI32(op, v) => {
+                                let val_slot = symbols.get_temp(*v);
+                                instrs.local_get(val_slot);
+                                let wasm_op = match op {
+                                    ir::UOp::Not => w::ir::UnaryOp::I32Eqz,
+                                    ir::UOp::Ref => todo!(),
+                                    ir::UOp::Deref => todo!(),
+                                    ir::UOp::Neg => unreachable!(),
+                                };
+                                instrs.unop(wasm_op);
+                            }
+                            AddrOf(_)
+                            | LoadI32(_)
+                            | LoadOffsetI32(_, _)
+                            | StoreI32(_, _)
+                            | StoreOffsetI32(_, _, _) => todo!(),
+                            Phi(_) => todo!(),
+                            Call(name, args) => {
+                                // Evaluate all args and stick 'em on the stack
+                                for arg in args {
+                                    let val_slot = symbols.get_temp(*arg);
+                                    instrs.local_get(val_slot);
+                                }
+                                // Then we just grab the function and call it.
+                                // We know already it's a direct call
+                                let f = symbols.get_function(*name).expect("Should never happen");
+                                instrs.call(f.id);
+                            }
+                            CallIndirect(val, args) => {
+                                // Evaluate all args and stick 'em on the stack
+                                for arg in args {
+                                    let val_slot = symbols.get_temp(*arg);
+                                    instrs.local_get(val_slot);
+                                }
+                                // We know already that the function table offset
+                                // is stuck into some temporary, so we look it up
+                                let f_slot = symbols.get_temp(*val);
+                                instrs.local_get(f_slot);
+                                // We need to look up the function type so the
+                                // call instr can check it
+                                let expr_type = &*cx.fetch_type(*optype);
+                                let (params_types, return_types) = match expr_type {
+                                    TypeDef::Lambda(params, ret) => lambda_signature(cx, params, *ret),
+                                    _ => unreachable!("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+                                };
+                                let function_type = m
+                                    .types
+                                    .find(&params_types, &return_types)
+                                    .expect("Shouldn't happen");
+
+                                // Get the table id, currently there's only one table
+                                let table_id = symbols.function_table.expect("Can't happen");
+                                instrs.call_indirect(function_type, table_id);
+                            }
                         }
 
                         // Great, now we have some kind of value atop the stack, save it to a local.
@@ -385,8 +471,13 @@ fn predeclare_func(cx: &Cx, m: &mut w::Module, symbols: &mut Symbols, func: &lir
     // add params
     // We do some shenanigans with scope here to create the locals and then
     let mut fn_params = vec![];
-    for (pname, ptype, _var) in func.params.iter() {
-        fn_params.push(LocalVar::new(cx, &mut m.locals, *pname, *ptype));
+    for binding in func.params.iter() {
+        fn_params.push(LocalVar::new(
+            cx,
+            &mut m.locals,
+            binding.name,
+            binding.typename,
+        ));
     }
     // So we have to create the function now, to get the FunctionId
     // and know what to call in case there's a recursion or such.
@@ -426,6 +517,29 @@ fn function_signature(cx: &Cx, sig: &ir::Signature) -> (Vec<w::ValType>, Vec<w::
     }
 }
 
+fn compile_binop(op: &ir::BOp) -> w::ir::BinaryOp {
+    match op {
+        ir::BOp::Add => w::ir::BinaryOp::I32Add,
+        ir::BOp::Sub => w::ir::BinaryOp::I32Sub,
+        ir::BOp::Mul => w::ir::BinaryOp::I32Mul,
+
+        // TODO: Check for div0?
+        ir::BOp::Div => w::ir::BinaryOp::I32DivS,
+        // TODO: Check for div0?
+        ir::BOp::Mod => w::ir::BinaryOp::I32RemS,
+
+        ir::BOp::Eq => w::ir::BinaryOp::I32Eq,
+        ir::BOp::Neq => w::ir::BinaryOp::I32Ne,
+        ir::BOp::Gt => w::ir::BinaryOp::I32GtS,
+        ir::BOp::Lt => w::ir::BinaryOp::I32LtS,
+        ir::BOp::Gte => w::ir::BinaryOp::I32GeS,
+        ir::BOp::Lte => w::ir::BinaryOp::I32LeS,
+
+        ir::BOp::And => w::ir::BinaryOp::I32And,
+        ir::BOp::Or => w::ir::BinaryOp::I32Or,
+        ir::BOp::Xor => w::ir::BinaryOp::I32Xor,
+    }
+}
 /*
 /// Compile multiple exprs, making sure they don't leave unused
 /// values on the stack by adding drop's as necessary.
