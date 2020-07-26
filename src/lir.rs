@@ -57,7 +57,6 @@ pub struct Func {
     pub name: VarSym,
     pub signature: ir::Signature,
     pub params: Vec<VarBinding>,
-    pub returns: TypeSym,
     pub body: HashMap<BB, Block>,
     /// The first basic block to execute.
     /// Could implicitly be 0, but making it
@@ -162,7 +161,6 @@ impl FuncBuilder {
                     rettype: rettype,
                 },
                 params: vec![],
-                returns: rettype,
                 body: HashMap::new(),
                 entry: BB(0),
                 locals: vec![],

@@ -263,6 +263,7 @@ fn display_instr(cx: &Cx, f: &Instr, out: &mut dyn io::Write) -> io::Result<()> 
 
 use crate::lir::*;
 fn display_func(cx: &Cx, f: &Func, out: &mut dyn io::Write) -> io::Result<()> {
+    /*
     writeln!(
         out,
         "Function {}, signature {:?}, params {:?}, returns {}",
@@ -271,6 +272,11 @@ fn display_func(cx: &Cx, f: &Func, out: &mut dyn io::Write) -> io::Result<()> {
         f.params,
         cx.fetch_type(f.returns).get_name(cx),
     )?;
+    */
+
+    write!(out, "Function {}", cx.fetch(f.name),)?;
+    unparse_sig(cx, &f.signature, out)?;
+    writeln!(out)?;
     writeln!(out, "Locals: {:?}", f.locals)?;
     writeln!(out, "Frame layout: {:?}", f.frame_layout)?;
     writeln!(out, "Entry point: {:?}", f.entry)?;
