@@ -281,7 +281,7 @@ fn display_func(cx: &Cx, f: &Func, out: &mut dyn io::Write) -> io::Result<()> {
     writeln!(out, "Frame layout: {:?}", f.frame_layout)?;
     writeln!(out, "Entry point: {:?}", f.entry)?;
     for (id, bb) in &f.body {
-        writeln!(out, "  BB {:?}", id)?;
+        writeln!(out, "  {:?}", id)?;
         for instr in &bb.body {
             display_instr(cx, instr, out)?;
         }
