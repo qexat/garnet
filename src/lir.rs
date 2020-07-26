@@ -454,15 +454,15 @@ fn lower_expr(cx: &Cx, fb: &mut FuncBuilder, bb: &mut Block, expr: &TExpr) -> Va
                 let (cond, ifbody) = &cases[0];
                 if cases.len() == 1 {
                     // We are on the last if statement, wire it up to the else statement.
-                    let cond_bb = &mut fb.next_block();
-                    let body_bb = &mut fb.next_block();
-                    let else_body_bb = &mut fb.next_block();
+                    let mut cond_bb = fb.next_block();
+                    let mut body_bb = fb.next_block();
+                    let mut else_body_bb = fb.next_block();
 
-                    let cond_result = lower_expr(cx, fb, cond_bb, &cond);
-                    let body_result = lower_exprs(cx, fb, body_bb, &ifbody)
-                        .unwrap_or_else(|| fb.assign(body_bb, cx.unit(), Op::ValUnit));
-                    let else_result = lower_exprs(cx, fb, else_body_bb, elsebody)
-                        .unwrap_or_else(|| fb.assign(else_body_bb, cx.unit(), Op::ValUnit));
+                    let cond_result = lower_expr(cx, fb, &mut cond_bb, &cond);
+                    let body_result = lower_exprs(cx, fb, &mut body_bb, &ifbody)
+                        .unwrap_or_else(|| fb.assign(&mut body_bb, cx.unit(), Op::ValUnit));
+                    let else_result = lower_exprs(cx, fb, &mut else_body_bb, elsebody)
+                        .unwrap_or_else(|| fb.assign(&mut else_body_bb, cx.unit(), Op::ValUnit));
 
                     // Wire all the BB's together
                     cond_bb.terminator = Branch::Branch(cond_result, body_bb.id, else_body_bb.id);
@@ -472,33 +472,44 @@ fn lower_expr(cx: &Cx, fb: &mut FuncBuilder, bb: &mut Block, expr: &TExpr) -> Va
                     // them in the phi
                     accm.push(body_bb.id);
                     accm.push(else_body_bb.id);
-                    return cond_bb.id;
+                    let cond_id = cond_bb.id;
+                    fb.add_block(cond_bb);
+                    fb.add_block(body_bb);
+                    fb.add_block(else_body_bb);
+                    return cond_id;
                 } else {
                     // Build the next case...
                     let next_bb = recursive_build_bbs(cx, fb, end_bb, &cases[1..], elsebody, accm);
                     // Build our cond and body
-                    let cond_bb = &mut fb.next_block();
-                    let body_bb = &mut fb.next_block();
+                    let mut cond_bb = fb.next_block();
+                    let mut body_bb = fb.next_block();
 
-                    let cond_result = lower_expr(cx, fb, cond_bb, &cond);
-                    let body_result = lower_exprs(cx, fb, body_bb, &ifbody)
-                        .unwrap_or_else(|| fb.assign(body_bb, cx.unit(), Op::ValUnit));
+                    let cond_result = lower_expr(cx, fb, &mut cond_bb, &cond);
+                    let body_result = lower_exprs(cx, fb, &mut body_bb, &ifbody)
+                        .unwrap_or_else(|| fb.assign(&mut body_bb, cx.unit(), Op::ValUnit));
 
                     // Wire together BB's
                     cond_bb.terminator = Branch::Branch(cond_result, body_bb.id, next_bb);
                     body_bb.terminator = Branch::Jump(body_result, end_bb);
-                    return cond_bb.id;
+                    let cond_id = cond_bb.id;
+                    fb.add_block(cond_bb);
+                    fb.add_block(body_bb);
+                    return cond_id;
                 }
             }
             // This is the block that all the if branches feed into.
-            let end_bb = &mut fb.next_block();
+            let mut end_bb = fb.next_block();
             // Make blocks for all the if branches
             let mut accm = vec![];
             let first_cond_bb =
                 recursive_build_bbs(cx, fb, end_bb.id, cases, falseblock, &mut accm);
 
             // Add a phi instruction combining all the branch results
-            let last_result = fb.assign(end_bb, expr.t, Op::Phi(accm));
+            let last_result = fb.assign(&mut end_bb, expr.t, Op::Phi(accm));
+            // AUGH this is all totally fucked TODO FIXME FJDSAKFL:JDASFLASDJ
+            end_bb.terminator = TODO
+            // Save the end block
+            fb.add_block(end_bb);
             // Connect the first BB to the start of the if block
             let last_value = bb
                 .last_value()
