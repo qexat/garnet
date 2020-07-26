@@ -362,7 +362,6 @@ fn lower_expr(cx: &Cx, fb: &mut FuncBuilder, bb: &mut Block, expr: &TExpr) -> Va
             mutable,
         } => {
             let v = lower_expr(cx, fb, bb, &*init);
-            dbg!("Adding var {}", varname);
             fb.add_var(*varname, *typename, v, *mutable);
             fb.assign(bb, cx.unit(), Op::ValUnit)
         }

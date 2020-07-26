@@ -219,6 +219,86 @@ pub fn unparse(cx: &Cx, ast: &Ast, out: &mut dyn io::Write) -> io::Result<()> {
     Ok(())
 }
 
+// //////////////// LIR formatting functions //////////////////////////////
+fn display_instr(cx: &Cx, f: &Instr, out: &mut dyn io::Write) -> io::Result<()> {
+    let display_op = |op: &Op, out: &mut dyn io::Write| -> io::Result<()> {
+        match op {
+            Op::ValI32(x) => write!(out, "const {}", x)?,
+            Op::ValUnit => write!(out, "const unit")?,
+
+            Op::BinOpI32(bop, v1, v2) => write!(out, "binop.i32 {:?}, {:?}, {:?}", bop, v1, v2)?,
+            Op::UniOpI32(uop, v) => write!(out, "uniop.i32 {:?}, {:?}", uop, v)?,
+
+            Op::GetLocal(name) => write!(out, "getlocal {}", cx.fetch(*name))?,
+            Op::SetLocal(name, v) => write!(out, "setlocal {}, {:?}", cx.fetch(*name), v)?,
+            Op::AddrOf(v) => write!(out, "addrof {:?}", v)?,
+            Op::LoadI32(v) => write!(out, "load.i32 {:?}", v)?,
+            Op::LoadOffsetI32(v1, v2) => write!(out, "loadoffset.i32 {:?} + {:?}", v1, v2)?,
+            Op::StoreI32(v1, v2) => write!(out, "store.i32 {:?} {:?}", v1, v2)?,
+            Op::StoreOffsetI32(v1, v2, v3) => {
+                write!(out, "storeoffset.i32 {:?} {:?} + {:?}", v1, v2, v3)?
+            }
+
+            Op::Phi(bbs) => write!(out, "PHI {:?}", bbs)?,
+            Op::Call(name, args) => write!(out, "call {} {:?}", cx.fetch(*name), args)?,
+            Op::CallIndirect(v, args) => write!(out, "call indirect {:?} {:?}", v, args)?,
+        }
+        Ok(())
+    };
+    // Indentation is fixed here, makes life easy.
+    match f {
+        Instr::Assign(var, typesym, op) => {
+            write!(
+                out,
+                "    {:?}: {} = ",
+                var,
+                cx.fetch_type(*typesym).get_name(cx)
+            )?;
+            display_op(op, out)?;
+            writeln!(out)?;
+        }
+    }
+    Ok(())
+}
+
+use crate::lir::*;
+fn display_func(cx: &Cx, f: &Func, out: &mut dyn io::Write) -> io::Result<()> {
+    writeln!(
+        out,
+        "Function {}, signature {:?}, params {:?}, returns {}",
+        cx.fetch(f.name),
+        f.signature,
+        f.params,
+        cx.fetch_type(f.returns).get_name(cx),
+    )?;
+    writeln!(out, "Locals: {:?}", f.locals)?;
+    writeln!(out, "Frame layout: {:?}", f.frame_layout)?;
+    writeln!(out, "Entry point: {:?}", f.entry)?;
+    for (id, bb) in &f.body {
+        writeln!(out, "  BB {:?}", id)?;
+        for instr in &bb.body {
+            display_instr(cx, instr, out)?;
+        }
+        match &bb.terminator {
+            Branch::Jump(v, bb) => writeln!(out, "  jump {:?}, {:?}", v, bb)?,
+            Branch::Branch(v, bb1, bb2) => writeln!(out, "  branch {:?}, {:?}, {:?}", v, bb1, bb2)?,
+            Branch::Return(v) => writeln!(out, "  return {:?}", v)?,
+            Branch::Unreachable => writeln!(out, "  unreachable")?,
+        }
+    }
+    Ok(())
+}
+
+/// dump LIR to a string for debugging
+/// Easier than
+pub fn display_lir(cx: &Cx, lir: &Lir, out: &mut dyn io::Write) -> io::Result<()> {
+    for f in &lir.funcs {
+        display_func(cx, f, out)?;
+        writeln!(out)?;
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use crate::format::unparse;
