@@ -202,6 +202,10 @@ pub(super) fn output(cx: &Cx, lir: &lir::Lir) -> Vec<u8> {
         predeclare_func(&cx, m, symbols, func);
     }
     make_heckin_function_table(m, symbols);
+    {
+        let out = &mut std::io::BufWriter::new(std::io::stderr());
+        crate::format::display_lir(cx, lir, out).unwrap();
+    }
     for func in lir.funcs.iter() {
         compile_func(&cx, m, symbols, func);
     }
@@ -336,11 +340,21 @@ fn compile_func(
             // That means a loop is just a cycle in the graph, which is its own kinda
             // thing but should be doable since traversing the graph should be easy.
             // Also we don't even have loops yet, so, nbd.
+            //
+            // There's also the question of how to turn register-based operations
+            // into wasm's stack based operations.
+            // For nowwwwww I suppose we just assign everything to local vars!
+            // Creating a wasm Local for each SSA register.
+            // That's fine for now, right?  Yeah, totally.
+            // HOWEVER, we could actually do this Right by starting at the last
+            // register, and walking back through the things it uses in a depth-
+            // first travresal, then assembling instructions on the way out of
+            // the recursion.  This would also eliminate dead code within the BB.
+            //
+            // Can try in the future.
             let current_bb = &func.body[&func.entry];
             for instr in &current_bb.body {
                 match instr {
-                    // For nowwwwww I suppose we just assign
-                    // everything to local vars!
                     lir::Instr::Assign(var, optype, op) => {
                         use lir::Op::*;
                         match op {

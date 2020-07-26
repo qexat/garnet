@@ -201,7 +201,10 @@ fn parse_and_compile_expr() {
 fn parse_and_compile_fn2() {
     let src = r#"fn test(x: I32, y: I32): I32 = x + y end"#;
     assert_eq!(eval_program2(src, 3, 4), 7);
+}
 
+#[test]
+fn parse_and_compile_fn3() {
     let src = r#"fn test(x: Bool, y: I32): I32 = if x then y+1 else y+2 end end"#;
     assert_eq!(eval_program2(src, 1, 4), 5);
     assert_eq!(eval_program2(src, 0, 4), 6);
@@ -224,7 +227,7 @@ fn test(x: I32): I32 = foo(x+90) end
 }
 
 #[test]
-fn eeeeeeeeeeeeefib() {
+fn fib1() {
     let src = r#"
 fn fib(x: I32): I32 =
     if x < 2 then 1
@@ -237,6 +240,10 @@ fn test(): I32 =
 end
 "#;
     assert_eq!(eval_program0(src), 21);
+}
+
+#[test]
+fn fib2() {
     // Test function name resolution works without
     // forward decl's too
     let src = r#"
@@ -283,7 +290,7 @@ fn truth() {
 
 /// Test lambda shenanigans
 #[test]
-fn lambda() {
+fn lambda1() {
     let src = r#"
 fn apply(f: fn(I32): I32, arg: I32): I32 =
     f(arg)
@@ -296,7 +303,10 @@ fn test(): I32 =
 end
 "#;
     assert_eq!(eval_program0(src), 90);
+}
 
+#[test]
+fn lambda2() {
     let src = r#"
 fn test(): I32 =
     if true then
