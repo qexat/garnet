@@ -33,7 +33,8 @@ type TExpr = ir::TypedExpr<TypeSym>;
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct Var(usize);
 
-/// Basic block ID.
+/// Basic block ID.  Just a number.
+/// The block structure itself is the `Block`.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct BB(usize);
 
@@ -145,6 +146,8 @@ pub enum Op {
 
 pub struct FuncBuilder {
     func: Func,
+    current_bb: BB,
+
     next_var: usize,
     next_bb: usize,
 }
@@ -167,6 +170,7 @@ impl FuncBuilder {
 
                 frame_layout: vec![],
             },
+            current_bb: BB(0),
             next_var: 0,
             next_bb: 0,
         };
@@ -179,9 +183,9 @@ impl FuncBuilder {
                 var: res.next_var(),
             })
             .collect();
-        let first_block = res.next_block();
+        let first_block = res.next_block().id;
         res.func.params = new_params;
-        res.func.entry = first_block.id;
+        res.func.entry = first_block;
 
         res
     }
@@ -194,20 +198,25 @@ impl FuncBuilder {
 
     /// Create a new empty Block with a valid ID.
     /// Must be added to the function builder after it's full.
-    fn next_block(&mut self) -> Block {
+    ///
+    /// ...this is kinda awful, actually, but I don't see a better
+    /// way to be able to construct multiple blocks at once.
+    fn next_block(&mut self) -> &mut Block {
         let id = BB(self.next_bb);
-        self.next_bb += 1;
         let block = Block {
             id,
             body: vec![],
             terminator: Branch::Unreachable,
         };
-        block
+        self.next_bb += 1;
+        self.current_bb = id;
+        self.add_block(block);
+        self.get_current_block()
     }
 
     /// Set the entry point of the function being built to the given block.
-    fn set_entry(&mut self, block: &Block) {
-        self.func.entry = block.id;
+    fn set_entry(&mut self, block: BB) {
+        self.func.entry = block;
     }
 
     /// Add a block
@@ -217,12 +226,14 @@ impl FuncBuilder {
         id
     }
 
-    /*
     /// Gets a mutable reference to a given block.
     fn get_block(&mut self, bb: BB) -> &mut Block {
         self.func.body.get_mut(&bb).expect("Should never fail")
     }
-    */
+
+    fn get_current_block(&mut self) -> &mut Block {
+        self.get_block(self.current_bb)
+    }
 
     fn build(self) -> Func {
         self.func
@@ -252,13 +263,14 @@ impl FuncBuilder {
             })
     }
 
-    /// Build a new instruction
+    /// Build a new instruction in the current basic block
     /// apparently currently the only option is Assign?
     ///
-    fn assign(&mut self, bb: &mut Block, typ: TypeSym, op: Op) -> Var {
+    /// Later we might have things like alloca and whatever though.
+    fn assign(&mut self, typ: TypeSym, op: Op) -> Var {
         let v = self.next_var();
         let instr = Instr::Assign(v, typ, op);
-        bb.body.push(instr);
+        self.get_current_block().body.push(instr);
         v
     }
 }
@@ -280,25 +292,27 @@ fn lower_decl(cx: &Cx, lir: &mut Lir, decl: &ir::Decl<TypeSym>) {
         } => {
             // TODO HERE: Add arguments to symbol table!
             let mut fb = FuncBuilder::new(*name, signature.params.as_ref(), signature.rettype);
-            let mut first_block = fb.next_block();
-            let last_var = lower_exprs(cx, &mut fb, &mut first_block, body);
-            first_block.terminator = Branch::Return(last_var);
-            fb.set_entry(&first_block);
-            fb.add_block(first_block);
+            {
+                let first_block = fb.next_block().id;
+                fb.set_entry(first_block);
+            }
+            let last_var = lower_exprs(cx, &mut fb, body);
+            let last_block = fb.get_current_block();
+            last_block.terminator = Branch::Return(last_var);
             lir.funcs.push(fb.build());
         }
         _ => todo!(),
     }
 }
-fn lower_exprs(cx: &Cx, fb: &mut FuncBuilder, bb: &mut Block, exprs: &[TExpr]) -> Option<Var> {
+fn lower_exprs(cx: &Cx, fb: &mut FuncBuilder, exprs: &[TExpr]) -> Option<Var> {
     let mut last = None;
     for e in exprs {
-        last = Some(lower_expr(cx, fb, bb, e));
+        last = Some(lower_expr(cx, fb, e));
     }
     last
 }
 
-fn lower_expr(cx: &Cx, fb: &mut FuncBuilder, bb: &mut Block, expr: &TExpr) -> Var {
+fn lower_expr(cx: &Cx, fb: &mut FuncBuilder, expr: &TExpr) -> Var {
     use ir::Expr as E;
     use ir::*;
     match &expr.e {
@@ -318,31 +332,31 @@ fn lower_expr(cx: &Cx, fb: &mut FuncBuilder, bb: &mut Block, expr: &TExpr) -> Va
                 }
             };
             let op = Op::ValI32(v as i32);
-            fb.assign(bb, expr.t, op)
+            fb.assign(expr.t, op)
         }
 
         E::Var { name } => {
             let op = Op::GetLocal(*name);
-            fb.assign(bb, expr.t, op)
+            fb.assign(expr.t, op)
         }
         E::BinOp { op, lhs, rhs } => {
-            let v1 = lower_expr(cx, fb, bb, &*lhs);
-            let v2 = lower_expr(cx, fb, bb, &*rhs);
+            let v1 = lower_expr(cx, fb, &*lhs);
+            let v2 = lower_expr(cx, fb, &*rhs);
             let o = Op::BinOpI32(*op, v1, v2);
-            fb.assign(bb, expr.t, o)
+            fb.assign(expr.t, o)
         }
         E::UniOp { op, rhs } => match op {
             // Turn -x into 0 - x
             ir::UOp::Neg => {
-                let v1 = fb.assign(bb, cx.i32(), Op::ValI32(0));
-                let v2 = lower_expr(cx, fb, bb, &*rhs);
+                let v1 = fb.assign(cx.i32(), Op::ValI32(0));
+                let v2 = lower_expr(cx, fb, &*rhs);
                 let op = Op::BinOpI32(ir::BOp::Sub, v1, v2);
-                fb.assign(bb, expr.t, op)
+                fb.assign(expr.t, op)
             }
             ir::UOp::Not => {
-                let v = lower_expr(cx, fb, bb, &*rhs);
+                let v = lower_expr(cx, fb, &*rhs);
                 let op = Op::UniOpI32(ir::UOp::Not, v);
-                fb.assign(bb, expr.t, op)
+                fb.assign(expr.t, op)
             }
             _ => todo!(),
         },
@@ -351,7 +365,7 @@ fn lower_expr(cx: &Cx, fb: &mut FuncBuilder, bb: &mut Block, expr: &TExpr) -> Va
             // that is used nowhere
             // If it is used as something other than unit then
             // this (hopefully) doesn't typecheck.
-            lower_exprs(cx, fb, bb, &*body).unwrap_or_else(|| fb.assign(bb, cx.unit(), Op::ValUnit))
+            lower_exprs(cx, fb, &*body).unwrap_or_else(|| fb.assign(cx.unit(), Op::ValUnit))
         }
         E::Let {
             varname,
@@ -359,9 +373,9 @@ fn lower_expr(cx: &Cx, fb: &mut FuncBuilder, bb: &mut Block, expr: &TExpr) -> Va
             init,
             mutable,
         } => {
-            let v = lower_expr(cx, fb, bb, &*init);
+            let v = lower_expr(cx, fb, &*init);
             fb.add_var(*varname, *typename, v, *mutable);
-            fb.assign(bb, cx.unit(), Op::ValUnit)
+            fb.assign(cx.unit(), Op::ValUnit)
         }
         E::If { cases, falseblock } => {
             // For a single if expr, we make this structure:
@@ -450,53 +464,61 @@ fn lower_expr(cx: &Cx, fb: &mut FuncBuilder, bb: &mut Block, expr: &TExpr) -> Va
                 elsebody: &[TExpr],
                 accm: &mut Vec<BB>,
             ) -> BB {
-                assert!(cases.len() != 0);
-                let (cond, ifbody) = &cases[0];
-                if cases.len() == 1 {
-                    // We are on the last if statement, wire it up to the else statement.
-                    let mut cond_bb = fb.next_block();
-                    let mut body_bb = fb.next_block();
-                    let mut else_body_bb = fb.next_block();
+                /*
+                    assert!(cases.len() != 0);
+                    let (cond, ifbody) = &cases[0];
+                    if cases.len() == 1 {
+                        // We are on the last if statement, wire it up to the else statement.
+                        let mut cond_bb = fb.next_block();
+                        let mut body_bb = fb.next_block();
+                        let mut else_body_bb = fb.next_block();
 
-                    let cond_result = lower_expr(cx, fb, &mut cond_bb, &cond);
-                    let body_result = lower_exprs(cx, fb, &mut body_bb, &ifbody)
-                        .unwrap_or_else(|| fb.assign(&mut body_bb, cx.unit(), Op::ValUnit));
-                    let else_result = lower_exprs(cx, fb, &mut else_body_bb, elsebody)
-                        .unwrap_or_else(|| fb.assign(&mut else_body_bb, cx.unit(), Op::ValUnit));
+                        /* TODO
+                        let cond_result = lower_expr(cx, fb, &mut cond_bb, &cond);
+                        let body_result = lower_exprs(cx, fb, &mut body_bb, &ifbody)
+                            .unwrap_or_else(|| fb.assign(&mut body_bb, cx.unit(), Op::ValUnit));
+                        let else_result = lower_exprs(cx, fb, &mut else_body_bb, elsebody)
+                            .unwrap_or_else(|| fb.assign(&mut else_body_bb, cx.unit(), Op::ValUnit));
 
-                    // Wire all the BB's together
-                    cond_bb.terminator = Branch::Branch(cond_result, body_bb.id, else_body_bb.id);
-                    body_bb.terminator = Branch::Jump(body_result, end_bb);
-                    else_body_bb.terminator = Branch::Jump(else_result, end_bb);
-                    // Accumulate the BB's that jump to "end" because we're going to have to put
-                    // them in the phi
-                    accm.push(body_bb.id);
-                    accm.push(else_body_bb.id);
-                    let cond_id = cond_bb.id;
-                    fb.add_block(cond_bb);
-                    fb.add_block(body_bb);
-                    fb.add_block(else_body_bb);
-                    return cond_id;
-                } else {
-                    // Build the next case...
-                    let next_bb = recursive_build_bbs(cx, fb, end_bb, &cases[1..], elsebody, accm);
-                    // Build our cond and body
-                    let mut cond_bb = fb.next_block();
-                    let mut body_bb = fb.next_block();
+                        // Wire all the BB's together
+                        cond_bb.terminator = Branch::Branch(cond_result, body_bb.id, else_body_bb.id);
+                        body_bb.terminator = Branch::Jump(body_result, end_bb);
+                        else_body_bb.terminator = Branch::Jump(else_result, end_bb);
+                        */
+                        // Accumulate the BB's that jump to "end" because we're going to have to put
+                        // them in the phi
+                        accm.push(body_bb.id);
+                        accm.push(else_body_bb.id);
+                        let cond_id = cond_bb.id;
+                        fb.add_block(cond_bb);
+                        fb.add_block(body_bb);
+                        fb.add_block(else_body_bb);
+                        return cond_id;
+                    } else {
+                        // Build the next case...
+                        let next_bb = recursive_build_bbs(cx, fb, end_bb, &cases[1..], elsebody, accm);
+                        // Build our cond and body
+                        let mut cond_bb = fb.next_block();
+                        let mut body_bb = fb.next_block();
 
-                    let cond_result = lower_expr(cx, fb, &mut cond_bb, &cond);
-                    let body_result = lower_exprs(cx, fb, &mut body_bb, &ifbody)
-                        .unwrap_or_else(|| fb.assign(&mut body_bb, cx.unit(), Op::ValUnit));
+                        /* TODO
+                        let cond_result = lower_expr(cx, fb, &mut cond_bb, &cond);
+                        let body_result = lower_exprs(cx, fb, &mut body_bb, &ifbody)
+                            .unwrap_or_else(|| fb.assign(&mut body_bb, cx.unit(), Op::ValUnit));
 
-                    // Wire together BB's
-                    cond_bb.terminator = Branch::Branch(cond_result, body_bb.id, next_bb);
-                    body_bb.terminator = Branch::Jump(body_result, end_bb);
-                    let cond_id = cond_bb.id;
-                    fb.add_block(cond_bb);
-                    fb.add_block(body_bb);
-                    return cond_id;
-                }
+                        // Wire together BB's
+                        cond_bb.terminator = Branch::Branch(cond_result, body_bb.id, next_bb);
+                        body_bb.terminator = Branch::Jump(body_result, end_bb);
+                        */
+                        let cond_id = cond_bb.id;
+                        fb.add_block(cond_bb);
+                        fb.add_block(body_bb);
+                        return cond_id;
+                    }
+                */
+                todo!()
             }
+            /*
             // This is the block that all the if branches feed into.
             let mut end_bb = fb.next_block();
             // Make blocks for all the if branches
@@ -507,17 +529,19 @@ fn lower_expr(cx: &Cx, fb: &mut FuncBuilder, bb: &mut Block, expr: &TExpr) -> Va
             // Add a phi instruction combining all the branch results
             let last_result = fb.assign(&mut end_bb, expr.t, Op::Phi(accm));
             // AUGH this is all totally fucked TODO FIXME FJDSAKFL:JDASFLASDJ
-            end_bb.terminator = TODO
+            //end_bb.terminator = TODO
             // Save the end block
             fb.add_block(end_bb);
             // Connect the first BB to the start of the if block
             let last_value = bb
                 .last_value()
-                .unwrap_or_else(|| fb.assign(bb, cx.unit(), Op::ValUnit));
+                .unwrap_or_else(|| fb.assign(cx.unit(), Op::ValUnit));
             bb.terminator = Branch::Jump(last_value, first_cond_bb);
 
             // TODO: How do we make this also say "here is the next BB to work with"?
             last_result
+                */
+            todo!()
         }
         E::Loop { .. } => todo!(),
         E::Lambda { .. } => {
@@ -525,15 +549,15 @@ fn lower_expr(cx: &Cx, fb: &mut FuncBuilder, bb: &mut Block, expr: &TExpr) -> Va
         }
         E::Funcall { func, params } => {
             // First, evaluate the args.
-            let param_vars = params.iter().map(|e| lower_expr(cx, fb, bb, e)).collect();
+            let param_vars = params.iter().map(|e| lower_expr(cx, fb, e)).collect();
             // Then, issue the instruction depending on the type of call.
             match &func.e {
-                E::Var { name } => fb.assign(bb, expr.t, Op::Call(*name, param_vars)),
+                E::Var { name } => fb.assign(expr.t, Op::Call(*name, param_vars)),
                 _expr => {
                     // We got some other expr, compile it and do an indirect call 'cause it heckin'
                     // better be a function
-                    let v = lower_expr(cx, fb, bb, &func);
-                    fb.assign(bb, expr.t, Op::CallIndirect(v, param_vars))
+                    let v = lower_expr(cx, fb, &func);
+                    fb.assign(expr.t, Op::CallIndirect(v, param_vars))
                 }
             }
         }
