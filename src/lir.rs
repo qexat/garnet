@@ -508,6 +508,7 @@ fn lower_expr(cx: &Cx, fb: &mut FuncBuilder, expr: &TExpr) -> Var {
                     fb.get_block(cond_bb).terminator =
                         Branch::Branch(cond_result, body_bb, next_bb);
                     fb.get_block(body_bb).terminator = Branch::Jump(body_result, end_bb);
+                    accm.push(body_bb);
                     cond_bb
                 }
             }
