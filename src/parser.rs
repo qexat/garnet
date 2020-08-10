@@ -99,19 +99,21 @@ typename =
 
 */
 
+use std::ops::Range;
+
 use logos::Logos;
 
 use crate::ast;
 use crate::{Cx, TypeDef, TypeSym, VarSym};
 
 #[derive(Logos, Debug, PartialEq, Clone)]
-pub enum Token {
+pub enum TokenKind {
     #[regex("[a-zA-Z_][a-zA-Z0-9_]*", |lex| lex.slice().to_owned())]
     Ident(String),
     #[regex("true|false", |lex| lex.slice().parse())]
     Bool(bool),
     #[regex("[0-9][0-9_]*", |lex| lex.slice().parse())]
-    Number(i32),
+    Integer(i32),
 
     // Decl stuff
     #[token("const")]
@@ -204,7 +206,18 @@ pub enum Token {
     Error,
 }
 
-fn bop_for(t: &Token) -> Option<ast::BOp> {
+pub struct Token {
+    pub kind: TokenKind,
+    pub span: Range<usize>,
+}
+
+impl Token {
+    fn new(kind: TokenKind, span: Range<usize>) -> Self {
+        Token { kind, span }
+    }
+}
+
+fn bop_for(t: &TokenKind) -> Option<ast::BOp> {
     match t {
         T::Plus => Some(ast::BOp::Add),
         T::Minus => Some(ast::BOp::Sub),
@@ -226,7 +239,7 @@ fn bop_for(t: &Token) -> Option<ast::BOp> {
     }
 }
 
-fn uop_for(t: &Token) -> Option<ast::UOp> {
+fn uop_for(t: &TokenKind) -> Option<ast::UOp> {
     match t {
         //T::Plus => Some(ast::UOp::Plus),
         T::Minus => Some(ast::UOp::Neg),
@@ -237,19 +250,17 @@ fn uop_for(t: &Token) -> Option<ast::UOp> {
     }
 }
 
-use self::Token as T;
-
-type Tok = (Token, logos::Span);
+use self::TokenKind as T;
 
 pub struct Parser<'cx, 'input> {
-    lex: std::iter::Peekable<logos::SpannedIter<'input, Token>>,
+    lex: std::iter::Peekable<logos::SpannedIter<'input, TokenKind>>,
     cx: &'cx Cx,
     source: &'input str,
 }
 
 impl<'cx, 'input> Parser<'cx, 'input> {
     pub fn new(cx: &'cx Cx, source: &'input str) -> Self {
-        let lex = Token::lexer(source).spanned().peekable();
+        let lex = TokenKind::lexer(source).spanned().peekable();
         Parser { lex, cx, source }
     }
 
@@ -264,12 +275,24 @@ impl<'cx, 'input> Parser<'cx, 'input> {
         ast::Ast { decls: decls }
     }
 
-    fn error(&self, token: Option<Tok>) -> ! {
-        if let Some((ref tok, ref span)) = token {
+    /// Returns the next token, with span.
+    fn next(&mut self) -> Option<Token> {
+        self.lex.next().map(|(tok, span)| Token::new(tok, span))
+    }
+
+    /// Peeks the next token, with span.
+    fn peek(&mut self) -> Option<Token> {
+        self.lex
+            .peek()
+            .map(|(tok, span)| Token::new(tok.clone(), span.clone()))
+    }
+
+    fn error(&self, token: Option<Token>) -> ! {
+        if let Some(Token { kind, span }) = token {
             let msg = format!(
                 "Parse error on {:?}, got token {:?} on str {}",
                 span,
-                tok,
+                kind,
                 &self.source[span.clone()]
             );
             panic!(msg)
@@ -282,19 +305,19 @@ impl<'cx, 'input> Parser<'cx, 'input> {
     /// Consume a token, we don't care what it is.
     /// Presumably because we've already peeked at it.
     fn drop(&mut self) {
-        self.lex.next();
+        self.next();
     }
 
     /// Consume a token that doesn't return anything
-    fn expect(&mut self, expected: Token) {
-        match self.lex.next() {
-            Some((t, _span)) if t == expected => (),
-            Some((tok, span)) => {
+    fn expect(&mut self, expected: TokenKind) {
+        match self.next() {
+            Some(t) if t.kind == expected => (),
+            Some(t) => {
                 let msg = format!(
                     "Parse error on {:?}: got token {:?} from str {}.  Expected token: {:?}",
-                    span,
-                    tok,
-                    &self.source[span.clone()],
+                    t.span,
+                    t.kind,
+                    &self.source[t.span.clone()],
                     expected
                 );
                 panic!(msg);
@@ -309,9 +332,9 @@ impl<'cx, 'input> Parser<'cx, 'input> {
         }
     }
 
-    fn peek_is(&mut self, expected: Token) -> bool {
-        if let Some((got, _)) = self.lex.peek().cloned() {
-            got == expected
+    fn peek_is(&mut self, expected: TokenKind) -> bool {
+        if let Some(got) = self.peek() {
+            got.kind == expected
         } else {
             false
         }
@@ -320,13 +343,15 @@ impl<'cx, 'input> Parser<'cx, 'input> {
     /// Consume an identifier and return its interned symbol.
     /// Note this returns a VarSym, not a TypeSym...
     fn expect_ident(&mut self) -> VarSym {
-        match self.lex.next() {
-            Some((T::Ident(s), _span)) => self.cx.intern(s),
-            Some((tok, span)) => {
+        match self.next() {
+            Some(Token {
+                kind: T::Ident(s), ..
+            }) => self.cx.intern(s),
+            Some(Token { kind, span }) => {
                 let msg = format!(
                     "Parse error on {:?}: got token {:?} from str {}.  Expected identifier.",
                     span,
-                    tok,
+                    kind,
                     &self.source[span.clone()],
                 );
                 panic!(msg);
@@ -342,13 +367,16 @@ impl<'cx, 'input> Parser<'cx, 'input> {
 
     /// Consumes a number and returns it.
     fn expect_int(&mut self) -> i32 {
-        match self.lex.next() {
-            Some((T::Number(s), _span)) => s,
-            Some((tok, span)) => {
+        match self.next() {
+            Some(Token {
+                kind: T::Integer(s),
+                ..
+            }) => s,
+            Some(Token { kind, span }) => {
                 let msg = format!(
                     "Parse error on {:?}: got token {:?} from str {}.  Expected number.",
                     span,
-                    tok,
+                    kind,
                     &self.source[span.clone()],
                 );
                 panic!(msg);
@@ -363,10 +391,9 @@ impl<'cx, 'input> Parser<'cx, 'input> {
 
     /// Returns None on EOF.
     fn parse_decl(&mut self) -> Option<ast::Decl> {
-        //-> ast::Decl {
-        match self.lex.next() {
-            Some((T::Const, _span)) => Some(self.parse_const()),
-            Some((T::Fn, _span)) => Some(self.parse_fn()),
+        match self.next() {
+            Some(Token { kind: T::Const, .. }) => Some(self.parse_const()),
+            Some(Token { kind: T::Fn, .. }) => Some(self.parse_fn()),
             None => None,
             other => self.error(other),
         }
@@ -384,6 +411,7 @@ impl<'cx, 'input> Parser<'cx, 'input> {
             init,
         }
     }
+
     fn parse_fn(&mut self) -> ast::Decl {
         let name = self.expect_ident();
         let signature = self.parse_fn_signature();
@@ -491,13 +519,14 @@ impl<'cx, 'input> Parser<'cx, 'input> {
     /// This departs from pure recursive descent and uses a Pratt
     /// parser to parse math expressions and such.
     fn parse_expr(&mut self, min_bp: usize) -> Option<ast::Expr> {
-        let (token, _span) = self.lex.peek().cloned()?;
+        let t = self.peek()?;
+        let token = &t.kind;
         let mut lhs = match token {
             T::Bool(b) => {
                 self.drop();
-                ast::Expr::bool(b)
+                ast::Expr::bool(*b)
             }
-            T::Number(_) => ast::Expr::int(self.expect_int() as i64),
+            T::Integer(_) => ast::Expr::int(self.expect_int() as i64),
             // Tuple literal
             T::LBrace => self.parse_constructor(),
             T::Ident(_) => {
@@ -591,7 +620,6 @@ impl<'cx, 'input> Parser<'cx, 'input> {
                     }
                 } else {
                     let bop = bop_for(&op_token).unwrap();
-                    //dbg!(&lhs, &op, self.lex.peek());
                     ast::Expr::BinOp {
                         op: bop,
                         lhs: Box::new(lhs),
@@ -677,15 +705,15 @@ impl<'cx, 'input> Parser<'cx, 'input> {
         }];
         // Parse 0 or more else if cases
         self.parse_elif(&mut ifcases);
-        let next = self.lex.peek().cloned();
+        let next = self.peek();
         let falseblock = match next {
             // No else block, we're done
-            Some((T::End, _)) => {
+            Some(Token { kind: T::End, .. }) => {
                 self.expect(T::End);
                 vec![]
             }
             // We're in an else block but not an else-if block
-            Some((T::Else, _)) => {
+            Some(Token { kind: T::Else, .. }) => {
                 self.expect(T::Else);
                 let elsepart = self.parse_exprs();
                 self.expect(T::End);
@@ -744,18 +772,27 @@ impl<'cx, 'input> Parser<'cx, 'input> {
     }
 
     fn parse_type(&mut self) -> TypeSym {
-        match self.lex.next() {
-            Some((T::Ident(s), span)) => match s.as_ref() {
+        let t = self.next();
+        match t {
+            Some(Token {
+                kind: T::Ident(s),
+                span,
+            }) => match s.as_ref() {
                 // TODO: This is a bit too hardwired tbh...
                 "I32" => self.cx.i32(),
                 "Bool" => self.cx.bool(),
-                _ => self.error(Some((T::Ident(s), span))),
+                _ => self.error(Some(Token {
+                    kind: T::Ident(s),
+                    span,
+                })),
             },
-            Some((T::LBrace, _span)) => {
+            Some(Token {
+                kind: T::LBrace, ..
+            }) => {
                 let tuptype = self.parse_tuple_type();
                 self.cx.intern_type(&tuptype)
             }
-            Some((T::Fn, _span)) => {
+            Some(Token { kind: T::Fn, .. }) => {
                 let fntype = self.parse_fn_type();
                 self.cx.intern_type(&fntype)
             }
@@ -769,7 +806,7 @@ impl<'cx, 'input> Parser<'cx, 'input> {
 /// Panics on invalid token, which should never happen
 /// since we always know what kind of expression we're parsing
 /// from the get-go with prefix operators.
-fn prefix_binding_power(op: &Token) -> ((), usize) {
+fn prefix_binding_power(op: &TokenKind) -> ((), usize) {
     match op {
         T::Plus | T::Minus | T::Not => ((), 110),
         x => unreachable!("{:?} is not a prefix op, should never happen!", x),
@@ -777,7 +814,7 @@ fn prefix_binding_power(op: &Token) -> ((), usize) {
 }
 
 /// Specifies binding power of postfix operators.
-fn postfix_binding_power(op: &Token) -> Option<(usize, ())> {
+fn postfix_binding_power(op: &TokenKind) -> Option<(usize, ())> {
     match op {
         // "(" opening function call args
         T::LParen => Some((120, ())),
@@ -793,7 +830,7 @@ fn postfix_binding_power(op: &Token) -> Option<(usize, ())> {
 /// Specifies binding power of infix operators.
 /// The binding power on one side should always be trivially
 /// greater than the other, so there's never ambiguity.
-fn infix_binding_power(op: &Token) -> Option<(usize, usize)> {
+fn infix_binding_power(op: &TokenKind) -> Option<(usize, usize)> {
     // Right associations are slightly more powerful so we always produce
     // a deterministic tree.
     match op {
