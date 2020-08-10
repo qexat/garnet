@@ -1,7 +1,10 @@
--- An implementation of the leb128 variable-length integer encoding.
--- Useful for wasm (and apparently dwarf).
---
--- Cruelly torn from https://github.com/gimli-rs/leb128
+--- An implementation of the leb128 variable-length integer encoding.
+--- Useful for wasm (and apparently dwarf).
+---
+--- Cruelly torn from https://github.com/gimli-rs/leb128
+---
+--- Does not currently compile, but useful as a thought experiment
+--- for how the language will eventually look.
 
 const CONTINUATION_BIT: U8 = 1 << 7
 const SIGN_BIT: U8 = 1 << 6
@@ -75,7 +78,7 @@ fn read_signed(r: Read): Result[I64, ReadError] =
 end
 
 
-fn write_unsigned(w: Write, val: U64): Result[usize, IoError] =
+fn write_unsigned(w: Write, val: U64): Result[USize, IoError] =
     let mut val = val
     let mut bytes_written = 0
     loop
@@ -96,7 +99,7 @@ fn write_unsigned(w: Write, val: U64): Result[usize, IoError] =
     end
 end
 
-fn signed(w: Write, val: I64): Result[usize, IoError] =
+fn signed(w: Write, val: I64): Result[USize, IoError] =
     let mut val = val
     let mut bytes_written = 0
     loop
