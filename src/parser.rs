@@ -284,10 +284,7 @@ impl<'cx, 'input> Parser<'cx, 'input> {
             Some(Token {
                 kind: T::Comment(_),
                 ..
-            }) => {
-                dbg!("Skipping comment", t);
-                self.next()
-            }
+            }) => self.next(),
             _ => t,
         }
     }
@@ -304,8 +301,8 @@ impl<'cx, 'input> Parser<'cx, 'input> {
                 kind: T::Comment(_),
                 ..
             }) => {
-                let t = self.lex.next();
-                dbg!("Skipping comment in peek", t);
+                // This must be self.lex.next(), not just self.next().
+                let _ = self.lex.next();
                 self.peek()
             }
             _ => t,
