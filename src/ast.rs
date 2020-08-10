@@ -220,11 +220,13 @@ pub enum Decl {
         name: VarSym,
         signature: Signature,
         body: Vec<Expr>,
+        doc_comment: Vec<String>,
     },
     Const {
         name: VarSym,
         typename: TypeSym,
         init: Expr,
+        doc_comment: Vec<String>,
     },
 }
 

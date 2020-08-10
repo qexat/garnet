@@ -14,7 +14,12 @@ fn unparse_decl(cx: &Cx, d: &Decl, out: &mut dyn io::Write) -> io::Result<()> {
             name,
             signature,
             body,
+            doc_comment,
         } => {
+            for line in doc_comment.iter() {
+                // No writeln, doc comment strings already end in \n
+                write!(out, "--- {}", line)?;
+            }
             let name = cx.fetch(*name);
             write!(out, "fn {}", name)?;
             unparse_sig(cx, signature, out)?;
@@ -29,7 +34,11 @@ fn unparse_decl(cx: &Cx, d: &Decl, out: &mut dyn io::Write) -> io::Result<()> {
             name,
             typename,
             init,
+            doc_comment,
         } => {
+            for line in doc_comment.iter() {
+                write!(out, "--- {}", line)?;
+            }
             let name = cx.fetch(*name);
             let tname = cx.fetch_type(*typename).get_name(cx);
             write!(out, "const {}: {} = ", name, tname)?;

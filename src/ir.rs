@@ -373,6 +373,7 @@ fn lower_decl(decl: &ast::Decl) -> Decl<()> {
             name,
             signature,
             body,
+            ..
         } => Decl::Function {
             name: *name,
             signature: lower_signature(signature),
@@ -382,6 +383,7 @@ fn lower_decl(decl: &ast::Decl) -> Decl<()> {
             name,
             typename,
             init,
+            ..
         } => Decl::Const {
             name: *name,
             typename: *typename,
