@@ -38,8 +38,8 @@ decl =
   | function_decl
   | const_decl
 
-const_decl = "const" ident ":" typename "=" expr
-function_decl = "fn" ident fn_signature "=" {expr} "end"
+const_decl = DOC_COMMENT "const" ident ":" typename "=" expr
+function_decl = DOC_COMMENT "fn" ident fn_signature "=" {expr} "end"
 
 value =
   | NUMBER
@@ -194,6 +194,9 @@ pub enum TokenKind {
     Carat,
     #[token("&")]
     Ampersand,
+
+    #[regex(r"---.*\n", |lex| lex.slice()[3..].to_owned())]
+    DocComment(String),
 
     // We save comment strings so we can use this same
     // parser as a reformatter or such.
@@ -413,15 +416,26 @@ impl<'cx, 'input> Parser<'cx, 'input> {
 
     /// Returns None on EOF.
     fn parse_decl(&mut self) -> Option<ast::Decl> {
-        match self.next() {
-            Some(Token { kind: T::Const, .. }) => Some(self.parse_const()),
-            Some(Token { kind: T::Fn, .. }) => Some(self.parse_fn()),
-            None => None,
-            other => self.error(other),
+        fn parse_decl_inner(p: &mut Parser, doc_comments: Vec<String>) -> Option<ast::Decl> {
+            match p.next() {
+                Some(Token {
+                    kind: T::DocComment(s),
+                    ..
+                }) => {
+                    let mut dcs = doc_comments;
+                    dcs.push(s);
+                    parse_decl_inner(p, dcs)
+                }
+                Some(Token { kind: T::Const, .. }) => Some(p.parse_const(doc_comments)),
+                Some(Token { kind: T::Fn, .. }) => Some(p.parse_fn(doc_comments)),
+                None => None,
+                other => p.error(other),
+            }
         }
+        parse_decl_inner(self, vec![])
     }
 
-    fn parse_const(&mut self) -> ast::Decl {
+    fn parse_const(&mut self, doc_comment: Vec<String>) -> ast::Decl {
         let name = self.expect_ident();
         self.expect(T::Colon);
         let typename = self.parse_type();
@@ -431,10 +445,11 @@ impl<'cx, 'input> Parser<'cx, 'input> {
             name,
             typename,
             init,
+            doc_comment,
         }
     }
 
-    fn parse_fn(&mut self) -> ast::Decl {
+    fn parse_fn(&mut self, doc_comment: Vec<String>) -> ast::Decl {
         let name = self.expect_ident();
         let signature = self.parse_fn_signature();
         self.expect(T::Equals);
@@ -444,6 +459,7 @@ impl<'cx, 'input> Parser<'cx, 'input> {
             name,
             signature,
             body,
+            doc_comment,
         }
     }
 
@@ -924,6 +940,7 @@ mod tests {
                 op: ast::UOp::Neg,
                 rhs: Box::new(Expr::int(9)),
             },
+            doc_comment: vec![],
         });
     }
 
@@ -938,6 +955,7 @@ mod tests {
                     rettype: i32_t,
                 },
                 body: vec![Expr::int(9)],
+                doc_comment: vec![],
             }
         });
     }
@@ -947,6 +965,7 @@ mod tests {
         let s = r#"
 const foo: I32 = -9
 const bar: Bool = 4
+--- rawr!
 const baz: {} = {}
 "#;
         let cx = &Cx::new();
@@ -968,17 +987,20 @@ const baz: {} = {}
                         init: Expr::UniOp {
                             op: ast::UOp::Neg,
                             rhs: Box::new(Expr::int(9)),
-                        }
+                        },
+                        doc_comment: vec![],
                     },
                     ast::Decl::Const {
                         name: barsym,
                         typename: bool_t,
                         init: Expr::int(4),
+                        doc_comment: vec![],
                     },
                     ast::Decl::Const {
                         name: bazsym,
                         typename: unit_t,
                         init: Expr::unit(),
+                        doc_comment: vec![String::from(" rawr!\n")],
                     }
                 ],
             }

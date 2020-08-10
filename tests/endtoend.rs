@@ -55,6 +55,7 @@ fn var_lookup() {
                 rettype: i32_t,
             },
             body: vec![ast::Expr::Var { name: varsym }],
+            doc_comment: vec![],
         }],
     };
     let ir = garnet::ir::lower(&ast);
@@ -84,6 +85,7 @@ fn subtraction() {
                 lhs: Box::new(ast::Expr::int(9)),
                 rhs: Box::new(ast::Expr::int(-3)),
             }],
+            doc_comment: vec![],
         }],
     };
     let ir = garnet::ir::lower(&ast);
@@ -111,6 +113,7 @@ fn maths() {
                 lhs: Box::new(ast::Expr::int(9)),
                 rhs: Box::new(ast::Expr::int(3)),
             }],
+            doc_comment: vec![],
         }],
     };
     let ir = garnet::ir::lower(&ast);
@@ -152,6 +155,7 @@ fn block() {
                     ],
                 },
             ],
+            doc_comment: vec![],
         }],
     };
     let ir = garnet::ir::lower(&ast);
@@ -190,6 +194,35 @@ fn test(): I32 =
     12 -- bop
 end  -- bleg
     -- blar
+"#;
+    let wasm = garnet::compile(src);
+    let f = compile_wasm(&wasm).get1::<(), i32>().unwrap();
+    let res: i32 = f(()).unwrap();
+    assert_eq!(res, 12);
+}
+
+#[test]
+fn parse_and_compile_doc_comments() {
+    let src = r#"
+--- Doc comments go here
+fn test(): I32 =
+    12
+end
+"#;
+    let wasm = garnet::compile(src);
+    let f = compile_wasm(&wasm).get1::<(), i32>().unwrap();
+    let res: i32 = f(()).unwrap();
+    assert_eq!(res, 12);
+}
+
+#[should_panic]
+#[test]
+fn parse_and_compile_doc_comments2() {
+    let src = r#"
+fn test(): I32 =
+    --- Doc comments don't go here
+    12
+end
 "#;
     let wasm = garnet::compile(src);
     let f = compile_wasm(&wasm).get1::<(), i32>().unwrap();
