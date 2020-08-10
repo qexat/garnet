@@ -4,6 +4,8 @@
 use std::borrow::Cow;
 use std::rc::Rc;
 
+use codespan_reporting as cs;
+
 pub mod ast;
 pub mod backend;
 pub mod format;
@@ -134,13 +136,15 @@ pub struct Cx {
     syms: intern::Interner<VarSym, String>,
     /// Known types
     types: intern::Interner<TypeSym, TypeDef>,
+    files: cs::files::SimpleFiles<String, String>,
 }
 
 impl Cx {
-    pub fn new() -> Self {
+    pub fn new(mod_name: &str, source: &str) -> Self {
         let s = Cx {
             syms: intern::Interner::new(),
             types: intern::Interner::new(),
+            files: cs::files::SimpleFiles::new(mod_name.to_owned(), source.to_owned()),
         };
         s
     }
@@ -209,6 +213,7 @@ pub fn compile(src: &str) -> Vec<u8> {
     wasm
 }
 
+/// Compiles using the LirWasm32 backend.  Will go away someday.
 pub fn compile_lir(src: &str) -> Vec<u8> {
     let cx = &mut Cx::new();
     let ast = {
