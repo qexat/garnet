@@ -181,6 +181,23 @@ fn parse_and_compile2() {
 }
 
 #[test]
+fn parse_and_compile_comments() {
+    let src = r#"
+-- foo
+        -- bar
+fn test(): I32 =
+    -- baz
+    12 -- bop
+end  -- bleg
+    -- blar
+"#;
+    let wasm = garnet::compile(src);
+    let f = compile_wasm(&wasm).get1::<(), i32>().unwrap();
+    let res: i32 = f(()).unwrap();
+    assert_eq!(res, 12);
+}
+
+#[test]
 fn parse_and_compile_expr() {
     let src = r#"fn test(x: I32): I32 = x end"#;
     assert_eq!(eval_program1(src, 3), 3);

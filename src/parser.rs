@@ -206,6 +206,7 @@ pub enum TokenKind {
     Error,
 }
 
+#[derive(Debug, PartialEq, Clone)]
 pub struct Token {
     pub kind: TokenKind,
     pub span: Range<usize>,
@@ -277,14 +278,38 @@ impl<'cx, 'input> Parser<'cx, 'input> {
 
     /// Returns the next token, with span.
     fn next(&mut self) -> Option<Token> {
-        self.lex.next().map(|(tok, span)| Token::new(tok, span))
+        let t = self.lex.next().map(|(tok, span)| Token::new(tok, span));
+        // Skip comments
+        match t {
+            Some(Token {
+                kind: T::Comment(_),
+                ..
+            }) => {
+                dbg!("Skipping comment", t);
+                self.next()
+            }
+            _ => t,
+        }
     }
 
     /// Peeks the next token, with span.
     fn peek(&mut self) -> Option<Token> {
-        self.lex
+        let t = self
+            .lex
             .peek()
-            .map(|(tok, span)| Token::new(tok.clone(), span.clone()))
+            .map(|(tok, span)| Token::new(tok.clone(), span.clone()));
+        // Skip comments
+        match t {
+            Some(Token {
+                kind: T::Comment(_),
+                ..
+            }) => {
+                let t = self.lex.next();
+                dbg!("Skipping comment in peek", t);
+                self.peek()
+            }
+            _ => t,
+        }
     }
 
     fn error(&self, token: Option<Token>) -> ! {
