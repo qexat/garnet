@@ -166,15 +166,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4785bdd1c96b2a846b2bd7cc02e86b6b3dbf14e7e53446c4f54c92a361040822"
 
 [[package]]
-name = "codespan"
-version = "0.9.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8ebaf6bb6a863ad6aa3a18729e9710c53d75df03306714d9cc1f7357a00cd789"
-dependencies = [
- "codespan-reporting",
-]
-
-[[package]]
 name = "codespan-reporting"
 version = "0.9.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -468,7 +459,7 @@ checksum = "3f9eec918d3f24069decb9af1554cad7c880e2da24a9afd88aca000531ab82c1"
 name = "garnet"
 version = "0.1.0"
 dependencies = [
- "codespan",
+ "codespan-reporting",
  "gumdrop",
  "logos",
  "walrus",

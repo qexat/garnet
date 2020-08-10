@@ -8,7 +8,7 @@ edition = "2018"
 walrus = {version = "0.17", default-features = false}
 logos = "0.11"
 gumdrop = "0.8"
-codespan = "0.9"
+codespan-reporting = "0.9"
 
 [dev-dependencies]
 # Use wasmtime to evaluate results of end-to-end tests.

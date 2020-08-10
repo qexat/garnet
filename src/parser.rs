@@ -102,6 +102,7 @@ typename =
 use std::ops::Range;
 
 use logos::Logos;
+use codespan_reporting as cs;
 
 use crate::ast;
 use crate::{Cx, TypeDef, TypeSym, VarSym};
@@ -320,7 +321,13 @@ impl<'cx, 'input> Parser<'cx, 'input> {
                 kind,
                 &self.source[span.clone()]
             );
-            panic!(msg)
+            panic!(msg);
+
+            use cs::diagnostic::{Diagnostic, Label};
+            let diag = Diagnostic::error().with_message("Parse error")
+                .with_labels(vec![
+                    Label::primary(
+                ]);
         } else {
             let msg = format!("Unexpected end of file!");
             panic!(msg)
