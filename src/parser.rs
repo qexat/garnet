@@ -101,8 +101,9 @@ typename =
 
 use std::ops::Range;
 
-use logos::Logos;
 use codespan_reporting as cs;
+use codespan_reporting::diagnostic::{Diagnostic, Label};
+use logos::Logos;
 
 use crate::ast;
 use crate::{Cx, TypeDef, TypeSym, VarSym};
@@ -257,16 +258,51 @@ fn uop_for(t: &TokenKind) -> Option<ast::UOp> {
 
 use self::TokenKind as T;
 
+struct ErrorReporter {
+    files: cs::files::SimpleFiles<String, String>,
+    file_id: usize,
+    config: cs::term::Config,
+}
+
+impl ErrorReporter {
+    fn new(filename: &str, src: &str) -> Self {
+        use codespan_reporting::files::SimpleFiles;
+        let mut files = SimpleFiles::new();
+        let file_id = files.add(filename.to_owned(), src.to_owned());
+
+        Self {
+            files,
+            file_id,
+            config: codespan_reporting::term::Config::default(),
+        }
+    }
+
+    fn error(&self, diag: &Diagnostic<usize>) -> ! {
+        use codespan_reporting::term::termcolor::{ColorChoice, StandardStream};
+        let writer = StandardStream::stderr(ColorChoice::Always);
+        cs::term::emit(&mut writer.lock(), &self.config, &self.files, diag)
+            .expect("Could not print error message");
+        std::process::exit(1)
+    }
+}
+
 pub struct Parser<'cx, 'input> {
     lex: std::iter::Peekable<logos::SpannedIter<'input, TokenKind>>,
     cx: &'cx Cx,
     source: &'input str,
+    err: ErrorReporter,
 }
 
 impl<'cx, 'input> Parser<'cx, 'input> {
     pub fn new(cx: &'cx Cx, source: &'input str) -> Self {
         let lex = TokenKind::lexer(source).spanned().peekable();
-        Parser { lex, cx, source }
+        let err = ErrorReporter::new("module", source);
+        Parser {
+            lex,
+            cx,
+            source,
+            err,
+        }
     }
 
     /// Read all its input and returns an Ast.
@@ -314,20 +350,12 @@ impl<'cx, 'input> Parser<'cx, 'input> {
     }
 
     fn error(&self, token: Option<Token>) -> ! {
-        if let Some(Token { kind, span }) = token {
-            let msg = format!(
-                "Parse error on {:?}, got token {:?} on str {}",
-                span,
-                kind,
-                &self.source[span.clone()]
-            );
-            panic!(msg);
+        if let Some(Token { span, .. }) = token {
+            let diag = Diagnostic::error()
+                .with_message("Parse error: got unexpected/unknown token")
+                .with_labels(vec![Label::primary(self.err.file_id, span.clone())]);
 
-            use cs::diagnostic::{Diagnostic, Label};
-            let diag = Diagnostic::error().with_message("Parse error")
-                .with_labels(vec![
-                    Label::primary(
-                ]);
+            self.err.error(&diag);
         } else {
             let msg = format!("Unexpected end of file!");
             panic!(msg)
@@ -346,20 +374,27 @@ impl<'cx, 'input> Parser<'cx, 'input> {
             Some(t) if t.kind == expected => (),
             Some(t) => {
                 let msg = format!(
-                    "Parse error on {:?}: got token {:?} from str {}.  Expected token: {:?}",
-                    t.span,
+                    "Parse error on got token {:?} from str {}.  Expected token: {:?}",
                     t.kind,
                     &self.source[t.span.clone()],
                     expected
                 );
-                panic!(msg);
+                let diag = Diagnostic::error()
+                    .with_message(msg)
+                    .with_labels(vec![Label::primary(self.err.file_id, t.span.clone())]);
+
+                self.err.error(&diag);
             }
             None => {
                 let msg = format!(
                     "Parse error: Got end of input or malformed token.  Expected token: {:?}",
                     expected
                 );
-                panic!(msg);
+                let diag = Diagnostic::error()
+                    .with_message(msg)
+                    .with_labels(vec![Label::primary(self.err.file_id, 0..0)]);
+
+                self.err.error(&diag);
             }
         }
     }
@@ -380,19 +415,22 @@ impl<'cx, 'input> Parser<'cx, 'input> {
                 kind: T::Ident(s), ..
             }) => self.cx.intern(s),
             Some(Token { kind, span }) => {
-                let msg = format!(
-                    "Parse error on {:?}: got token {:?} from str {}.  Expected identifier.",
-                    span,
-                    kind,
-                    &self.source[span.clone()],
-                );
-                panic!(msg);
+                let msg = format!("Parse error: got token {:?}.  Expected identifier.", kind,);
+                let diag = Diagnostic::error()
+                    .with_message(msg)
+                    .with_labels(vec![Label::primary(self.err.file_id, span)]);
+
+                self.err.error(&diag);
             }
             None => {
                 let msg = format!(
                     "Parse error: Got end of input or malformed token.  Expected identifier",
                 );
-                panic!(msg);
+                let diag = Diagnostic::error()
+                    .with_message(msg)
+                    .with_labels(vec![Label::primary(self.err.file_id, 0..0)]);
+
+                self.err.error(&diag);
             }
         }
     }
@@ -405,18 +443,22 @@ impl<'cx, 'input> Parser<'cx, 'input> {
                 ..
             }) => s,
             Some(Token { kind, span }) => {
-                let msg = format!(
-                    "Parse error on {:?}: got token {:?} from str {}.  Expected number.",
-                    span,
-                    kind,
-                    &self.source[span.clone()],
-                );
-                panic!(msg);
+                let msg = format!("Parse error: got token {:?}.  Expected identifier.", kind,);
+                let diag = Diagnostic::error()
+                    .with_message(msg)
+                    .with_labels(vec![Label::primary(self.err.file_id, span)]);
+
+                self.err.error(&diag);
             }
             None => {
-                let msg =
-                    format!("Parse error: Got end of input or malformed token.  Expected number",);
-                panic!(msg);
+                let msg = format!(
+                    "Parse error: Got end of input or malformed token.  Expected identifier",
+                );
+                let diag = Diagnostic::error()
+                    .with_message(msg)
+                    .with_labels(vec![Label::primary(self.err.file_id, 0..0)]);
+
+                self.err.error(&diag);
             }
         }
     }

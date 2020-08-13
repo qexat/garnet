@@ -136,15 +136,15 @@ pub struct Cx {
     syms: intern::Interner<VarSym, String>,
     /// Known types
     types: intern::Interner<TypeSym, TypeDef>,
-    files: cs::files::SimpleFiles<String, String>,
+    //files: cs::files::SimpleFiles<String, String>,
 }
 
 impl Cx {
-    pub fn new(mod_name: &str, source: &str) -> Self {
+    pub fn new() -> Self {
         let s = Cx {
             syms: intern::Interner::new(),
             types: intern::Interner::new(),
-            files: cs::files::SimpleFiles::new(mod_name.to_owned(), source.to_owned()),
+            //files: cs::files::SimpleFiles::new(mod_name.to_owned(), source.to_owned()),
         };
         s
     }
