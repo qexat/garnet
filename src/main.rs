@@ -21,6 +21,7 @@ fn parse_args() -> Opt {
 fn help() {
     println!("TODO: help text generator.  structopt is great but heavy, gumdrop looks good but still relatively heavy.  Only 'cause it uses proc maros though, no other deps.  Walrus and logos already use proc macros anyway, so.");
 }
+`argh` is a good option, I kinda trust it more than gumdrop
 */
 
 fn main() -> std::io::Result<()> {
