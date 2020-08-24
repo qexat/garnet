@@ -44,7 +44,7 @@ pub struct Lir {
     pub funcs: Vec<Func>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Copy, Clone)]
 pub struct VarBinding {
     pub name: VarSym,
     pub typename: TypeSym,
@@ -80,9 +80,12 @@ pub struct Func {
 /// harder.  Something to think about.
 #[derive(Debug)]
 pub enum Branch {
-    /// Unconditional jump
+    /// Unconditional jump.
+    /// The var that goes into it is the "result of the block" that gets fed
+    /// into any following Phi instructions.
     Jump(Var, BB),
     /// Conditional branch
+    /// Tests the given var and jumps to the first BB if true, second if false.
     Branch(Var, BB, BB),
     /// Return, optionally with some value
     Return(Option<Var>),
@@ -190,6 +193,7 @@ impl FuncBuilder {
         res
     }
 
+    /// Create a new Var slot with an unused ID.
     fn next_var(&mut self) -> Var {
         let s = Var(self.next_var);
         self.next_var += 1;
@@ -210,20 +214,14 @@ impl FuncBuilder {
         };
         self.next_bb += 1;
         self.current_bb = id;
-        self.add_block(block);
+        let id = block.id;
+        self.func.body.insert(id, block);
         self.get_current_block()
     }
 
     /// Set the entry point of the function being built to the given block.
     fn set_entry(&mut self, block: BB) {
         self.func.entry = block;
-    }
-
-    /// Add a block
-    fn add_block(&mut self, block: Block) -> BB {
-        let id = block.id;
-        self.func.body.insert(id, block);
-        id
     }
 
     /// Gets a mutable reference to a given block.
@@ -235,7 +233,7 @@ impl FuncBuilder {
         self.get_block(self.current_bb)
     }
 
-    fn set_current_block(&mut self, bb: BB) {
+    fn _set_current_block(&mut self, bb: BB) {
         self.current_bb = bb;
     }
 
@@ -252,7 +250,7 @@ impl FuncBuilder {
         });
     }
 
-    fn get_var(&self, name: VarSym) -> &VarBinding {
+    fn _get_var(&self, name: VarSym) -> &VarBinding {
         self.func
             .locals
             .iter()
@@ -267,9 +265,8 @@ impl FuncBuilder {
             })
     }
 
-    /// Build a new instruction in the current basic block
-    /// apparently currently the only option is Assign?
-    ///
+    /// Build a new instruction in the current basic block.
+    /// Apparently currently the only option is Assign.
     /// Later we might have things like alloca and whatever though.
     fn assign(&mut self, typ: TypeSym, op: Op) -> Var {
         let v = self.next_var();
@@ -294,12 +291,13 @@ fn lower_decl(cx: &Cx, lir: &mut Lir, decl: &hir::Decl<TypeSym>) {
             signature,
             body,
         } => {
-            // TODO HERE: Add arguments to symbol table!
             let mut fb = FuncBuilder::new(*name, signature.params.as_ref(), signature.rettype);
-            {
-                let first_block = fb.next_block().id;
-                fb.set_entry(first_block);
+            // Add arguments to symbol bindings.
+            for (pname, ptype) in signature.params.iter() {
+                let next_var = fb.next_var();
+                fb.add_var(*pname, *ptype, next_var, false);
             }
+            // Construct the body
             let last_var = lower_exprs(cx, &mut fb, body);
             let last_block = fb.get_current_block();
             last_block.terminator = Branch::Return(last_var);
@@ -379,7 +377,7 @@ fn lower_expr(cx: &Cx, fb: &mut FuncBuilder, expr: &TExpr) -> Var {
         } => {
             let v = lower_expr(cx, fb, &*init);
             fb.add_var(*varname, *typename, v, *mutable);
-            fb.assign(cx.unit(), Op::ValUnit)
+            fb.assign(expr.t, Op::SetLocal(*varname, v))
         }
         E::If { cases, falseblock } => {
             // For a single if expr, we make this structure:
@@ -553,7 +551,30 @@ fn lower_expr(cx: &Cx, fb: &mut FuncBuilder, expr: &TExpr) -> Var {
         E::Return { retval } => todo!(),
         E::TupleCtor { body } => todo!(),
         E::TupleRef { expr, elt } => todo!(),
-        E::Assign { lhs, rhs } => todo!(),
+
+        E::Assign { lhs, rhs } => match &lhs.e {
+            hir::Expr::Var { name } => {
+                // Well, this at least is easy
+                let res = lower_expr(cx, fb, rhs);
+                // Look up var name.
+                // TODO: Globals
+                let mut binding = None;
+                for b in fb.func.locals.iter().rev() {
+                    if b.name == *name {
+                        if !b.mutable {
+                            unreachable!("Attempted to mutate immutable variable");
+                        }
+                        binding = Some(*b);
+                    }
+                }
+                let binding = binding.expect("Var not found, should not happen");
+                // We just add a new binding shadowing the old one.
+                fb.add_var(binding.name, binding.typename, res, false);
+                fb.assign(expr.t, Op::SetLocal(*name, res))
+            }
+            hir::Expr::TupleRef { .. } => todo!("FDSA"),
+            _ => unreachable!(),
+        },
         E::Ref { .. } => todo!(),
         E::Deref { .. } => todo!(),
     }
