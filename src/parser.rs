@@ -280,9 +280,13 @@ impl ErrorReporter {
     fn error(&self, diag: &Diagnostic<usize>) -> ! {
         use codespan_reporting::term::termcolor::{ColorChoice, StandardStream};
         let writer = StandardStream::stderr(ColorChoice::Always);
-        cs::term::emit(&mut writer.lock(), &self.config, &self.files, diag)
-            .expect("Could not print error message");
-        std::process::exit(1)
+        #[cfg(not(test))]
+        {
+            cs::term::emit(&mut writer.lock(), &self.config, &self.files, diag)
+                .expect("Could not print error message");
+        }
+        //std::process::exit(1)
+        panic!()
     }
 }
 

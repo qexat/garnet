@@ -4,7 +4,7 @@
 //! having a visitor and mutating stuff or anything like that,
 //! which may be less efficient but is IMO simpler to think about.
 
-use crate::ir::{plz, Decl as D, Expr as E, Ir, TypedExpr};
+use crate::hir::{plz, Decl as D, Expr as E, Ir, TypedExpr};
 use crate::*;
 
 type Pass<T> = fn(cx: &Cx, Ir<T>) -> Ir<T>;
