@@ -9,8 +9,8 @@ use codespan_reporting as cs;
 pub mod ast;
 pub mod backend;
 pub mod format;
+pub mod hir;
 pub mod intern;
-pub mod ir;
 pub mod lir;
 pub mod parser;
 pub mod passes;
@@ -205,10 +205,10 @@ pub fn compile(src: &str) -> Vec<u8> {
         let mut parser = parser::Parser::new(cx, src);
         parser.parse()
     };
-    let ir = ir::lower(&ast);
-    let ir = passes::run_passes(cx, ir);
+    let hir = hir::lower(&ast);
+    let hir = passes::run_passes(cx, hir);
     let checked =
-        typeck::typecheck(cx, ir).unwrap_or_else(|e| panic!("Type check error: {}", e.format(cx)));
+        typeck::typecheck(cx, hir).unwrap_or_else(|e| panic!("Type check error: {}", e.format(cx)));
     let wasm = backend::output(backend::Backend::LirWasm32, cx, &checked);
     wasm
 }
@@ -220,10 +220,10 @@ pub fn compile_lir(src: &str) -> Vec<u8> {
         let mut parser = parser::Parser::new(cx, src);
         parser.parse()
     };
-    let ir = ir::lower(&ast);
-    let ir = passes::run_passes(cx, ir);
+    let hir = hir::lower(&ast);
+    let hir = passes::run_passes(cx, hir);
     let checked =
-        typeck::typecheck(cx, ir).unwrap_or_else(|e| panic!("Type check error: {}", e.format(cx)));
+        typeck::typecheck(cx, hir).unwrap_or_else(|e| panic!("Type check error: {}", e.format(cx)));
     let wasm = backend::output(backend::Backend::LirWasm32, cx, &checked);
     wasm
 }

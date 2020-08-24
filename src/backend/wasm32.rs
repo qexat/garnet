@@ -7,7 +7,7 @@ use std::cell::RefCell;
 
 use walrus as w;
 
-use crate::ir;
+use crate::hir;
 use crate::scope;
 use crate::*;
 
@@ -54,7 +54,7 @@ fn init_module(m: &mut w::Module) -> (w::GlobalId, w::GlobalId) {
 }
 
 /// Entry point to turn the IR into a compiled wasm module
-pub(super) fn output(cx: &Cx, program: &ir::Ir<TypeSym>) -> Vec<u8> {
+pub(super) fn output(cx: &Cx, program: &hir::Ir<TypeSym>) -> Vec<u8> {
     let config = w::ModuleConfig::new();
     let m = &mut w::Module::with_config(config);
     let (sp, st) = init_module(m);
@@ -105,8 +105,8 @@ fn make_heckin_function_table(m: &mut w::Module, symbols: &mut Symbols) {
 
 /// Goes through top-level decl's and adds them all to the top scope of the symbol table,
 /// so we don't need to do forward declarations in our source.
-fn predeclare_decl(cx: &Cx, m: &mut w::Module, symbols: &mut Symbols, decl: &ir::Decl<TypeSym>) {
-    use ir::*;
+fn predeclare_decl(cx: &Cx, m: &mut w::Module, symbols: &mut Symbols, decl: &hir::Decl<TypeSym>) {
+    use hir::*;
     match decl {
         Decl::Function {
             name,
@@ -147,8 +147,8 @@ fn predeclare_decl(cx: &Cx, m: &mut w::Module, symbols: &mut Symbols, decl: &ir:
     }
 }
 
-fn compile_decl(cx: &Cx, m: &mut w::Module, symbols: &mut Symbols, decl: &ir::Decl<TypeSym>) {
-    use ir::*;
+fn compile_decl(cx: &Cx, m: &mut w::Module, symbols: &mut Symbols, decl: &hir::Decl<TypeSym>) {
+    use hir::*;
     match decl {
         Decl::Function {
             name,
@@ -191,7 +191,7 @@ fn lambda_signature(
 
 /// Same as `lambda_signature` but takes a `Signature`, which is part of
 /// an expression, not a type.  Just calls `lambda_signature()` under the hood.
-fn function_signature(cx: &Cx, sig: &ir::Signature) -> (Vec<w::ValType>, Vec<w::ValType>) {
+fn function_signature(cx: &Cx, sig: &hir::Signature) -> (Vec<w::ValType>, Vec<w::ValType>) {
     if let TypeDef::Lambda(params, ret) = &*cx.fetch_type(sig.to_type(cx)) {
         lambda_signature(cx, params, *ret)
     } else {
@@ -346,7 +346,7 @@ fn compile_function(
     m: &mut w::Module,
     symbols: &mut Symbols,
     name: VarSym,
-    body: &[ir::TypedExpr<TypeSym>],
+    body: &[hir::TypedExpr<TypeSym>],
 ) -> w::FunctionId {
     // This should already be here due to the function being predeclared.
     let func = symbols
@@ -379,7 +379,7 @@ fn compile_exprs(
     t: &mut w::ModuleTypes,
     symbols: &mut Symbols,
     instrs: &mut w::InstrSeqBuilder,
-    exprs: &[ir::TypedExpr<TypeSym>],
+    exprs: &[hir::TypedExpr<TypeSym>],
 ) {
     // The trick here is that wasm doesn't let you leave stuff on
     // the stack and just ignore it forevermore.  Like, functions must
@@ -425,10 +425,10 @@ fn compile_expr(
     t: &mut w::ModuleTypes,
     symbols: &mut Symbols,
     instrs: &mut w::InstrSeqBuilder,
-    expr: &ir::TypedExpr<TypeSym>,
+    expr: &hir::TypedExpr<TypeSym>,
 ) {
-    use ir::Expr as E;
-    use ir::*;
+    use hir::Expr as E;
+    use hir::*;
     match &expr.e {
         E::Lit { val } => match val {
             Literal::Integer(i) => {
@@ -457,27 +457,27 @@ fn compile_expr(
         E::BinOp { op, lhs, rhs } => {
             // Currently we only have signed integers
             // so this is pretty simple.
-            fn compile_binop(op: &ir::BOp) -> w::ir::BinaryOp {
+            fn compile_binop(op: &hir::BOp) -> w::ir::BinaryOp {
                 match op {
-                    ir::BOp::Add => w::ir::BinaryOp::I32Add,
-                    ir::BOp::Sub => w::ir::BinaryOp::I32Sub,
-                    ir::BOp::Mul => w::ir::BinaryOp::I32Mul,
+                    hir::BOp::Add => w::ir::BinaryOp::I32Add,
+                    hir::BOp::Sub => w::ir::BinaryOp::I32Sub,
+                    hir::BOp::Mul => w::ir::BinaryOp::I32Mul,
 
                     // TODO: Check for div0?
-                    ir::BOp::Div => w::ir::BinaryOp::I32DivS,
+                    hir::BOp::Div => w::ir::BinaryOp::I32DivS,
                     // TODO: Check for div0?
-                    ir::BOp::Mod => w::ir::BinaryOp::I32RemS,
+                    hir::BOp::Mod => w::ir::BinaryOp::I32RemS,
 
-                    ir::BOp::Eq => w::ir::BinaryOp::I32Eq,
-                    ir::BOp::Neq => w::ir::BinaryOp::I32Ne,
-                    ir::BOp::Gt => w::ir::BinaryOp::I32GtS,
-                    ir::BOp::Lt => w::ir::BinaryOp::I32LtS,
-                    ir::BOp::Gte => w::ir::BinaryOp::I32GeS,
-                    ir::BOp::Lte => w::ir::BinaryOp::I32LeS,
+                    hir::BOp::Eq => w::ir::BinaryOp::I32Eq,
+                    hir::BOp::Neq => w::ir::BinaryOp::I32Ne,
+                    hir::BOp::Gt => w::ir::BinaryOp::I32GtS,
+                    hir::BOp::Lt => w::ir::BinaryOp::I32LtS,
+                    hir::BOp::Gte => w::ir::BinaryOp::I32GeS,
+                    hir::BOp::Lte => w::ir::BinaryOp::I32LeS,
 
-                    ir::BOp::And => w::ir::BinaryOp::I32And,
-                    ir::BOp::Or => w::ir::BinaryOp::I32Or,
-                    ir::BOp::Xor => w::ir::BinaryOp::I32Xor,
+                    hir::BOp::And => w::ir::BinaryOp::I32And,
+                    hir::BOp::Or => w::ir::BinaryOp::I32Or,
+                    hir::BOp::Xor => w::ir::BinaryOp::I32Xor,
                 }
             }
             compile_expr(cx, m, t, symbols, instrs, lhs);
@@ -488,12 +488,12 @@ fn compile_expr(
         E::UniOp { op, rhs } => match op {
             // We just implement this as 0 - thing.
             // By definition this only works on signed integers anyway.
-            ir::UOp::Neg => {
+            hir::UOp::Neg => {
                 instrs.i32_const(0);
                 compile_expr(cx, m, t, symbols, instrs, rhs);
                 instrs.binop(w::ir::BinaryOp::I32Sub);
             }
-            ir::UOp::Not => {
+            hir::UOp::Not => {
                 compile_expr(cx, m, t, symbols, instrs, rhs);
                 instrs.unop(w::ir::UnaryOp::I32Eqz);
             }
@@ -644,7 +644,7 @@ fn compile_expr(
             instrs.local_get(local.id);
         }
         E::Assign { lhs, rhs } => match &lhs.e {
-            ir::Expr::Var { name } => {
+            hir::Expr::Var { name } => {
                 // Well, this at least is easy
                 compile_expr(cx, m, t, symbols, instrs, &*rhs);
                 match symbols
@@ -658,7 +658,7 @@ fn compile_expr(
                     _ => todo!("Globals"),
                 }
             }
-            ir::Expr::TupleRef { .. } => todo!("FDSA"),
+            hir::Expr::TupleRef { .. } => todo!("FDSA"),
             _ => unreachable!(),
         },
         E::Deref { .. } => todo!(),
@@ -675,9 +675,9 @@ fn compile_ifcase(
     m: &mut w::ModuleLocals,
     t: &mut w::ModuleTypes,
     symbols: &mut Symbols,
-    cases: &[(ir::TypedExpr<TypeSym>, Vec<ir::TypedExpr<TypeSym>>)],
+    cases: &[(hir::TypedExpr<TypeSym>, Vec<hir::TypedExpr<TypeSym>>)],
     instrs: &mut w::InstrSeqBuilder,
-    falseblock: &[ir::TypedExpr<TypeSym>],
+    falseblock: &[hir::TypedExpr<TypeSym>],
 ) {
     assert_ne!(cases.len(), 0);
     // First off we just compile the if test,
@@ -795,7 +795,7 @@ mod tests {
     use walrus as w;
 
     use crate::backend::wasm32::*;
-    use crate::ir::{self, Expr as E};
+    use crate::hir::{self, Expr as E};
 
     /// Test compiling a let expr and var lookup
     #[test]
@@ -808,7 +808,7 @@ mod tests {
 
         let (paramtype, rettype) = function_signature(
             cx,
-            &ir::Signature {
+            &hir::Signature {
                 params: vec![],
                 rettype: cx.i32(),
             },
@@ -819,15 +819,15 @@ mod tests {
         let instrs = &mut fb.func_body();
 
         // Can we compile the let?
-        let expr = ir::TypedExpr {
+        let expr = hir::TypedExpr {
             t: cx.unit(),
             e: E::Let {
                 varname,
                 typename: cx.i32(),
                 mutable: false,
-                init: Box::new(ir::TypedExpr {
+                init: Box::new(hir::TypedExpr {
                     t: cx.i32(),
-                    e: ir::Expr::int(9),
+                    e: hir::Expr::int(9),
                 }),
             },
         };
@@ -837,7 +837,7 @@ mod tests {
         assert!(symbols.get_local(varname).is_some());
 
         // Can we then compile the var lookup?
-        let expr = ir::TypedExpr {
+        let expr = hir::TypedExpr {
             t: cx.i32(),
             e: E::Var { name: varname },
         };
@@ -845,8 +845,8 @@ mod tests {
         /*
         assert_eq!(
         instrs.instrs()[0].0,
-        w::ir::Instr::Const(w::ir::Const {
-        value: w::ir::Value::I32(9)
+        w::hir::Instr::Const(w::hir::Const {
+        value: w::hir::Value::I32(9)
         })
         );
         */
@@ -866,10 +866,10 @@ mod tests {
         let locals = &mut HashMap::new();
         let isns = &mut vec![];
 
-        let expr = ir::Expr::BinOp {
-        op: ir::BOp::Sub,
-        lhs: Box::new(ir::Expr::int(9)),
-        rhs: Box::new(ir::Expr::int(-3)),
+        let expr = hir::Expr::BinOp {
+        op: hir::BOp::Sub,
+        lhs: Box::new(hir::Expr::int(9)),
+        rhs: Box::new(hir::Expr::int(-3)),
         };
 
         compile_expr(cx, locals, isns, &expr);

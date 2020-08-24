@@ -393,10 +393,10 @@ fn compile_func(
                                 let val_slot = symbols.get_temp(*v);
                                 instrs.local_get(val_slot);
                                 let wasm_op = match op {
-                                    ir::UOp::Not => w::ir::UnaryOp::I32Eqz,
-                                    ir::UOp::Ref => todo!(),
-                                    ir::UOp::Deref => todo!(),
-                                    ir::UOp::Neg => unreachable!(),
+                                    hir::UOp::Not => w::ir::UnaryOp::I32Eqz,
+                                    hir::UOp::Ref => todo!(),
+                                    hir::UOp::Deref => todo!(),
+                                    hir::UOp::Neg => unreachable!(),
                                 };
                                 instrs.unop(wasm_op);
                             }
@@ -523,7 +523,7 @@ fn lambda_signature(
 
 /// Same as `lambda_signature` but takes a `Signature`, which is part of
 /// an expression, not a type.  Just calls `lambda_signature()` under the hood.
-fn function_signature(cx: &Cx, sig: &ir::Signature) -> (Vec<w::ValType>, Vec<w::ValType>) {
+fn function_signature(cx: &Cx, sig: &hir::Signature) -> (Vec<w::ValType>, Vec<w::ValType>) {
     if let TypeDef::Lambda(params, ret) = &*cx.fetch_type(sig.to_type(cx)) {
         lambda_signature(cx, params, *ret)
     } else {
@@ -531,27 +531,27 @@ fn function_signature(cx: &Cx, sig: &ir::Signature) -> (Vec<w::ValType>, Vec<w::
     }
 }
 
-fn compile_binop(op: &ir::BOp) -> w::ir::BinaryOp {
+fn compile_binop(op: &hir::BOp) -> w::ir::BinaryOp {
     match op {
-        ir::BOp::Add => w::ir::BinaryOp::I32Add,
-        ir::BOp::Sub => w::ir::BinaryOp::I32Sub,
-        ir::BOp::Mul => w::ir::BinaryOp::I32Mul,
+        hir::BOp::Add => w::ir::BinaryOp::I32Add,
+        hir::BOp::Sub => w::ir::BinaryOp::I32Sub,
+        hir::BOp::Mul => w::ir::BinaryOp::I32Mul,
 
         // TODO: Check for div0?
-        ir::BOp::Div => w::ir::BinaryOp::I32DivS,
+        hir::BOp::Div => w::ir::BinaryOp::I32DivS,
         // TODO: Check for div0?
-        ir::BOp::Mod => w::ir::BinaryOp::I32RemS,
+        hir::BOp::Mod => w::ir::BinaryOp::I32RemS,
 
-        ir::BOp::Eq => w::ir::BinaryOp::I32Eq,
-        ir::BOp::Neq => w::ir::BinaryOp::I32Ne,
-        ir::BOp::Gt => w::ir::BinaryOp::I32GtS,
-        ir::BOp::Lt => w::ir::BinaryOp::I32LtS,
-        ir::BOp::Gte => w::ir::BinaryOp::I32GeS,
-        ir::BOp::Lte => w::ir::BinaryOp::I32LeS,
+        hir::BOp::Eq => w::ir::BinaryOp::I32Eq,
+        hir::BOp::Neq => w::ir::BinaryOp::I32Ne,
+        hir::BOp::Gt => w::ir::BinaryOp::I32GtS,
+        hir::BOp::Lt => w::ir::BinaryOp::I32LtS,
+        hir::BOp::Gte => w::ir::BinaryOp::I32GeS,
+        hir::BOp::Lte => w::ir::BinaryOp::I32LeS,
 
-        ir::BOp::And => w::ir::BinaryOp::I32And,
-        ir::BOp::Or => w::ir::BinaryOp::I32Or,
-        ir::BOp::Xor => w::ir::BinaryOp::I32Xor,
+        hir::BOp::And => w::ir::BinaryOp::I32And,
+        hir::BOp::Or => w::ir::BinaryOp::I32Or,
+        hir::BOp::Xor => w::ir::BinaryOp::I32Xor,
     }
 }
 /*

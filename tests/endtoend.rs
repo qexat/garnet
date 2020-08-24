@@ -58,7 +58,7 @@ fn var_lookup() {
             doc_comment: vec![],
         }],
     };
-    let ir = garnet::ir::lower(&ast);
+    let ir = garnet::hir::lower(&ast);
     let checked = garnet::typeck::typecheck(&mut cx, ir).unwrap();
     let wasm = garnet::backend::output(garnet::backend::Backend::Wasm32, &mut cx, &checked);
     // Compiling a function gets us a dynamically-typed thing.
@@ -88,7 +88,7 @@ fn subtraction() {
             doc_comment: vec![],
         }],
     };
-    let ir = garnet::ir::lower(&ast);
+    let ir = garnet::hir::lower(&ast);
     let checked = garnet::typeck::typecheck(&mut cx, ir).unwrap();
     let wasm = garnet::backend::output(garnet::backend::Backend::Wasm32, &mut cx, &checked);
     let f = compile_wasm(&wasm).get1::<(), i32>().unwrap();
@@ -116,7 +116,7 @@ fn maths() {
             doc_comment: vec![],
         }],
     };
-    let ir = garnet::ir::lower(&ast);
+    let ir = garnet::hir::lower(&ast);
     let checked = garnet::typeck::typecheck(&mut cx, ir).unwrap();
     let wasm = garnet::backend::output(garnet::backend::Backend::Wasm32, &mut cx, &checked);
     // Compiling a function gets us a dynamically-typed thing.
@@ -158,7 +158,7 @@ fn block() {
             doc_comment: vec![],
         }],
     };
-    let ir = garnet::ir::lower(&ast);
+    let ir = garnet::hir::lower(&ast);
     let checked = garnet::typeck::typecheck(&mut cx, ir).unwrap();
     let wasm = garnet::backend::output(garnet::backend::Backend::Wasm32, &mut cx, &checked);
     let f = compile_wasm(&wasm).get1::<(), i32>().unwrap();

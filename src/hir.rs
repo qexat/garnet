@@ -410,7 +410,7 @@ pub(crate) fn plz(e: Expr<()>) -> Box<TypedExpr<()>> {
 mod tests {
     use super::*;
     use crate::ast::Expr as A;
-    use crate::ir::Expr as I;
+    use crate::hir::Expr as I;
 
     /// Does `return;` turn into `return ();`?
     #[test]

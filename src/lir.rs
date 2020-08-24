@@ -23,11 +23,11 @@
 
 use std::collections::HashMap;
 
-use crate::ir;
+use crate::hir;
 use crate::{Cx, TypeSym, VarSym};
 
 /// Shortcut
-type TExpr = ir::TypedExpr<TypeSym>;
+type TExpr = hir::TypedExpr<TypeSym>;
 
 /// A var/virtual register, just a number
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
@@ -56,7 +56,7 @@ pub struct VarBinding {
 #[derive(Debug)]
 pub struct Func {
     pub name: VarSym,
-    pub signature: ir::Signature,
+    pub signature: hir::Signature,
     pub params: Vec<VarBinding>,
     pub body: HashMap<BB, Block>,
     /// The first basic block to execute.
@@ -123,8 +123,8 @@ pub enum Op {
     ValUnit,
 
     // Operators
-    BinOpI32(ir::BOp, Var, Var),
-    UniOpI32(ir::UOp, Var),
+    BinOpI32(hir::BOp, Var, Var),
+    UniOpI32(hir::UOp, Var),
 
     // Memory
     GetLocal(VarSym),
@@ -159,7 +159,7 @@ impl FuncBuilder {
         let mut res = Self {
             func: Func {
                 name: func_name,
-                signature: ir::Signature {
+                signature: hir::Signature {
                     params: Vec::from(params),
                     rettype: rettype,
                 },
@@ -279,17 +279,17 @@ impl FuncBuilder {
     }
 }
 
-pub fn lower_ir(cx: &Cx, ir: &ir::Ir<TypeSym>) -> Lir {
+pub fn lower_hir(cx: &Cx, hir: &hir::Ir<TypeSym>) -> Lir {
     let mut lir = Lir::default();
-    for decl in ir.decls.iter() {
+    for decl in hir.decls.iter() {
         lower_decl(cx, &mut lir, &decl);
     }
     lir
 }
 
-fn lower_decl(cx: &Cx, lir: &mut Lir, decl: &ir::Decl<TypeSym>) {
+fn lower_decl(cx: &Cx, lir: &mut Lir, decl: &hir::Decl<TypeSym>) {
     match decl {
-        ir::Decl::Function {
+        hir::Decl::Function {
             name,
             signature,
             body,
@@ -317,8 +317,8 @@ fn lower_exprs(cx: &Cx, fb: &mut FuncBuilder, exprs: &[TExpr]) -> Option<Var> {
 }
 
 fn lower_expr(cx: &Cx, fb: &mut FuncBuilder, expr: &TExpr) -> Var {
-    use ir::Expr as E;
-    use ir::*;
+    use hir::Expr as E;
+    use hir::*;
     match &expr.e {
         E::Lit { val } => {
             let v = match val {
@@ -351,15 +351,15 @@ fn lower_expr(cx: &Cx, fb: &mut FuncBuilder, expr: &TExpr) -> Var {
         }
         E::UniOp { op, rhs } => match op {
             // Turn -x into 0 - x
-            ir::UOp::Neg => {
+            hir::UOp::Neg => {
                 let v1 = fb.assign(cx.i32(), Op::ValI32(0));
                 let v2 = lower_expr(cx, fb, &*rhs);
-                let op = Op::BinOpI32(ir::BOp::Sub, v1, v2);
+                let op = Op::BinOpI32(hir::BOp::Sub, v1, v2);
                 fb.assign(expr.t, op)
             }
-            ir::UOp::Not => {
+            hir::UOp::Not => {
                 let v = lower_expr(cx, fb, &*rhs);
-                let op = Op::UniOpI32(ir::UOp::Not, v);
+                let op = Op::UniOpI32(hir::UOp::Not, v);
                 fb.assign(expr.t, op)
             }
             _ => todo!(),
@@ -457,7 +457,7 @@ fn lower_expr(cx: &Cx, fb: &mut FuncBuilder, expr: &TExpr) -> Var {
             //   %7 = phi ifpart1 ifpart2 ifpart3 elsepart
 
             // I feel like this actually gets lots simpler using a recursive solution.
-            // Returns the ID of the first check_cond basic block.
+            // Returns the ID of the fhirst check_cond basic block.
             //
             // TODO: Refactor, there's some redundant code here.
             fn recursive_build_bbs(
@@ -570,11 +570,11 @@ mod tests {
             let mut parser = parser::Parser::new(cx, src);
             parser.parse()
         };
-        let ir = ir::lower(&ast);
-        let ir = passes::run_passes(cx, ir);
-        let checked = typeck::typecheck(cx, ir)
+        let hir = hir::lower(&ast);
+        let hir = passes::run_passes(cx, hir);
+        let checked = typeck::typecheck(cx, hir)
             .unwrap_or_else(|e| panic!("Type check error: {}", e.format(cx)));
-        lower_ir(cx, &checked)
+        lower_hir(cx, &checked)
     }
 
     #[test]
