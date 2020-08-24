@@ -4,6 +4,7 @@
 //! and maybe bootstrap stuff if we feel like it.
 
 use std::collections::HashMap;
+use std::convert::TryFrom;
 
 use walrus as w;
 
@@ -157,7 +158,9 @@ impl Symbols {
 /// runtime lib with stuff that multiple Garnet modules can share.
 ///
 /// For now we just make sure it has a chunk of memory we can use
-/// as a stack.
+/// as a stack.  We reserve a fixed size, and our stack pointer
+/// starts at the top and grows downward.  The top of the stack
+/// is then address 8, so we never hit address 0.
 ///
 /// Returns the stack pointer and stack top pointer
 fn init_module(m: &mut w::Module) -> (w::GlobalId, w::GlobalId) {
@@ -168,26 +171,24 @@ fn init_module(m: &mut w::Module) -> (w::GlobalId, w::GlobalId) {
     const PAGE_SIZE: u32 = 64 * 1024;
     m.memories.add_local(false, INIT_SIZE / PAGE_SIZE, None);
 
-    // We start the stack 64 bytes past
-    // 0 to leave some spare space so that address 0 is never
-    // used for anything.
+    // We start the stack at the top of our memory,
+    // and it grows downwards.
     //
     // TODO: Set the memory at 0 to 0xDEADBEEF or something
     // else distinctive as a warning?  Eh, maybe someday.
-    const STACK_BOTTOM: i32 = 64;
+    let stack_bottom: i32 = i32::try_from(INIT_SIZE).unwrap();
 
     // Add a global to the module to act as stack pointer
     // And also one to point at the stack top.
-
     let sp = m.globals.add_local(
         w::ValType::I32,
         true,
-        w::InitExpr::Value(w::ir::Value::I32(STACK_BOTTOM)),
+        w::InitExpr::Value(w::ir::Value::I32(stack_bottom)),
     );
     let st = m.globals.add_local(
         w::ValType::I32,
         false,
-        w::InitExpr::Value(w::ir::Value::I32(INIT_SIZE as i32)),
+        w::InitExpr::Value(w::ir::Value::I32(8 as i32)),
     );
     (sp, st)
 }

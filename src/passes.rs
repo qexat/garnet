@@ -305,7 +305,7 @@ fn lambda_lifting(cx: &Cx, ir: Ir<()>) -> Ir<()> {
 ///
 /// We might be able to get rid of TupleRef's by turning
 /// them into pointer arithmatic, too.
-fn pointerification(cx: &Cx, ir: Ir<TypeSym>) -> Ir<TypeSym> {
+fn _pointerification(_cx: &Cx, _ir: Ir<TypeSym>) -> Ir<TypeSym> {
     todo!()
 }
 

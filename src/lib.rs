@@ -4,8 +4,6 @@
 use std::borrow::Cow;
 use std::rc::Rc;
 
-use codespan_reporting as cs;
-
 pub mod ast;
 pub mod backend;
 pub mod format;
