@@ -276,6 +276,14 @@ impl FuncBuilder {
         self.get_current_block().body.push(instr);
         v
     }
+
+    /// Build a new instruction in the given basic block.
+    fn assign_block(&mut self, bb: BB, typ: TypeSym, op: Op) -> Var {
+        let v = self.next_var();
+        let instr = Instr::Assign(v, typ, op);
+        self.get_block(bb).body.push(instr);
+        v
+    }
 }
 
 pub fn lower_hir(cx: &Cx, hir: &hir::Ir<TypeSym>) -> Lir {
@@ -472,7 +480,7 @@ fn lower_expr(cx: &Cx, fb: &mut FuncBuilder, expr: &TExpr) -> Var {
                 let (cond, ifbody) = &cases[0];
                 if cases.len() == 1 {
                     // We are on the last if statement, wire it up to the else statement.
-                    let cond_bb = fb.next_block().id;
+                    let cond_bb = fb.get_current_block().id;
                     let cond_result = lower_expr(cx, fb, &cond);
 
                     let body_bb = fb.next_block().id;
@@ -523,11 +531,12 @@ fn lower_expr(cx: &Cx, fb: &mut FuncBuilder, expr: &TExpr) -> Var {
             let last_result = fb.assign(expr.t, Op::Phi(accm));
             // Save the end block
             // Connect the first BB to the start of the if block
-            let last_value = fb
-                .get_block(start_bb)
-                .last_value()
-                .unwrap_or_else(|| fb.assign(cx.unit(), Op::ValUnit));
-            fb.get_block(start_bb).terminator = Branch::Jump(last_value, first_cond_bb);
+            if let Some(last_value) = fb.get_block(start_bb).last_value() {
+                fb.get_block(start_bb).terminator = Branch::Jump(last_value, first_cond_bb);
+            } else {
+                let last_value = fb.assign_block(start_bb, cx.unit(), Op::ValUnit);
+                fb.get_block(start_bb).terminator = Branch::Jump(last_value, first_cond_bb);
+            }
 
             last_result
         }
