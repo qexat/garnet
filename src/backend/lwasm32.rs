@@ -471,7 +471,8 @@ fn compile_func(
                 }
                 lir::Branch::Return(None) => todo!("return none"),
                 lir::Branch::Unreachable => (),
-                x => todo!("return something else: {:?}", x),
+                lir::Branch::Jump(var, dest) => todo!("return something else: {:?}", var),
+                lir::Branch::Branch(val, ifpart, elsepart) => todo!("rar"),
             }
             symbols.pop_scope();
         }
