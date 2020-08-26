@@ -470,7 +470,8 @@ fn compile_func(
                     instrs.return_();
                 }
                 lir::Branch::Return(None) => todo!("return none"),
-                _ => todo!("return something else"),
+                lir::Branch::Unreachable => (),
+                x => todo!("return something else: {:?}", x),
             }
             symbols.pop_scope();
         }

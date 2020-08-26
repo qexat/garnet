@@ -21,7 +21,7 @@
 //! to go through and scoot them into registers as the opportunity
 //! provides.
 
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 use crate::hir;
 use crate::{Cx, TypeSym, VarSym};
@@ -35,7 +35,7 @@ pub struct Var(usize);
 
 /// Basic block ID.  Just a number.
 /// The block structure itself is the `Block`.
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct BB(usize);
 
 /// A single struct containing all the bits necessary for a LIR module.
@@ -58,7 +58,9 @@ pub struct Func {
     pub name: VarSym,
     pub signature: hir::Signature,
     pub params: Vec<VarBinding>,
-    pub body: HashMap<BB, Block>,
+    /// Use a BTreeMap here so it stays ordered, which makes
+    /// it easier to heckin' read.
+    pub body: BTreeMap<BB, Block>,
     /// The first basic block to execute.
     /// Could implicitly be 0, but making it
     /// explicit here might make things easier
@@ -167,7 +169,7 @@ impl FuncBuilder {
                     rettype: rettype,
                 },
                 params: vec![],
-                body: HashMap::new(),
+                body: BTreeMap::new(),
                 entry: BB(0),
                 locals: vec![],
 
