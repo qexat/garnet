@@ -39,10 +39,20 @@ It must then be a fixed maximum size, and the heap must be above it and
 also grow upwards.  This is going to get awful quick if we have threads,
 but for now there's not much else we can do about it.
 
+TODO: If our stack is fixed size then there's no reason not to have it
+start at a place in heap memory and grow downwards towards 0, since
+that's what most CPU arch's do.  aarch64, x86, ARM (either, but thumb2
+prefers down), PPC(?) all grow the stack down.  So, doing that will make
+life easier in general.
+
 ## Data layouts
 
 Future thoughts: A struct and tuple declared similarly are guarenteed to
 have the same representation.
+
+Struct layout ordering and stuff is actually quite important for DLL
+ABI's in general, both C/C++ (Windows) and Swift jump through some hoops
+to make this consistent.
 
 ## Modules and imports
 

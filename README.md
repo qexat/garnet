@@ -79,7 +79,8 @@ change with time.
  * Easy to control code size bloat
  * Easy to get a (partial) mental model, which is low-level enough to
    teach you a lot
- * Simple and universal ABI -- easy for higher level stuff to call it
+ * Simple and universal ABI for every platform -- easy for higher level
+   stuff to call it, easy for it to call arbitrary stuff.
  * Compiles fast
 
 ## Pain points in Rust to think about
@@ -106,7 +107,10 @@ change with time.
    platform-specific low-level stuff like threading and timekeeping
    primitives that may appear in a microcontroller or low-level VM
    without a full OS, then `os` or something for stuff like filesystems,
-   processes, etc.  Need better names though.
+   processes, etc.  Need better names though.  I do like the idea of
+   splitting out specific capabilities into specific parts that may or
+   may not be present on all platforms though, instead of having a
+   strictly additive model.
  * Syntax inconsistencies/nuisances: Fiddly match blocks, <>'s for
    generics (though the turbofish is wonderful), i32 is both a type and
    a module, -> and => being different is a PITA, you declare values
@@ -121,7 +125,12 @@ change with time.
    C-like enums, separate enum discriminants from enums or vice versa
    (which makes them awkward to compose),
  * Rust's closures are awful.
- * On the note of boilerplate-y stuff, see <https://github.com/rustwasm/walrus/blob/121340d3113e0102707b2b07cab3e764cea1ed6b/crates/macro/src/lib.rs> for an example of a giant, complex, heavy proc macro that is used exactly once to generate a huge amount of entirely uninteresting --but nonetheless necessary-- code.  It's good that you can use a macro for it, but it's kinda less good that you need to.
+ * On the note of boilerplate-y stuff, see
+   <https://github.com/rustwasm/walrus/blob/121340d3113e0102707b2b07cab3e764cea1ed6b/crates/macro/src/lib.rs>
+   for an example of a giant, complex, heavy proc macro that is used
+   exactly once to generate a huge amount of entirely uninteresting
+   --but nonetheless necessary-- code.  It's good that you can use a
+   macro for it, but it's kinda less good that you need to.
 
 ## Glory points in Rust to exploit or even enhance
 
@@ -136,7 +145,7 @@ change with time.
  * UTF-8 everywhere
  * Lack of magical constructors
 
-## Functionality sacrificed for simplicity
+## Functionality we sacrificed for simplicity
 
  * match blocks on function params, like Erlang -- just syntactic sugar
  * Monomorphized generics -- for now?
@@ -168,7 +177,7 @@ change with time.
 
 Things to consider:
 
- * structopt (for arg parsing)
+ * argh (for command line opts)
  * rustyline (for repl)
  * codespan (for error reporting)
  * logos (for lexer)
@@ -295,3 +304,16 @@ articles.  Also, apparently Zig has opt-*in* undefined behavior for
 things like integer overflow, shift checking, etc which sounds pretty
 hot.  Another option is to provide compiler-intrinsic escape hatches,
 similar to Rust's various `unchecked_foo()` functions.
+
+Some of the optimizations that pointer UB enables are talked about here:
+<https://plv.mpi-sws.org/rustbelt/stacked-borrows/paper.pdf>  Would be
+very interesting to have some emperical numbers about how much UB helps
+optimizations.
+
+Again, note that we are NOT trying to make incorrect programs do
+something that could be considered correct, and we are NOT trying to
+define things that are inherently undefinable (such as writing to a
+truly random/unknown pointer).  Sooner or later, defining what is
+defined is up to the *programmer*, and we are trying to make it so that
+there are as few rules and hidden gotchas as possible for the
+*programmer* to handle when dealing with these things.
