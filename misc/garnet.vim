@@ -3,7 +3,7 @@
 " Maintainer:   Simon Heath <icefox@dreamquest.io>
 " Last Change:  Jul 04, 2020
 
-" Currently just taken copied from the garnet syntax highlighting with
+" Currently just copied from the rust syntax highlighting with
 " some changes.
 " To use it, put it in ~/.config/nvim/syntax
 " and run

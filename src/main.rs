@@ -1,32 +1,19 @@
 use std::path::PathBuf;
 
+use argh::FromArgs;
 use garnet;
-use gumdrop::Options;
 
-#[derive(Debug, Options)]
+/// Garnet compiler
+#[derive(Debug, FromArgs)]
 struct Opt {
-    #[options(free, help = "Input files")]
+    /// input files
+    #[argh(positional)]
     files: Vec<PathBuf>,
-    #[options(help = "Print help")]
-    help: bool,
 }
-
-/*
-fn parse_args() -> Opt {
-    let args = pico_args::Arguments::from_env();
-    let files = args.free().unwrap().iter().map(PathBuf::from).collect();
-    Opt { files: files }
-}
-
-fn help() {
-    println!("TODO: help text generator.  structopt is great but heavy, gumdrop looks good but still relatively heavy.  Only 'cause it uses proc maros though, no other deps.  Walrus and logos already use proc macros anyway, so.");
-}
-`argh` is a good option, I kinda trust it more than gumdrop
-*/
 
 fn main() -> std::io::Result<()> {
     //let opt = parse_args();
-    let opt = Opt::parse_args_default_or_exit();
+    let opt: Opt = argh::from_env();
     if opt.files.len() == 0 {
         println!("No files input, try --help?");
         return Ok(());
