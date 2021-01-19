@@ -317,3 +317,6 @@ truly random/unknown pointer).  Sooner or later, defining what is
 defined is up to the *programmer*, and we are trying to make it so that
 there are as few rules and hidden gotchas as possible for the
 *programmer* to handle when dealing with these things.
+
+Other reading material from people doing interesting unsafe Rust things:
+<https://github.com/TimelyDataflow/abomonation/issues/32>
