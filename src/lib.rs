@@ -193,7 +193,7 @@ impl Cx {
 }
 
 /// Main driver function.
-/// Compile a given source string to wasm.
+/// Compile a given source string to ~~wasm~~ Rust.
 ///
 /// Parse -> lower to IR -> run transformation passes
 /// -> typecheck -> compile to wasm
@@ -207,22 +207,7 @@ pub fn compile(src: &str) -> Vec<u8> {
     let hir = passes::run_passes(cx, hir);
     let checked =
         typeck::typecheck(cx, hir).unwrap_or_else(|e| panic!("Type check error: {}", e.format(cx)));
-    let wasm = backend::output(backend::Backend::LirWasm32, cx, &checked);
-    wasm
-}
-
-/// Compiles using the LirWasm32 backend.  Will go away someday.
-pub fn compile_lir(src: &str) -> Vec<u8> {
-    let cx = &mut Cx::new();
-    let ast = {
-        let mut parser = parser::Parser::new(cx, src);
-        parser.parse()
-    };
-    let hir = hir::lower(&ast);
-    let hir = passes::run_passes(cx, hir);
-    let checked =
-        typeck::typecheck(cx, hir).unwrap_or_else(|e| panic!("Type check error: {}", e.format(cx)));
-    let wasm = backend::output(backend::Backend::LirWasm32, cx, &checked);
+    let wasm = backend::output(backend::Backend::Rust, cx, &checked);
     wasm
 }
 

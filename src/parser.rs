@@ -361,8 +361,7 @@ impl<'cx, 'input> Parser<'cx, 'input> {
 
             self.err.error(&diag);
         } else {
-            let msg = format!("Unexpected end of file!");
-            panic!(msg)
+            panic!("Unexpected end of file!")
         }
     }
 
