@@ -2,12 +2,14 @@ use crate::hir;
 use crate::{Cx, TypeSym};
 
 mod lwasm32;
+mod rust;
 mod wasm32;
 
 #[derive(Copy, Clone, Debug)]
 pub enum Backend {
     Wasm32,
     LirWasm32,
+    Rust,
 }
 
 /// Produce a binary module output of some kind for the given backend.
@@ -18,6 +20,10 @@ pub fn output(backend: Backend, cx: &Cx, program: &hir::Ir<TypeSym>) -> Vec<u8> 
             //unimplemented!()
             let lir = crate::lir::lower_hir(cx, &program);
             lwasm32::output(cx, &lir)
+        }
+        Backend::Rust => {
+            let lir = crate::lir::lower_hir(cx, &program);
+            rust::output(cx, &lir)
         }
     }
 }
