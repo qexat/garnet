@@ -4,9 +4,14 @@
 //! including things like parentheses and comments.  That way we can
 //! eventually use the same structure for a code formatter and not
 //! have it nuke anything.
+//!
+//! Though code formatters have different constraints, if they have line
+//! wrapping and stuff at least.  So, it might not be a particularly
+//! great cocde formatter.
 
 use crate::{TypeDef, TypeSym, VarSym};
 
+/// Literal value
 #[derive(Debug, Clone, PartialEq)]
 pub enum Literal {
     Integer(i64),
@@ -117,7 +122,7 @@ impl Signature {
 }
 
 /// Any expression.
-/// So, basically anything not a top-level type decl.
+/// So, basically anything not a top-level decl.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Expr {
     Lit {
