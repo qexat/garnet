@@ -1,12 +1,11 @@
 /// End-to-end test rig: compile programs from source,
 /// or currently from AST,
 /// and ensure that they give the output we want.
-use std::env;
 use std::fmt::Display;
 use std::fs;
-use std::io::{self, Write};
+use std::io::Write;
 
-use garnet::{self, ast};
+use garnet;
 
 /// We gotta create a temporary file, write our code to it, call rustc on it, and execute the
 /// result.
