@@ -23,7 +23,7 @@ fn main() -> std::io::Result<()> {
         let src = std::fs::read_to_string(&file)?;
         let output = garnet::compile(&src);
         let mut output_file = file.clone();
-        output_file.set_extension("wasm");
+        output_file.set_extension("rs");
         std::fs::write(&output_file, &output)?;
     }
     return Ok(());

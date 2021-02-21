@@ -1,6 +1,10 @@
 /// End-to-end test rig: compile programs from source,
 /// or currently from AST,
 /// and ensure that they give the output we want.
+use std::env;
+use std::fs;
+use std::io::{self, Write};
+
 use garnet::{self, ast};
 use wasmprinter;
 use wasmtime as w;
@@ -19,26 +23,110 @@ fn compile_wasm(bytes: &[u8]) -> w::Func {
         .expect("Test function needs to be called 'test'")
 }
 
+/// We gotta create a temporary file, write our code to it, call rustc on it, and execute the
+/// result.
+fn compile_rs(bytes: &[u8], entry_point: &str) -> i32 {
+    // Write program to a temp file
+    let dir = tempfile::TempDir::new().unwrap();
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+    use std::path::PathBuf;
+
+    // Won't make a collision since TempDir() is always unique, right?  Totally.
+    let mut h = DefaultHasher::new();
+    bytes.hash(&mut h);
+    let hashnum = h.finish();
+    let filename = format!("{}.rs", hashnum);
+    let mut filepath = PathBuf::from(dir.path());
+    filepath.push(filename);
+
+    // Output file with test harness entry point.
+    {
+        let mut f = fs::File::create(&filepath).unwrap();
+        f.write(bytes).unwrap();
+        f.write(entry_point.as_bytes()).unwrap();
+    }
+
+    eprintln!("Source file: {:?}", &filepath);
+    eprintln!(
+        "{}",
+        String::from_utf8(fs::read(&filepath).unwrap()).unwrap()
+    );
+
+    // Execute rustc
+    let mut output_file = filepath.clone();
+    output_file.set_extension("exe");
+
+    eprintln!("Output file: {:?}", &output_file);
+
+    use std::process::Command;
+    let output = Command::new("rustc")
+        .arg(filepath)
+        .arg("-o")
+        .arg(&output_file)
+        .output()
+        .expect("Failed to execute rustc");
+    println!("rustc output:");
+    println!("stdout: {}", String::from_utf8(output.stdout).unwrap());
+    println!("stderr: {}", String::from_utf8(output.stderr).unwrap());
+    // Execute resulting program
+    let output = Command::new(output_file)
+        .output()
+        .expect("Failed to execute program");
+
+    // get return code
+    let out = output.status.code().unwrap();
+
+    //clean up dir
+    dir.close().unwrap();
+
+    out
+}
+
 /// Takes a program defining a function named `test` with 1 arg,
 /// returns its result
 fn eval_program0(src: &str) -> i32 {
-    let wasm = garnet::compile(src);
-    let f = compile_wasm(&wasm).get0::<i32>().unwrap();
-    f().unwrap()
+    let out = garnet::compile(src);
+    // Add entry point
+    let entry = r#"
+fn main() {
+    let res = test();
+    std::process::exit(res as i32);
+}
+"#;
+    compile_rs(&out, entry)
 }
 
 /// Same as eval_program0 but `test` takes 1 args.
 fn eval_program1(src: &str, input: i32) -> i32 {
-    let wasm = garnet::compile(src);
-    let f = compile_wasm(&wasm).get1::<i32, i32>().unwrap();
-    f(input).unwrap()
+    let out = garnet::compile(src);
+    // Add entry point
+    let entry = format!(
+        r#"
+fn main() {{
+    let res = test({});
+    std::process::exit(res as i32);
+}}
+"#,
+        input
+    );
+    compile_rs(&out, &entry)
 }
 
 /// Same as eval_program0 but `test` takes 2 args.
 fn eval_program2(src: &str, i1: i32, i2: i32) -> i32 {
-    let wasm = garnet::compile(src);
-    let f = compile_wasm(&wasm).get2::<i32, i32, i32>().unwrap();
-    f(i1, i2).unwrap()
+    let out = garnet::compile(src);
+    // Add entry point
+    let entry = format!(
+        r#"
+fn main() {{
+    let res = test({}, {});
+    std::process::exit(res as i32);
+}}
+"#,
+        i1, i2
+    );
+    compile_rs(&out, &entry)
 }
 
 #[test]
