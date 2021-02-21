@@ -44,6 +44,7 @@ pub struct Lir {
     pub funcs: Vec<Func>,
 }
 
+/// A declaration for a bound variable
 #[derive(Debug, Copy, Clone)]
 pub struct VarBinding {
     pub name: VarSym,
@@ -166,7 +167,7 @@ impl FuncBuilder {
                 name: func_name,
                 signature: hir::Signature {
                     params: Vec::from(params),
-                    rettype: rettype,
+                    rettype,
                 },
                 params: vec![],
                 body: BTreeMap::new(),
@@ -222,7 +223,7 @@ impl FuncBuilder {
     }
 
     /// Set the entry point of the function being built to the given block.
-    fn set_entry(&mut self, block: BB) {
+    fn _set_entry(&mut self, block: BB) {
         self.func.entry = block;
     }
 

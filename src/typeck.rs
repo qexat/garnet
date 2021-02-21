@@ -312,6 +312,7 @@ fn type_matches(t1: TypeSym, t2: TypeSym) -> bool {
     t1 == t2
 }
 
+/// Try to actually typecheck the given HIR, and return HIR with resolved types.
 pub fn typecheck(cx: &mut Cx, ir: hir::Ir<()>) -> Result<hir::Ir<TypeSym>, TypeError> {
     let symtbl = &mut Symtbl::new();
     ir.decls.iter().for_each(|d| predeclare_decl(cx, symtbl, d));
@@ -481,7 +482,7 @@ fn typecheck_expr(
             let t = last_type_of(cx, &b);
             Ok(hir::TypedExpr {
                 e: Block { body: b },
-                t: t,
+                t,
             })
         }
         Let {
@@ -548,7 +549,7 @@ fn typecheck_expr(
             let t = last_type_of(cx, &b);
             Ok(hir::TypedExpr {
                 e: Loop { body: b },
-                t: t,
+                t,
             })
         }
         Lambda { signature, body } => {
@@ -627,7 +628,7 @@ fn typecheck_expr(
                     t: typesyms[elt],
                     e: TupleRef {
                         expr: Box::new(body_expr),
-                        elt: elt,
+                        elt,
                     },
                 })
             } else {

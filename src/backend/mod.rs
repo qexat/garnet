@@ -1,3 +1,5 @@
+//! Backend indirection layer.
+
 use crate::hir;
 use crate::{Cx, TypeSym};
 
@@ -5,10 +7,14 @@ mod lwasm32;
 mod rust;
 mod wasm32;
 
+/// Specifies which backend to use.
 #[derive(Copy, Clone, Debug)]
 pub enum Backend {
+    /// Original wasm backend
     Wasm32,
+    /// wasm backend with a LIR layer
     LirWasm32,
+    /// Rust backend
     Rust,
 }
 
