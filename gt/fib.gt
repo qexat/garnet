@@ -6,6 +6,7 @@ fn fib(x: I32): I32 =
     end
 end
 
-fn _start(): I32 =
+fn main(): {} =
     fib(40)
+    {}
 end
