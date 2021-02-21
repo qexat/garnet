@@ -35,7 +35,16 @@ fn compile_typedef(cx: &Cx, td: &TypeDef) -> Cow<'static, str> {
             accm += ")";
             accm.into()
         }
-        Lambda(_params, _ret) => unimplemented!(),
+        Lambda(params, ret) => {
+            let mut accm = String::from("fn (");
+            for p in params {
+                accm += &compile_typedef(cx, &*cx.fetch_type(*p));
+                accm += ", ";
+            }
+            accm += ") -> ";
+            accm += &compile_typedef(cx, &*cx.fetch_type(*ret));
+            accm.into()
+        }
         Ptr(_) => unimplemented!(),
     }
 }
@@ -47,6 +56,14 @@ pub(super) fn output(cx: &Cx, lir: &hir::Ir<TypeSym>) -> Vec<u8> {
     s.into_bytes()
 }
 
+/// Mangle/unmangle a name for a function.
+/// We need this for lambda's, migth need it for other things, we'll see.
+/// TODO: There might be a better way to make lambda's un-nameable.
+/// Probably, really.
+fn mangle_name(s: &str) -> String {
+    s.replace("@", "__")
+}
+
 fn compile_decl(cx: &Cx, decl: &hir::Decl<TypeSym>) -> String {
     match decl {
         hir::Decl::Function {
@@ -54,7 +71,7 @@ fn compile_decl(cx: &Cx, decl: &hir::Decl<TypeSym>) -> String {
             signature,
             body,
         } => {
-            let nstr = &*cx.fetch(*name);
+            let nstr = mangle_name(&*cx.fetch(*name));
             let sstr = compile_fn_signature(cx, signature);
             let bstr = compile_exprs(cx, body, ";\n");
             format!("fn {}{} {{\n{}\n}}\n", nstr, sstr, bstr)
@@ -64,7 +81,7 @@ fn compile_decl(cx: &Cx, decl: &hir::Decl<TypeSym>) -> String {
             typename,
             init,
         } => {
-            let nstr = &*cx.fetch(*name);
+            let nstr = mangle_name(&*cx.fetch(*name));
             let tstr = compile_typedef(cx, &*cx.fetch_type(*typename));
             let istr = compile_expr(cx, init);
             format!("const {}: {} = {};", nstr, tstr, istr)
@@ -78,6 +95,7 @@ fn compile_fn_signature(cx: &Cx, sig: &ast::Signature) -> String {
         accm += &*cx.fetch(*varsym);
         accm += ": ";
         accm += &compile_typedef(cx, &*cx.fetch_type(*typesym));
+        accm += ", ";
     }
     accm += ") -> ";
     accm += &compile_typedef(cx, &*cx.fetch_type(sig.rettype));
@@ -129,7 +147,7 @@ fn compile_expr(cx: &Cx, expr: &hir::TypedExpr<TypeSym>) -> String {
         E::Lit {
             val: ast::Literal::Bool(b),
         } => format!("{}", b),
-        E::Var { name } => cx.fetch(*name).as_ref().to_owned(),
+        E::Var { name } => mangle_name(&*cx.fetch(*name)),
         E::BinOp { op, lhs, rhs } => format!(
             "({} {} {})",
             compile_expr(cx, lhs),
@@ -146,7 +164,7 @@ fn compile_expr(cx: &Cx, expr: &hir::TypedExpr<TypeSym>) -> String {
             init,
             mutable,
         } => {
-            let vstr = cx.fetch(*varname);
+            let vstr = mangle_name(&*cx.fetch(*varname));
             let tstr = compile_typedef(cx, &*cx.fetch_type(*typename));
             let istr = compile_expr(cx, init);
             if *mutable {
@@ -181,9 +199,16 @@ fn compile_expr(cx: &Cx, expr: &hir::TypedExpr<TypeSym>) -> String {
             )
         }
         E::Funcall { func, params } => {
+            // We have to store an intermediate value for the func, 'cause
+            // Rust has problems with things like this:
+            // fn f1() -> i32 { 1 }
+            // fn f2() -> i32 { 10 }
+            // fn f() -> i32 { if true { f1 } else { f2 }() }
+            //
+            // Should this happen in an IR lowering step?  idk.
             let nstr = compile_expr(cx, func);
             let pstr = compile_exprs(cx, params, ", ");
-            format!("{}({})", nstr, pstr)
+            format!("{{ let __dummy = {}; __dummy({}) }}", nstr, pstr)
         }
         E::Break => {
             format!("break;")

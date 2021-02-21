@@ -2,6 +2,7 @@
 /// or currently from AST,
 /// and ensure that they give the output we want.
 use std::env;
+use std::fmt::Display;
 use std::fs;
 use std::io::{self, Write};
 
@@ -101,7 +102,11 @@ fn main() {{
 }
 
 /// Same as eval_program0 but `test` takes 2 args.
-fn eval_program2(src: &str, i1: i32, i2: i32) -> i32 {
+fn eval_program2<T1, T2>(src: &str, i1: T1, i2: T2) -> i32
+where
+    T1: Display,
+    T2: Display,
+{
     let out = garnet::compile(src);
     // Add entry point
     let entry = format!(
@@ -322,8 +327,8 @@ fn parse_and_compile_fn2() {
 #[test]
 fn parse_and_compile_fn3() {
     let src = r#"fn test(x: Bool, y: I32): I32 = if x then y+1 else y+2 end end"#;
-    assert_eq!(eval_program2(src, 1, 4), 5);
-    assert_eq!(eval_program2(src, 0, 4), 6);
+    assert_eq!(eval_program2(src, true, 4), 5);
+    assert_eq!(eval_program2(src, false, 4), 6);
 }
 
 #[should_panic]
