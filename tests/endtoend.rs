@@ -6,8 +6,6 @@ use std::fs;
 use std::io::{self, Write};
 
 use garnet::{self, ast};
-use wasmprinter;
-use wasmtime as w;
 
 /// We gotta create a temporary file, write our code to it, call rustc on it, and execute the
 /// result.
