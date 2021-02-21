@@ -64,7 +64,7 @@ impl BOp {
 }
 
 /// Unary operation
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum UOp {
     Neg,
     Not,

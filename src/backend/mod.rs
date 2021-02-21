@@ -28,8 +28,8 @@ pub fn output(backend: Backend, cx: &Cx, program: &hir::Ir<TypeSym>) -> Vec<u8> 
             lwasm32::output(cx, &lir)
         }
         Backend::Rust => {
-            let lir = crate::lir::lower_hir(cx, &program);
-            rust::output(cx, &lir)
+            //let lir = crate::lir::lower_hir(cx, &program);
+            rust::output(cx, &program)
         }
     }
 }
