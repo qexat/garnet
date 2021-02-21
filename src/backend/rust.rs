@@ -1,6 +1,12 @@
 //! Compile our HIR to Rust.
 //! This is kinda silly, but hey why not.
 //!
+//!
+//! Potential improvements:
+//!  * Use something smarter than strings to collect output -- could just
+//!    output to a stream like the formatter does
+//!  * Use `syn` or something to generate tokens for output rather than strings
+
 use std::borrow::Cow;
 
 //use crate::lir;
@@ -166,14 +172,25 @@ fn compile_expr(cx: &Cx, expr: &hir::TypedExpr<TypeSym>) -> String {
         E::Loop { body } => {
             format!("loop {{\n{}\n}}\n", compile_exprs(cx, body, ";\n"))
         }
-        E::Lambda { signature, body } => todo!(),
+        // TODO: We don't have closures, lambda are just functions, so...
+        E::Lambda { signature, body } => {
+            format!(
+                "fn {} {{ {} }}",
+                compile_fn_signature(cx, signature),
+                compile_exprs(cx, body, ";\n")
+            )
+        }
         E::Funcall { func, params } => {
             let nstr = compile_expr(cx, func);
             let pstr = compile_exprs(cx, params, ", ");
             format!("{}({})", nstr, pstr)
         }
-        E::Break => todo!(),
-        E::Return { retval } => todo!(),
+        E::Break => {
+            format!("break;")
+        }
+        E::Return { retval } => {
+            format!("return {};", compile_expr(cx, retval))
+        }
         E::TupleCtor { body } => {
             // We *don't* want join() here, we want to append comma's so that
             // `(foo,)` works properly.
@@ -185,9 +202,13 @@ fn compile_expr(cx: &Cx, expr: &hir::TypedExpr<TypeSym>) -> String {
             accm += ")";
             accm
         }
-        E::TupleRef { expr, elt } => todo!(),
-        E::Assign { lhs, rhs } => todo!(),
-        E::Deref { expr } => todo!(),
-        E::Ref { expr } => todo!(),
+        E::TupleRef { expr, elt } => {
+            format!("{}.{}", compile_expr(cx, expr), elt)
+        }
+        E::Assign { lhs, rhs } => {
+            format!("{} = {};", compile_expr(cx, lhs), compile_expr(cx, rhs))
+        }
+        E::Deref { expr } => format!("*{}", compile_expr(cx, expr)),
+        E::Ref { expr } => format!("&{}", compile_expr(cx, expr)),
     }
 }
