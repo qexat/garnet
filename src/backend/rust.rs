@@ -147,12 +147,12 @@ fn compile_expr(cx: &Cx, expr: &hir::TypedExpr<TypeSym>) -> String {
             mutable,
         } => {
             let vstr = cx.fetch(*varname);
-            let tstr = cx.fetch_type(*typename).get_name(cx);
+            let tstr = compile_typedef(cx, &*cx.fetch_type(*typename));
             let istr = compile_expr(cx, init);
             if *mutable {
-                format!("let mut {}: {} = {};", vstr, tstr, istr)
+                format!("let mut {}: {} = {}", vstr, tstr, istr)
             } else {
-                format!("let {}: {} = {};", vstr, tstr, istr)
+                format!("let {}: {} = {}", vstr, tstr, istr)
             }
         }
         E::If { cases, falseblock } => {
@@ -206,7 +206,7 @@ fn compile_expr(cx: &Cx, expr: &hir::TypedExpr<TypeSym>) -> String {
             format!("{}.{}", compile_expr(cx, expr), elt)
         }
         E::Assign { lhs, rhs } => {
-            format!("{} = {};", compile_expr(cx, lhs), compile_expr(cx, rhs))
+            format!("{} = {}", compile_expr(cx, lhs), compile_expr(cx, rhs))
         }
         E::Deref { expr } => format!("*{}", compile_expr(cx, expr)),
         E::Ref { expr } => format!("&{}", compile_expr(cx, expr)),
