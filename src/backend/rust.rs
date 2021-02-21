@@ -175,8 +175,12 @@ fn compile_expr(cx: &Cx, expr: &hir::TypedExpr<TypeSym>) -> String {
         }
         E::If { cases, falseblock } => {
             let mut accm = String::new();
-            for (cond, body) in cases {
-                accm += "if ";
+            for (i, (cond, body)) in cases.iter().enumerate() {
+                if i == 0 {
+                    accm += "if ";
+                } else {
+                    accm += " else if "
+                }
                 accm += &compile_expr(cx, cond);
                 accm += " {\n";
                 accm += &compile_exprs(cx, &body, ";\n");
