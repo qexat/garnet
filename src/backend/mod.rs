@@ -3,6 +3,7 @@
 use crate::hir;
 use crate::{Cx, TypeSym};
 
+mod lrust;
 mod rust;
 
 /// Specifies which backend to use.
@@ -16,6 +17,8 @@ pub enum Backend {
     */
     /// Rust backend
     Rust,
+    /// LIR Rust backend
+    LRust,
 }
 
 /// Produce a binary module output of some kind for the given backend.
@@ -29,9 +32,10 @@ pub fn output(backend: Backend, cx: &Cx, program: &hir::Ir<TypeSym>) -> Vec<u8> 
             lwasm32::output(cx, &lir)
         }
         */
-        Backend::Rust => {
-            //let lir = crate::lir::lower_hir(cx, &program);
-            rust::output(cx, &program)
+        Backend::Rust => rust::output(cx, &program),
+        Backend::LRust => {
+            let lir = crate::lir::lower_hir(cx, &program);
+            lrust::output(cx, &lir)
         }
     }
 }
