@@ -560,9 +560,9 @@ fn lower_expr(cx: &Cx, fb: &mut FuncBuilder, expr: &TExpr) -> Var {
             }
         }
         E::Break => todo!(),
-        E::Return { retval } => todo!(),
-        E::TupleCtor { body } => todo!(),
-        E::TupleRef { expr, elt } => todo!(),
+        E::Return { retval: _ } => todo!(),
+        E::TupleCtor { body: _ } => todo!(),
+        E::TupleRef { expr: _, elt: _ } => todo!(),
 
         E::Assign { lhs, rhs } => match &lhs.e {
             hir::Expr::Var { name } => {
