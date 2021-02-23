@@ -9,7 +9,7 @@ use std::rc::Rc;
 
 /// Safe interner.
 /// The mutable caches and other guts are RefCell'd, so this is logically "immutable".
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Interner<Ky, Val>
 where
     Val: Eq + Hash,

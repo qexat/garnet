@@ -605,8 +605,8 @@ mod tests {
         };
         let hir = hir::lower(&ast);
         let hir = passes::run_passes(cx, hir);
-        let checked = typeck::typecheck(cx, hir)
-            .unwrap_or_else(|e| panic!("Type check error: {}", e.format(cx)));
+        let checked =
+            typeck::typecheck(cx, hir).unwrap_or_else(|e| panic!("Type check error: {}", e));
         lower_hir(cx, &checked)
     }
 
