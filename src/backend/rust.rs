@@ -22,8 +22,14 @@ fn prelude() -> &'static str {
 fn compile_typedef(cx: &Cx, td: &TypeDef) -> Cow<'static, str> {
     use crate::TypeDef::*;
     match td {
+        SInt(16) => "i128".to_owned().into(),
+        SInt(8) => "i64".to_owned().into(),
         SInt(4) => "i32".to_owned().into(),
-        SInt(_) => unimplemented!(),
+        SInt(2) => "i16".to_owned().into(),
+        SInt(1) => "i8".to_owned().into(),
+        SInt(e) => {
+            unreachable!("Invalid integer size: {}", e)
+        }
         Bool => "bool".into(),
         Tuple(types) => {
             let mut accm = String::from("(");

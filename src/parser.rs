@@ -782,7 +782,11 @@ impl<'cx, 'input> Parser<'cx, 'input> {
                 span,
             }) => match s.as_ref() {
                 // TODO: This is a bit too hardwired tbh...
+                "I128" => self.cx.i128(),
+                "I64" => self.cx.i64(),
                 "I32" => self.cx.i32(),
+                "I16" => self.cx.i16(),
+                "I8" => self.cx.i8(),
                 "Bool" => self.cx.bool(),
                 _ => self.error(Some(Token {
                     kind: T::Ident(s),
@@ -988,11 +992,11 @@ const baz: {} = {}
             "()",
             "(x: Bool):I32",
             "(x: Bool):{}",
-            "(x: I32, y: Bool)",
-            "(x: I32, y: Bool):Bool",
-            "(x: I32, y: Bool,)",
+            "(x: I16, y: Bool)",
+            "(x: I64, y: Bool):Bool",
+            "(x: I8, y: Bool,)",
             "(x: I32, y: Bool,):Bool",
-            "(f: fn(I32):I32, x: I32):Bool",
+            "(f: fn(I32):I128, x: I32):Bool",
         ];
         test_parse_with(|p| p.parse_fn_signature(), &valid_args)
     }
