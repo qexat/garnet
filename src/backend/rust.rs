@@ -16,7 +16,6 @@ use crate::*;
 /// Whatever prefix stuff we want in the Rust program.
 fn prelude() -> &'static str {
     r#"
-// ahahahahaha wow
 "#
 }
 

@@ -173,14 +173,13 @@ change with time.
  * rustc
  * `logos` lexer
  * custom parser (recursive descent + Pratt)
- * output wasm with `walrus`
+ * output Rust, just to make things work.
+ * argh (for command line opts)
+ * codespan (for error reporting)
 
 Things to consider:
 
- * argh (for command line opts)
  * rustyline (for repl)
- * codespan (for error reporting)
- * logos (for lexer)
  * lasso or `string-interner` (for string interning)
  * `ryu` for parsing floats
 
