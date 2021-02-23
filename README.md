@@ -150,6 +150,9 @@ change with time.
  * match blocks on function params, like Erlang -- just syntactic sugar
  * Monomorphized generics -- for now?
  * Cool arbitrary/rational number types -- can be a lib.
+ * Though it is tempting, we will NOT do arbitrary-precision integer
+   types such as being able to define an integer via an arbitrary range
+   such as `[-1, 572)` or arbitrary size such as `i23`.  Maybe later.
 
 ## Wishlist items
 

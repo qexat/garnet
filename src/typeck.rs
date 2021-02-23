@@ -977,6 +977,18 @@ end"#;
     }
 
     #[test]
+    fn test_number_types() {
+        let src = r#"fn foo() =
+        let x: I8 = 8
+        let x: I16 = 9
+        let x: I32 = 10
+        let y: I64 = 11
+        let y: I128 = 12
+end"#;
+        typecheck_src(src);
+    }
+
+    #[test]
     #[should_panic]
     fn test_bad_assign1() {
         let src = r#"fn foo() =
@@ -991,6 +1003,16 @@ end"#;
     fn test_bad_assign2() {
         let src = r#"fn foo() =
     {1,2,3}.3 = 11
+end"#;
+        typecheck_src(src);
+    }
+
+    #[test]
+    fn test_bad_types() {
+        let src = r#"fn foo() =
+        let x: I32 = 10
+        let mut y: I64 = 11
+        y = x
 end"#;
         typecheck_src(src);
     }

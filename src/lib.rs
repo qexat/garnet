@@ -167,9 +167,29 @@ impl Cx {
         self.types.fetch(s)
     }
 
+    /// Shortcut for getting the type symbol for I128
+    pub fn i128(&self) -> TypeSym {
+        self.intern_type(&TypeDef::SInt(16))
+    }
+
+    /// Shortcut for getting the type symbol for I64
+    pub fn i64(&self) -> TypeSym {
+        self.intern_type(&TypeDef::SInt(8))
+    }
+
     /// Shortcut for getting the type symbol for I32
     pub fn i32(&self) -> TypeSym {
         self.intern_type(&TypeDef::SInt(4))
+    }
+
+    /// Shortcut for getting the type symbol for I16
+    pub fn i16(&self) -> TypeSym {
+        self.intern_type(&TypeDef::SInt(2))
+    }
+
+    /// Shortcut for getting the type symbol for I8
+    pub fn i8(&self) -> TypeSym {
+        self.intern_type(&TypeDef::SInt(1))
     }
 
     /// Shortcut for getting the type symbol for Bool
