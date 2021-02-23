@@ -83,7 +83,11 @@ impl TypeDef {
             p_strs.join(", ")
         };
         match self {
+            TypeDef::SInt(16) => Cow::Borrowed("I128"),
+            TypeDef::SInt(8) => Cow::Borrowed("I64"),
             TypeDef::SInt(4) => Cow::Borrowed("I32"),
+            TypeDef::SInt(2) => Cow::Borrowed("I16"),
+            TypeDef::SInt(1) => Cow::Borrowed("I8"),
             TypeDef::SInt(s) => panic!("Undefined integer size {}!", s),
             TypeDef::Bool => Cow::Borrowed("Bool"),
             TypeDef::Tuple(v) => {
@@ -129,6 +133,10 @@ impl TypeDef {
 /// the original plan of bundling it up into a special context
 /// type for each step of compilation hasn't really worked out
 /// (at least for wasm with `walrus`.  TODO: Maybe rename it?
+///
+/// This impl's clone so we can bundle it with error types.
+/// Maybe Rc it instead?
+#[derive(Clone, Debug)]
 pub struct Cx {
     /// Interned symbols
     syms: intern::Interner<VarSym, String>,
@@ -225,8 +233,7 @@ pub fn compile(src: &str) -> Vec<u8> {
     };
     let hir = hir::lower(&ast);
     let hir = passes::run_passes(cx, hir);
-    let checked =
-        typeck::typecheck(cx, hir).unwrap_or_else(|e| panic!("Type check error: {}", e.format(cx)));
+    let checked = typeck::typecheck(cx, hir).unwrap_or_else(|e| panic!("Type check error: {}", e));
     let wasm = backend::output(backend::Backend::Rust, cx, &checked);
     wasm
 }

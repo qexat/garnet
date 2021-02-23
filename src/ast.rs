@@ -9,7 +9,7 @@
 //! wrapping and stuff at least.  So, it might not be a particularly
 //! great cocde formatter.
 
-use crate::{TypeDef, TypeSym, VarSym};
+use crate::{Cx, TypeDef, TypeSym, VarSym};
 
 /// Literal value
 #[derive(Debug, Clone, PartialEq)]
@@ -44,7 +44,7 @@ pub enum BOp {
 
 impl BOp {
     /// Returns the type that the bin op operates on.
-    pub fn input_type(&self, cx: &mut crate::Cx) -> TypeSym {
+    pub fn input_type(&self, cx: &Cx) -> TypeSym {
         use BOp::*;
         match self {
             And | Or | Xor => cx.bool(),
@@ -53,7 +53,7 @@ impl BOp {
     }
 
     /// What the resultant type of the binop is
-    pub fn output_type(&self, cx: &mut crate::Cx) -> TypeSym {
+    pub fn output_type(&self, cx: &Cx) -> TypeSym {
         use BOp::*;
         match self {
             Add | Sub | Mul | Div | Mod => cx.i32(),
@@ -75,7 +75,7 @@ pub enum UOp {
 impl UOp {
     /// Returns the type that the unary op operates on.
     /// Currently, only numbers.
-    pub fn input_type(&self, cx: &mut crate::Cx) -> TypeSym {
+    pub fn input_type(&self, cx: &Cx) -> TypeSym {
         use UOp::*;
         match self {
             Neg => cx.i32(),
@@ -86,7 +86,7 @@ impl UOp {
     }
 
     /// What the resultant type of the uop is
-    pub fn output_type(&self, cx: &mut crate::Cx) -> TypeSym {
+    pub fn output_type(&self, cx: &Cx) -> TypeSym {
         use UOp::*;
         match self {
             Neg => cx.i32(),
@@ -114,7 +114,7 @@ pub struct Signature {
 
 impl Signature {
     /// Returns a lambda typedef representing the signature
-    pub(crate) fn to_type(&self, cx: &crate::Cx) -> TypeSym {
+    pub(crate) fn to_type(&self, cx: &Cx) -> TypeSym {
         let args = self.params.iter().map(|(_v, t)| *t).collect();
         let t = TypeDef::Lambda(args, self.rettype);
         cx.intern_type(&t)
@@ -211,7 +211,7 @@ impl Expr {
     }
 
     /// Shortcuts for making vars
-    pub fn var(cx: &crate::Cx, name: &str) -> Expr {
+    pub fn var(cx: &Cx, name: &str) -> Expr {
         Expr::Var {
             name: cx.intern(name),
         }
