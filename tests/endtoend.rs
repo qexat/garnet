@@ -477,7 +477,6 @@ end
     assert_eq!(eval_program0(src), 20);
 }
 
-/* TODO
 #[test]
 fn assign_tuples() {
     let src = r#"
@@ -489,7 +488,26 @@ fn test(): I32 =
     y.0
 end
 "#;
-    assert_eq!(eval_program0(src), 20);
+    assert_eq!(eval_program0(src), 10);
+}
+
+/// This is a little weird... apparently Rust tuples
+/// automatically implement Copy if all their contents
+/// do?
+#[test]
+fn move_tuples() {
+    let src = r#"
+
+fn test(): I32 =
+    let x: {I32, I32} = {10, 11}
+    let mut y: {I32, I32} = {20, 21}
+    let mut z: {I32, I32} = {30, 31}
+    y = x
+    z = x
+    z.0
+end
+"#;
+    assert_eq!(eval_program0(src), 10);
 }
 
 #[test]
@@ -507,4 +525,3 @@ end
 "#;
     assert_eq!(eval_program0(src), 20);
 }
-*/

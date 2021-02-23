@@ -167,6 +167,9 @@ fn uop_for(t: &TokenKind) -> Option<ast::UOp> {
 
 use self::TokenKind as T;
 
+// This is not dead code but sometimes cargo thinks some of it fields are, since their usage is
+// cfg'd out in unit tests.
+#[allow(dead_code)]
 struct ErrorReporter {
     files: cs::files::SimpleFiles<String, String>,
     file_id: usize,
@@ -186,12 +189,12 @@ impl ErrorReporter {
         }
     }
 
-    fn error(&self, diag: &Diagnostic<usize>) -> ! {
-        use codespan_reporting::term::termcolor::{ColorChoice, StandardStream};
-        let writer = StandardStream::stderr(ColorChoice::Always);
+    fn error(&self, _diag: &Diagnostic<usize>) -> ! {
         #[cfg(not(test))]
         {
-            cs::term::emit(&mut writer.lock(), &self.config, &self.files, diag)
+            use codespan_reporting::term::termcolor::{ColorChoice, StandardStream};
+            let writer = StandardStream::stderr(ColorChoice::Always);
+            cs::term::emit(&mut writer.lock(), &self.config, &self.files, _diag)
                 .expect("Could not print error message");
         }
         //std::process::exit(1)
