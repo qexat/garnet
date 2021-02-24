@@ -1045,11 +1045,12 @@ end"#;
     #[test]
     fn test_number_types() {
         let src = r#"fn foo() =
-        let x: I8 = 8
-        let x: I16 = 9
+        let x: I8 = 8i8
+        let x: I16 = 9i16
+        let x: I32 = 10i32
+        let y: I64 = 11i64
+        let y: I128 = 12i128
         let x: I32 = 10
-        let y: I64 = 11
-        let y: I128 = 12
 end"#;
         typecheck_src(src);
     }
@@ -1074,10 +1075,22 @@ end"#;
     }
 
     #[test]
-    fn test_bad_types() {
+    #[should_panic]
+    fn test_bad_integer_assignment() {
         let src = r#"fn foo() =
         let x: I32 = 10
-        let mut y: I64 = 11
+        let mut y: I64 = 11i64
+        y = x
+end"#;
+        typecheck_src(src);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_bad_integer_math() {
+        let src = r#"fn foo() =
+        let x: I32 = 10
+        let mut y: I64 = 11i64
         y = x
 end"#;
         typecheck_src(src);
