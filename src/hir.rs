@@ -117,7 +117,7 @@ impl<T> Expr<T> {
     }
 
     /// Shortcut function for making literal integers
-    pub const fn int(i: i64) -> Self {
+    pub const fn int(i: i128) -> Self {
         Self::Lit {
             val: Literal::Integer(i),
         }

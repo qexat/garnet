@@ -12,10 +12,16 @@ use std::ops::Range;
 
 use codespan_reporting as cs;
 use codespan_reporting::diagnostic::{Diagnostic, Label};
-use logos::Logos;
+use logos::{Lexer, Logos};
 
 use crate::ast;
 use crate::{Cx, TypeDef, TypeSym, VarSym};
+
+fn make_i8(lex: &mut Lexer<TokenKind>) -> Option<(i128, u8)> {
+    let slice = lex.slice();
+    let m = slice[..slice.len() - 2].parse().ok()?;
+    Some((m, 1))
+}
 
 #[derive(Logos, Debug, PartialEq, Clone)]
 pub enum TokenKind {
@@ -24,7 +30,9 @@ pub enum TokenKind {
     #[regex("true|false", |lex| lex.slice().parse())]
     Bool(bool),
     #[regex("[0-9][0-9_]*", |lex| lex.slice().parse())]
-    Integer(i32),
+    Integer(i128),
+    #[regex("[0-9][0-9_]*i8", make_i8)]
+    IntegerSize((i128, u8)),
 
     // Decl stuff
     #[token("const")]
@@ -352,7 +360,7 @@ impl<'cx, 'input> Parser<'cx, 'input> {
     }
 
     /// Consumes a number and returns it.
-    fn expect_int(&mut self) -> i32 {
+    fn expect_int(&mut self) -> i128 {
         match self.next() {
             Some(Token {
                 kind: T::Integer(s),
@@ -529,7 +537,7 @@ impl<'cx, 'input> Parser<'cx, 'input> {
                 self.drop();
                 ast::Expr::bool(*b)
             }
-            T::Integer(_) => ast::Expr::int(self.expect_int() as i64),
+            T::Integer(_) => ast::Expr::int(self.expect_int() as i128),
             // Tuple literal
             T::LBrace => self.parse_constructor(),
             T::Ident(_) => {
@@ -1231,6 +1239,36 @@ const baz: {} = {}
             }),
             rhs: Box::new(Expr::int(3)),
         });
+    }
+
+    #[test]
+    fn lex_integer_values() {
+        //test_expr_is("43i8", |_cx| Expr::sized_int(43, 1));
+        let s = "43i8";
+        let cx = &Cx::new();
+        let mut p = Parser::new(cx, s);
+        assert_eq!(p.next().unwrap().kind, TokenKind::Integer(43));
+        assert!(p.next().is_none());
+    }
+
+    #[test]
+    fn parse_integer_values() {
+        test_expr_is("43i8", |_cx| Expr::sized_int(43, 1));
+        /*
+        test_expr_is("{1,2,3}", |_cx| Expr::TupleCtor {
+            body: vec![Expr::int(1), Expr::int(2), Expr::int(3)],
+        });
+        test_expr_is("{1,2,{1,2,3},3}", |_cx| Expr::TupleCtor {
+            body: vec![
+                Expr::int(1),
+                Expr::int(2),
+                Expr::TupleCtor {
+                    body: vec![Expr::int(1), Expr::int(2), Expr::int(3)],
+                },
+                Expr::int(3),
+            ],
+        });
+        */
     }
 
     #[test]

@@ -332,8 +332,12 @@ fn lower_expr(cx: &Cx, fb: &mut FuncBuilder, expr: &TExpr) -> Var {
         E::Lit { val } => {
             let v = match val {
                 Literal::Integer(i) => {
-                    assert!(*i < (std::i32::MAX as i64));
+                    assert!(*i < (std::i32::MAX as i128));
                     *i
+                }
+                Literal::SizedInteger { vl, .. } => {
+                    assert!(*vl < (std::i32::MAX as i128));
+                    *vl
                 }
                 // Turn bools into integers.
                 Literal::Bool(b) => {

@@ -15,8 +15,12 @@ use crate::{Cx, TypeDef, TypeSym, VarSym};
 #[derive(Debug, Clone, PartialEq)]
 pub enum Literal {
     /// An integer of some kind
-    Integer(i64),
-    // An integer with a known size
+    Integer(i128),
+    /// An integer with a known size
+    SizedInteger {
+        vl: i128,
+        bytes: u8,
+    },
     Bool(bool),
 }
 
@@ -201,9 +205,16 @@ impl Expr {
     }
 
     /// Shortcut function for making literal integers
-    pub const fn int(i: i64) -> Expr {
+    pub const fn int(i: i128) -> Expr {
         Expr::Lit {
             val: Literal::Integer(i),
+        }
+    }
+
+    /// Shortcut function for making literal integers of a known size
+    pub const fn sized_int(i: i128, bytes: u8) -> Expr {
+        Expr::Lit {
+            val: Literal::SizedInteger { vl: i, bytes },
         }
     }
 
