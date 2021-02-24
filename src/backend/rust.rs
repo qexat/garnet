@@ -153,6 +153,12 @@ fn compile_expr(cx: &Cx, expr: &hir::TypedExpr<TypeSym>) -> String {
         E::Lit {
             val: ast::Literal::Bool(b),
         } => format!("{}", b),
+        E::Lit {
+            val: ast::Literal::SizedInteger { vl, bytes },
+        } => {
+            let bits = bytes * 8;
+            format!("{}i{}", vl, bits)
+        }
         E::Var { name } => mangle_name(&*cx.fetch(*name)),
         E::BinOp { op, lhs, rhs } => format!(
             "({} {} {})",

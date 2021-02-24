@@ -732,6 +732,7 @@ fn is_mutable_lvalue<T>(symtbl: &Symtbl, expr: &hir::Expr<T>) -> Result<bool, Ty
 fn typecheck_literal(cx: &Cx, lit: &hir::Literal) -> Result<TypeSym, TypeError> {
     match lit {
         hir::Literal::Integer(_) => Ok(cx.i32()),
+        hir::Literal::SizedInteger { vl: _, bytes } => Ok(cx.intern_type(&TypeDef::SInt(*bytes))),
         hir::Literal::Bool(_) => Ok(cx.bool()),
     }
 }

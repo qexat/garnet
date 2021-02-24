@@ -52,7 +52,7 @@ impl From<VarSym> for usize {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum TypeDef {
     /// Signed integer with the given number of bytes
-    SInt(usize),
+    SInt(u8),
     /// An integer of unknown size, from an integer literal
     UnknownInt,
     Bool,

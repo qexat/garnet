@@ -79,6 +79,10 @@ fn unparse_expr(cx: &Cx, e: &Expr, indent: usize, out: &mut dyn io::Write) -> io
     match e {
         E::Lit { val } => match val {
             Literal::Integer(i) => write!(out, "{}", i),
+            Literal::SizedInteger { vl, bytes } => {
+                let size = bytes * 8;
+                write!(out, "{}i{}", vl, size)
+            }
             Literal::Bool(b) => write!(out, "{}", b),
         },
         E::Var { name } => {
