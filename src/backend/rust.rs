@@ -30,6 +30,7 @@ fn compile_typedef(cx: &Cx, td: &TypeDef) -> Cow<'static, str> {
         SInt(e) => {
             unreachable!("Invalid integer size: {}", e)
         }
+        UnknownInt => unreachable!("Should never happen!"),
         Bool => "bool".into(),
         Tuple(types) => {
             let mut accm = String::from("(");

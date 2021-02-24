@@ -14,7 +14,9 @@ use crate::{Cx, TypeDef, TypeSym, VarSym};
 /// Literal value
 #[derive(Debug, Clone, PartialEq)]
 pub enum Literal {
+    /// An integer of some kind
     Integer(i64),
+    // An integer with a known size
     Bool(bool),
 }
 
