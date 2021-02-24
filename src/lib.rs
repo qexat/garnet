@@ -53,6 +53,8 @@ impl From<VarSym> for usize {
 pub enum TypeDef {
     /// Signed integer with the given number of bytes
     SInt(usize),
+    /// An integer of unknown size, from an integer literal
+    UnknownInt,
     Bool,
     /// We can infer types for tuples
     Tuple(Vec<TypeSym>),
@@ -89,6 +91,7 @@ impl TypeDef {
             TypeDef::SInt(2) => Cow::Borrowed("I16"),
             TypeDef::SInt(1) => Cow::Borrowed("I8"),
             TypeDef::SInt(s) => panic!("Undefined integer size {}!", s),
+            TypeDef::UnknownInt => Cow::Borrowed("{number}"),
             TypeDef::Bool => Cow::Borrowed("Bool"),
             TypeDef::Tuple(v) => {
                 if v.len() == 0 {
@@ -173,6 +176,11 @@ impl Cx {
     /// Get the TypeDef for a type symbol
     pub fn fetch_type(&self, s: TypeSym) -> Rc<TypeDef> {
         self.types.fetch(s)
+    }
+
+    /// Shortcut for getting the type symbol for I128
+    pub fn unknown_int(&self) -> TypeSym {
+        self.intern_type(&TypeDef::UnknownInt)
     }
 
     /// Shortcut for getting the type symbol for I128
