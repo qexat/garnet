@@ -20,7 +20,32 @@ use crate::{Cx, TypeDef, TypeSym, VarSym};
 fn make_i8(lex: &mut Lexer<TokenKind>) -> Option<(i128, u8)> {
     let slice = lex.slice();
     let m = slice[..slice.len() - 2].parse().ok()?;
+    // TODO: Bounds check
     Some((m, 1))
+}
+
+fn make_i16(lex: &mut Lexer<TokenKind>) -> Option<(i128, u8)> {
+    let slice = lex.slice();
+    let m = slice[..slice.len() - 3].parse().ok()?;
+    Some((m, 2))
+}
+
+fn make_i32(lex: &mut Lexer<TokenKind>) -> Option<(i128, u8)> {
+    let slice = lex.slice();
+    let m = slice[..slice.len() - 3].parse().ok()?;
+    Some((m, 4))
+}
+
+fn make_i64(lex: &mut Lexer<TokenKind>) -> Option<(i128, u8)> {
+    let slice = lex.slice();
+    let m = slice[..slice.len() - 3].parse().ok()?;
+    Some((m, 8))
+}
+
+fn make_i128(lex: &mut Lexer<TokenKind>) -> Option<(i128, u8)> {
+    let slice = lex.slice();
+    let m = slice[..slice.len() - 4].parse().ok()?;
+    Some((m, 16))
 }
 
 #[derive(Logos, Debug, PartialEq, Clone)]
@@ -32,6 +57,10 @@ pub enum TokenKind {
     #[regex("[0-9][0-9_]*", |lex| lex.slice().parse())]
     Integer(i128),
     #[regex("[0-9][0-9_]*i8", make_i8)]
+    #[regex("[0-9][0-9_]*i16", make_i16)]
+    #[regex("[0-9][0-9_]*i32", make_i32)]
+    #[regex("[0-9][0-9_]*i64", make_i64)]
+    #[regex("[0-9][0-9_]*i128", make_i128)]
     IntegerSize((i128, u8)),
 
     // Decl stuff
@@ -205,8 +234,7 @@ impl ErrorReporter {
             cs::term::emit(&mut writer.lock(), &self.config, &self.files, _diag)
                 .expect("Could not print error message");
         }
-        //std::process::exit(1)
-        panic!()
+        panic!("Error somewhere in parser")
     }
 }
 
@@ -366,8 +394,12 @@ impl<'cx, 'input> Parser<'cx, 'input> {
                 kind: T::Integer(s),
                 ..
             }) => s,
+            Some(Token {
+                kind: T::IntegerSize((s, _)),
+                ..
+            }) => s,
             Some(Token { kind, span }) => {
-                let msg = format!("Parse error: got token {:?}.  Expected identifier.", kind,);
+                let msg = format!("Parse error: got token {:?}.  Expected integer.", kind,);
                 let diag = Diagnostic::error()
                     .with_message(msg)
                     .with_labels(vec![Label::primary(self.err.file_id, span)]);
@@ -376,7 +408,7 @@ impl<'cx, 'input> Parser<'cx, 'input> {
             }
             None => {
                 let msg = format!(
-                    "Parse error: Got end of input or malformed token.  Expected identifier",
+                    "Parse error: Got end of input or malformed token.  Expected integer.",
                 );
                 let diag = Diagnostic::error()
                     .with_message(msg)
@@ -538,6 +570,7 @@ impl<'cx, 'input> Parser<'cx, 'input> {
                 ast::Expr::bool(*b)
             }
             T::Integer(_) => ast::Expr::int(self.expect_int() as i128),
+            T::IntegerSize((_str, size)) => ast::Expr::sized_int(self.expect_int() as i128, *size),
             // Tuple literal
             T::LBrace => self.parse_constructor(),
             T::Ident(_) => {
@@ -1244,11 +1277,25 @@ const baz: {} = {}
     #[test]
     fn lex_integer_values() {
         //test_expr_is("43i8", |_cx| Expr::sized_int(43, 1));
-        let s = "43i8";
         let cx = &Cx::new();
-        let mut p = Parser::new(cx, s);
-        assert_eq!(p.next().unwrap().kind, TokenKind::Integer(43));
-        assert!(p.next().is_none());
+        let tests = &[
+            // Input string, expected integer, expected integer size
+            ("43i8", 43, 1),
+            ("22i16", 22, 2),
+            ("33i32", 33, 4),
+            ("91i64", 91, 8),
+            ("9i128", 9, 16),
+        ];
+        for (s, expected_int, expected_bytes) in tests {
+            let mut p = Parser::new(cx, s);
+            assert_eq!(
+                p.next().unwrap().kind,
+                TokenKind::IntegerSize((*expected_int, *expected_bytes))
+            );
+            // Make sure we don't lex the "i128" or whatever as the start of
+            // another token
+            assert!(p.next().is_none());
+        }
     }
 
     #[test]

@@ -491,6 +491,20 @@ end
     assert_eq!(eval_program0(src), 10);
 }
 
+#[test]
+fn assign_tuples_lvalue() {
+    let src = r#"
+
+fn test(): I32 =
+    let x: {I32, I32} = {10, 11}
+    let mut y: {I32, I32} = {20, 21}
+    y.1 = x.0
+    y.1
+end
+"#;
+    assert_eq!(eval_program0(src), 10);
+}
+
 /// This is a little weird... apparently Rust tuples
 /// automatically implement Copy if all their contents
 /// do?
@@ -525,3 +539,21 @@ end
 "#;
     assert_eq!(eval_program0(src), 20);
 }
+
+/*  This needs to wait for generic-ish binops
+#[test]
+fn add_numbers() {
+    let src = r#"
+
+fn foo(x: I64): I64 =
+    x + 3i64
+end
+
+fn test(): I64 =
+    let x: I64 = foo(9)
+    x
+end
+"#;
+    assert_eq!(eval_program0(src), 12);
+}
+*/
