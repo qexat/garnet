@@ -1,8 +1,5 @@
 Short-term todo list:
 
- * Clean up `typecheck_src()` unit test function, should check for
-   correct error instead of just panicking
- * Implement mutability if it's not already there
  * Make `return` statement work
  * Make type inference work, even if it's primitive
  * Make binops work on any integer type

@@ -742,6 +742,24 @@ mod tests {
     use super::*;
     use crate::*;
 
+    fn typecheck_src(src: &str) -> Result<hir::Ir<TypeSym>, CxError<TypeError>> {
+        let cx = &mut crate::Cx::new();
+        use crate::parser::Parser;
+        let ast = Parser::new(cx, src).parse();
+        let ir = hir::lower(&ast);
+        typecheck(cx, ir)
+    }
+
+    macro_rules! fail_typecheck {
+        ( $src: expr, $err_pat: pat ) => {
+            match typecheck_src($src) {
+                Ok(_) => panic!("Typecheck succeeded and should have failed!"),
+                Err(CxError(_, $err_pat)) => (),
+                Err(x) => panic!("Typecheck gave the wrong error: {}", x),
+            }
+        };
+    }
+
     /// Sanity check
     #[test]
     fn test_typecheck_lit() {
@@ -990,10 +1008,9 @@ mod tests {
     }
 
     #[test]
-    #[should_panic]
     fn test_bogus_function() {
         let src = "fn foo(): fn(I32):I32 = fn(x: I32):Bool = x+1 end end";
-        typecheck_src(src);
+        fail_typecheck!(src, TypeError::ReturnMismatch { .. });
     }
 
     /// TODO
@@ -1009,19 +1026,6 @@ mod tests {
             typecheck_expr(cx, tbl, *plz(hir::Expr::unit())).unwrap().t,
             cx.unit()
         );
-    }
-
-    fn typecheck_src(src: &str) {
-        let cx = &mut crate::Cx::new();
-        use crate::parser::Parser;
-        let ast = Parser::new(cx, src).parse();
-        let ir = hir::lower(&ast);
-        match &typecheck(cx, ir) {
-            Ok(_res) => (),
-            Err(e) => {
-                panic!("Typecheck failed: {}", e)
-            }
-        }
     }
 
     #[test]
@@ -1056,13 +1060,12 @@ end"#;
     }
 
     #[test]
-    #[should_panic]
     fn test_bad_assign1() {
         let src = r#"fn foo() =
     let x: I32 = 10
     x = 11
 end"#;
-        typecheck_src(src);
+        fail_typecheck!(src, TypeError::MutabilityMismatch { .. });
     }
 
     #[test]
@@ -1071,28 +1074,26 @@ end"#;
         let src = r#"fn foo() =
     {1,2,3}.3 = 11
 end"#;
-        typecheck_src(src);
+        typecheck_src(src).unwrap();
     }
 
     #[test]
-    #[should_panic]
     fn test_bad_integer_assignment() {
         let src = r#"fn foo() =
         let x: I32 = 10
         let mut y: I64 = 11i64
         y = x
 end"#;
-        typecheck_src(src);
+        fail_typecheck!(src, TypeError::TypeMismatch { .. });
     }
 
     #[test]
-    #[should_panic]
     fn test_bad_integer_math() {
         let src = r#"fn foo() =
         let x: I32 = 10
         let mut y: I64 = 11i64
-        y = x
+        y + x
 end"#;
-        typecheck_src(src);
+        fail_typecheck!(src, TypeError::BopTypeMismatch { .. });
     }
 }
