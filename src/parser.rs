@@ -92,6 +92,8 @@ pub enum TokenKind {
     Loop,
     #[token("do")]
     Do,
+    #[token("return")]
+    Return,
 
     // Punctuation
     #[token("(")]
@@ -582,6 +584,7 @@ impl<'cx, 'input> Parser<'cx, 'input> {
             T::Loop => self.parse_loop(),
             T::Do => self.parse_block(),
             T::Fn => self.parse_lambda(),
+            T::Return => self.parse_return(),
             // Parenthesized expr's
             T::LParen => {
                 self.drop();
@@ -719,6 +722,16 @@ impl<'cx, 'input> Parser<'cx, 'input> {
         }
     }
 
+    /// return = "return" expr
+    fn parse_return(&mut self) -> ast::Expr {
+        self.expect(T::Return);
+        let retval = Box::new(
+            self.parse_expr(0)
+                .expect("Expected expression after `let ... =`, did not get one"),
+        );
+        ast::Expr::Return { retval }
+    }
+
     /// {"elseif" expr "then" {expr}}
     fn parse_elif(&mut self, accm: &mut Vec<ast::IfCase>) {
         while self.peek_is(T::Elseif) {
@@ -797,7 +810,6 @@ impl<'cx, 'input> Parser<'cx, 'input> {
         ast::Expr::Lambda { signature, body }
     }
 
-    /// let = "let" ident ":" typename "=" expr
     /// tuple constructor = "{" [expr {"," expr} [","] "}"
     fn parse_constructor(&mut self) -> ast::Expr {
         self.expect(T::LBrace);
