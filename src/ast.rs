@@ -172,7 +172,7 @@ pub enum Expr {
     },
     Break,
     Return {
-        retval: Option<Box<Expr>>,
+        retval: Box<Expr>,
     },
     /// Tuple constructor
     TupleCtor {

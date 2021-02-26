@@ -189,12 +189,11 @@ fn unparse_expr(cx: &Cx, e: &Expr, indent: usize, out: &mut dyn io::Write) -> io
             write!(out, ")")
         }
         E::Break => writeln!(out, "break"),
-        E::Return { retval: Some(e) } => {
+        E::Return { retval: e } => {
             write!(out, "return ")?;
             unparse_expr(cx, e, 0, out)?;
             writeln!(out)
         }
-        E::Return { retval: None } => writeln!(out, "return"),
         E::TupleCtor { body } => {
             write!(out, "{{")?;
             for e in body {

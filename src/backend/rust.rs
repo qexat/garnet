@@ -32,6 +32,7 @@ fn compile_typedef(cx: &Cx, td: &TypeDef) -> Cow<'static, str> {
         }
         UnknownInt => unreachable!("Should never happen!"),
         Bool => "bool".into(),
+        Never => panic!("Stable rust can't quite do this yet..."),
         Tuple(types) => {
             let mut accm = String::from("(");
             for typ in types {

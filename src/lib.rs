@@ -58,6 +58,8 @@ pub enum TypeDef {
     Bool,
     /// We can infer types for tuples
     Tuple(Vec<TypeSym>),
+    /// Never is a real type, I guess!
+    Never,
     Lambda(Vec<TypeSym>, TypeSym),
     Ptr(Box<TypeSym>),
     /*
@@ -93,6 +95,7 @@ impl TypeDef {
             TypeDef::SInt(s) => panic!("Undefined integer size {}!", s),
             TypeDef::UnknownInt => Cow::Borrowed("{number}"),
             TypeDef::Bool => Cow::Borrowed("Bool"),
+            TypeDef::Never => Cow::Borrowed("Never"),
             TypeDef::Tuple(v) => {
                 if v.len() == 0 {
                     Cow::Borrowed("{}")

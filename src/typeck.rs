@@ -412,7 +412,7 @@ fn typecheck_decl(
             // a return statement here?
             // Use a Never type, it seems.
             let typechecked_exprs = typecheck_exprs(cx, symtbl, body)?;
-            // TODO: This only works if there are no return statements.
+            // This works because we have no return statements.
             let last_expr_type = last_type_of(cx, &typechecked_exprs);
 
             if !type_matches(cx, signature.rettype, last_expr_type) {
@@ -655,7 +655,7 @@ fn typecheck_expr(
             }
         }
         Break => Ok(expr.map(unittype)),
-        Return { .. } => todo!("TODO: Never type"),
+        Return { retval } => Ok(retval.map(cx.intern_type(&TypeDef::Never))),
         TupleCtor { body } => {
             let body_exprs = typecheck_exprs(cx, symtbl, body)?;
             let body_typesyms = body_exprs.iter().map(|te| te.t).collect();
@@ -1013,9 +1013,14 @@ mod tests {
         fail_typecheck!(src, TypeError::ReturnMismatch { .. });
     }
 
-    /// TODO
     #[test]
-    fn test_return() {}
+    fn test_rettype() {
+        let src = r#"fn foo(): I32 =
+        let x: I32 = 10
+        return x
+end"#;
+        typecheck_src(src).unwrap();
+    }
 
     #[test]
     fn test_tuples() {
@@ -1034,7 +1039,7 @@ mod tests {
     let mut x: I32 = 10
     x = 11
 end"#;
-        typecheck_src(src);
+        typecheck_src(src).unwrap();
     }
 
     #[test]
@@ -1043,7 +1048,7 @@ end"#;
     let mut x: {I32, I32} = {10, 12}
     x.0 = 11
 end"#;
-        typecheck_src(src);
+        typecheck_src(src).unwrap();
     }
 
     #[test]
@@ -1056,7 +1061,7 @@ end"#;
         let y: I128 = 12i128
         let x: I32 = 10
 end"#;
-        typecheck_src(src);
+        typecheck_src(src).unwrap();
     }
 
     #[test]

@@ -49,6 +49,7 @@ expr =
   | block
   | funcall
   | lambda
+  | return
   | constructor
   | binop
   | prefixop
@@ -61,6 +62,7 @@ loop = "loop" {expr} "end"
 block = "do" {expr} "end"
 funcall = expr "(" [expr {"," expr}] ")"
 lambda = "fn" fn_signature "=" {expr} "end"
+return = "return" expr
 
 fn_args = "(" [ident ":" typename {"," ident ":" typename}] ")"
 fn_signature = fn_args [":" typename]

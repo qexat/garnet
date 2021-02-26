@@ -329,14 +329,7 @@ fn lower_expr(expr: &ast::Expr) -> TypedExpr<()> {
             }
         }
         E::Break => Break,
-        E::Return { retval: None } => Return {
-            // Return unit
-            retval: Box::new(TypedExpr {
-                t: (),
-                e: Expr::unit(),
-            }),
-        },
-        E::Return { retval: Some(e) } => Return {
+        E::Return { retval: e } => Return {
             retval: Box::new(lower_expr(e)),
         },
         E::TupleCtor { body } => Expr::TupleCtor {
@@ -412,7 +405,9 @@ mod tests {
     use crate::ast::Expr as A;
     use crate::hir::Expr as I;
 
+    /*
     /// Does `return;` turn into `return ();`?
+    /// Not doing that to make parsing simpler
     #[test]
     fn test_return_none() {
         let input = A::Return { retval: None };
@@ -422,12 +417,13 @@ mod tests {
         let res = lower_expr(&input);
         assert_eq!(&res, &output);
     }
+    */
 
     /// Does `return ();` also turn into `return ();`?
     #[test]
     fn test_return_unit() {
         let input = A::Return {
-            retval: Some(Box::new(A::unit())),
+            retval: Box::new(A::unit()),
         };
         let output = *plz(I::Return {
             retval: plz(I::unit()),
