@@ -44,6 +44,7 @@ pub enum TypeError {
         got: TypeSym,
         expected: TypeSym,
     },
+    InvalidReturn,
     BopTypeMismatch {
         bop: hir::BOp,
         got1: TypeSym,
@@ -91,6 +92,9 @@ impl TypeError {
     pub fn format(&self, cx: &Cx) -> String {
         match self {
             TypeError::UnknownVar(sym) => format!("Unknown var: {}", cx.fetch(*sym)),
+            TypeError::InvalidReturn => {
+                format!("return expression happened somewhere that isn't in a function!")
+            }
             TypeError::ReturnMismatch {
                 fname,
                 got,
@@ -339,18 +343,27 @@ impl InferenceCx {
 /// Currently we have no covariance or contravariance, so this is pretty simple.
 /// Currently it's just, if the symbols match, the types match.
 /// The symbols matching by definition means the structures match.
-fn type_matches(cx: &Cx, t1: TypeSym, t2: TypeSym) -> bool {
-    let td1 = &*cx.fetch_type(t1);
-    let td2 = &*cx.fetch_type(t2);
-    match (td1, td2) {
-        // Numbers match numbers of unknown sizes...
-        // Actually, maybe we need to do this with real type inference.
-        /*
-        (TypeDef::UnknownInt, TypeDef::SInt(_)) => true,
-        (TypeDef::SInt(_), TypeDef::UnknownInt) => true,
-        */
-        (t1, t2) => t1 == t2,
+fn type_matches(cx: &Cx, wanted: TypeSym, got: TypeSym) -> bool {
+    // If we want some type, and got Never, then this is always valid
+    // because we never hit the expression that expected the `wanted` type
+    if got == cx.never() {
+        return true;
+    } else {
+        wanted == got
     }
+    /*
+        let wanted_def = &*cx.fetch_type(wanted);
+        let got_def = &*cx.fetch_type(t2);
+        match (def, td2) {
+            // Numbers match numbers of unknown sizes...
+            // Actually, maybe we need to do this with real type inference.
+            /*
+            (TypeDef::UnknownInt, TypeDef::SInt(_)) => true,
+            (TypeDef::SInt(_), TypeDef::UnknownInt) => true,
+            */
+            (wanted, t2) => wanted == t2,
+        }
+    */
 }
 
 /// Try to actually typecheck the given HIR, and return HIR with resolved types.
@@ -411,8 +424,10 @@ fn typecheck_decl(
             // Oh gods, what in the name of Eris do we do if there's
             // a return statement here?
             // Use a Never type, it seems.
-            let typechecked_exprs = typecheck_exprs(cx, symtbl, body)?;
-            // This works because we have no return statements.
+            let typechecked_exprs = typecheck_exprs(cx, symtbl, body, Some(signature.rettype))?;
+            // Ok, so we *also* need to walk through all the expressions
+            // and look for any "return" exprs (or later `?`/`try` exprs
+            // also) and see make sure the return types match.
             let last_expr_type = last_type_of(cx, &typechecked_exprs);
 
             if !type_matches(cx, signature.rettype, last_expr_type) {
@@ -440,7 +455,7 @@ fn typecheck_decl(
         } => Ok(hir::Decl::Const {
             name,
             typename,
-            init: typecheck_expr(cx, symtbl, init)?,
+            init: typecheck_expr(cx, symtbl, init, None)?,
         }),
     }
 }
@@ -451,31 +466,51 @@ fn typecheck_exprs(
     cx: &Cx,
     symtbl: &mut Symtbl,
     exprs: Vec<hir::TypedExpr<()>>,
+    function_rettype: Option<TypeSym>,
 ) -> Result<Vec<hir::TypedExpr<TypeSym>>, CxError<TypeError>> {
     exprs
         .into_iter()
-        .map(|e| typecheck_expr(cx, symtbl, e))
+        .map(|e| typecheck_expr(cx, symtbl, e, function_rettype))
         .collect()
 }
 
 /// Takes a slice of typed expr's and returns the type of the last one.
-/// Returns unit if the slice is empty.
+/// Returns unit if the slice is empty.  Returns None if the only expressions
+/// are return statements or other things that don't return a value
+///
+/// Basically, what do we do if we get this code?
+///
+/// let x = something
+/// return something_else
+/// x
+///
+/// Or even just:
+///
+/// return 1
+/// return 2
+/// return 3
+///
+/// The type of those expr lists is `Never`,
 fn last_type_of(cx: &Cx, exprs: &[hir::TypedExpr<TypeSym>]) -> TypeSym {
     exprs.last().map(|e| e.t).unwrap_or_else(|| cx.unit())
 }
 
 /// Actually typecheck a single expr
+///
+/// `function_rettype` is the type that `return` exprs and such must be.
+/// If it is None, this is an expression for which a return is not valid,
+/// ie an initializer for a Const or whatever.
 fn typecheck_expr(
     cx: &Cx,
     symtbl: &mut Symtbl,
     expr: hir::TypedExpr<()>,
-    //) -> Result<hir::TypedExpr<TypeSym>, TypeError> {
+    function_rettype: Option<TypeSym>,
 ) -> Result<hir::TypedExpr<TypeSym>, CxError<TypeError>> {
     use hir::Expr::*;
     let unittype = cx.unit();
     let booltype = cx.bool();
+    // TODO: Better name maybe!
     let rar = |e| CxError(cx.clone(), e);
-    //let rar = |e| CxError(Cx::new(), e);
     match expr.e {
         Lit { val } => {
             let t = typecheck_literal(cx, &val).map_err(rar)?;
@@ -487,8 +522,8 @@ fn typecheck_expr(
             Ok(expr.map(t))
         }
         BinOp { op, lhs, rhs } => {
-            let lhs = Box::new(typecheck_expr(cx, symtbl, *lhs)?);
-            let rhs = Box::new(typecheck_expr(cx, symtbl, *rhs)?);
+            let lhs = Box::new(typecheck_expr(cx, symtbl, *lhs, function_rettype)?);
+            let rhs = Box::new(typecheck_expr(cx, symtbl, *rhs, function_rettype)?);
             // Currently, our only valid binops are on numbers.
             let input_type = op.input_type(cx);
             let output_type = op.output_type(cx);
@@ -507,7 +542,7 @@ fn typecheck_expr(
             }
         }
         UniOp { op, rhs } => {
-            let rhs = Box::new(typecheck_expr(cx, symtbl, *rhs)?);
+            let rhs = Box::new(typecheck_expr(cx, symtbl, *rhs, function_rettype)?);
             // Currently, our only valid binops are on numbers.
             let input_type = op.input_type(cx);
             let output_type = op.output_type(cx);
@@ -525,7 +560,7 @@ fn typecheck_expr(
             }
         }
         Block { body } => {
-            let b = typecheck_exprs(cx, symtbl, body)?;
+            let b = typecheck_exprs(cx, symtbl, body, function_rettype)?;
             let t = last_type_of(cx, &b);
             Ok(hir::TypedExpr {
                 e: Block { body: b },
@@ -538,7 +573,7 @@ fn typecheck_expr(
             init,
             mutable,
         } => {
-            let init_expr = typecheck_expr(cx, symtbl, *init)?;
+            let init_expr = typecheck_expr(cx, symtbl, *init, function_rettype)?;
             let init_type = init_expr.t;
             if type_matches(cx, init_type, typename) {
                 // Add var to symbol table, proceed
@@ -561,14 +596,14 @@ fn typecheck_expr(
             }
         }
         If { cases, falseblock } => {
-            let falseblock = typecheck_exprs(cx, symtbl, falseblock)?;
+            let falseblock = typecheck_exprs(cx, symtbl, falseblock, function_rettype)?;
             let assumed_type = last_type_of(cx, &falseblock);
             let mut new_cases = vec![];
             for (cond, body) in cases {
-                let cond_expr = typecheck_expr(cx, symtbl, cond)?;
+                let cond_expr = typecheck_expr(cx, symtbl, cond, function_rettype)?;
                 if type_matches(cx, cond_expr.t, booltype) {
                     // Proceed to typecheck arms
-                    let ifbody_exprs = typecheck_exprs(cx, symtbl, body)?;
+                    let ifbody_exprs = typecheck_exprs(cx, symtbl, body, function_rettype)?;
                     let if_type = last_type_of(cx, &ifbody_exprs);
                     if !type_matches(cx, if_type, assumed_type) {
                         return Err(rar(TypeError::IfTypeMismatch {
@@ -592,7 +627,7 @@ fn typecheck_expr(
             })
         }
         Loop { body } => {
-            let b = typecheck_exprs(cx, symtbl, body)?;
+            let b = typecheck_exprs(cx, symtbl, body, function_rettype)?;
             let t = last_type_of(cx, &b);
             Ok(hir::TypedExpr {
                 e: Loop { body: b },
@@ -605,7 +640,7 @@ fn typecheck_expr(
             for (paramname, paramtype) in signature.params.iter() {
                 symtbl.add_var(*paramname, *paramtype, false);
             }
-            let body_expr = typecheck_exprs(cx, symtbl, body)?;
+            let body_expr = typecheck_exprs(cx, symtbl, body, function_rettype)?;
             let bodytype = last_type_of(cx, &body_expr);
             // TODO: validate/unify types
             if !type_matches(cx, bodytype, signature.rettype) {
@@ -628,9 +663,9 @@ fn typecheck_expr(
         }
         Funcall { func, params } => {
             // First, get param types
-            let given_params = typecheck_exprs(cx, symtbl, params)?;
+            let given_params = typecheck_exprs(cx, symtbl, params, function_rettype)?;
             // Then, look up function
-            let f = typecheck_expr(cx, symtbl, *func)?;
+            let f = typecheck_expr(cx, symtbl, *func, function_rettype)?;
             let fdef = &*cx.fetch_type(f.t);
             match fdef {
                 TypeDef::Lambda(paramtypes, rettype) => {
@@ -655,9 +690,29 @@ fn typecheck_expr(
             }
         }
         Break => Ok(expr.map(unittype)),
-        Return { retval } => Ok(retval.map(cx.intern_type(&TypeDef::Never))),
+        Return { retval } => {
+            if let Some(wanted_type) = function_rettype {
+                // We got a `return` expression in a place where there ain't anything to return
+                // from.
+                let mut body_expr = typecheck_expr(cx, symtbl, *retval, function_rettype)?;
+                let given = body_expr.t;
+                if type_matches(cx, given, wanted_type) {
+                    // If you do `let x = return y` the type of `x` is `Never`
+                    body_expr.t = cx.never();
+                    Ok(body_expr)
+                } else {
+                    Err(rar(TypeError::TypeMismatch {
+                        expr_name: String::from("return"),
+                        expected: wanted_type,
+                        got: given,
+                    }))
+                }
+            } else {
+                Err(rar(TypeError::InvalidReturn))
+            }
+        }
         TupleCtor { body } => {
-            let body_exprs = typecheck_exprs(cx, symtbl, body)?;
+            let body_exprs = typecheck_exprs(cx, symtbl, body, function_rettype)?;
             let body_typesyms = body_exprs.iter().map(|te| te.t).collect();
             let body_type = TypeDef::Tuple(body_typesyms);
             Ok(hir::TypedExpr {
@@ -666,7 +721,7 @@ fn typecheck_expr(
             })
         }
         TupleRef { expr, elt } => {
-            let body_expr = typecheck_expr(cx, symtbl, *expr)?;
+            let body_expr = typecheck_expr(cx, symtbl, *expr, function_rettype)?;
             let expr_typedef = cx.fetch_type(body_expr.t);
             if let TypeDef::Tuple(typesyms) = &*expr_typedef {
                 // TODO
@@ -683,8 +738,8 @@ fn typecheck_expr(
             }
         }
         Assign { lhs, rhs } => {
-            let lhs_expr = typecheck_expr(cx, symtbl, *lhs)?;
-            let rhs_expr = typecheck_expr(cx, symtbl, *rhs)?;
+            let lhs_expr = typecheck_expr(cx, symtbl, *lhs, function_rettype)?;
+            let rhs_expr = typecheck_expr(cx, symtbl, *rhs, function_rettype)?;
             // So the rules for assignments are, it's good only:
             // If the lhs is an lvalue (just variable or tuple ref currently)
             // (This basically comes down to "somewhere with a location"...)
@@ -864,7 +919,7 @@ mod tests {
             });
             assert!(type_matches(
                 cx,
-                typecheck_expr(cx, tbl, ir).unwrap().t,
+                typecheck_expr(cx, tbl, ir, None).unwrap().t,
                 t_i32
             ));
 
@@ -877,7 +932,7 @@ mod tests {
                     val: Literal::Bool(false),
                 }),
             });
-            assert!(typecheck_expr(cx, tbl, bad_ir).is_err());
+            assert!(typecheck_expr(cx, tbl, bad_ir, None).is_err());
         }
     }
 
@@ -898,7 +953,7 @@ mod tests {
             });
             assert!(type_matches(
                 cx,
-                typecheck_expr(cx, tbl, ir).unwrap().t,
+                typecheck_expr(cx, tbl, ir, None).unwrap().t,
                 t_i32
             ));
 
@@ -908,7 +963,7 @@ mod tests {
                     val: Literal::Bool(false),
                 }),
             });
-            assert!(typecheck_expr(cx, tbl, bad_ir).is_err());
+            assert!(typecheck_expr(cx, tbl, bad_ir, None).is_err());
         }
     }
 
@@ -937,7 +992,7 @@ mod tests {
             });
             assert!(type_matches(
                 cx,
-                typecheck_expr(cx, tbl, ir).unwrap().t,
+                typecheck_expr(cx, tbl, ir, None).unwrap().t,
                 t_unit
             ));
             // Is the variable now bound in our symbol table?
@@ -992,7 +1047,7 @@ mod tests {
                     params: vec![*plz(Expr::int(3)), *plz(Expr::int(4))],
                 }),
             ];
-            let exprs = &typecheck_exprs(cx, tbl, ir).unwrap();
+            let exprs = &typecheck_exprs(cx, tbl, ir, None).unwrap();
             assert!(type_matches(cx, last_type_of(cx, exprs), t_i32));
             // Is the variable now bound in our symbol table?
             assert_eq!(tbl.get_var(fname).unwrap(), ftype);
@@ -1023,12 +1078,51 @@ end"#;
     }
 
     #[test]
+    fn test_bad_rettype1() {
+        let src = r#"fn foo(): I32 =
+        let x: I32 = 10
+        return true
+        x
+end"#;
+        fail_typecheck!(src, TypeError::TypeMismatch { .. });
+    }
+
+    #[test]
+    fn test_bad_rettype2() {
+        let src = r#"fn foo(): I32 =
+        let x: I32 = 10
+        return x
+        true
+end"#;
+        fail_typecheck!(src, TypeError::ReturnMismatch { .. });
+    }
+
+    #[test]
+    fn test_bad_rettype3() {
+        let src = r#"fn foo(): I32 =
+        return 3
+        return true
+        return 4
+end"#;
+        fail_typecheck!(src, TypeError::TypeMismatch { .. });
+    }
+
+    #[test]
+    fn test_invalid_return() {
+        let src = r#"const F: I32 = return 3
+"#;
+        fail_typecheck!(src, TypeError::InvalidReturn)
+    }
+
+    #[test]
     fn test_tuples() {
         use hir::*;
         let cx = &mut crate::Cx::new();
         let tbl = &mut Symtbl::new();
         assert_eq!(
-            typecheck_expr(cx, tbl, *plz(hir::Expr::unit())).unwrap().t,
+            typecheck_expr(cx, tbl, *plz(hir::Expr::unit()), None)
+                .unwrap()
+                .t,
             cx.unit()
         );
     }

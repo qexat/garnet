@@ -221,6 +221,11 @@ impl Cx {
         self.intern_type(&TypeDef::Tuple(vec![]))
     }
 
+    /// Shortcut for getting the type symbol for Never
+    pub fn never(&self) -> TypeSym {
+        self.intern_type(&TypeDef::Never)
+    }
+
     /// Generate a new unique symbol including the given string
     /// Useful for some optimziations and intermediate names and such.
     ///
