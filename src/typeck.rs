@@ -1,6 +1,8 @@
 //! Typechecking and other semantic checking.
 //! Operates on the IR.
 
+use std::borrow::Cow;
+
 use crate::hir;
 use crate::scope;
 use crate::{Cx, TypeDef, TypeSym, VarSym};
@@ -79,12 +81,12 @@ pub enum TypeError {
         got: TypeSym,
     },
     TypeMismatch {
-        expr_name: String,
+        expr_name: Cow<'static, str>,
         got: TypeSym,
         expected: TypeSym,
     },
     MutabilityMismatch {
-        expr_name: String,
+        expr_name: Cow<'static, str>,
     },
 }
 
@@ -702,7 +704,7 @@ fn typecheck_expr(
                     Ok(body_expr)
                 } else {
                     Err(rar(TypeError::TypeMismatch {
-                        expr_name: String::from("return"),
+                        expr_name: "return".into(),
                         expected: wanted_type,
                         got: given,
                     }))
@@ -747,11 +749,11 @@ fn typecheck_expr(
             // If the types of lhs and rhs match.
             if !is_mutable_lvalue(symtbl, &lhs_expr.e).map_err(rar)? {
                 Err(rar(TypeError::MutabilityMismatch {
-                    expr_name: String::from("assignment"),
+                    expr_name: "assignment".into(),
                 }))
             } else if !type_matches(cx, lhs_expr.t, rhs_expr.t) {
                 Err(rar(TypeError::TypeMismatch {
-                    expr_name: String::from("assignment"),
+                    expr_name: "assignment".into(),
                     expected: lhs_expr.t,
                     got: rhs_expr.t,
                 }))
