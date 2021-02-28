@@ -50,18 +50,18 @@ impl From<VarSym> for usize {
 /// For now this is what we use as a type...
 /// This doesn't include the name, just the properties of it.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum TypeDef {
+pub enum TypeDef<Sym = TypeSym> {
     /// Signed integer with the given number of bytes
     SInt(u8),
-    /// An integer of unknown size, from an integer literal
-    UnknownInt,
+    // /// An integer of unknown size, from an integer literal
+    // UnknownInt,
     Bool,
     /// We can infer types for tuples
-    Tuple(Vec<TypeSym>),
+    Tuple(Vec<Sym>),
     /// Never is a real type, I guess!
     Never,
-    Lambda(Vec<TypeSym>, TypeSym),
-    Ptr(Box<TypeSym>),
+    Lambda(Vec<Sym>, Sym),
+    Ptr(Box<Sym>),
     /*
     /// TODO: AUGJDKSFLJDSFSLAF
     /// This is basically a type that has been named but we
@@ -93,7 +93,7 @@ impl TypeDef {
             TypeDef::SInt(2) => Cow::Borrowed("I16"),
             TypeDef::SInt(1) => Cow::Borrowed("I8"),
             TypeDef::SInt(s) => panic!("Undefined integer size {}!", s),
-            TypeDef::UnknownInt => Cow::Borrowed("{number}"),
+            //TypeDef::UnknownInt => Cow::Borrowed("{number}"),
             TypeDef::Bool => Cow::Borrowed("Bool"),
             TypeDef::Never => Cow::Borrowed("Never"),
             TypeDef::Tuple(v) => {
@@ -181,10 +181,12 @@ impl Cx {
         self.types.fetch(s)
     }
 
-    /// Shortcut for getting the type symbol for I128
+    /*
+    /// Shortcut for getting the type symbol for an unknown int
     pub fn unknown_int(&self) -> TypeSym {
         self.intern_type(&TypeDef::UnknownInt)
     }
+    */
 
     /// Shortcut for getting the type symbol for I128
     pub fn i128(&self) -> TypeSym {

@@ -3,7 +3,6 @@
 
 use std::borrow::Cow;
 use std::collections::HashMap;
-use std::rc::Rc;
 
 use crate::hir;
 use crate::scope;
@@ -250,21 +249,46 @@ impl From<InfTypeSym> for usize {
     }
 }
 
-/// An inferred type definition
+/// What we know about an inferred type
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum InfTypeDef {
+pub enum TypeInfo {
     /// Unknown type not inferred yet
     Unknown,
     /// Reference saying "this type is the same as that one",
     /// which may still be unknown.
     Ref(InfTypeSym),
     /// Known type.
-    Known(TypeSym),
+    Known(InfTypeDef),
+}
+
+/// A real type def that has had all the inference stuff done
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum ConcreteTypeDef {
+    /// Signed integer with the given number of bytes
+    SInt(u8),
+    Bool,
+    /// We can infer types for tuples
+    Tuple(Vec<ConcreteTypeDef>),
+    /// Never is a real type, I guess!
+    Never,
+    Lambda(Vec<ConcreteTypeDef>, Box<ConcreteTypeDef>),
+}
+
+/// An inferred type definition that contains
+/// other inferred info
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum InfTypeDef {
+    /// Signed integer with the given number of bytes
+    SInt(u8),
+    Bool,
+    Never,
+    Tuple(Vec<InfTypeSym>),
+    Lambda(Vec<InfTypeSym>, Box<InfTypeSym>),
 }
 
 struct InferenceCx {
     /// This is NOT an `Interner` because we *modify* what it contains.
-    types: HashMap<InfTypeSym, InfTypeDef>,
+    types: HashMap<InfTypeSym, TypeInfo>,
     next_idx: usize,
 }
 
@@ -278,7 +302,7 @@ impl InferenceCx {
     }
 
     /// Add a new inferred type and get a symbol for it.
-    pub fn insert(&mut self, def: InfTypeDef) -> InfTypeSym {
+    pub fn insert(&mut self, def: TypeInfo) -> InfTypeSym {
         let sym = InfTypeSym(self.next_idx);
         self.next_idx += 1;
         self.types.insert(sym, def);
@@ -286,7 +310,7 @@ impl InferenceCx {
     }
 
     /// Get what we know about the given inferred type.
-    pub fn get(&self, s: InfTypeSym) -> &InfTypeDef {
+    pub fn get(&self, s: InfTypeSym) -> &TypeInfo {
         self.types
             .get(&s)
             .expect("Unknown inferred type symbol, should never happen")
@@ -299,7 +323,7 @@ impl InferenceCx {
     /// That might work!
     /// https://play.rust-lang.org/?version=stable&mode=debug&edition=2018&gist=ba1adacd8659de0587af68cb0e55a471
     pub fn unify(&mut self, a: InfTypeSym, b: InfTypeSym) -> Result<(), TypeError> {
-        use InfTypeDef::*;
+        use TypeInfo::*;
         // TODO someday: clean up clones
         let def_a = self.get(a).clone();
         let def_b = self.get(b).clone();
@@ -322,20 +346,19 @@ impl InferenceCx {
                 Ok(())
             }
 
-            (Known(t1), Known(t2)) if t1 == t2 => Ok(()),
-            (Known(t1), Known(t2)) => Err(TypeError::TypeMismatch {
-                expr_name: "type inference unification".into(),
-                expected: t1,
-                got: t2,
-            }),
-            /*
+            (Known(t1), Known(t2)) => self.unify_defs(t1, t2),
+        }
+    }
+
+    pub fn unify_defs(&mut self, a: InfTypeDef, b: InfTypeDef) -> Result<(), TypeError> {
+        use InfTypeDef::*;
+        match (a, b) {
             // Primitives are easy to unify
             (SInt(sa), SInt(sb)) if sa == sb => Ok(()),
-            (SInt(sa), SInt(sb)) => Err(TypeError::Type(format!(
-                "Integer mismatch: {} != {}",
-                sa, sb
-            ))),
+            (SInt(sa), SInt(sb)) => Err(todo!()),
             (Bool, Bool) => Ok(()),
+            // Never is our bottom-ish type
+            (Never, _) => Ok(()),
 
             // For complex types, we must unify their sub-types.
             (Tuple(ta), Tuple(tb)) => {
@@ -350,21 +373,35 @@ impl InferenceCx {
                 }
                 self.unify(*ra, *rb)
             }
-            */
             // No attempt to match was successful, error.
-            //(t1, t2) => Err(TypeError::InferenceFailed { t1: *t1, t2: *t2 }),
+            (t1, t2) => Err(todo!()),
         }
     }
 
-    /// Attempt to reconstruct a concrete type from a symbol.  This may
+    /// Attempt to reconstruct a concrete type from an inferred type symbol.  This may
     /// fail if we don't have enough info to figure out what the type is.
-    pub fn reconstruct(&self, sym: InfTypeSym) -> Result<TypeSym, TypeError> {
+    pub fn reconstruct(&self, sym: InfTypeSym) -> Result<ConcreteTypeDef, TypeError> {
         let t = &*self.get(sym);
-        use InfTypeDef::*;
+        use ConcreteTypeDef as C;
+        use InfTypeDef as I;
+        use TypeInfo::*;
         match t {
             Unknown => todo!("No type?"),
             Ref(id) => self.reconstruct(*id),
-            Known(sym) => Ok(*sym),
+            Known(I::SInt(i)) => Ok(C::SInt(*i)),
+            Known(I::Bool) => Ok(C::Bool),
+            Known(I::Never) => Ok(C::Never),
+            Known(I::Tuple(items)) => {
+                let new_items: Result<Vec<ConcreteTypeDef>, TypeError> =
+                    items.into_iter().map(|i| self.reconstruct(*i)).collect();
+                Ok(C::Tuple(new_items?))
+            }
+            Known(I::Lambda(args, ret)) => {
+                let new_args: Result<Vec<ConcreteTypeDef>, TypeError> =
+                    args.into_iter().map(|i| self.reconstruct(*i)).collect();
+                let new_ret = self.reconstruct(**ret)?;
+                Ok(C::Lambda(new_args?, Box::new(new_ret)))
+            }
         }
     }
 }
@@ -1225,5 +1262,34 @@ end"#;
         y + x
 end"#;
         fail_typecheck!(src, TypeError::BopType { .. });
+    }
+
+    #[test]
+    fn test_inference() {
+        let mut engine = InferenceCx::new();
+        // Function with unknown input
+        let i = engine.insert(TypeInfo::Unknown);
+        let o = engine.insert(TypeInfo::Known(InfTypeDef::SInt(4)));
+        let f0 = engine.insert(TypeInfo::Known(InfTypeDef::Lambda(vec![i], Box::new(o))));
+
+        // Function with unkown output
+        let i = engine.insert(TypeInfo::Known(InfTypeDef::Bool));
+        let o = engine.insert(TypeInfo::Unknown);
+        let f1 = engine.insert(TypeInfo::Known(InfTypeDef::Lambda(vec![i], Box::new(o))));
+
+        // Unify them...
+        engine.unify(f0, f1).unwrap();
+        // What do we know about these functions?
+        let t0 = engine.reconstruct(f0).unwrap();
+        let t1 = engine.reconstruct(f1).unwrap();
+
+        assert_eq!(
+            t0,
+            ConcreteTypeDef::Lambda(
+                vec![ConcreteTypeDef::Bool],
+                Box::new(ConcreteTypeDef::SInt(4)),
+            ),
+        );
+        assert_eq!(t0, t1);
     }
 }
