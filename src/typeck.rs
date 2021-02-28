@@ -2,6 +2,8 @@
 //! Operates on the IR.
 
 use std::borrow::Cow;
+use std::collections::HashMap;
+use std::rc::Rc;
 
 use crate::hir;
 use crate::scope;
@@ -41,43 +43,47 @@ impl std::fmt::Display for TypeError {
 #[derive(Debug, Clone)]
 pub enum TypeError {
     UnknownVar(VarSym),
-    ReturnMismatch {
+    InferenceFailed {
+        t1: InfTypeDef,
+        t2: InfTypeDef,
+    },
+    InvalidReturn,
+    Return {
         fname: VarSym,
         got: TypeSym,
         expected: TypeSym,
     },
-    InvalidReturn,
-    BopTypeMismatch {
+    BopType {
         bop: hir::BOp,
         got1: TypeSym,
         got2: TypeSym,
         expected: TypeSym,
     },
-    UopTypeMismatch {
+    UopType {
         op: hir::UOp,
         got: TypeSym,
         expected: TypeSym,
     },
-    LetTypeMismatch {
+    LetType {
         name: VarSym,
         got: TypeSym,
         expected: TypeSym,
     },
-    IfTypeMismatch {
+    IfType {
         ifpart: TypeSym,
         elsepart: TypeSym,
     },
-    CondMismatch {
+    Cond {
         got: TypeSym,
     },
-    ParamMismatch {
+    Param {
         got: TypeSym,
         expected: TypeSym,
     },
-    CallMismatch {
+    Call {
         got: TypeSym,
     },
-    TupleRefMismatch {
+    TupleRef {
         got: TypeSym,
     },
     TypeMismatch {
@@ -85,7 +91,7 @@ pub enum TypeError {
         got: TypeSym,
         expected: TypeSym,
     },
-    MutabilityMismatch {
+    Mutability {
         expr_name: Cow<'static, str>,
     },
 }
@@ -97,7 +103,10 @@ impl TypeError {
             TypeError::InvalidReturn => {
                 format!("return expression happened somewhere that isn't in a function!")
             }
-            TypeError::ReturnMismatch {
+            TypeError::InferenceFailed { t1, t2 } => {
+                format!("Type inference failed: {:?} != {:?}", t1, t2)
+            }
+            TypeError::Return {
                 fname,
                 got,
                 expected,
@@ -107,7 +116,7 @@ impl TypeError {
                 cx.fetch_type(*got).get_name(cx),
                 cx.fetch_type(*expected).get_name(cx),
             ),
-            TypeError::BopTypeMismatch {
+            TypeError::BopType {
                 bop,
                 got1,
                 got2,
@@ -119,13 +128,13 @@ impl TypeError {
                 cx.fetch_type(*got1).get_name(cx),
                 cx.fetch_type(*got2).get_name(cx)
             ),
-            TypeError::UopTypeMismatch { op, got, expected } => format!(
+            TypeError::UopType { op, got, expected } => format!(
                 "Invalid types for UOp {:?}: expected {}, got {}",
                 op,
                 cx.fetch_type(*expected).get_name(cx),
                 cx.fetch_type(*got).get_name(cx)
             ),
-            TypeError::LetTypeMismatch {
+            TypeError::LetType {
                 name,
                 got,
                 expected,
@@ -135,25 +144,25 @@ impl TypeError {
                 cx.fetch_type(*expected).get_name(cx),
                 cx.fetch_type(*got).get_name(cx)
             ),
-            TypeError::IfTypeMismatch { ifpart, elsepart } => format!(
+            TypeError::IfType { ifpart, elsepart } => format!(
                 "If block return type is {}, but else block returns {}",
                 cx.fetch_type(*ifpart).get_name(cx),
                 cx.fetch_type(*elsepart).get_name(cx),
             ),
-            TypeError::CondMismatch { got } => format!(
+            TypeError::Cond { got } => format!(
                 "If expr condition is {}, not bool",
                 cx.fetch_type(*got).get_name(cx),
             ),
-            TypeError::ParamMismatch { got, expected } => format!(
+            TypeError::Param { got, expected } => format!(
                 "Function wanted type {} in param but got type {}",
                 cx.fetch_type(*got).get_name(cx),
                 cx.fetch_type(*expected).get_name(cx)
             ),
-            TypeError::CallMismatch { got } => format!(
+            TypeError::Call { got } => format!(
                 "Tried to call function but it is not a function, it is a {}",
                 cx.fetch_type(*got).get_name(cx)
             ),
-            TypeError::TupleRefMismatch { got } => format!(
+            TypeError::TupleRef { got } => format!(
                 "Tried to reference tuple but didn't get a tuple, got {}",
                 cx.fetch_type(*got).get_name(cx)
             ),
@@ -167,7 +176,7 @@ impl TypeError {
                 cx.fetch_type(*expected).get_name(cx),
                 cx.fetch_type(*got).get_name(cx)
             ),
-            TypeError::MutabilityMismatch { expr_name } => {
+            TypeError::Mutability { expr_name } => {
                 format!("Mutability mismatch in '{}' expresssion", expr_name)
             }
         }
@@ -224,56 +233,63 @@ impl Symtbl {
     }
 }
 
-/// The interned value of a type inference ref
+/// The interned name of an inferred type, that may be
+/// known or not
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
-pub struct InfoSym(pub usize);
+pub struct InfTypeSym(pub usize);
 
-impl From<usize> for InfoSym {
-    fn from(i: usize) -> InfoSym {
-        InfoSym(i)
+impl From<usize> for InfTypeSym {
+    fn from(i: usize) -> InfTypeSym {
+        InfTypeSym(i)
     }
 }
 
-impl From<InfoSym> for usize {
-    fn from(i: InfoSym) -> usize {
+impl From<InfTypeSym> for usize {
+    fn from(i: InfTypeSym) -> usize {
         i.0
     }
 }
 
-/*
-/// Info tag for type inference
-#[derive(Debug, Hash, Clone, PartialEq, Eq)]
-pub enum TypeInfo {
+/// An inferred type definition
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum InfTypeDef {
     /// Unknown type not inferred yet
     Unknown,
     /// Reference saying "this type is the same as that one",
     /// which may still be unknown.
-    /// TODO: Symbol type needs to change.
-    Ref(InfoSym),
+    Ref(InfTypeSym),
     /// Known type.
     Known(TypeSym),
 }
 
 struct InferenceCx {
-    types: intern::Interner<InfoSym, TypeInfo>,
+    /// This is NOT an `Interner` because we *modify* what it contains.
+    types: HashMap<InfTypeSym, InfTypeDef>,
+    next_idx: usize,
 }
 
 impl InferenceCx {
     pub fn new() -> Self {
         let s = Self {
-            types: intern::Interner::new(),
+            types: HashMap::new(),
+            next_idx: 0,
         };
         s
     }
 
-    /// Intern the symbol.
-    pub fn intern(&self, ti: &TypeInfo) -> InfoSym {
-        self.types.intern(&ti.clone())
+    /// Add a new inferred type and get a symbol for it.
+    pub fn insert(&mut self, def: InfTypeDef) -> InfTypeSym {
+        let sym = InfTypeSym(self.next_idx);
+        self.next_idx += 1;
+        self.types.insert(sym, def);
+        sym
     }
 
-    /// Get the string for a variable symbol
-    pub fn fetch(&self, s: InfoSym) -> Rc<TypeInfo> {
-        self.types.fetch(s)
+    /// Get what we know about the given inferred type.
+    pub fn get(&self, s: InfTypeSym) -> &InfTypeDef {
+        self.types
+            .get(&s)
+            .expect("Unknown inferred type symbol, should never happen")
     }
 
     /// Make the types of two terms equivalent, or produce an error if they're in conflict
@@ -282,26 +298,40 @@ impl InferenceCx {
     /// with InfoSym rather than TypeSym or such, and then go from there?
     /// That might work!
     /// https://play.rust-lang.org/?version=stable&mode=debug&edition=2018&gist=ba1adacd8659de0587af68cb0e55a471
-    pub fn unify(&self, a: &TypeInfo, b: &TypeInfo) -> Result<(), TypeError> {
-        use TypeInfo::*;
-        match (a, b) {
+    pub fn unify(&mut self, a: InfTypeSym, b: InfTypeSym) -> Result<(), TypeError> {
+        use InfTypeDef::*;
+        // TODO someday: clean up clones
+        let def_a = self.get(a).clone();
+        let def_b = self.get(b).clone();
+        match (def_a, def_b) {
             // Follow references
-            (Ref(a), _) => self.unify(&*self.fetch(*a), b),
-            (_, Ref(b)) => self.unify(a, &*self.fetch(*b)),
+            (Ref(a), _) => self.unify(a, b),
+            (_, Ref(b)) => self.unify(a, b),
 
             // When we don't know about a type, assume they match and
             // make the one know nothing about refer to the one we may
-            // know something about
-            (Unknown, _) => todo!(),
-            (_, Unknown) => todo!(),
+            // know something about.
+            //
+            // This involves updating what we know about our types.
+            (Unknown, _) => {
+                self.types.insert(a, Ref(b));
+                Ok(())
+            }
+            (_, Unknown) => {
+                self.types.insert(b, Ref(a));
+                Ok(())
+            }
 
             (Known(t1), Known(t2)) if t1 == t2 => Ok(()),
-            (Known(_t1), Known(_t2)) => todo!("Inference failed: Type mismatch"),
-
+            (Known(t1), Known(t2)) => Err(TypeError::TypeMismatch {
+                expr_name: "type inference unification".into(),
+                expected: t1,
+                got: t2,
+            }),
             /*
             // Primitives are easy to unify
             (SInt(sa), SInt(sb)) if sa == sb => Ok(()),
-            (SInt(sa), SInt(sb)) => Err(TypeError::TypeMismatch(format!(
+            (SInt(sa), SInt(sb)) => Err(TypeError::Type(format!(
                 "Integer mismatch: {} != {}",
                 sa, sb
             ))),
@@ -322,15 +352,15 @@ impl InferenceCx {
             }
             */
             // No attempt to match was successful, error.
-            (t1, t2) => todo!("Inference failed: Could not unify types"),
+            //(t1, t2) => Err(TypeError::InferenceFailed { t1: *t1, t2: *t2 }),
         }
     }
 
     /// Attempt to reconstruct a concrete type from a symbol.  This may
     /// fail if we don't have enough info to figure out what the type is.
-    pub fn reconstruct(&self, sym: InfoSym) -> Result<TypeSym, TypeError> {
-        let t = &*self.fetch(sym);
-        use TypeInfo::*;
+    pub fn reconstruct(&self, sym: InfTypeSym) -> Result<TypeSym, TypeError> {
+        let t = &*self.get(sym);
+        use InfTypeDef::*;
         match t {
             Unknown => todo!("No type?"),
             Ref(id) => self.reconstruct(*id),
@@ -338,7 +368,6 @@ impl InferenceCx {
         }
     }
 }
-*/
 
 /// Does t1 equal t2?
 ///
@@ -435,7 +464,7 @@ fn typecheck_decl(
             if !type_matches(cx, signature.rettype, last_expr_type) {
                 return Err(CxError(
                     cx.clone(),
-                    TypeError::ReturnMismatch {
+                    TypeError::Return {
                         fname: name,
                         got: last_expr_type,
                         expected: signature.rettype,
@@ -535,7 +564,7 @@ fn typecheck_expr(
                     t: output_type,
                 })
             } else {
-                Err(rar(TypeError::BopTypeMismatch {
+                Err(rar(TypeError::BopType {
                     bop: op,
                     expected: input_type,
                     got1: lhs.t,
@@ -554,7 +583,7 @@ fn typecheck_expr(
                     t: output_type,
                 })
             } else {
-                Err(rar(TypeError::UopTypeMismatch {
+                Err(rar(TypeError::UopType {
                     op,
                     expected: input_type,
                     got: rhs.t,
@@ -590,7 +619,7 @@ fn typecheck_expr(
                     t: unittype,
                 })
             } else {
-                Err(rar(TypeError::LetTypeMismatch {
+                Err(rar(TypeError::LetType {
                     name: varname,
                     got: init_type,
                     expected: typename,
@@ -608,7 +637,7 @@ fn typecheck_expr(
                     let ifbody_exprs = typecheck_exprs(cx, symtbl, body, function_rettype)?;
                     let if_type = last_type_of(cx, &ifbody_exprs);
                     if !type_matches(cx, if_type, assumed_type) {
-                        return Err(rar(TypeError::IfTypeMismatch {
+                        return Err(rar(TypeError::IfType {
                             ifpart: if_type,
                             elsepart: assumed_type,
                         }));
@@ -617,7 +646,7 @@ fn typecheck_expr(
                     // Great, it matches
                     new_cases.push((cond_expr, ifbody_exprs));
                 } else {
-                    return Err(rar(TypeError::CondMismatch { got: cond_expr.t }));
+                    return Err(rar(TypeError::Cond { got: cond_expr.t }));
                 }
             }
             Ok(hir::TypedExpr {
@@ -647,7 +676,7 @@ fn typecheck_expr(
             // TODO: validate/unify types
             if !type_matches(cx, bodytype, signature.rettype) {
                 let function_name = cx.intern("lambda");
-                return Err(rar(TypeError::ReturnMismatch {
+                return Err(rar(TypeError::Return {
                     fname: function_name,
                     got: bodytype,
                     expected: signature.rettype,
@@ -674,7 +703,7 @@ fn typecheck_expr(
                     // Now, make sure all the function's params match what it wants
                     for (given, wanted) in given_params.iter().zip(paramtypes) {
                         if !type_matches(cx, given.t, *wanted) {
-                            return Err(rar(TypeError::ParamMismatch {
+                            return Err(rar(TypeError::Param {
                                 got: given.t,
                                 expected: *wanted,
                             }));
@@ -688,7 +717,7 @@ fn typecheck_expr(
                         t: *rettype,
                     })
                 }
-                _other => Err(rar(TypeError::CallMismatch { got: f.t })),
+                _other => Err(rar(TypeError::Call { got: f.t })),
             }
         }
         Break => Ok(expr.map(unittype)),
@@ -736,7 +765,7 @@ fn typecheck_expr(
                     },
                 })
             } else {
-                Err(rar(TypeError::TupleRefMismatch { got: body_expr.t }))
+                Err(rar(TypeError::TupleRef { got: body_expr.t }))
             }
         }
         Assign { lhs, rhs } => {
@@ -748,7 +777,7 @@ fn typecheck_expr(
             // If the lhs is mutable
             // If the types of lhs and rhs match.
             if !is_mutable_lvalue(symtbl, &lhs_expr.e).map_err(rar)? {
-                Err(rar(TypeError::MutabilityMismatch {
+                Err(rar(TypeError::Mutability {
                     expr_name: "assignment".into(),
                 }))
             } else if !type_matches(cx, lhs_expr.t, rhs_expr.t) {
@@ -1067,7 +1096,7 @@ mod tests {
     #[test]
     fn test_bogus_function() {
         let src = "fn foo(): fn(I32):I32 = fn(x: I32):Bool = x+1 end end";
-        fail_typecheck!(src, TypeError::ReturnMismatch { .. });
+        fail_typecheck!(src, TypeError::Return { .. });
     }
 
     #[test]
@@ -1096,7 +1125,7 @@ end"#;
         return x
         true
 end"#;
-        fail_typecheck!(src, TypeError::ReturnMismatch { .. });
+        fail_typecheck!(src, TypeError::Return { .. });
     }
 
     #[test]
@@ -1166,7 +1195,7 @@ end"#;
     let x: I32 = 10
     x = 11
 end"#;
-        fail_typecheck!(src, TypeError::MutabilityMismatch { .. });
+        fail_typecheck!(src, TypeError::Mutability { .. });
     }
 
     #[test]
@@ -1195,6 +1224,6 @@ end"#;
         let mut y: I64 = 11i64
         y + x
 end"#;
-        fail_typecheck!(src, TypeError::BopTypeMismatch { .. });
+        fail_typecheck!(src, TypeError::BopType { .. });
     }
 }
