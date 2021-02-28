@@ -45,6 +45,8 @@ where
             // We have it, great
             *sym
         } else {
+            // We create the index from the length of the data.
+            // This works because we never remove elements.
             let sym = Ky::from(data.len());
             let s = Rc::new(s.clone());
             data.push(s.clone());

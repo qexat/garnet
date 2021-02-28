@@ -1,6 +1,5 @@
 Short-term todo list:
 
- * Make `return` statement work
  * Make type inference work, even if it's primitive
  * Make binops work on any integer type
 
