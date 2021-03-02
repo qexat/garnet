@@ -250,6 +250,7 @@ MIT
  * <https://www.evanmiller.org/statistical-shortcomings-in-standard-math-libraries.html>
  * <https://thume.ca/2019/07/14/a-tour-of-metaprogramming-models-for-generics/>
  * <https://boats.gitlab.io/blog/post/notes-on-a-smaller-rust/>
+ * <https://without.boats/blog/revisiting-a-smaller-rust/>
 
 # Random notes
 
