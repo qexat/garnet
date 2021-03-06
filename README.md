@@ -153,6 +153,7 @@ change with time.
  * Though it is tempting, we will NOT do arbitrary-precision integer
    types such as being able to define an integer via an arbitrary range
    such as `[-1, 572)` or arbitrary size such as `i23`.  Maybe later.
+ * Don't need to target architectures smaller than 32 bits
 
 ## Wishlist items
 
