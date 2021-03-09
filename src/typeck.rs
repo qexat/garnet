@@ -232,60 +232,6 @@ impl Symtbl {
     }
 }
 
-/// The interned name of an inferred type, that may be
-/// known or not
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
-pub struct InfTypeSym(pub usize);
-
-impl From<usize> for InfTypeSym {
-    fn from(i: usize) -> InfTypeSym {
-        InfTypeSym(i)
-    }
-}
-
-impl From<InfTypeSym> for usize {
-    fn from(i: InfTypeSym) -> usize {
-        i.0
-    }
-}
-
-/// What we know about an inferred type
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum TypeInfo {
-    /// Unknown type not inferred yet
-    Unknown,
-    /// Reference saying "this type is the same as that one",
-    /// which may still be unknown.
-    Ref(InfTypeSym),
-    /// Known type.
-    Known(InfTypeDef),
-}
-
-/// A real type def that has had all the inference stuff done
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum ConcreteTypeDef {
-    /// Signed integer with the given number of bytes
-    SInt(u8),
-    Bool,
-    /// We can infer types for tuples
-    Tuple(Vec<ConcreteTypeDef>),
-    /// Never is a real type, I guess!
-    Never,
-    Lambda(Vec<ConcreteTypeDef>, Box<ConcreteTypeDef>),
-}
-
-/// An inferred type definition that contains
-/// other inferred info
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum InfTypeDef {
-    /// Signed integer with the given number of bytes
-    SInt(u8),
-    Bool,
-    Never,
-    Tuple(Vec<InfTypeSym>),
-    Lambda(Vec<InfTypeSym>, Box<InfTypeSym>),
-}
-
 struct InferenceCx {
     /// This is NOT an `Interner` because we *modify* what it contains.
     types: HashMap<InfTypeSym, TypeInfo>,
@@ -437,11 +383,12 @@ fn type_matches(cx: &Cx, wanted: TypeSym, got: TypeSym) -> bool {
 /// Try to actually typecheck the given HIR, and return HIR with resolved types.
 pub fn typecheck(cx: &Cx, ir: hir::Ir<()>) -> Result<hir::Ir<TypeSym>, CxError<TypeError>> {
     let symtbl = &mut Symtbl::new();
+    let icx = &mut InferenceCx::new();
     ir.decls.iter().for_each(|d| predeclare_decl(cx, symtbl, d));
     let checked_decls = ir
         .decls
         .into_iter()
-        .map(|decl| typecheck_decl(cx, symtbl, decl))
+        .map(|decl| typecheck_decl(cx, icx, symtbl, decl))
         .collect::<Result<Vec<hir::Decl<TypeSym>>, CxError<TypeError>>>()?;
     Ok(hir::Ir {
         decls: checked_decls,
@@ -469,6 +416,7 @@ fn predeclare_decl(cx: &Cx, symtbl: &mut Symtbl, decl: &hir::Decl<()>) {
 /// Typechecks a single decl
 fn typecheck_decl(
     cx: &Cx,
+    icx: &mut InferenceCx,
     symtbl: &mut Symtbl,
     decl: hir::Decl<()>,
 ) -> Result<hir::Decl<TypeSym>, CxError<TypeError>> {
