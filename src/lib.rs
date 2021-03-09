@@ -47,19 +47,78 @@ impl From<VarSym> for usize {
     }
 }
 
+/// The interned value of an inferred type, that may be
+/// known or not
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+pub struct InfTypeSym(pub usize);
+
+impl From<usize> for InfTypeSym {
+    fn from(i: usize) -> InfTypeSym {
+        InfTypeSym(i)
+    }
+}
+
+impl From<InfTypeSym> for usize {
+    fn from(i: InfTypeSym) -> usize {
+        i.0
+    }
+}
+
+/// What we know about an inferred type
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum TypeInfo {
+    /// Unknown type not inferred yet
+    Unknown,
+    /// Reference saying "this type is the same as that one",
+    /// which may still be unknown.
+    Ref(InfTypeSym),
+    /// Known type.
+    Known(InfTypeDef),
+}
+
+/// A real type def that has had all the inference stuff done
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum ConcreteTypeDef {
+    /// Signed integer with the given number of bytes
+    SInt(u8),
+    Bool,
+    /// We can infer types for tuples
+    Tuple(Vec<ConcreteTypeDef>),
+    /// Never is a real type, I guess!
+    Never,
+    Lambda(Vec<ConcreteTypeDef>, Box<ConcreteTypeDef>),
+}
+
+/// An inferred type definition that contains
+/// other inferred info, which may yet be unknown.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum InfTypeDef {
+    /// Signed integer with the given number of bytes
+    SInt(u8),
+    Bool,
+    Never,
+    Tuple(Vec<InfTypeSym>),
+    Lambda(Vec<InfTypeSym>, Box<InfTypeSym>),
+}
+
 /// For now this is what we use as a type...
 /// This doesn't include the name, just the properties of it.
+///
+/// An inferred type definition that contains
+/// other inferred info, which may yet be unknown.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum TypeDef<Sym = TypeSym> {
+pub enum TypeDef {
+    /// A number with an unknown size
+    Number,
     /// Signed integer with the given number of bytes
     SInt(u8),
     // /// An integer of unknown size, from an integer literal
     // UnknownInt,
     Bool,
+    Never,
     /// We can infer types for tuples
     Tuple(Vec<Sym>),
     /// Never is a real type, I guess!
-    Never,
     Lambda(Vec<Sym>, Sym),
     Ptr(Box<Sym>),
     /*
@@ -69,7 +128,6 @@ pub enum TypeDef<Sym = TypeSym> {
     Named(String),
     */
 }
-
 impl TypeDef {
     /// Get a string for the name of the given type.
     ///
