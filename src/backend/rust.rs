@@ -43,7 +43,7 @@ fn compile_typedef(cx: &Cx, td: &TypeDef) -> Cow<'static, str> {
             accm.into()
         }
         Lambda(params, ret) => {
-            let mut accm = String::from("fn (");
+            let mut accm = String::from("extern fn (");
             for p in params {
                 accm += &compile_typedef(cx, &*cx.fetch_type(*p));
                 accm += ", ";
@@ -81,7 +81,10 @@ fn compile_decl(cx: &Cx, decl: &hir::Decl<TypeSym>) -> String {
             let nstr = mangle_name(&*cx.fetch(*name));
             let sstr = compile_fn_signature(cx, signature);
             let bstr = compile_exprs(cx, body, ";\n");
-            format!("fn {}{} {{\n{}\n}}\n", nstr, sstr, bstr)
+            format!(
+                "#[no_mangle]\npub extern fn {}{} {{\n{}\n}}\n",
+                nstr, sstr, bstr
+            )
         }
         hir::Decl::Const {
             name,

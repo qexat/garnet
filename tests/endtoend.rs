@@ -7,16 +7,16 @@ use std::io::Write;
 
 use garnet;
 
-/// We gotta create a temporary file, write our code to it, call rustc on it, and execute the
-/// result.
-fn eval_rs(bytes: &[u8], entry_point: &str) -> i32 {
+/// We gotta create a temporary file, write our code to it, call rustc on it, and return the
+/// result as a dynamic library already loaded via libloading
+fn eval_rs_dylib(bytes: &[u8]) -> libloading::Library {
     // Write program to a temp file
     let dir = tempfile::TempDir::new().unwrap();
     use std::collections::hash_map::DefaultHasher;
     use std::hash::{Hash, Hasher};
     use std::path::PathBuf;
 
-    // Won't make a collision since TempDir() is always unique, right?  Totally.
+    // Won't make a collision since TempDir() is always unique, right?  Totally.  Honest.
     let mut h = DefaultHasher::new();
     bytes.hash(&mut h);
     let hashnum = h.finish();
@@ -24,11 +24,10 @@ fn eval_rs(bytes: &[u8], entry_point: &str) -> i32 {
     let mut filepath = PathBuf::from(dir.path());
     filepath.push(filename);
 
-    // Output file with test harness entry point.
+    // Output file
     {
         let mut f = fs::File::create(&filepath).unwrap();
         f.write(bytes).unwrap();
-        f.write(entry_point.as_bytes()).unwrap();
     }
 
     eprintln!("Source file: {:?}", &filepath);
@@ -39,65 +38,54 @@ fn eval_rs(bytes: &[u8], entry_point: &str) -> i32 {
 
     // Execute rustc
     let mut output_file = filepath.clone();
-    output_file.set_extension("exe");
+    output_file.set_extension("dlib");
 
     eprintln!("Output file: {:?}", &output_file);
 
     use std::process::Command;
     let output = Command::new("rustc")
-        .arg(filepath)
         .arg("-o")
         .arg(&output_file)
+        .arg("--crate-type")
+        .arg("cdylib")
+        .arg(filepath)
         .output()
         .expect("Failed to execute rustc");
     println!("rustc output:");
     println!("stdout: {}", String::from_utf8(output.stdout).unwrap());
     println!("stderr: {}", String::from_utf8(output.stderr).unwrap());
-    // Execute resulting program
-    let output = Command::new(output_file)
-        .output()
-        .expect("Failed to execute program");
-
-    // get return code
-    let out = output.status.code().unwrap();
+    // Load and return resulting program as DLL
+    let lib = unsafe { libloading::Library::new(output_file).unwrap() };
 
     //clean up dir
     // TODO: Make it leave the file behind if compilation failed somehow.
     dir.close().unwrap();
 
-    out
+    lib
 }
-
-/// Entry point for a func with 0 args.
-/// USed in a couple different places.
-const ENTRY0: &str = r#"
-fn main() {
-    let res = test();
-    std::process::exit(res as i32);
-}
-"#;
 
 /// Takes a program defining a function named `test` with 1 arg,
 /// returns its result
 fn eval_program0(src: &str) -> i32 {
     let out = garnet::compile(src);
-    eval_rs(&out, ENTRY0)
+    let lib = eval_rs_dylib(&out);
+    unsafe {
+        let sym: libloading::Symbol<unsafe extern "C" fn() -> i32> = lib.get(b"test").unwrap();
+        sym()
+    }
 }
 
 /// Same as eval_program0 but `test` takes 1 args.
-fn eval_program1(src: &str, input: i32) -> i32 {
+fn eval_program1<T1>(src: &str, input: T1) -> i32
+where
+    T1: Display,
+{
     let out = garnet::compile(src);
-    // Add entry point
-    let entry = format!(
-        r#"
-fn main() {{
-    let res = test({});
-    std::process::exit(res as i32);
-}}
-"#,
-        input
-    );
-    eval_rs(&out, &entry)
+    let lib = eval_rs_dylib(&out);
+    unsafe {
+        let sym: libloading::Symbol<unsafe extern "C" fn(T1) -> i32> = lib.get(b"test").unwrap();
+        sym(input)
+    }
 }
 
 /// Same as eval_program0 but `test` takes 2 args.
@@ -107,25 +95,15 @@ where
     T2: Display,
 {
     let out = garnet::compile(src);
-    // Add entry point
-    let entry = format!(
-        r#"
-fn main() {{
-    let res = test({}, {});
-    std::process::exit(res as i32);
-}}
-"#,
-        i1, i2
-    );
-    eval_rs(&out, &entry)
+    let lib = eval_rs_dylib(&out);
+    unsafe {
+        let sym: libloading::Symbol<unsafe extern "C" fn(T1, T2) -> i32> =
+            lib.get(b"test").unwrap();
+        sym(i1, i2)
+    }
 }
 
-/* TODO: Since we have to add an entry point explicitly to a Rust program,
- * these AST-based tests can't be executed correctly...
- * Ponder how to fix it.  Either we rewrite them to start from source code,
- * or we figure out a way to staple the Rust entry point onto them afterwards,
- * or we make the Rust entry point redundant and/or more flexible.
-
+use garnet::ast;
 #[test]
 fn var_lookup() {
     let mut cx = garnet::Cx::new();
@@ -145,8 +123,13 @@ fn var_lookup() {
     };
     let ir = garnet::hir::lower(&ast);
     let checked = garnet::typeck::typecheck(&mut cx, ir).unwrap();
-    let wasm = garnet::backend::output(garnet::backend::Backend::Rust, &mut cx, &checked);
-    let res = eval_rs(&wasm, ENTRY0);
+    let src = garnet::backend::output(garnet::backend::Backend::Rust, &mut cx, &checked);
+
+    let lib = eval_rs_dylib(&src);
+    let res = unsafe {
+        let sym: libloading::Symbol<unsafe extern "C" fn(i32) -> i32> = lib.get(b"test").unwrap();
+        sym(5)
+    };
     assert_eq!(res, 5);
 }
 
@@ -172,8 +155,12 @@ fn subtraction() {
     };
     let ir = garnet::hir::lower(&ast);
     let checked = garnet::typeck::typecheck(&mut cx, ir).unwrap();
-    let wasm = garnet::backend::output(garnet::backend::Backend::Rust, &mut cx, &checked);
-    let res = eval_program0(&String::from_utf8(wasm).unwrap());
+    let src = garnet::backend::output(garnet::backend::Backend::Rust, &mut cx, &checked);
+    let lib = eval_rs_dylib(&src);
+    let res = unsafe {
+        let sym: libloading::Symbol<unsafe extern "C" fn() -> i32> = lib.get(b"test").unwrap();
+        sym()
+    };
     assert_eq!(res, 12);
 }
 
@@ -199,10 +186,13 @@ fn maths() {
     };
     let ir = garnet::hir::lower(&ast);
     let checked = garnet::typeck::typecheck(&mut cx, ir).unwrap();
-    let wasm = garnet::backend::output(garnet::backend::Backend::Rust, &mut cx, &checked);
-    // Compiling a function gets us a dynamically-typed thing.
-    // Assert what its type is and run it.
-    let res = eval_program0(&String::from_utf8(wasm).unwrap());
+    let src = garnet::backend::output(garnet::backend::Backend::Rust, &mut cx, &checked);
+
+    let lib = eval_rs_dylib(&src);
+    let res = unsafe {
+        let sym: libloading::Symbol<unsafe extern "C" fn() -> i32> = lib.get(b"test").unwrap();
+        sym()
+    };
     assert_eq!(res, 3);
 }
 
@@ -240,11 +230,15 @@ fn block() {
     };
     let ir = garnet::hir::lower(&ast);
     let checked = garnet::typeck::typecheck(&mut cx, ir).unwrap();
-    let wasm = garnet::backend::output(garnet::backend::Backend::Rust, &mut cx, &checked);
-    let res = eval_program0(&String::from_utf8(wasm).unwrap());
+    let src = garnet::backend::output(garnet::backend::Backend::Rust, &mut cx, &checked);
+
+    let lib = eval_rs_dylib(&src);
+    let res = unsafe {
+        let sym: libloading::Symbol<unsafe extern "C" fn() -> i32> = lib.get(b"test").unwrap();
+        sym()
+    };
     assert_eq!(res, 0);
 }
-*/
 
 #[test]
 fn parse_and_compile() {
