@@ -52,7 +52,6 @@ fn compile_typedef(cx: &Cx, td: &TypeDef) -> Cow<'static, str> {
             accm += &compile_typedef(cx, &*cx.fetch_type(*ret));
             accm.into()
         }
-        Ptr(_) => unimplemented!(),
     }
 }
 

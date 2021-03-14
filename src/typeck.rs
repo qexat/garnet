@@ -2,10 +2,10 @@
 //! Operates on the IR.
 
 use std::borrow::Cow;
-use std::collections::HashMap;
 
 use crate::hir;
 use crate::scope;
+use crate::*;
 use crate::{Cx, TypeDef, TypeSym, VarSym};
 
 /// A random other error type bundled up with a `Cx`,
@@ -232,36 +232,7 @@ impl Symtbl {
     }
 }
 
-struct InferenceCx {
-    /// This is NOT an `Interner` because we *modify* what it contains.
-    types: HashMap<InfTypeSym, TypeInfo>,
-    next_idx: usize,
-}
-
 impl InferenceCx {
-    pub fn new() -> Self {
-        let s = Self {
-            types: HashMap::new(),
-            next_idx: 0,
-        };
-        s
-    }
-
-    /// Add a new inferred type and get a symbol for it.
-    pub fn insert(&mut self, def: TypeInfo) -> InfTypeSym {
-        let sym = InfTypeSym(self.next_idx);
-        self.next_idx += 1;
-        self.types.insert(sym, def);
-        sym
-    }
-
-    /// Get what we know about the given inferred type.
-    pub fn get(&self, s: InfTypeSym) -> &TypeInfo {
-        self.types
-            .get(&s)
-            .expect("Unknown inferred type symbol, should never happen")
-    }
-
     /// Make the types of two terms equivalent, or produce an error if they're in conflict
     /// TODO: Figure out how to use this
     /// Aha, can we just make this another pass right before typechecking, fill out the IR tree
@@ -301,7 +272,7 @@ impl InferenceCx {
         match (a, b) {
             // Primitives are easy to unify
             (SInt(sa), SInt(sb)) if sa == sb => Ok(()),
-            (SInt(sa), SInt(sb)) => Err(todo!()),
+            (SInt(_sa), SInt(_sb)) => todo!(),
             (Bool, Bool) => Ok(()),
             // Never is our bottom-ish type
             (Never, _) => Ok(()),
@@ -320,35 +291,38 @@ impl InferenceCx {
                 self.unify(*ra, *rb)
             }
             // No attempt to match was successful, error.
-            (t1, t2) => Err(todo!()),
+            (_t1, _t2) => todo!(),
         }
     }
 
     /// Attempt to reconstruct a concrete type from an inferred type symbol.  This may
     /// fail if we don't have enough info to figure out what the type is.
-    pub fn reconstruct(&self, sym: InfTypeSym) -> Result<ConcreteTypeDef, TypeError> {
+    pub fn reconstruct(&self, cx: &Cx, sym: InfTypeSym) -> Result<TypeSym, TypeError> {
         let t = &*self.get(sym);
-        use ConcreteTypeDef as C;
         use InfTypeDef as I;
+        use TypeDef as C;
         use TypeInfo::*;
-        match t {
+        let def = match t {
             Unknown => todo!("No type?"),
-            Ref(id) => self.reconstruct(*id),
-            Known(I::SInt(i)) => Ok(C::SInt(*i)),
-            Known(I::Bool) => Ok(C::Bool),
-            Known(I::Never) => Ok(C::Never),
+            Ref(id) => return Ok(self.reconstruct(cx, *id)?),
+            Known(I::SInt(i)) => C::SInt(*i),
+            Known(I::Bool) => C::Bool,
+            Known(I::Never) => C::Never,
             Known(I::Tuple(items)) => {
-                let new_items: Result<Vec<ConcreteTypeDef>, TypeError> =
-                    items.into_iter().map(|i| self.reconstruct(*i)).collect();
-                Ok(C::Tuple(new_items?))
+                let new_items: Result<Vec<TypeSym>, TypeError> = items
+                    .into_iter()
+                    .map(|i| self.reconstruct(cx, *i))
+                    .collect();
+                C::Tuple(new_items?)
             }
             Known(I::Lambda(args, ret)) => {
-                let new_args: Result<Vec<ConcreteTypeDef>, TypeError> =
-                    args.into_iter().map(|i| self.reconstruct(*i)).collect();
-                let new_ret = self.reconstruct(**ret)?;
-                Ok(C::Lambda(new_args?, Box::new(new_ret)))
+                let new_args: Result<Vec<TypeSym>, TypeError> =
+                    args.into_iter().map(|i| self.reconstruct(cx, *i)).collect();
+                let new_ret = self.reconstruct(cx, **ret)?;
+                C::Lambda(new_args?, new_ret)
             }
-        }
+        };
+        Ok(cx.intern_type(&def))
     }
 }
 
@@ -383,12 +357,11 @@ fn type_matches(cx: &Cx, wanted: TypeSym, got: TypeSym) -> bool {
 /// Try to actually typecheck the given HIR, and return HIR with resolved types.
 pub fn typecheck(cx: &Cx, ir: hir::Ir<()>) -> Result<hir::Ir<TypeSym>, CxError<TypeError>> {
     let symtbl = &mut Symtbl::new();
-    let icx = &mut InferenceCx::new();
     ir.decls.iter().for_each(|d| predeclare_decl(cx, symtbl, d));
     let checked_decls = ir
         .decls
         .into_iter()
-        .map(|decl| typecheck_decl(cx, icx, symtbl, decl))
+        .map(|decl| typecheck_decl(cx, symtbl, decl))
         .collect::<Result<Vec<hir::Decl<TypeSym>>, CxError<TypeError>>>()?;
     Ok(hir::Ir {
         decls: checked_decls,
@@ -416,7 +389,6 @@ fn predeclare_decl(cx: &Cx, symtbl: &mut Symtbl, decl: &hir::Decl<()>) {
 /// Typechecks a single decl
 fn typecheck_decl(
     cx: &Cx,
-    icx: &mut InferenceCx,
     symtbl: &mut Symtbl,
     decl: hir::Decl<()>,
 ) -> Result<hir::Decl<TypeSym>, CxError<TypeError>> {
@@ -1214,6 +1186,7 @@ end"#;
 
     #[test]
     fn test_inference() {
+        let cx = &mut crate::Cx::new();
         let mut engine = InferenceCx::new();
         // Function with unknown input
         let i = engine.insert(TypeInfo::Unknown);
@@ -1228,15 +1201,12 @@ end"#;
         // Unify them...
         engine.unify(f0, f1).unwrap();
         // What do we know about these functions?
-        let t0 = engine.reconstruct(f0).unwrap();
-        let t1 = engine.reconstruct(f1).unwrap();
+        let t0 = engine.reconstruct(cx, f0).unwrap();
+        let t1 = engine.reconstruct(cx, f1).unwrap();
 
         assert_eq!(
             t0,
-            ConcreteTypeDef::Lambda(
-                vec![ConcreteTypeDef::Bool],
-                Box::new(ConcreteTypeDef::SInt(4)),
-            ),
+            cx.intern_type(&TypeDef::Lambda(vec![cx.bool()], cx.i32()),)
         );
         assert_eq!(t0, t1);
     }
