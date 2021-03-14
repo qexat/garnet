@@ -9,7 +9,7 @@
 //! wrapping and stuff at least.  So, it might not be a particularly
 //! great cocde formatter.
 
-use crate::{Cx, TypeDef, TypeSym, VarSym};
+use crate::*;
 
 /// Literal value
 #[derive(Debug, Clone, PartialEq)]

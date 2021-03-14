@@ -13,7 +13,7 @@
 
 use crate::ast::{self};
 pub use crate::ast::{BOp, IfCase, Literal, Signature, UOp};
-use crate::{TypeSym, VarSym};
+use crate::*;
 
 /// An expression with an optional type annotation.
 /// Currently will be () for something that hasn't been

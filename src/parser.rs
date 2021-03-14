@@ -15,7 +15,7 @@ use codespan_reporting::diagnostic::{Diagnostic, Label};
 use logos::{Lexer, Logos};
 
 use crate::ast;
-use crate::{Cx, TypeDef, TypeSym, VarSym};
+use crate::*;
 
 fn make_i8(lex: &mut Lexer<TokenKind>) -> Option<(i128, u8)> {
     let slice = lex.slice();
@@ -859,6 +859,42 @@ impl<'cx, 'input> Parser<'cx, 'input> {
             other => self.error(other),
         }
     }
+
+    /*
+    fn parse_inf_type(&mut self) -> TypeInfo {
+        use crate::*;
+        let t = self.next();
+        match t {
+            Some(Token {
+                kind: T::Ident(s),
+                span,
+            }) => match s.as_ref() {
+                // TODO: This is a bit too hardwired tbh...
+                "I128" => TypeInfo::Known(InfTypeDef::SInt(16)),
+                "I64" => TypeInfo::Known(InfTypeDef::SInt(8)),
+                "I32" => TypeInfo::Known(InfTypeDef::SInt(4)),
+                "I16" => TypeInfo::Known(InfTypeDef::SInt(2)),
+                "I8" => TypeInfo::Known(InfTypeDef::SInt(1)),
+                "Bool" => TypeInfo::Known(InfTypeDef::Bool),
+                _ => self.error(Some(Token {
+                    kind: T::Ident(s),
+                    span,
+                })),
+            },
+            Some(Token {
+                kind: T::LBrace, ..
+            }) => {
+                let tuptype = self.parse_tuple_type();
+                self.cx.intern_type(&tuptype)
+            }
+            Some(Token { kind: T::Fn, .. }) => {
+                let fntype = self.parse_fn_type();
+                self.cx.intern_type(&fntype)
+            }
+            other => self.error(other),
+        }
+    }
+    */
 }
 
 /// Specifies binding power of prefix operators.
