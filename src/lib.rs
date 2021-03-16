@@ -42,19 +42,7 @@ pub enum TypeInfo {
     /// which may still be unknown.
     Ref(InfTypeSym),
     /// Known type.
-    Known(InfTypeDef),
-}
-
-/// An inferred type definition that contains
-/// other inferred info
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum InfTypeDef {
-    /// Signed integer with the given number of bytes
-    SInt(u8),
-    Bool,
-    Never,
-    Tuple(Vec<InfTypeSym>),
-    Lambda(Vec<InfTypeSym>, Box<InfTypeSym>),
+    Known(TypeDef),
 }
 
 pub struct InferenceCx {
