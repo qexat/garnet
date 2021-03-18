@@ -172,6 +172,15 @@ change with time.
    or just use Handlebars :P.
    Also see <https://todo.sr.ht/~icefox/garnet/8>
 
+## Goals
+
+ * Being effectively finished someday.
+
+## Antigoals
+
+ * Async, promises, other fanciness for nonblocking I/O
+ * Ultimate max performance in all circumstances
+
 # Toolchain
 
  * rustc
