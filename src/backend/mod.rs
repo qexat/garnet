@@ -4,7 +4,7 @@ use crate::hir;
 use crate::{Cx, TypeSym};
 
 //mod lrust;
-mod rust;
+//mod rust;
 
 /// Specifies which backend to use.
 #[derive(Copy, Clone, Debug)]
@@ -17,12 +17,15 @@ pub enum Backend {
     */
     /// Rust backend
     Rust,
+    /// Backend that actually doesn't output anything.
+    /// Sometimes useful for debuggin.
+    Null,
     // /// LIR Rust backend
     // LRust,
 }
 
 /// Produce a binary module output of some kind for the given backend.
-pub fn output(backend: Backend, cx: &Cx, program: &hir::Ir<TypeSym>) -> Vec<u8> {
+pub fn output(backend: Backend, _cx: &Cx, _program: &hir::Ir<TypeSym>) -> Vec<u8> {
     match backend {
         /*
         Backend::Wasm32 => wasm32::output(cx, program),
@@ -32,7 +35,9 @@ pub fn output(backend: Backend, cx: &Cx, program: &hir::Ir<TypeSym>) -> Vec<u8> 
             lwasm32::output(cx, &lir)
         }
         */
-        Backend::Rust => rust::output(cx, &program),
+        //Backend::Rust => rust::output(cx, &program),
+        Backend::Null => vec![],
+        _ => unimplemented!(),
         /*
         Backend::LRust => {
             let lir = crate::lir::lower_hir(cx, &program);

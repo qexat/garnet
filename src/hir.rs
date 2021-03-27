@@ -228,14 +228,23 @@ pub enum Decl<T> {
 /// A compilable chunk of IR.
 ///
 /// Currently, basically a compilation unit.
+///
+/// The T is a type annotation of some kind, but we really don't care what.
 #[derive(Debug, Clone, Default)]
 pub struct Ir<T> {
     pub decls: Vec<Decl<T>>,
 }
 
 /// Transforms AST into IR
-pub fn lower(ast: &ast::Ast) -> Ir<()> {
-    lower_decls(&ast.decls)
+///
+/// The function `f` is a function that should generate whatever value we need
+/// for our type info attached to the HIR node.  For real code it generally generates
+/// a new `InfTypeSym` saying "we don't know anything about this type yet", but
+/// for test code it's also useful to make it return unit, and after inference
+/// I think we're going to just reify our types by turning them all into concrete
+/// `TypeSym`'s...  zomg.
+pub fn lower<T>(f: &mut dyn FnMut() -> T, ast: &ast::Ast) -> Ir<T> {
+    lower_decls(f, &ast.decls)
 }
 
 fn lower_lit(lit: &ast::Literal) -> Literal {
@@ -255,7 +264,7 @@ fn lower_signature(sig: &ast::Signature) -> Signature {
 }
 
 /// This is the biggie currently
-fn lower_expr(expr: &ast::Expr) -> TypedExpr<()> {
+fn lower_expr<T>(f: &mut dyn FnMut() -> T, expr: &ast::Expr) -> TypedExpr<T> {
     use ast::Expr as E;
     use Expr::*;
     let new_exp = match expr {
@@ -265,8 +274,8 @@ fn lower_expr(expr: &ast::Expr) -> TypedExpr<()> {
         E::Var { name } => Var { name: *name },
         E::BinOp { op, lhs, rhs } => {
             let nop = lower_bop(op);
-            let nlhs = lower_expr(lhs);
-            let nrhs = lower_expr(rhs);
+            let nlhs = lower_expr(f, lhs);
+            let nrhs = lower_expr(f, rhs);
             BinOp {
                 op: nop,
                 lhs: Box::new(nlhs),
@@ -275,14 +284,14 @@ fn lower_expr(expr: &ast::Expr) -> TypedExpr<()> {
         }
         E::UniOp { op, rhs } => {
             let nop = lower_uop(op);
-            let nrhs = lower_expr(rhs);
+            let nrhs = lower_expr(f, rhs);
             UniOp {
                 op: nop,
                 rhs: Box::new(nrhs),
             }
         }
         E::Block { body } => {
-            let nbody = body.iter().map(lower_expr).collect();
+            let nbody = body.iter().map(|e| lower_expr(f, e)).collect();
             Block { body: nbody }
         }
         E::Let {
@@ -291,7 +300,7 @@ fn lower_expr(expr: &ast::Expr) -> TypedExpr<()> {
             init,
             mutable,
         } => {
-            let ninit = Box::new(lower_expr(init));
+            let ninit = Box::new(lower_expr(f, init));
             Let {
                 varname: *varname,
                 typename: typename.clone(),
@@ -303,26 +312,26 @@ fn lower_expr(expr: &ast::Expr) -> TypedExpr<()> {
             assert!(cases.len() > 0, "Should never happen");
             let cases = cases
                 .iter()
-                .map(|case| (lower_expr(&*case.condition), lower_exprs(&case.body)))
+                .map(|case| (lower_expr(f, &*case.condition), lower_exprs(f, &case.body)))
                 .collect();
-            let falseblock = lower_exprs(falseblock);
+            let falseblock = lower_exprs(f, falseblock);
             If { cases, falseblock }
         }
         E::Loop { body } => {
-            let nbody = lower_exprs(body);
+            let nbody = lower_exprs(f, body);
             Loop { body: nbody }
         }
         E::Lambda { signature, body } => {
             let nsig = lower_signature(signature);
-            let nbody = lower_exprs(body);
+            let nbody = lower_exprs(f, body);
             Lambda {
                 signature: nsig,
                 body: nbody,
             }
         }
         E::Funcall { func, params } => {
-            let nfunc = Box::new(lower_expr(func));
-            let nparams = lower_exprs(params);
+            let nfunc = Box::new(lower_expr(f, func));
+            let nparams = lower_exprs(f, params);
             Funcall {
                 func: nfunc,
                 params: nparams,
@@ -330,36 +339,37 @@ fn lower_expr(expr: &ast::Expr) -> TypedExpr<()> {
         }
         E::Break => Break,
         E::Return { retval: e } => Return {
-            retval: Box::new(lower_expr(e)),
+            retval: Box::new(lower_expr(f, e)),
         },
         E::TupleCtor { body } => Expr::TupleCtor {
-            body: lower_exprs(body),
+            body: lower_exprs(f, body),
         },
         E::TupleRef { expr, elt } => Expr::TupleRef {
-            expr: Box::new(lower_expr(expr)),
+            expr: Box::new(lower_expr(f, expr)),
             elt: *elt,
         },
         E::Deref { expr } => Expr::Deref {
-            expr: Box::new(lower_expr(expr)),
+            expr: Box::new(lower_expr(f, expr)),
         },
         E::Ref { expr } => Expr::Ref {
-            expr: Box::new(lower_expr(expr)),
+            expr: Box::new(lower_expr(f, expr)),
         },
         E::Assign { lhs, rhs } => Expr::Assign {
-            lhs: Box::new(lower_expr(lhs)),
-            rhs: Box::new(lower_expr(rhs)),
+            lhs: Box::new(lower_expr(f, lhs)),
+            rhs: Box::new(lower_expr(f, rhs)),
         },
     };
-    TypedExpr { t: (), e: new_exp }
+    let t = f();
+    TypedExpr { t, e: new_exp }
 }
 
 /// handy shortcut to lower Vec<ast::Expr>
-fn lower_exprs(exprs: &[ast::Expr]) -> Vec<TypedExpr<()>> {
-    exprs.iter().map(lower_expr).collect()
+fn lower_exprs<T>(f: &mut dyn FnMut() -> T, exprs: &[ast::Expr]) -> Vec<TypedExpr<T>> {
+    exprs.iter().map(|e| lower_expr(f, e)).collect()
 }
 
 /// Lower an AST decl to IR.
-fn lower_decl(decl: &ast::Decl) -> Decl<()> {
+fn lower_decl<T>(f: &mut dyn FnMut() -> T, decl: &ast::Decl) -> Decl<T> {
     use ast::Decl as D;
     match decl {
         D::Function {
@@ -370,7 +380,7 @@ fn lower_decl(decl: &ast::Decl) -> Decl<()> {
         } => Decl::Function {
             name: *name,
             signature: lower_signature(signature),
-            body: lower_exprs(body),
+            body: lower_exprs(f, body),
         },
         D::Const {
             name,
@@ -380,14 +390,14 @@ fn lower_decl(decl: &ast::Decl) -> Decl<()> {
         } => Decl::Const {
             name: *name,
             typename: *typename,
-            init: lower_expr(init),
+            init: lower_expr(f, init),
         },
     }
 }
 
-fn lower_decls(decls: &[ast::Decl]) -> Ir<()> {
+fn lower_decls<T>(f: &mut dyn FnMut() -> T, decls: &[ast::Decl]) -> Ir<T> {
     Ir {
-        decls: decls.iter().map(lower_decl).collect(),
+        decls: decls.iter().map(|d| lower_decl(f, d)).collect(),
     }
 }
 
@@ -404,6 +414,11 @@ mod tests {
     use super::*;
     use crate::ast::Expr as A;
     use crate::hir::Expr as I;
+
+    /// High on the "I can't believe this is working" scale.
+    fn rly() {
+        ()
+    }
 
     /*
     /// Does `return;` turn into `return ();`?
@@ -428,7 +443,7 @@ mod tests {
         let output = *plz(I::Return {
             retval: plz(I::unit()),
         });
-        let res = lower_expr(&input);
+        let res = lower_expr(&mut rly, &input);
         assert_eq!(&res, &output);
     }
 
@@ -447,7 +462,7 @@ mod tests {
             cases: vec![(*plz(I::bool(false)), vec![*plz(I::int(1))])],
             falseblock: vec![*plz(I::int(2))],
         });
-        let res = lower_expr(&input);
+        let res = lower_expr(&mut rly, &input);
         assert_eq!(&res, &output);
     }
 
@@ -475,7 +490,7 @@ mod tests {
             ],
             falseblock: vec![*plz(I::int(3))],
         });
-        let res = lower_expr(&input);
+        let res = lower_expr(&mut rly, &input);
         assert_eq!(&res, &output);
     }
 
@@ -487,6 +502,6 @@ mod tests {
             cases: vec![],
             falseblock: vec![],
         };
-        let _ = lower_expr(&input);
+        let _ = lower_expr(&mut rly, &input);
     }
 }

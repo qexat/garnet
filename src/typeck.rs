@@ -6,6 +6,7 @@ use std::borrow::Cow;
 use crate::hir;
 use crate::scope;
 use crate::*;
+use crate::{Cx, TypeDef, TypeSym, VarSym};
 
 /// A random other error type bundled up with a `Cx`,
 /// so that error can be printed with info from the Cx.
@@ -42,8 +43,8 @@ impl std::fmt::Display for TypeError {
 pub enum TypeError {
     UnknownVar(VarSym),
     InferenceFailed {
-        t1: TypeDef,
-        t2: TypeDef,
+        t1: InfTypeDef,
+        t2: InfTypeDef,
     },
     InvalidReturn,
     Return {
@@ -266,8 +267,8 @@ impl InferenceCx {
         }
     }
 
-    pub fn unify_defs(&mut self, a: TypeDef, b: TypeDef) -> Result<(), TypeError> {
-        use TypeDef::*;
+    pub fn unify_defs(&mut self, a: InfTypeDef, b: InfTypeDef) -> Result<(), TypeError> {
+        use InfTypeDef::*;
         match (a, b) {
             // Primitives are easy to unify
             (SInt(sa), SInt(sb)) if sa == sb => Ok(()),
@@ -298,7 +299,7 @@ impl InferenceCx {
     /// fail if we don't have enough info to figure out what the type is.
     pub fn reconstruct(&self, cx: &Cx, sym: InfTypeSym) -> Result<TypeSym, TypeError> {
         let t = &*self.get(sym);
-        use TypeDef as I;
+        use InfTypeDef as I;
         use TypeDef as C;
         use TypeInfo::*;
         let def = match t {
@@ -788,7 +789,7 @@ mod tests {
         let cx = &mut crate::Cx::new();
         use crate::parser::Parser;
         let ast = Parser::new(cx, src).parse();
-        let ir = hir::lower(&ast);
+        let ir = hir::lower(&mut || (), &ast);
         typecheck(cx, ir)
     }
 
@@ -1044,7 +1045,7 @@ mod tests {
             use crate::parser::Parser;
             let src = "fn foo(): fn(I32):I32 = fn(x: I32):I32 = x+1 end end";
             let ast = Parser::new(cx, src).parse();
-            let ir = hir::lower(&ast);
+            let ir = hir::lower(&mut || (), &ast);
             let _ = &typecheck(cx, ir).unwrap();
         }
     }
@@ -1189,13 +1190,13 @@ end"#;
         let mut engine = InferenceCx::new();
         // Function with unknown input
         let i = engine.insert(TypeInfo::Unknown);
-        let o = engine.insert(TypeInfo::Known(TypeDef::SInt(4)));
-        let f0 = engine.insert(TypeInfo::Known(TypeDef::Lambda(vec![i], Box::new(o))));
+        let o = engine.insert(TypeInfo::Known(InfTypeDef::SInt(4)));
+        let f0 = engine.insert(TypeInfo::Known(InfTypeDef::Lambda(vec![i], Box::new(o))));
 
         // Function with unkown output
-        let i = engine.insert(TypeInfo::Known(TypeDef::Bool));
+        let i = engine.insert(TypeInfo::Known(InfTypeDef::Bool));
         let o = engine.insert(TypeInfo::Unknown);
-        let f1 = engine.insert(TypeInfo::Known(TypeDef::Lambda(vec![i], Box::new(o))));
+        let f1 = engine.insert(TypeInfo::Known(InfTypeDef::Lambda(vec![i], Box::new(o))));
 
         // Unify them...
         engine.unify(f0, f1).unwrap();

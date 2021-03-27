@@ -131,6 +131,8 @@ change with time.
    exactly once to generate a huge amount of entirely uninteresting
    --but nonetheless necessary-- code.  It's good that you can use a
    macro for it, but it's kinda less good that you need to.
+ * No function currying is rather a pain sometimes, especially when it's
+   really just syntactic sugar for a trivial closure.
 
 ## Glory points in Rust to exploit or even enhance
 
