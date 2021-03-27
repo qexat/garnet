@@ -42,7 +42,19 @@ pub enum TypeInfo {
     /// which may still be unknown.
     Ref(InfTypeSym),
     /// Known type.
-    Known(TypeDef),
+    Known(InfTypeDef),
+}
+
+/// An inferred type definition that contains
+/// other inferred info which may or may not be known yet.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum InfTypeDef {
+    /// Signed integer with the given number of bytes
+    SInt(u8),
+    Bool,
+    Never,
+    Tuple(Vec<InfTypeSym>),
+    Lambda(Vec<InfTypeSym>, Box<InfTypeSym>),
 }
 
 pub struct InferenceCx {
@@ -312,11 +324,13 @@ pub fn compile(src: &str) -> Vec<u8> {
         let mut parser = parser::Parser::new(cx, src);
         parser.parse()
     };
-    let hir = hir::lower(&ast);
-    let hir = passes::run_passes(cx, hir);
-    let checked = typeck::typecheck(cx, hir).unwrap_or_else(|e| panic!("Type check error: {}", e));
-    let wasm = backend::output(backend::Backend::Rust, cx, &checked);
-    wasm
+    // BLAR
+    let icx = &mut InferenceCx::new();
+    let hir = hir::lower(&mut || icx.insert(TypeInfo::Unknown), &ast);
+    //let hir = passes::run_passes(cx, hir);
+    //let checked = typeck::typecheck(cx, hir).unwrap_or_else(|e| panic!("Type check error: {}", e));
+    //backend::output(backend::Backend::Null, cx, &checked)
+    vec![]
 }
 
 #[cfg(test)]
