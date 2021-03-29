@@ -16,6 +16,9 @@ pub mod passes;
 mod scope;
 pub mod typeck;
 
+#[cfg(test)]
+pub(crate) mod testutil;
+
 /// The interned name of an inferred type, that may be
 /// known or not
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
@@ -326,7 +329,7 @@ pub fn compile(src: &str) -> Vec<u8> {
     };
     // BLAR
     let icx = &mut InferenceCx::new();
-    let hir = hir::lower(&mut || icx.insert(TypeInfo::Unknown), &ast);
+    let hir = hir::lower(&mut |_| icx.insert(TypeInfo::Unknown), &ast);
     //let hir = passes::run_passes(cx, hir);
     //let checked = typeck::typecheck(cx, hir).unwrap_or_else(|e| panic!("Type check error: {}", e));
     //backend::output(backend::Backend::Null, cx, &checked)

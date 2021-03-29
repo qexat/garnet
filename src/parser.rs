@@ -708,7 +708,7 @@ impl<'cx, 'input> Parser<'cx, 'input> {
         };
         let varname = self.expect_ident();
         self.expect(T::Colon);
-        let typename = self.parse_type();
+        let typename = Some(self.parse_type());
         self.expect(T::Equals);
         let init = Box::new(
             self.parse_expr(0)

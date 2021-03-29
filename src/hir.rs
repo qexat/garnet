@@ -66,7 +66,7 @@ pub enum Expr<T> {
     },
     Let {
         varname: VarSym,
-        typename: TypeSym,
+        typename: Option<TypeSym>,
         init: Box<TypedExpr<T>>,
         mutable: bool,
     },
@@ -243,7 +243,7 @@ pub struct Ir<T> {
 /// for test code it's also useful to make it return unit, and after inference
 /// I think we're going to just reify our types by turning them all into concrete
 /// `TypeSym`'s...  zomg.
-pub fn lower<T>(f: &mut dyn FnMut() -> T, ast: &ast::Ast) -> Ir<T> {
+pub fn lower<T>(f: &mut dyn FnMut(&hir::Expr<T>) -> T, ast: &ast::Ast) -> Ir<T> {
     lower_decls(f, &ast.decls)
 }
 
@@ -264,7 +264,7 @@ fn lower_signature(sig: &ast::Signature) -> Signature {
 }
 
 /// This is the biggie currently
-fn lower_expr<T>(f: &mut dyn FnMut() -> T, expr: &ast::Expr) -> TypedExpr<T> {
+fn lower_expr<T>(f: &mut dyn FnMut(&hir::Expr<T>) -> T, expr: &ast::Expr) -> TypedExpr<T> {
     use ast::Expr as E;
     use Expr::*;
     let new_exp = match expr {
@@ -359,17 +359,17 @@ fn lower_expr<T>(f: &mut dyn FnMut() -> T, expr: &ast::Expr) -> TypedExpr<T> {
             rhs: Box::new(lower_expr(f, rhs)),
         },
     };
-    let t = f();
+    let t = f(&new_exp);
     TypedExpr { t, e: new_exp }
 }
 
 /// handy shortcut to lower Vec<ast::Expr>
-fn lower_exprs<T>(f: &mut dyn FnMut() -> T, exprs: &[ast::Expr]) -> Vec<TypedExpr<T>> {
+fn lower_exprs<T>(f: &mut dyn FnMut(&hir::Expr<T>) -> T, exprs: &[ast::Expr]) -> Vec<TypedExpr<T>> {
     exprs.iter().map(|e| lower_expr(f, e)).collect()
 }
 
 /// Lower an AST decl to IR.
-fn lower_decl<T>(f: &mut dyn FnMut() -> T, decl: &ast::Decl) -> Decl<T> {
+fn lower_decl<T>(f: &mut dyn FnMut(&hir::Expr<T>) -> T, decl: &ast::Decl) -> Decl<T> {
     use ast::Decl as D;
     match decl {
         D::Function {
@@ -395,7 +395,7 @@ fn lower_decl<T>(f: &mut dyn FnMut() -> T, decl: &ast::Decl) -> Decl<T> {
     }
 }
 
-fn lower_decls<T>(f: &mut dyn FnMut() -> T, decls: &[ast::Decl]) -> Ir<T> {
+fn lower_decls<T>(f: &mut dyn FnMut(&hir::Expr<T>) -> T, decls: &[ast::Decl]) -> Ir<T> {
     Ir {
         decls: decls.iter().map(|d| lower_decl(f, d)).collect(),
     }
@@ -414,11 +414,7 @@ mod tests {
     use super::*;
     use crate::ast::Expr as A;
     use crate::hir::Expr as I;
-
-    /// High on the "I can't believe this is working" scale.
-    fn rly() {
-        ()
-    }
+    use crate::testutil::*;
 
     /*
     /// Does `return;` turn into `return ();`?
