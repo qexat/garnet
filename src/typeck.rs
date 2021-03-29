@@ -233,6 +233,109 @@ impl Symtbl {
 }
 
 impl InferenceCx {
+    /// Take an expression, and update the type symbols to
+    /// represent what we can figure out about it.
+    ///
+    /// Basically walk down the tree and figure out all the facts we
+    /// know for the inference algorithm to work with, and attach them to
+    /// the appropriate expressions.
+    fn heckin_infer(&mut self, expr: hir::TypedExpr<()>) -> hir::TypedExpr<InfTypeSym> {
+        use hir::Expr as E;
+        match expr.e {
+            E::Lit { val } => {
+                let t = self.insert(Self::infer_lit(&val));
+                hir::TypedExpr {
+                    e: E::Lit { val },
+                    t: t,
+                }
+            }
+            E::Var { name } => todo!(),
+            E::BinOp { op, lhs, rhs } => {
+                let t1 = self.heckin_infer(*lhs);
+                let t2 = self.heckin_infer(*rhs);
+                let output_type = op.output_inftype();
+                // "t1 is the same as our input type"
+                // "t2 is the same as our input type"
+                // That occurs in unify() which is a separate step...
+                // We may not have enough info to know what t1 and t2 are yet.
+                //
+                // "The type of this expression is its output type"
+                let t = self.insert(TypeInfo::Known(output_type));
+                hir::TypedExpr {
+                    e: E::BinOp {
+                        op: op,
+                        lhs: Box::new(t1),
+                        rhs: Box::new(t2),
+                    },
+                    t: t,
+                }
+            }
+            E::UniOp { op, rhs } => {
+                let t1 = self.heckin_infer(*rhs);
+                let output_type = op.output_inftype();
+                // "The type of this expression is its output type"
+                let t = self.insert(TypeInfo::Known(output_type));
+                hir::TypedExpr {
+                    e: E::UniOp {
+                        op: op,
+                        rhs: Box::new(t1),
+                    },
+                    t: t,
+                }
+            }
+            E::Block { body } => todo!(),
+            E::Let {
+                varname,
+                typename,
+                init,
+                mutable,
+            } => {
+                let t1 = self.heckin_infer(*init);
+                let t = if let Some(ty) = typename {
+                    // > let x: T = foo
+                    // x has the type T
+                    // foo has the same type as x
+                    self.insert(TypeInfo::Known(ty))
+                } else {
+                    // > let x = foo
+                    // x has the same type as foo
+                    self.insert(TypeInfo::Ref(t1.t))
+                };
+                hir::TypedExpr {
+                    e: E::Let {
+                        varname,
+                        typename,
+                        init: Box::new(t1),
+                        mutable,
+                    },
+                    t: t,
+                }
+            }
+            E::If { cases, falseblock } => todo!(),
+            E::Loop { body } => todo!(),
+            E::Lambda { signature, body } => todo!(),
+            E::Funcall { func, params } => todo!(),
+            E::Break => todo!(),
+            E::Return { retval } => todo!(),
+            E::TupleCtor { body } => todo!(),
+            E::TupleRef { expr, elt } => todo!(),
+            E::Assign { lhs, rhs } => todo!(),
+            E::Deref { expr } => todo!(),
+            E::Ref { expr } => todo!(),
+        }
+    }
+
+    fn infer_lit(lit: &hir::Literal) -> TypeInfo {
+        match lit {
+            // TODO: Make this an "unknown number" type.
+            hir::Literal::Integer(_) => TypeInfo::Known(InfTypeDef::SInt(4)),
+            hir::Literal::SizedInteger { vl: _, bytes } => {
+                TypeInfo::Known(InfTypeDef::SInt(*bytes))
+            }
+            hir::Literal::Bool(_) => TypeInfo::Known(InfTypeDef::Bool),
+        }
+    }
+
     /// Make the types of two terms equivalent, or produce an error if they're in conflict
     /// TODO: Figure out how to use this
     /// Aha, can we just make this another pass right before typechecking, fill out the IR tree
@@ -267,6 +370,7 @@ impl InferenceCx {
         }
     }
 
+    /// Unify concrete types.
     pub fn unify_defs(&mut self, a: InfTypeDef, b: InfTypeDef) -> Result<(), TypeError> {
         use InfTypeDef::*;
         match (a, b) {
@@ -304,7 +408,7 @@ impl InferenceCx {
         use TypeInfo::*;
         let def = match t {
             Unknown => todo!("No type?"),
-            Ref(id) => return Ok(self.reconstruct(cx, *id)?),
+            Ref(id) => return self.reconstruct(cx, *id),
             Known(I::SInt(i)) => C::SInt(*i),
             Known(I::Bool) => C::Bool,
             Known(I::Never) => C::Never,
@@ -512,7 +616,6 @@ fn typecheck_expr(
         BinOp { op, lhs, rhs } => {
             let lhs = Box::new(typecheck_expr(cx, symtbl, *lhs, function_rettype)?);
             let rhs = Box::new(typecheck_expr(cx, symtbl, *rhs, function_rettype)?);
-            // Currently, our only valid binops are on numbers.
             let input_type = op.input_type(cx);
             let output_type = op.output_type(cx);
             if type_matches(cx, lhs.t, rhs.t) && type_matches(cx, input_type, lhs.t) {
@@ -563,13 +666,14 @@ fn typecheck_expr(
         } => {
             let init_expr = typecheck_expr(cx, symtbl, *init, function_rettype)?;
             let init_type = init_expr.t;
+            let typename = typename.expect("No type in let expr but it got past type inference?");
             if type_matches(cx, init_type, typename) {
                 // Add var to symbol table, proceed
                 symtbl.add_var(varname, typename, mutable);
                 Ok(hir::TypedExpr {
                     e: Let {
                         varname,
-                        typename,
+                        typename: Some(typename),
                         init: Box::new(init_expr),
                         mutable,
                     },
@@ -783,13 +887,14 @@ fn typecheck_literal(cx: &Cx, lit: &hir::Literal) -> Result<TypeSym, TypeError> 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::testutil::*;
     use crate::*;
 
     fn typecheck_src(src: &str) -> Result<hir::Ir<TypeSym>, CxError<TypeError>> {
         let cx = &mut crate::Cx::new();
         use crate::parser::Parser;
         let ast = Parser::new(cx, src).parse();
-        let ir = hir::lower(&mut || (), &ast);
+        let ir = hir::lower(&mut rly, &ast);
         typecheck(cx, ir)
     }
 
@@ -972,7 +1077,7 @@ mod tests {
         {
             let ir = *plz(Expr::Let {
                 varname: fooname,
-                typename: t_i32.clone(),
+                typename: Some(t_i32.clone()),
                 init: plz(Expr::Lit {
                     val: Literal::Integer(42),
                 }),
@@ -1016,7 +1121,7 @@ mod tests {
             let ir = vec![
                 *plz(Expr::Let {
                     varname: fname,
-                    typename: ftype,
+                    typename: Some(ftype),
                     mutable: false,
                     init: plz(Expr::Lambda {
                         signature: Signature {
@@ -1045,7 +1150,7 @@ mod tests {
             use crate::parser::Parser;
             let src = "fn foo(): fn(I32):I32 = fn(x: I32):I32 = x+1 end end";
             let ast = Parser::new(cx, src).parse();
-            let ir = hir::lower(&mut || (), &ast);
+            let ir = hir::lower(&mut rly, &ast);
             let _ = &typecheck(cx, ir).unwrap();
         }
     }

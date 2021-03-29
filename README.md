@@ -263,6 +263,7 @@ MIT
  * <https://thume.ca/2019/07/14/a-tour-of-metaprogramming-models-for-generics/>
  * <https://boats.gitlab.io/blog/post/notes-on-a-smaller-rust/>
  * <https://without.boats/blog/revisiting-a-smaller-rust/>
+ * <https://dl.acm.org/doi/pdf/10.1145/3428195> (on type inference)
 
 # Random notes
 

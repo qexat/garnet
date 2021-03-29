@@ -58,6 +58,14 @@ impl BOp {
         }
     }
 
+    pub fn input_inftype(&self) -> InfTypeDef {
+        use BOp::*;
+        match self {
+            And | Or | Xor => InfTypeDef::Bool,
+            _ => InfTypeDef::SInt(4),
+        }
+    }
+
     /// What the resultant type of the binop is
     pub fn output_type(&self, cx: &Cx) -> TypeSym {
         use BOp::*;
@@ -65,6 +73,16 @@ impl BOp {
             Add | Sub | Mul | Div | Mod => cx.i32(),
             Eq | Neq | Gt | Lt | Gte | Lte => cx.bool(),
             And | Or | Xor => cx.bool(),
+        }
+    }
+
+    /// What the resultant type of the binop is
+    pub fn output_inftype(&self) -> InfTypeDef {
+        use BOp::*;
+        match self {
+            Add | Sub | Mul | Div | Mod => InfTypeDef::SInt(4),
+            Eq | Neq | Gt | Lt | Gte | Lte => InfTypeDef::Bool,
+            And | Or | Xor => InfTypeDef::Bool,
         }
     }
 }
@@ -91,12 +109,33 @@ impl UOp {
         }
     }
 
+    pub fn input_inftype(&self) -> InfTypeDef {
+        use UOp::*;
+        match self {
+            Neg => InfTypeDef::SInt(4),
+            Not => InfTypeDef::Bool,
+            Ref => todo!(),
+            Deref => todo!(),
+        }
+    }
+
     /// What the resultant type of the uop is
     pub fn output_type(&self, cx: &Cx) -> TypeSym {
         use UOp::*;
         match self {
             Neg => cx.i32(),
             Not => cx.bool(),
+            Ref => todo!(),
+            Deref => todo!(),
+        }
+    }
+
+    /// What the resultant type of the uop is
+    pub fn output_inftype(&self) -> InfTypeDef {
+        use UOp::*;
+        match self {
+            Neg => InfTypeDef::SInt(4),
+            Not => InfTypeDef::Bool,
             Ref => todo!(),
             Deref => todo!(),
         }
@@ -151,7 +190,7 @@ pub enum Expr {
     },
     Let {
         varname: VarSym,
-        typename: TypeSym,
+        typename: Option<TypeSym>,
         init: Box<Expr>,
         mutable: bool,
     },

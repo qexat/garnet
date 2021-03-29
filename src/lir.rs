@@ -391,7 +391,12 @@ fn lower_expr(cx: &Cx, fb: &mut FuncBuilder, expr: &TExpr) -> Var {
             mutable,
         } => {
             let v = lower_expr(cx, fb, &*init);
-            fb.add_var(*varname, *typename, v, *mutable);
+            fb.add_var(
+                *varname,
+                typename.expect("No type in let expr got past type inference?"),
+                v,
+                *mutable,
+            );
             fb.assign(expr.t, Op::SetLocal(*varname, v))
         }
         E::If { cases, falseblock } => {
@@ -599,6 +604,7 @@ fn lower_expr(cx: &Cx, fb: &mut FuncBuilder, expr: &TExpr) -> Var {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::testutil::*;
     use crate::*;
 
     fn compile_lir(src: &str) -> Lir {
@@ -607,7 +613,7 @@ mod tests {
             let mut parser = parser::Parser::new(cx, src);
             parser.parse()
         };
-        let hir = hir::lower(&mut || (), &ast);
+        let hir = hir::lower(&mut rly, &ast);
         let hir = passes::run_passes(cx, hir);
         let checked =
             typeck::typecheck(cx, hir).unwrap_or_else(|e| panic!("Type check error: {}", e));
