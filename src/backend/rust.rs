@@ -180,7 +180,7 @@ fn compile_expr(cx: &Cx, expr: &hir::TypedExpr<TypeSym>) -> String {
             mutable,
         } => {
             let vstr = mangle_name(&*cx.fetch(*varname));
-            let tstr = compile_typedef(cx, &*cx.fetch_type(*typename));
+            let tstr = compile_typedef(cx, &*cx.fetch_type(typename.unwrap()));
             let istr = compile_expr(cx, init);
             if *mutable {
                 format!("let mut {}: {} = {}", vstr, tstr, istr)

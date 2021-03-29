@@ -233,6 +233,7 @@ impl Symtbl {
 }
 
 impl InferenceCx {
+    /*
     /// Take an expression, and update the type symbols to
     /// represent what we can figure out about it.
     ///
@@ -295,7 +296,7 @@ impl InferenceCx {
                     // > let x: T = foo
                     // x has the type T
                     // foo has the same type as x
-                    self.insert(TypeInfo::Known(ty))
+                    //self.insert(TypeInfo::Known(ty))
                 } else {
                     // > let x = foo
                     // x has the same type as foo
@@ -335,6 +336,7 @@ impl InferenceCx {
             hir::Literal::Bool(_) => TypeInfo::Known(InfTypeDef::Bool),
         }
     }
+    */
 
     /// Make the types of two terms equivalent, or produce an error if they're in conflict
     /// TODO: Figure out how to use this

@@ -121,7 +121,7 @@ fn var_lookup() {
             doc_comment: vec![],
         }],
     };
-    let ir = garnet::hir::lower(&ast);
+    let ir = garnet::hir::lower(&mut |_| (), &ast);
     let checked = garnet::typeck::typecheck(&mut cx, ir).unwrap();
     let src = garnet::backend::output(garnet::backend::Backend::Rust, &mut cx, &checked);
 
@@ -153,7 +153,7 @@ fn subtraction() {
             doc_comment: vec![],
         }],
     };
-    let ir = garnet::hir::lower(&ast);
+    let ir = garnet::hir::lower(&mut |_| (), &ast);
     let checked = garnet::typeck::typecheck(&mut cx, ir).unwrap();
     let src = garnet::backend::output(garnet::backend::Backend::Rust, &mut cx, &checked);
     let lib = eval_rs_dylib(&src);
@@ -184,7 +184,7 @@ fn maths() {
             doc_comment: vec![],
         }],
     };
-    let ir = garnet::hir::lower(&ast);
+    let ir = garnet::hir::lower(&mut |_| (), &ast);
     let checked = garnet::typeck::typecheck(&mut cx, ir).unwrap();
     let src = garnet::backend::output(garnet::backend::Backend::Rust, &mut cx, &checked);
 
@@ -228,7 +228,7 @@ fn block() {
             doc_comment: vec![],
         }],
     };
-    let ir = garnet::hir::lower(&ast);
+    let ir = garnet::hir::lower(&mut |_| (), &ast);
     let checked = garnet::typeck::typecheck(&mut cx, ir).unwrap();
     let src = garnet::backend::output(garnet::backend::Backend::Rust, &mut cx, &checked);
 
