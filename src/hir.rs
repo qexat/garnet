@@ -28,17 +28,85 @@ pub struct TypedExpr<T> {
 }
 
 impl<T> TypedExpr<T> {
-    /// TODO: This is less useful than it should be,
-    /// I was kinda imagining it as a general purpose
-    /// transformer/visitor but it can only correctly transform
-    /// leaf nodes.  Hnyrn.
-    pub(crate) fn map<T2>(self, new_t: T2) -> TypedExpr<T2>
-    where
-        T2: Copy,
-    {
+    /// Takes a function that transforms a typedexpr and applies it to every single node
+    /// in the expr tree.  The function should really only transform the node it's called on,
+    /// not recurse to alter its children...
+    pub(crate) fn map_type<T2>(&self, f: &impl Fn(&T) -> T2) -> TypedExpr<T2> {
+        use Expr::*;
+        let map_vec =
+            |e: &Vec<TypedExpr<T>>| e.into_iter().map(|te| te.map_type(f)).collect::<Vec<_>>();
+        let new_e = match &self.e {
+            Lit { val } => Lit { val: val.clone() },
+            Var { name } => Var { name: *name },
+            UniOp { op, rhs } => UniOp {
+                op: *op,
+                rhs: Box::new(rhs.map_type(f)),
+            },
+            BinOp { op, lhs, rhs } => BinOp {
+                op: *op,
+                lhs: Box::new(lhs.map_type(f)),
+                rhs: Box::new(rhs.map_type(f)),
+            },
+            Block { body } => Block {
+                body: map_vec(body),
+            },
+            Let {
+                varname,
+                typename,
+                init,
+                mutable,
+            } => Let {
+                varname: *varname,
+                typename: *typename,
+                init: Box::new(init.map_type(f)),
+                mutable: *mutable,
+            },
+            If { cases, falseblock } => {
+                let new_cases = cases
+                    .into_iter()
+                    .map(|(c, bod)| (c.map_type(f), map_vec(bod)))
+                    .collect();
+                If {
+                    cases: new_cases,
+                    falseblock: map_vec(falseblock),
+                }
+            }
+            Loop { body } => Loop {
+                body: map_vec(body),
+            },
+            Lambda { signature, body } => Lambda {
+                signature: signature.clone(),
+                body: map_vec(body),
+            },
+            Funcall { func, params } => Funcall {
+                func: Box::new(func.map_type(f)),
+                params: map_vec(params),
+            },
+            Break => Break,
+            Return { retval } => Return {
+                retval: Box::new(retval.map_type(f)),
+            },
+            TupleCtor { body } => TupleCtor {
+                body: map_vec(body),
+            },
+            TupleRef { expr, elt } => TupleRef {
+                expr: Box::new(expr.map_type(f)),
+                elt: *elt,
+            },
+            Assign { lhs, rhs } => Assign {
+                lhs: Box::new(lhs.map_type(f)),
+                rhs: Box::new(rhs.map_type(f)),
+            },
+            Deref { expr } => Deref {
+                expr: Box::new(expr.map_type(f)),
+            },
+            Ref { expr } => Ref {
+                expr: Box::new(expr.map_type(f)),
+            },
+        };
         TypedExpr {
-            t: new_t,
-            e: self.e.map(new_t),
+            e: new_e,
+            t: f(&self.t),
         }
     }
 }
@@ -126,86 +194,6 @@ impl<T> Expr<T> {
     /// Shortcut function for making literal unit
     pub fn unit() -> Self {
         Self::TupleCtor { body: vec![] }
-    }
-
-    /// Again, general purpose visitor that's only
-    /// actually used in a couple places...
-    pub(crate) fn map<T2>(self, new_t: T2) -> Expr<T2>
-    where
-        T2: Copy,
-    {
-        use Expr as E;
-        let map_vec =
-            |body: Vec<TypedExpr<T>>| body.into_iter().map(|e| TypedExpr::map(e, new_t)).collect();
-        match self {
-            E::Lit { val } => E::Lit { val },
-            E::Var { name } => E::Var { name },
-            E::BinOp { op, lhs, rhs } => E::BinOp {
-                op,
-                lhs: Box::new(lhs.map(new_t)),
-                rhs: Box::new(rhs.map(new_t)),
-            },
-            E::UniOp { op, rhs } => E::UniOp {
-                op,
-                rhs: Box::new(rhs.map(new_t)),
-            },
-            E::Block { body } => E::Block {
-                body: map_vec(body),
-            },
-            E::Let {
-                varname,
-                typename,
-                init,
-                mutable,
-            } => E::Let {
-                varname,
-                typename,
-                init: Box::new(init.map(new_t)),
-                mutable,
-            },
-            E::If { cases, falseblock } => {
-                let new_cases = cases
-                    .into_iter()
-                    .map(|(c, bod)| (c.map(new_t), map_vec(bod)))
-                    .collect();
-                E::If {
-                    cases: new_cases,
-                    falseblock: map_vec(falseblock),
-                }
-            }
-            E::Loop { body } => E::Loop {
-                body: map_vec(body),
-            },
-            E::Lambda { signature, body } => E::Lambda {
-                signature,
-                body: map_vec(body),
-            },
-            E::Funcall { func, params } => E::Funcall {
-                func: Box::new(func.map(new_t)),
-                params: map_vec(params),
-            },
-            E::Break => E::Break,
-            E::Return { retval } => E::Return {
-                retval: Box::new(retval.map(new_t)),
-            },
-            E::TupleCtor { body } => E::TupleCtor {
-                body: map_vec(body),
-            },
-            E::TupleRef { expr, elt } => E::TupleRef {
-                expr: Box::new(expr.map(new_t)),
-                elt,
-            },
-            E::Assign { lhs, rhs } => E::Assign {
-                lhs: Box::new(lhs.map(new_t)),
-                rhs: Box::new(rhs.map(new_t)),
-            },
-            E::Deref { expr } => E::Deref {
-                expr: Box::new(expr.map(new_t)),
-            },
-            E::Ref { expr } => E::Ref {
-                expr: Box::new(expr.map(new_t)),
-            },
-        }
     }
 }
 

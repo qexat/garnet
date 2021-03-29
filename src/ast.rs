@@ -54,7 +54,7 @@ impl BOp {
         use BOp::*;
         match self {
             And | Or | Xor => cx.bool(),
-            _ => cx.i32(),
+            _ => cx.iunknown(),
         }
     }
 
@@ -70,7 +70,7 @@ impl BOp {
     pub fn output_type(&self, cx: &Cx) -> TypeSym {
         use BOp::*;
         match self {
-            Add | Sub | Mul | Div | Mod => cx.i32(),
+            Add | Sub | Mul | Div | Mod => cx.iunknown(),
             Eq | Neq | Gt | Lt | Gte | Lte => cx.bool(),
             And | Or | Xor => cx.bool(),
         }
@@ -102,7 +102,7 @@ impl UOp {
     pub fn input_type(&self, cx: &Cx) -> TypeSym {
         use UOp::*;
         match self {
-            Neg => cx.i32(),
+            Neg => cx.iunknown(),
             Not => cx.bool(),
             Ref => todo!(),
             Deref => todo!(),
@@ -123,7 +123,7 @@ impl UOp {
     pub fn output_type(&self, cx: &Cx) -> TypeSym {
         use UOp::*;
         match self {
-            Neg => cx.i32(),
+            Neg => cx.iunknown(),
             Not => cx.bool(),
             Ref => todo!(),
             Deref => todo!(),

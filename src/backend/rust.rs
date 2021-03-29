@@ -30,7 +30,7 @@ fn compile_typedef(cx: &Cx, td: &TypeDef) -> Cow<'static, str> {
         SInt(e) => {
             unreachable!("Invalid integer size: {}", e)
         }
-        //UnknownInt => unreachable!("Should never happen!"),
+        UnknownInt => unreachable!("Backend got an integer of unknown size, should never happen!"),
         Bool => "bool".into(),
         Never => panic!("Stable rust can't quite do this yet..."),
         Tuple(types) => {

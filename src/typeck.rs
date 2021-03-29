@@ -232,6 +232,7 @@ impl Symtbl {
     }
 }
 
+/*
 impl InferenceCx {
     /*
     /// Take an expression, and update the type symbols to
@@ -431,6 +432,7 @@ impl InferenceCx {
         Ok(cx.intern_type(&def))
     }
 }
+*/
 
 /// Does t1 equal t2?
 ///
@@ -458,6 +460,136 @@ fn type_matches(cx: &Cx, wanted: TypeSym, got: TypeSym) -> bool {
             (wanted, t2) => wanted == t2,
         }
     */
+}
+
+/// Goes from types that may be unknown to a type that is
+/// totally real, and returns the real type.
+/// Returns `None` if there is not enough info to decide.
+fn infer_type(cx: &Cx, t1: TypeSym, t2: TypeSym) -> Option<TypeSym> {
+    let t1_def = &*cx.fetch_type(t1);
+    let t2_def = &*cx.fetch_type(t2);
+    match (t1_def, t2_def) {
+        (TypeDef::UnknownInt, TypeDef::SInt(_)) => Some(t2),
+        (TypeDef::SInt(_), TypeDef::UnknownInt) => Some(t1),
+        (TypeDef::Never, _) => Some(t1),
+        (_, TypeDef::Never) => Some(t2),
+        (tt1, tt2) if tt1 == tt2 => Some(t1),
+        _ => None,
+    }
+}
+
+/// Walks down the expression tree and if it hits a type that is a `UnknownInt`
+/// it replaces it with the given type.  Basically we use `infer_type()` on a subexpression
+/// tree to figure out what the real number type of it must be, then
+/// call this to rewrite the tree.
+///
+/// I THINK this can never fail, if a contradiction occur it gets caught in `infer_type()`
+fn reify_types(
+    from: TypeSym,
+    to: TypeSym,
+    expr: hir::TypedExpr<TypeSym>,
+) -> hir::TypedExpr<TypeSym> {
+    // We're done?
+    if expr.t == to {
+        return expr;
+    } else {
+        expr.map_type(&|t| if *t == from { to } else { *t })
+    }
+    /*
+    use hir::Expr as E;
+    let new_expr = match expr {
+        E::BinOp { op, lhs, rhs } => E::BinOp {
+            op,
+            lhs: Box::new(reify_types(from, to, lhs)),
+            rhs: Box::new(reify_types(from, to, rhs)),
+        },
+        E::UniOp { op, rhs } => E::UniOp {
+            op,
+            rhs: Box::new(rhs.map(new_t)),
+        },
+        E::Block { body } => E::Block {
+            body: map_vec(body),
+        },
+        E::Let {
+            varname,
+            typename,
+            init,
+            mutable,
+        } => E::Let {
+            varname,
+            typename,
+            init: Box::new(init.map(new_t)),
+            mutable,
+        },
+        E::If { cases, falseblock } => {
+            let new_cases = cases
+                .into_iter()
+                .map(|(c, bod)| (c.map(new_t), map_vec(bod)))
+                .collect();
+            E::If {
+                cases: new_cases,
+                falseblock: map_vec(falseblock),
+            }
+        }
+        E::Loop { body } => E::Loop {
+            body: map_vec(body),
+        },
+        E::Lambda { signature, body } => E::Lambda {
+            signature,
+            body: map_vec(body),
+        },
+        E::Funcall { func, params } => E::Funcall {
+            func: Box::new(func.map(new_t)),
+            params: map_vec(params),
+        },
+        E::Break => E::Break,
+        E::Return { retval } => E::Return {
+            retval: Box::new(retval.map(new_t)),
+        },
+        E::TupleCtor { body } => E::TupleCtor {
+            body: map_vec(body),
+        },
+        E::TupleRef { expr, elt } => E::TupleRef {
+            expr: Box::new(expr.map(new_t)),
+            elt,
+        },
+        E::Assign { lhs, rhs } => E::Assign {
+            lhs: Box::new(lhs.map(new_t)),
+            rhs: Box::new(rhs.map(new_t)),
+        },
+        E::Deref { expr } => E::Deref {
+            expr: Box::new(expr.map(new_t)),
+        },
+        E::Ref { expr } => E::Ref {
+            expr: Box::new(expr.map(new_t)),
+        },
+        let new_e = match expr.e {
+            BinOp { op, lhs, rhs } => {
+            }
+            UniOp { op, rhs } => {}
+            Block { body } => {}
+            Let {
+                varname,
+                typename,
+                init,
+                mutable,
+            } => {}
+            If { cases, falseblock } => {}
+            Loop { body } => {}
+            Lambda { signature, body } => {}
+            Funcall { func, params } => {}
+            Break => {}
+            Return { retval } => {}
+            TupleCtor { body } => {}
+            TupleRef { expr, elt } => {}
+            Assign { lhs, rhs } => {}
+            other => other,
+        };
+        hir::TypedExpr {
+            e: new_e,
+            t: realtype,
+        }
+            */
 }
 
 /// Try to actually typecheck the given HIR, and return HIR with resolved types.
@@ -562,6 +694,7 @@ fn typecheck_exprs(
     exprs: Vec<hir::TypedExpr<()>>,
     function_rettype: Option<TypeSym>,
 ) -> Result<Vec<hir::TypedExpr<TypeSym>>, CxError<TypeError>> {
+    // For each expr, figure out what its type *should* be
     exprs
         .into_iter()
         .map(|e| typecheck_expr(cx, symtbl, e, function_rettype))
@@ -592,8 +725,6 @@ fn last_type_of(cx: &Cx, exprs: &[hir::TypedExpr<TypeSym>]) -> TypeSym {
 /// Actually typecheck a single expr
 ///
 /// `function_rettype` is the type that `return` exprs and such must be.
-/// If it is None, this is an expression for which a return is not valid,
-/// ie an initializer for a Const or whatever.
 fn typecheck_expr(
     cx: &Cx,
     symtbl: &mut Symtbl,
@@ -613,36 +744,65 @@ fn typecheck_expr(
 
         Var { name } => {
             let t = symtbl.get_var(name).map_err(rar)?;
-            Ok(expr.map(t))
+            Ok(expr.map_type(&|_| t))
         }
         BinOp { op, lhs, rhs } => {
-            let lhs = Box::new(typecheck_expr(cx, symtbl, *lhs, function_rettype)?);
-            let rhs = Box::new(typecheck_expr(cx, symtbl, *rhs, function_rettype)?);
+            // Typecheck each arm
+            let lhs1 = typecheck_expr(cx, symtbl, *lhs, function_rettype)?;
+            let rhs1 = typecheck_expr(cx, symtbl, *rhs, function_rettype)?;
+            // Find out real type of each arm
             let input_type = op.input_type(cx);
-            let output_type = op.output_type(cx);
-            if type_matches(cx, lhs.t, rhs.t) && type_matches(cx, input_type, lhs.t) {
+            let t_lhs = infer_type(cx, input_type, lhs1.t).ok_or_else(|| {
+                rar(TypeError::TypeMismatch {
+                    expr_name: format!("{:?}", op).into(),
+                    got: lhs1.t,
+                    expected: input_type,
+                })
+            })?;
+            let t_rhs = infer_type(cx, input_type, rhs1.t).ok_or_else(|| {
+                rar(TypeError::TypeMismatch {
+                    expr_name: format!("{:?}", op).into(),
+                    got: lhs1.t,
+                    expected: input_type,
+                })
+            })?;
+            // Both arms must be a compatible type
+            if let Some(t) = infer_type(cx, t_lhs, t_rhs) {
+                let real_lhs = reify_types(t_lhs, t, lhs1);
+                let real_rhs = reify_types(t_rhs, t, rhs1);
                 Ok(hir::TypedExpr {
-                    e: BinOp { op, lhs, rhs },
-                    t: output_type,
+                    e: BinOp {
+                        op,
+                        lhs: Box::new(real_lhs),
+                        rhs: Box::new(real_rhs),
+                    },
+                    t: t,
                 })
             } else {
                 Err(rar(TypeError::BopType {
                     bop: op,
                     expected: input_type,
-                    got1: lhs.t,
-                    got2: rhs.t,
+                    got1: lhs1.t,
+                    got2: rhs1.t,
                 }))
             }
         }
         UniOp { op, rhs } => {
-            let rhs = Box::new(typecheck_expr(cx, symtbl, *rhs, function_rettype)?);
+            let rhs = typecheck_expr(cx, symtbl, *rhs, function_rettype)?;
             // Currently, our only valid binops are on numbers.
             let input_type = op.input_type(cx);
-            let output_type = op.output_type(cx);
-            if type_matches(cx, input_type, rhs.t) {
+            if let Some(t) = infer_type(cx, input_type, rhs.t) {
+                // Type `t` is compatible with the expr's return type
+                // and the op's input type.
+                // We force it to be our output type too, though that
+                // isn't *strictly* necessary for general purpose ops.
+                let new_rhs = reify_types(rhs.t, t, rhs);
                 Ok(hir::TypedExpr {
-                    e: UniOp { op, rhs },
-                    t: output_type,
+                    e: UniOp {
+                        op,
+                        rhs: Box::new(new_rhs),
+                    },
+                    t,
                 })
             } else {
                 Err(rar(TypeError::UopType {
@@ -783,7 +943,7 @@ fn typecheck_expr(
                 _other => Err(rar(TypeError::Call { got: f.t })),
             }
         }
-        Break => Ok(expr.map(unittype)),
+        Break => Ok(expr.map_type(&|_| unittype)),
         Return { retval } => {
             if let Some(wanted_type) = function_rettype {
                 // We got a `return` expression in a place where there ain't anything to return
@@ -880,7 +1040,7 @@ fn is_mutable_lvalue<T>(symtbl: &Symtbl, expr: &hir::Expr<T>) -> Result<bool, Ty
 
 fn typecheck_literal(cx: &Cx, lit: &hir::Literal) -> Result<TypeSym, TypeError> {
     match lit {
-        hir::Literal::Integer(_) => Ok(cx.i32()),
+        hir::Literal::Integer(_) => Ok(cx.iunknown()),
         hir::Literal::SizedInteger { vl: _, bytes } => Ok(cx.intern_type(&TypeDef::SInt(*bytes))),
         hir::Literal::Bool(_) => Ok(cx.bool()),
     }
@@ -997,7 +1157,9 @@ mod tests {
     #[test]
     fn test_binop() {
         let cx = &mut crate::Cx::new();
-        let t_i32 = cx.intern_type(&TypeDef::SInt(4));
+        let t_i32 = cx.i32();
+        let t_i16 = cx.i16();
+        let t_iunk = cx.iunknown();
         let tbl = &mut Symtbl::new();
 
         use hir::*;
@@ -1015,7 +1177,7 @@ mod tests {
             assert!(type_matches(
                 cx,
                 typecheck_expr(cx, tbl, ir, None).unwrap().t,
-                t_i32
+                t_iunk
             ));
 
             let bad_ir = *plz(Expr::BinOp {
@@ -1029,13 +1191,47 @@ mod tests {
             });
             assert!(typecheck_expr(cx, tbl, bad_ir, None).is_err());
         }
+        // Inference of UnknownInt types
+        {
+            let ir = *plz(Expr::BinOp {
+                op: BOp::Add,
+                lhs: plz(Expr::Lit {
+                    val: Literal::SizedInteger { vl: 3, bytes: 4 },
+                }),
+                rhs: plz(Expr::Lit {
+                    val: Literal::Integer(4),
+                }),
+            });
+            assert!(type_matches(
+                cx,
+                typecheck_expr(cx, tbl, ir, None).unwrap().t,
+                t_i32
+            ));
+
+            let ir = *plz(Expr::BinOp {
+                op: BOp::Add,
+                lhs: plz(Expr::Lit {
+                    val: Literal::Integer(4),
+                }),
+                rhs: plz(Expr::Lit {
+                    val: Literal::SizedInteger { vl: 3, bytes: 2 },
+                }),
+            });
+            assert!(type_matches(
+                cx,
+                typecheck_expr(cx, tbl, ir, None).unwrap().t,
+                t_i16
+            ));
+        }
     }
 
-    /// Test binop typechecks
+    /// Test uniop typechecks
     #[test]
     fn test_uniop() {
         let cx = &mut crate::Cx::new();
-        let t_i32 = cx.intern_type(&TypeDef::SInt(4));
+        let t_i16 = cx.i16();
+        let t_i32 = cx.i32();
+        let t_iunk = cx.iunknown();
         let tbl = &mut Symtbl::new();
 
         use hir::*;
@@ -1049,9 +1245,37 @@ mod tests {
             assert!(type_matches(
                 cx,
                 typecheck_expr(cx, tbl, ir, None).unwrap().t,
-                t_i32
+                t_iunk
             ));
+        }
+        {
+            let ir = *plz(Expr::UniOp {
+                op: UOp::Neg,
+                rhs: plz(Expr::Lit {
+                    val: Literal::SizedInteger { vl: 42, bytes: 4 },
+                }),
+            });
+            assert!(type_matches(
+                cx,
+                typecheck_expr(cx, tbl, ir, None).unwrap().t,
+                t_i32,
+            ));
+        }
+        {
+            let ir = *plz(Expr::UniOp {
+                op: UOp::Neg,
+                rhs: plz(Expr::Lit {
+                    val: Literal::SizedInteger { vl: 91, bytes: 2 },
+                }),
+            });
+            assert!(type_matches(
+                cx,
+                typecheck_expr(cx, tbl, ir, None).unwrap().t,
+                t_i16
+            ));
+        }
 
+        {
             let bad_ir = *plz(Expr::UniOp {
                 op: UOp::Neg,
                 rhs: plz(Expr::Lit {
@@ -1291,6 +1515,7 @@ end"#;
         fail_typecheck!(src, TypeError::BopType { .. });
     }
 
+    /*
     #[test]
     fn test_inference() {
         let cx = &mut crate::Cx::new();
@@ -1317,4 +1542,5 @@ end"#;
         );
         assert_eq!(t0, t1);
     }
+    */
 }
