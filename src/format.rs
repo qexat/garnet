@@ -4,7 +4,7 @@
 use std::io;
 
 use crate::ast::*;
-use crate::Cx;
+use crate::{Cx, INT};
 
 const INDENT_SIZE: usize = 4;
 
@@ -314,9 +314,9 @@ fn display_func(cx: &Cx, f: &Func, out: &mut dyn io::Write) -> io::Result<()> {
 
 /// dump LIR to a string for debugging
 /// Easier than
-pub fn display_lir(cx: &Cx, lir: &Lir, out: &mut dyn io::Write) -> io::Result<()> {
+pub fn display_lir(lir: &Lir, out: &mut dyn io::Write) -> io::Result<()> {
     for f in &lir.funcs {
-        display_func(cx, f, out)?;
+        display_func(&INT, f, out)?;
         writeln!(out)?;
     }
     Ok(())
@@ -325,7 +325,7 @@ pub fn display_lir(cx: &Cx, lir: &Lir, out: &mut dyn io::Write) -> io::Result<()
 #[cfg(test)]
 mod tests {
     use crate::format::unparse;
-    use crate::Cx;
+    use crate::INT;
     use std::io::Cursor;
     #[test]
     fn test_reparse() {
@@ -334,13 +334,12 @@ mod tests {
 end
 
 "#;
-        let cx = &mut Cx::new();
         let ast = {
-            let mut parser = crate::parser::Parser::new(cx, src);
+            let mut parser = crate::parser::Parser::new(src);
             parser.parse()
         };
         let mut output = Cursor::new(vec![]);
-        unparse(cx, &ast, &mut output).unwrap();
+        unparse(&INT, &ast, &mut output).unwrap();
         let output_str = String::from_utf8(output.into_inner()).unwrap();
         assert_eq!(src, output_str);
     }

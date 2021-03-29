@@ -608,16 +608,15 @@ mod tests {
     use crate::*;
 
     fn compile_lir(src: &str) -> Lir {
-        let cx = &mut Cx::new();
         let ast = {
-            let mut parser = parser::Parser::new(cx, src);
+            let mut parser = parser::Parser::new(src);
             parser.parse()
         };
         let hir = hir::lower(&mut rly, &ast);
-        let hir = passes::run_passes(cx, hir);
+        let hir = passes::run_passes(&INT, hir);
         let checked =
-            typeck::typecheck(cx, hir).unwrap_or_else(|e| panic!("Type check error: {}", e));
-        lower_hir(cx, &checked)
+            typeck::typecheck(&INT, hir).unwrap_or_else(|e| panic!("Type check error: {}", e));
+        lower_hir(&INT, &checked)
     }
 
     #[test]

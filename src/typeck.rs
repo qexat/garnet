@@ -11,23 +11,23 @@ use crate::{Cx, TypeDef, TypeSym, VarSym};
 /// A random other error type bundled up with a `Cx`,
 /// so that error can be printed with info from the Cx.
 #[derive(Debug, Clone)]
-pub struct CxError<T>(Cx, T);
+pub struct CxError<T>(T);
 
 impl std::fmt::Display for CxError<TypeError> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.1.format(&self.0))
+        write!(f, "{}", self.0.format(&INT))
     }
 }
 
 impl std::error::Error for CxError<TypeError> {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        Some(&self.1)
+        Some(&self.0)
     }
 }
 
 impl From<CxError<TypeError>> for TypeError {
     fn from(e: CxError<TypeError>) -> TypeError {
-        e.1
+        e.0
     }
 }
 
@@ -657,14 +657,11 @@ fn typecheck_decl(
             let last_expr_type = last_type_of(cx, &typechecked_exprs);
 
             if !type_matches(cx, signature.rettype, last_expr_type) {
-                return Err(CxError(
-                    cx.clone(),
-                    TypeError::Return {
-                        fname: name,
-                        got: last_expr_type,
-                        expected: signature.rettype,
-                    },
-                ));
+                return Err(CxError(TypeError::Return {
+                    fname: name,
+                    got: last_expr_type,
+                    expected: signature.rettype,
+                }));
             }
 
             symtbl.pop_scope();
@@ -735,7 +732,7 @@ fn typecheck_expr(
     let unittype = cx.unit();
     let booltype = cx.bool();
     // TODO: Better name maybe!
-    let rar = |e| CxError(cx.clone(), e);
+    let rar = |e| CxError(e);
     match expr.e {
         Lit { val } => {
             let t = typecheck_literal(cx, &val).map_err(rar)?;
@@ -1053,18 +1050,17 @@ mod tests {
     use crate::*;
 
     fn typecheck_src(src: &str) -> Result<hir::Ir<TypeSym>, CxError<TypeError>> {
-        let cx = &mut crate::Cx::new();
         use crate::parser::Parser;
-        let ast = Parser::new(cx, src).parse();
+        let ast = Parser::new(src).parse();
         let ir = hir::lower(&mut rly, &ast);
-        typecheck(cx, ir)
+        typecheck(&INT, ir)
     }
 
     macro_rules! fail_typecheck {
         ( $src: expr, $err_pat: pat ) => {
             match typecheck_src($src) {
                 Ok(_) => panic!("Typecheck succeeded and should have failed!"),
-                Err(CxError(_, $err_pat)) => (),
+                Err(CxError($err_pat)) => (),
                 Err(x) => panic!("Typecheck gave the wrong error: {}", x),
             }
         };
@@ -1375,7 +1371,7 @@ mod tests {
         {
             use crate::parser::Parser;
             let src = "fn foo(): fn(I32):I32 = fn(x: I32):I32 = x+1 end end";
-            let ast = Parser::new(cx, src).parse();
+            let ast = Parser::new(src).parse();
             let ir = hir::lower(&mut rly, &ast);
             let _ = &typecheck(cx, ir).unwrap();
         }

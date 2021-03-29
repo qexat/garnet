@@ -240,23 +240,17 @@ impl ErrorReporter {
     }
 }
 
-pub struct Parser<'cx, 'input> {
+pub struct Parser<'input> {
     lex: std::iter::Peekable<logos::SpannedIter<'input, TokenKind>>,
-    cx: &'cx Cx,
     source: &'input str,
     err: ErrorReporter,
 }
 
-impl<'cx, 'input> Parser<'cx, 'input> {
-    pub fn new(cx: &'cx Cx, source: &'input str) -> Self {
+impl<'input> Parser<'input> {
+    pub fn new(source: &'input str) -> Self {
         let lex = TokenKind::lexer(source).spanned().peekable();
         let err = ErrorReporter::new("module", source);
-        Parser {
-            lex,
-            cx,
-            source,
-            err,
-        }
+        Parser { lex, source, err }
     }
 
     /// Read all its input and returns an Ast.
@@ -367,7 +361,7 @@ impl<'cx, 'input> Parser<'cx, 'input> {
         match self.next() {
             Some(Token {
                 kind: T::Ident(s), ..
-            }) => self.cx.intern(s),
+            }) => crate::INT.intern(s),
             Some(Token { kind, span }) => {
                 let msg = format!("Parse error: got token {:?}.  Expected identifier.", kind,);
                 let diag = Diagnostic::error()
@@ -477,7 +471,7 @@ impl<'cx, 'input> Parser<'cx, 'input> {
             self.expect(T::Colon);
             self.parse_type()
         } else {
-            self.cx.unit()
+            crate::INT.unit()
         };
         ast::Signature { params, rettype }
     }
@@ -510,7 +504,7 @@ impl<'cx, 'input> Parser<'cx, 'input> {
             self.expect(T::Colon);
             self.parse_type()
         } else {
-            self.cx.unit()
+            crate::INT.unit()
         };
         TypeDef::Lambda(params, rettype)
     }
@@ -835,12 +829,12 @@ impl<'cx, 'input> Parser<'cx, 'input> {
                 span,
             }) => match s.as_ref() {
                 // TODO: This is a bit too hardwired tbh...
-                "I128" => self.cx.i128(),
-                "I64" => self.cx.i64(),
-                "I32" => self.cx.i32(),
-                "I16" => self.cx.i16(),
-                "I8" => self.cx.i8(),
-                "Bool" => self.cx.bool(),
+                "I128" => crate::INT.i128(),
+                "I64" => crate::INT.i64(),
+                "I32" => crate::INT.i32(),
+                "I16" => crate::INT.i16(),
+                "I8" => crate::INT.i8(),
+                "Bool" => crate::INT.bool(),
                 _ => self.error(Some(Token {
                     kind: T::Ident(s),
                     span,
@@ -850,11 +844,11 @@ impl<'cx, 'input> Parser<'cx, 'input> {
                 kind: T::LBrace, ..
             }) => {
                 let tuptype = self.parse_tuple_type();
-                self.cx.intern_type(&tuptype)
+                crate::INT.intern_type(&tuptype)
             }
             Some(Token { kind: T::Fn, .. }) => {
                 let fntype = self.parse_fn_type();
-                self.cx.intern_type(&fntype)
+                crate::INT.intern_type(&fntype)
             }
             other => self.error(other),
         }
@@ -948,15 +942,14 @@ fn infix_binding_power(op: &TokenKind) -> Option<(usize, usize)> {
 mod tests {
     use crate::ast::{self, Expr};
     use crate::parser::*;
-    use crate::{Cx, TypeDef};
+    use crate::{TypeDef, INT};
 
     /// Take a list of strings and try parsing them with the given function.
     /// Is ok iff the parsing succeeds, does no checking that the produced
     /// AST is actually something that you want, or anything at all.
     fn test_parse_with<T>(f: impl Fn(&mut Parser) -> T, strs: &[&str]) {
         for s in strs {
-            let cx = &Cx::new();
-            let mut p = Parser::new(cx, s);
+            let mut p = Parser::new(s);
             f(&mut p);
             // Make sure we've parsed the whole string.
             assert_eq!(p.lex.peek(), None);
@@ -969,9 +962,8 @@ mod tests {
     ///
     /// For now it's just for expr's, since that's most of the language.
     fn test_expr_is(s: &str, f: impl Fn(&Cx) -> Expr) {
-        let cx = &Cx::new();
-        let ast = f(cx);
-        let mut p = Parser::new(cx, s);
+        let ast = f(&INT);
+        let mut p = Parser::new(s);
         let parsed_expr = p.parse_expr(0).unwrap();
         assert_eq!(&ast, &parsed_expr);
         // Make sure we've parsed the whole string.
@@ -980,9 +972,8 @@ mod tests {
 
     /// Same as test_expr_is but with decl's
     fn test_decl_is(s: &str, f: impl Fn(&Cx) -> ast::Decl) {
-        let cx = &Cx::new();
-        let ast = f(cx);
-        let mut p = Parser::new(cx, s);
+        let ast = f(&INT);
+        let mut p = Parser::new(s);
         let parsed_decl = p.parse_decl().unwrap();
         assert_eq!(&ast, &parsed_decl);
         // Make sure we've parsed the whole string.
@@ -1026,14 +1017,13 @@ const bar: Bool = 4
 --- rawr!
 const baz: {} = {}
 "#;
-        let cx = &Cx::new();
-        let p = &mut Parser::new(cx, s);
-        let foosym = cx.intern("foo");
-        let barsym = cx.intern("bar");
-        let bazsym = cx.intern("baz");
-        let i32_t = cx.i32();
-        let bool_t = cx.bool();
-        let unit_t = cx.unit();
+        let p = &mut Parser::new(s);
+        let foosym = INT.intern("foo");
+        let barsym = INT.intern("bar");
+        let bazsym = INT.intern("baz");
+        let i32_t = INT.i32();
+        let bool_t = INT.bool();
+        let unit_t = INT.unit();
         let d = p.parse();
         assert_eq!(
             d,
@@ -1325,7 +1315,6 @@ const baz: {} = {}
     #[test]
     fn lex_integer_values() {
         //test_expr_is("43i8", |_cx| Expr::sized_int(43, 1));
-        let cx = &Cx::new();
         let tests = &[
             // Input string, expected integer, expected integer size
             ("43i8", 43, 1),
@@ -1335,7 +1324,7 @@ const baz: {} = {}
             ("9i128", 9, 16),
         ];
         for (s, expected_int, expected_bytes) in tests {
-            let mut p = Parser::new(cx, s);
+            let mut p = Parser::new(s);
             assert_eq!(
                 p.next().unwrap().kind,
                 TokenKind::IntegerSize((*expected_int, *expected_bytes))
