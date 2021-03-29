@@ -2,23 +2,22 @@
 //!
 //! Does not free its contents; free the whole thing.
 
-use std::cell::RefCell;
 use std::collections::HashMap;
 use std::hash::Hash;
-use std::rc::Rc;
+use std::sync::{Arc, RwLock};
 
 /// Safe interner.
 /// The mutable caches and other guts are RefCell'd, so this is logically "immutable".
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct Interner<Ky, Val>
 where
     Val: Eq + Hash,
     Ky: From<usize> + Into<usize> + Copy + Clone,
 {
-    /// We just Rc the value type, which is fine.
+    /// We just Arc the value type, which is fine.
     /// This saves us the trouble of returning copies of it anyway.
-    data: RefCell<Vec<Rc<Val>>>,
-    map: RefCell<HashMap<Rc<Val>, Ky>>,
+    data: RwLock<Vec<Arc<Val>>>,
+    map: RwLock<HashMap<Arc<Val>, Ky>>,
 }
 
 /// The type for an interned thingy.
@@ -32,15 +31,15 @@ where
 {
     pub fn new() -> Self {
         Self {
-            data: RefCell::new(vec![]),
-            map: RefCell::new(HashMap::new()),
+            data: RwLock::new(vec![]),
+            map: RwLock::new(HashMap::new()),
         }
     }
     /// Intern the string, if necessary, returning a token for it.
     pub fn intern(&self, s: &Val) -> Ky {
         // Apparently I'm not smart enough to use entry() currently.
-        let mut data = self.data.borrow_mut();
-        let mut map = self.map.borrow_mut();
+        let mut data = self.data.write().unwrap();
+        let mut map = self.map.write().unwrap();
         if let Some(sym) = map.get(&*s) {
             // We have it, great
             *sym
@@ -48,7 +47,7 @@ where
             // We create the index from the length of the data.
             // This works because we never remove elements.
             let sym = Ky::from(data.len());
-            let s = Rc::new(s.clone());
+            let s = Arc::new(s.clone());
             data.push(s.clone());
             map.insert(s, sym);
             sym
@@ -58,13 +57,13 @@ where
     /// Get a value given its token
     /// Clones the value, which is kinda ugly, but otherwise it runs
     /// into borrowing issues with its RefCell.
-    pub fn fetch(&self, sym: Ky) -> Rc<Val> {
-        self.data.borrow()[sym.into()].clone()
+    pub fn fetch(&self, sym: Ky) -> Arc<Val> {
+        self.data.read().unwrap()[sym.into()].clone()
     }
 
     /// Number of symbols held.
     pub fn count(&self) -> usize {
-        self.data.borrow().len()
+        self.data.read().unwrap().len()
     }
 }
 

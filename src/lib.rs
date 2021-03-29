@@ -3,7 +3,7 @@
 
 use std::borrow::Cow;
 use std::collections::HashMap;
-use std::rc::Rc;
+use std::sync::Arc;
 
 pub mod ast;
 pub mod backend;
@@ -18,6 +18,12 @@ pub mod typeck;
 
 #[cfg(test)]
 pub(crate) mod testutil;
+
+use once_cell::sync::Lazy;
+/// The interner.  It's the ONLY part we have to actually
+/// carry around anywhere, so I'm experimenting with not
+/// heckin' bothering.
+pub static INT: Lazy<Cx> = Lazy::new(|| Cx::new());
 
 /// The interned name of an inferred type, that may be
 /// known or not
@@ -220,7 +226,7 @@ impl TypeDef {
 ///
 /// This impl's clone so we can bundle it with error types.
 /// Maybe Rc it instead?
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct Cx {
     /// Interned symbols
     syms: intern::Interner<VarSym, String>,
@@ -245,7 +251,7 @@ impl Cx {
     }
 
     /// Get the string for a variable symbol
-    pub fn fetch(&self, s: VarSym) -> Rc<String> {
+    pub fn fetch(&self, s: VarSym) -> Arc<String> {
         self.syms.fetch(s)
     }
 
@@ -255,7 +261,7 @@ impl Cx {
     }
 
     /// Get the TypeDef for a type symbol
-    pub fn fetch_type(&self, s: TypeSym) -> Rc<TypeDef> {
+    pub fn fetch_type(&self, s: TypeSym) -> Arc<TypeDef> {
         self.types.fetch(s)
     }
 
@@ -320,15 +326,15 @@ impl Cx {
 /// Parse -> lower to IR -> run transformation passes
 /// -> typecheck -> compile to wasm
 pub fn compile(src: &str) -> Vec<u8> {
-    let cx = &mut Cx::new();
     let ast = {
-        let mut parser = parser::Parser::new(cx, src);
+        let mut parser = parser::Parser::new(src);
         parser.parse()
     };
     let hir = hir::lower(&mut |_| (), &ast);
-    let hir = passes::run_passes(cx, hir);
-    let checked = typeck::typecheck(cx, hir).unwrap_or_else(|e| panic!("Type check error: {}", e));
-    backend::output(backend::Backend::Rust, cx, &checked)
+    let hir = passes::run_passes(&INT, hir);
+    let checked =
+        typeck::typecheck(&INT, hir).unwrap_or_else(|e| panic!("Type check error: {}", e));
+    backend::output(backend::Backend::Rust, &INT, &checked)
 }
 
 #[cfg(test)]
