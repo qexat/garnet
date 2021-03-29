@@ -327,13 +327,10 @@ pub fn compile(src: &str) -> Vec<u8> {
         let mut parser = parser::Parser::new(cx, src);
         parser.parse()
     };
-    // BLAR
-    let icx = &mut InferenceCx::new();
-    let hir = hir::lower(&mut |_| icx.insert(TypeInfo::Unknown), &ast);
-    //let hir = passes::run_passes(cx, hir);
-    //let checked = typeck::typecheck(cx, hir).unwrap_or_else(|e| panic!("Type check error: {}", e));
-    //backend::output(backend::Backend::Null, cx, &checked)
-    vec![]
+    let hir = hir::lower(&mut |_| (), &ast);
+    let hir = passes::run_passes(cx, hir);
+    let checked = typeck::typecheck(cx, hir).unwrap_or_else(|e| panic!("Type check error: {}", e));
+    backend::output(backend::Backend::Rust, cx, &checked)
 }
 
 #[cfg(test)]
