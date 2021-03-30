@@ -5,7 +5,7 @@ use std::fmt::Display;
 use std::fs;
 use std::io::Write;
 
-use garnet;
+use garnet::{self, INT};
 
 /// We gotta create a temporary file, write our code to it, call rustc on it, and return the
 /// result as a dynamic library already loaded via libloading
@@ -106,10 +106,9 @@ where
 use garnet::ast;
 #[test]
 fn var_lookup() {
-    let mut cx = garnet::Cx::new();
-    let mainsym = cx.intern("test");
-    let varsym = cx.intern("a");
-    let i32_t = cx.intern_type(&garnet::TypeDef::SInt(4));
+    let mainsym = INT.intern("test");
+    let varsym = INT.intern("a");
+    let i32_t = INT.intern_type(&garnet::TypeDef::SInt(4));
     let ast = ast::Ast {
         decls: vec![ast::Decl::Function {
             name: mainsym,
@@ -122,8 +121,8 @@ fn var_lookup() {
         }],
     };
     let ir = garnet::hir::lower(&mut |_| (), &ast);
-    let checked = garnet::typeck::typecheck(&mut cx, ir).unwrap();
-    let src = garnet::backend::output(garnet::backend::Backend::Rust, &mut cx, &checked);
+    let checked = garnet::typeck::typecheck(ir).unwrap();
+    let src = garnet::backend::output(garnet::backend::Backend::Rust, &checked);
 
     let lib = eval_rs_dylib(&src);
     let res = unsafe {
@@ -135,9 +134,8 @@ fn var_lookup() {
 
 #[test]
 fn subtraction() {
-    let mut cx = garnet::Cx::new();
-    let mainsym = cx.intern("test");
-    let i32_t = cx.intern_type(&garnet::TypeDef::SInt(4));
+    let mainsym = INT.intern("test");
+    let i32_t = INT.intern_type(&garnet::TypeDef::SInt(4));
     let ast = ast::Ast {
         decls: vec![ast::Decl::Function {
             name: mainsym,
@@ -154,8 +152,8 @@ fn subtraction() {
         }],
     };
     let ir = garnet::hir::lower(&mut |_| (), &ast);
-    let checked = garnet::typeck::typecheck(&mut cx, ir).unwrap();
-    let src = garnet::backend::output(garnet::backend::Backend::Rust, &mut cx, &checked);
+    let checked = garnet::typeck::typecheck(ir).unwrap();
+    let src = garnet::backend::output(garnet::backend::Backend::Rust, &checked);
     let lib = eval_rs_dylib(&src);
     let res = unsafe {
         let sym: libloading::Symbol<unsafe extern "C" fn() -> i32> = lib.get(b"test").unwrap();
@@ -166,9 +164,8 @@ fn subtraction() {
 
 #[test]
 fn maths() {
-    let mut cx = garnet::Cx::new();
-    let mainsym = cx.intern("test");
-    let i32_t = cx.intern_type(&garnet::TypeDef::SInt(4));
+    let mainsym = INT.intern("test");
+    let i32_t = INT.intern_type(&garnet::TypeDef::SInt(4));
     let ast = ast::Ast {
         decls: vec![ast::Decl::Function {
             name: mainsym,
@@ -185,8 +182,8 @@ fn maths() {
         }],
     };
     let ir = garnet::hir::lower(&mut |_| (), &ast);
-    let checked = garnet::typeck::typecheck(&mut cx, ir).unwrap();
-    let src = garnet::backend::output(garnet::backend::Backend::Rust, &mut cx, &checked);
+    let checked = garnet::typeck::typecheck(ir).unwrap();
+    let src = garnet::backend::output(garnet::backend::Backend::Rust, &checked);
 
     let lib = eval_rs_dylib(&src);
     let res = unsafe {
@@ -198,9 +195,8 @@ fn maths() {
 
 #[test]
 fn block() {
-    let mut cx = garnet::Cx::new();
-    let mainsym = cx.intern("test");
-    let bool_t = cx.intern_type(&garnet::TypeDef::Bool);
+    let mainsym = INT.intern("test");
+    let bool_t = INT.intern_type(&garnet::TypeDef::Bool);
     let ast = ast::Ast {
         decls: vec![ast::Decl::Function {
             name: mainsym,
@@ -229,8 +225,8 @@ fn block() {
         }],
     };
     let ir = garnet::hir::lower(&mut |_| (), &ast);
-    let checked = garnet::typeck::typecheck(&mut cx, ir).unwrap();
-    let src = garnet::backend::output(garnet::backend::Backend::Rust, &mut cx, &checked);
+    let checked = garnet::typeck::typecheck(ir).unwrap();
+    let src = garnet::backend::output(garnet::backend::Backend::Rust, &checked);
 
     let lib = eval_rs_dylib(&src);
     let res = unsafe {

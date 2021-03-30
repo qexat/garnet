@@ -158,13 +158,13 @@ impl TypeDef {
     ///
     /// TODO: We need a good way to go the other way around as well,
     /// for built-in types like I32 and Bool.
-    pub fn get_name(&self, cx: &Cx) -> Cow<'static, str> {
+    pub fn get_name(&self) -> Cow<'static, str> {
         let join_types_with_commas = |lst: &[TypeSym]| {
             let p_strs = lst
                 .iter()
                 .map(|ptype| {
-                    let ptype_def = cx.fetch_type(*ptype);
-                    ptype_def.get_name(cx)
+                    let ptype_def = INT.fetch_type(*ptype);
+                    ptype_def.get_name()
                 })
                 .collect::<Vec<_>>();
             p_strs.join(", ")
@@ -194,13 +194,13 @@ impl TypeDef {
                 t += &join_types_with_commas(params);
 
                 t += ")";
-                let ret_def = cx.fetch_type(*rettype);
+                let ret_def = INT.fetch_type(*rettype);
                 match &*ret_def {
                     TypeDef::Tuple(x) if x.len() == 0 => {
                         // pass, implicitly return unit
                     }
                     x => {
-                        let type_str = x.get_name(cx);
+                        let type_str = x.get_name();
                         t += ": ";
                         t += &type_str;
                     }
@@ -208,7 +208,7 @@ impl TypeDef {
                 Cow::Owned(t)
             } /*
               TypeDef::Ptr(t) => {
-                  let inner_name = cx.fetch_type(**t).get_name(cx);
+                  let inner_name = cx.fetch_type(**t).get_name();
                   let s = format!("{}^", inner_name);
                   Cow::Owned(s)
               }
@@ -331,10 +331,9 @@ pub fn compile(src: &str) -> Vec<u8> {
         parser.parse()
     };
     let hir = hir::lower(&mut |_| (), &ast);
-    let hir = passes::run_passes(&INT, hir);
-    let checked =
-        typeck::typecheck(&INT, hir).unwrap_or_else(|e| panic!("Type check error: {}", e));
-    backend::output(backend::Backend::Rust, &INT, &checked)
+    let hir = passes::run_passes(hir);
+    let checked = typeck::typecheck(hir).unwrap_or_else(|e| panic!("Type check error: {}", e));
+    backend::output(backend::Backend::Rust, &checked)
 }
 
 #[cfg(test)]
@@ -343,10 +342,9 @@ mod tests {
     /// Make sure outputting a lambda's name gives us something we expect.
     #[test]
     fn check_name_format() {
-        let cx = Cx::new();
-        let args = vec![cx.i32(), cx.bool()];
-        let def = TypeDef::Lambda(args, cx.i32());
-        let gotten_name = def.get_name(&cx);
+        let args = vec![INT.i32(), INT.bool()];
+        let def = TypeDef::Lambda(args, INT.i32());
+        let gotten_name = def.get_name();
         let desired_name = "fn(I32, Bool): I32";
         assert_eq!(&gotten_name, desired_name);
     }

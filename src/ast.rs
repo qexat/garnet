@@ -50,11 +50,11 @@ pub enum BOp {
 
 impl BOp {
     /// Returns the type that the bin op operates on.
-    pub fn input_type(&self, cx: &Cx) -> TypeSym {
+    pub fn input_type(&self) -> TypeSym {
         use BOp::*;
         match self {
-            And | Or | Xor => cx.bool(),
-            _ => cx.iunknown(),
+            And | Or | Xor => INT.bool(),
+            _ => INT.iunknown(),
         }
     }
 
@@ -67,12 +67,12 @@ impl BOp {
     }
 
     /// What the resultant type of the binop is
-    pub fn output_type(&self, cx: &Cx) -> TypeSym {
+    pub fn output_type(&self) -> TypeSym {
         use BOp::*;
         match self {
-            Add | Sub | Mul | Div | Mod => cx.iunknown(),
-            Eq | Neq | Gt | Lt | Gte | Lte => cx.bool(),
-            And | Or | Xor => cx.bool(),
+            Add | Sub | Mul | Div | Mod => INT.iunknown(),
+            Eq | Neq | Gt | Lt | Gte | Lte => INT.bool(),
+            And | Or | Xor => INT.bool(),
         }
     }
 
@@ -99,11 +99,11 @@ pub enum UOp {
 impl UOp {
     /// Returns the type that the unary op operates on.
     /// Currently, only numbers.
-    pub fn input_type(&self, cx: &Cx) -> TypeSym {
+    pub fn input_type(&self) -> TypeSym {
         use UOp::*;
         match self {
-            Neg => cx.iunknown(),
-            Not => cx.bool(),
+            Neg => INT.iunknown(),
+            Not => INT.bool(),
             Ref => todo!(),
             Deref => todo!(),
         }
@@ -120,11 +120,11 @@ impl UOp {
     }
 
     /// What the resultant type of the uop is
-    pub fn output_type(&self, cx: &Cx) -> TypeSym {
+    pub fn output_type(&self) -> TypeSym {
         use UOp::*;
         match self {
-            Neg => cx.iunknown(),
-            Not => cx.bool(),
+            Neg => INT.iunknown(),
+            Not => INT.bool(),
             Ref => todo!(),
             Deref => todo!(),
         }
@@ -159,10 +159,10 @@ pub struct Signature {
 
 impl Signature {
     /// Returns a lambda typedef representing the signature
-    pub(crate) fn to_type(&self, cx: &Cx) -> TypeSym {
+    pub(crate) fn to_type(&self) -> TypeSym {
         let args = self.params.iter().map(|(_v, t)| *t).collect();
         let t = TypeDef::Lambda(args, self.rettype);
-        cx.intern_type(&t)
+        INT.intern_type(&t)
     }
 }
 
@@ -263,9 +263,9 @@ impl Expr {
     }
 
     /// Shortcuts for making vars
-    pub fn var(cx: &Cx, name: &str) -> Expr {
+    pub fn var(name: &str) -> Expr {
         Expr::Var {
-            name: cx.intern(name),
+            name: INT.intern(name),
         }
     }
 }

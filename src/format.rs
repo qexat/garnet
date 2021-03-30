@@ -40,7 +40,7 @@ fn unparse_decl(cx: &Cx, d: &Decl, out: &mut dyn io::Write) -> io::Result<()> {
                 write!(out, "--- {}", line)?;
             }
             let name = cx.fetch(*name);
-            let tname = cx.fetch_type(*typename).get_name(cx);
+            let tname = cx.fetch_type(*typename).get_name();
             write!(out, "const {}: {} = ", name, tname)?;
             unparse_expr(cx, init, 0, out)?;
             writeln!(out)
@@ -52,11 +52,11 @@ fn unparse_sig(cx: &Cx, sig: &Signature, out: &mut dyn io::Write) -> io::Result<
     write!(out, "(")?;
     for (name, typename) in sig.params.iter() {
         let name = cx.fetch(*name);
-        let tname = cx.fetch_type(*typename).get_name(cx);
+        let tname = cx.fetch_type(*typename).get_name();
         write!(out, "{}: {}", name, tname)?;
     }
     write!(out, "): ")?;
-    let rettype = cx.fetch_type(sig.rettype).get_name(cx);
+    let rettype = cx.fetch_type(sig.rettype).get_name();
     write!(out, "{}", rettype)
 }
 
@@ -142,7 +142,7 @@ fn unparse_expr(cx: &Cx, e: &Expr, indent: usize, out: &mut dyn io::Write) -> io
             }
             write!(out, "{} ", name)?;
             if let Some(typename) = typename {
-                let tname = cx.fetch_type(*typename).get_name(cx);
+                let tname = cx.fetch_type(*typename).get_name();
                 write!(out, ": {} ", tname)?;
             }
             write!(out, "= ")?;
@@ -269,7 +269,7 @@ fn display_instr(cx: &Cx, f: &Instr, out: &mut dyn io::Write) -> io::Result<()> 
                 out,
                 "    {:?}: {} = ",
                 var,
-                cx.fetch_type(*typesym).get_name(cx)
+                cx.fetch_type(*typesym).get_name()
             )?;
             display_op(op, out)?;
             writeln!(out)?;
@@ -287,7 +287,7 @@ fn display_func(cx: &Cx, f: &Func, out: &mut dyn io::Write) -> io::Result<()> {
         cx.fetch(f.name),
         f.signature,
         f.params,
-        cx.fetch_type(f.returns).get_name(cx),
+        cx.fetch_type(f.returns).get_name(),
     )?;
     */
 

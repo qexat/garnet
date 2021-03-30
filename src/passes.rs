@@ -7,11 +7,11 @@
 use crate::hir::{plz, Decl as D, Expr as E, Ir, TypedExpr};
 use crate::*;
 
-type Pass<T> = fn(cx: &Cx, Ir<T>) -> Ir<T>;
+type Pass<T> = fn(Ir<T>) -> Ir<T>;
 
-pub fn run_passes(cx: &Cx, ir: Ir<()>) -> Ir<()> {
+pub fn run_passes(ir: Ir<()>) -> Ir<()> {
     let passes: &[Pass<()>] = &[lambda_lifting];
-    passes.iter().fold(ir, |prev_ir, f| f(cx, prev_ir))
+    passes.iter().fold(ir, |prev_ir, f| f(prev_ir))
 }
 /* Handy match templates
  *
@@ -172,11 +172,11 @@ fn walk<T1, T2>(
 */
 
 /// Lambda lift a single expr.
-fn lambda_lift_expr(cx: &Cx, expr: TypedExpr<()>, output_funcs: &mut Vec<D<()>>) -> TypedExpr<()> {
+fn lambda_lift_expr(expr: TypedExpr<()>, output_funcs: &mut Vec<D<()>>) -> TypedExpr<()> {
     let result = match expr.e {
         E::BinOp { op, lhs, rhs } => {
-            let nlhs = lambda_lift_expr(cx, *lhs, output_funcs);
-            let nrhs = lambda_lift_expr(cx, *rhs, output_funcs);
+            let nlhs = lambda_lift_expr(*lhs, output_funcs);
+            let nrhs = lambda_lift_expr(*rhs, output_funcs);
             E::BinOp {
                 op,
                 lhs: Box::new(nlhs),
@@ -184,14 +184,14 @@ fn lambda_lift_expr(cx: &Cx, expr: TypedExpr<()>, output_funcs: &mut Vec<D<()>>)
             }
         }
         E::UniOp { op, rhs } => {
-            let nrhs = lambda_lift_expr(cx, *rhs, output_funcs);
+            let nrhs = lambda_lift_expr(*rhs, output_funcs);
             E::UniOp {
                 op,
                 rhs: Box::new(nrhs),
             }
         }
         E::Block { body } => E::Block {
-            body: lambda_lift_exprs(cx, body, output_funcs),
+            body: lambda_lift_exprs(body, output_funcs),
         },
         E::Let {
             varname,
@@ -201,19 +201,19 @@ fn lambda_lift_expr(cx: &Cx, expr: TypedExpr<()>, output_funcs: &mut Vec<D<()>>)
         } => E::Let {
             varname,
             typename,
-            init: Box::new(lambda_lift_expr(cx, *init, output_funcs)),
+            init: Box::new(lambda_lift_expr(*init, output_funcs)),
             mutable,
         },
         E::If { cases, falseblock } => {
             let new_cases = cases
                 .into_iter()
                 .map(|(test, case)| {
-                    let new_test = lambda_lift_expr(cx, test, output_funcs);
-                    let new_cases = lambda_lift_exprs(cx, case, output_funcs);
+                    let new_test = lambda_lift_expr(test, output_funcs);
+                    let new_cases = lambda_lift_exprs(case, output_funcs);
                     (new_test, new_cases)
                 })
                 .collect();
-            let new_falseblock = lambda_lift_exprs(cx, falseblock, output_funcs);
+            let new_falseblock = lambda_lift_exprs(falseblock, output_funcs);
             E::If {
                 cases: new_cases,
                 falseblock: new_falseblock,
@@ -221,14 +221,14 @@ fn lambda_lift_expr(cx: &Cx, expr: TypedExpr<()>, output_funcs: &mut Vec<D<()>>)
         }
 
         E::Loop { body } => E::Loop {
-            body: lambda_lift_exprs(cx, body, output_funcs),
+            body: lambda_lift_exprs(body, output_funcs),
         },
         E::Return { retval } => E::Return {
-            retval: Box::new(lambda_lift_expr(cx, *retval, output_funcs)),
+            retval: Box::new(lambda_lift_expr(*retval, output_funcs)),
         },
         E::Funcall { func, params } => {
-            let new_func = Box::new(lambda_lift_expr(cx, *func, output_funcs));
-            let new_params = lambda_lift_exprs(cx, params, output_funcs);
+            let new_func = Box::new(lambda_lift_expr(*func, output_funcs));
+            let new_params = lambda_lift_exprs(params, output_funcs);
             E::Funcall {
                 func: new_func,
                 params: new_params,
@@ -238,11 +238,11 @@ fn lambda_lift_expr(cx: &Cx, expr: TypedExpr<()>, output_funcs: &mut Vec<D<()>>)
             // This is actually the only important bit.
             // TODO: Make a more informative name, maybe including the file and line number or
             // such.
-            let lambda_name = cx.gensym("lambda");
+            let lambda_name = INT.gensym("lambda");
             let function_decl = D::Function {
                 name: lambda_name,
                 signature,
-                body: lambda_lift_exprs(cx, body, output_funcs),
+                body: lambda_lift_exprs(body, output_funcs),
             };
             output_funcs.push(function_decl);
             E::Var { name: lambda_name }
@@ -254,13 +254,12 @@ fn lambda_lift_expr(cx: &Cx, expr: TypedExpr<()>, output_funcs: &mut Vec<D<()>>)
 
 /// Lambda lift a list of expr's
 fn lambda_lift_exprs(
-    cx: &Cx,
     exprs: Vec<TypedExpr<()>>,
     output_funcs: &mut Vec<D<()>>,
 ) -> Vec<TypedExpr<()>> {
     exprs
         .into_iter()
-        .map(|e| lambda_lift_expr(cx, e, output_funcs))
+        .map(|e| lambda_lift_expr(e, output_funcs))
         .collect()
 }
 
@@ -270,7 +269,7 @@ fn lambda_lift_exprs(
 /// TODO: Output is an IR that does not have any lambda expr's in it, which
 /// I would like to make un-representable, but don't see a good way
 /// to do yet.  Add a tag type of some kind to the Ir<T>?
-fn lambda_lifting(cx: &Cx, ir: Ir<()>) -> Ir<()> {
+fn lambda_lifting(ir: Ir<()>) -> Ir<()> {
     let mut new_functions = vec![];
     let new_decls: Vec<D<()>> = ir
         .decls
@@ -281,7 +280,7 @@ fn lambda_lifting(cx: &Cx, ir: Ir<()>) -> Ir<()> {
                 signature,
                 body,
             } => {
-                let new_body = lambda_lift_exprs(cx, body, &mut new_functions);
+                let new_body = lambda_lift_exprs(body, &mut new_functions);
                 D::Function {
                     name,
                     signature,
@@ -305,7 +304,7 @@ fn lambda_lifting(cx: &Cx, ir: Ir<()>) -> Ir<()> {
 ///
 /// We might be able to get rid of TupleRef's by turning
 /// them into pointer arithmatic, too.
-fn _pointerification(_cx: &Cx, _ir: Ir<TypeSym>) -> Ir<TypeSym> {
+fn _pointerification(_ir: Ir<TypeSym>) -> Ir<TypeSym> {
     todo!()
 }
 
