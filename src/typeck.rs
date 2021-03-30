@@ -12,7 +12,7 @@ impl std::error::Error for TypeError {}
 
 impl std::fmt::Display for TypeError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self)
+        write!(f, "{}", self.format())
     }
 }
 
@@ -448,8 +448,12 @@ fn infer_type(t1: TypeSym, t2: TypeSym) -> Option<TypeSym> {
     match (t1_def, t2_def) {
         (TypeDef::UnknownInt, TypeDef::SInt(_)) => Some(t2),
         (TypeDef::SInt(_), TypeDef::UnknownInt) => Some(t1),
+        // Anything related to a never type becomes a never type,
+        // because by definition control flow never actually gets
+        // to that expression.
         (TypeDef::Never, _) => Some(t1),
         (_, TypeDef::Never) => Some(t2),
+        // TODO: Never and Never?  Is that valid, or not?  I THINK it is
         (tt1, tt2) if tt1 == tt2 => Some(t1),
         _ => None,
     }
@@ -793,16 +797,17 @@ fn typecheck_expr(
             mutable,
         } => {
             let init_expr = typecheck_expr(symtbl, *init, function_rettype)?;
-            let init_type = init_expr.t;
-            let typename = typename.expect("No type in let expr but it got past type inference?");
-            if type_matches(init_type, typename) {
+            let typename = typename.expect("TODO: Try to do type inference here if we can?");
+            // If the init expression can match with the declared let type, life is good
+            if let Some(t) = infer_type(typename, init_expr.t) {
+                let new_init = reify_types(init_expr.t, t, init_expr);
                 // Add var to symbol table, proceed
-                symtbl.add_var(varname, typename, mutable);
+                symtbl.add_var(varname, t, mutable);
                 Ok(hir::TypedExpr {
                     e: Let {
                         varname,
-                        typename: Some(typename),
-                        init: Box::new(init_expr),
+                        typename: Some(t),
+                        init: Box::new(new_init),
                         mutable,
                     },
                     t: unittype,
@@ -810,7 +815,7 @@ fn typecheck_expr(
             } else {
                 Err(TypeError::LetType {
                     name: varname,
-                    got: init_type,
+                    got: init_expr.t,
                     expected: typename,
                 })
             }
@@ -854,6 +859,7 @@ fn typecheck_expr(
                 t,
             })
         }
+        // TODO: Inference?
         Lambda { signature, body } => {
             symtbl.push_scope();
             // add params to symbol table
@@ -881,6 +887,7 @@ fn typecheck_expr(
                 t: lambdatype,
             })
         }
+        // TODO: Inference?
         Funcall { func, params } => {
             // First, get param types
             let given_params = typecheck_exprs(symtbl, params, function_rettype)?;
@@ -912,25 +919,31 @@ fn typecheck_expr(
         Break => Ok(expr.map_type(&|_| unittype)),
         Return { retval } => {
             if let Some(wanted_type) = function_rettype {
-                // We got a `return` expression in a place where there ain't anything to return
-                // from.
-                let mut body_expr = typecheck_expr(symtbl, *retval, function_rettype)?;
-                let given = body_expr.t;
-                if type_matches(given, wanted_type) {
-                    // If you do `let x = return y` the type of `x` is `Never`
-                    body_expr.t = INT.never();
-                    Ok(body_expr)
+                let retval_expr = typecheck_expr(symtbl, *retval, function_rettype)?;
+                if let Some(t) = infer_type(retval_expr.t, wanted_type) {
+                    // If you do `let x = return y` the type of `x` is `Never`,
+                    // while the type of y is the return type of the function.
+                    let new_retval = reify_types(retval_expr.t, t, retval_expr);
+                    Ok(hir::TypedExpr {
+                        t: INT.never(),
+                        e: Return {
+                            retval: Box::new(new_retval),
+                        },
+                    })
                 } else {
                     Err(TypeError::TypeMismatch {
                         expr_name: "return".into(),
                         expected: wanted_type,
-                        got: given,
+                        got: retval_expr.t,
                     })
                 }
             } else {
+                // We got a `return` expression in a place where there ain't anything to return
+                // from, such as a const initializer
                 Err(TypeError::InvalidReturn)
             }
         }
+        // TODO: Inference?
         TupleCtor { body } => {
             let body_exprs = typecheck_exprs(symtbl, body, function_rettype)?;
             let body_typesyms = body_exprs.iter().map(|te| te.t).collect();
@@ -960,28 +973,33 @@ fn typecheck_expr(
         Assign { lhs, rhs } => {
             let lhs_expr = typecheck_expr(symtbl, *lhs, function_rettype)?;
             let rhs_expr = typecheck_expr(symtbl, *rhs, function_rettype)?;
-            // So the rules for assignments are, it's good only:
-            // If the lhs is an lvalue (just variable or tuple ref currently)
+            // So the rules for assignments are, it's valid only if:
+            // The LHS is an lvalue (just variable or tuple ref currently)
             // (This basically comes down to "somewhere with a location"...)
-            // If the lhs is mutable
-            // If the types of lhs and rhs match.
+            // The LHS is mutable
+            // The types of the RHS can be inferred into the type of the LHS
             if !is_mutable_lvalue(symtbl, &lhs_expr.e)? {
                 Err(TypeError::Mutability {
                     expr_name: "assignment".into(),
                 })
-            } else if !type_matches(lhs_expr.t, rhs_expr.t) {
+            } else if let Some(t) = infer_type(lhs_expr.t, rhs_expr.t) {
+                // TODO: Do we change the type of the LHS?  I THINK we could...
+                // I think by definition the type of the LHS is always known
+                // and is always a real type.  So this should at worst be a noop?
+                let new_lhs = reify_types(lhs_expr.t, t, lhs_expr);
+                let new_rhs = reify_types(rhs_expr.t, t, rhs_expr);
+                Ok(hir::TypedExpr {
+                    t: INT.unit(),
+                    e: Assign {
+                        lhs: Box::new(new_lhs),
+                        rhs: Box::new(new_rhs),
+                    },
+                })
+            } else {
                 Err(TypeError::TypeMismatch {
                     expr_name: "assignment".into(),
                     expected: lhs_expr.t,
                     got: rhs_expr.t,
-                })
-            } else {
-                Ok(hir::TypedExpr {
-                    t: INT.unit(),
-                    e: Assign {
-                        lhs: Box::new(lhs_expr),
-                        rhs: Box::new(rhs_expr),
-                    },
                 })
             }
         }
@@ -1022,7 +1040,10 @@ mod tests {
         use crate::parser::Parser;
         let ast = Parser::new(src).parse();
         let ir = hir::lower(&mut rly, &ast);
-        typecheck(ir)
+        typecheck(ir).map_err(|e| {
+            eprintln!("typecheck_src got error: {}", e);
+            e
+        })
     }
 
     macro_rules! fail_typecheck {
@@ -1033,23 +1054,6 @@ mod tests {
                 Err(x) => panic!("Typecheck gave the wrong error: {}", x),
             }
         };
-    }
-
-    /// Sanity check
-    #[test]
-    fn test_typecheck_lit() {
-        use hir;
-        let t_i32 = INT.i32();
-        let t_bool = INT.bool();
-
-        assert!(type_matches(
-            typecheck_literal(&hir::Literal::Integer(9)).unwrap(),
-            t_i32
-        ));
-        assert_eq!(
-            typecheck_literal(&hir::Literal::Bool(false)).unwrap(),
-            t_bool
-        );
     }
 
     /// Test symbol table
@@ -1101,7 +1105,7 @@ mod tests {
     /// Test literal type inference
     #[test]
     fn test_type_lit() {
-        let t_i32 = INT.i32();
+        let t_iunk = INT.iunknown();
         let t_bool = INT.bool();
 
         let l1 = hir::Literal::Integer(3);
@@ -1110,7 +1114,7 @@ mod tests {
         let l2t = typecheck_literal(&l2).unwrap();
         assert!(!type_matches(l1t, l2t));
 
-        assert!(type_matches(l1t, t_i32));
+        assert!(type_matches(l1t, t_iunk));
         assert!(type_matches(l2t, t_bool));
     }
 
@@ -1323,11 +1327,8 @@ mod tests {
         }
 
         {
-            use crate::parser::Parser;
             let src = "fn foo(): fn(I32):I32 = fn(x: I32):I32 = x+1 end end";
-            let ast = Parser::new(src).parse();
-            let ir = hir::lower(&mut rly, &ast);
-            let _ = &typecheck(ir).unwrap();
+            typecheck_src(src).unwrap();
         }
     }
 
