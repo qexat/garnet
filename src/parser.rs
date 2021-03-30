@@ -961,8 +961,8 @@ mod tests {
     /// intern strings for identifiers.
     ///
     /// For now it's just for expr's, since that's most of the language.
-    fn test_expr_is(s: &str, f: impl Fn(&Cx) -> Expr) {
-        let ast = f(&INT);
+    fn test_expr_is(s: &str, f: impl Fn() -> Expr) {
+        let ast = f();
         let mut p = Parser::new(s);
         let parsed_expr = p.parse_expr(0).unwrap();
         assert_eq!(&ast, &parsed_expr);
@@ -971,8 +971,8 @@ mod tests {
     }
 
     /// Same as test_expr_is but with decl's
-    fn test_decl_is(s: &str, f: impl Fn(&Cx) -> ast::Decl) {
-        let ast = f(&INT);
+    fn test_decl_is(s: &str, f: impl Fn() -> ast::Decl) {
+        let ast = f();
         let mut p = Parser::new(s);
         let parsed_decl = p.parse_decl().unwrap();
         assert_eq!(&ast, &parsed_decl);
@@ -982,9 +982,9 @@ mod tests {
 
     #[test]
     fn test_const() {
-        test_decl_is("const foo: I32 = -9", |cx| ast::Decl::Const {
-            name: cx.intern("foo"),
-            typename: cx.intern_type(&TypeDef::SInt(4)),
+        test_decl_is("const foo: I32 = -9", || ast::Decl::Const {
+            name: INT.intern("foo"),
+            typename: INT.intern_type(&TypeDef::SInt(4)),
             init: Expr::UniOp {
                 op: ast::UOp::Neg,
                 rhs: Box::new(Expr::int(9)),
@@ -995,12 +995,12 @@ mod tests {
 
     #[test]
     fn test_fn() {
-        test_decl_is("fn foo(x: I32): I32 = 9 end", |cx| {
-            let i32_t = cx.intern_type(&TypeDef::SInt(4));
+        test_decl_is("fn foo(x: I32): I32 = 9 end", || {
+            let i32_t = INT.intern_type(&TypeDef::SInt(4));
             ast::Decl::Function {
-                name: cx.intern("foo"),
+                name: INT.intern("foo"),
                 signature: ast::Signature {
-                    params: vec![(cx.intern("x"), i32_t)],
+                    params: vec![(INT.intern("x"), i32_t)],
                     rettype: i32_t,
                 },
                 body: vec![Expr::int(9)],
@@ -1172,22 +1172,22 @@ const baz: {} = {}
 
     #[test]
     fn parse_funcall() {
-        test_expr_is("y(1, 2, 3)", |cx| Expr::Funcall {
+        test_expr_is("y(1, 2, 3)", || Expr::Funcall {
             func: Box::new(Expr::Var {
-                name: cx.intern("y"),
+                name: INT.intern("y"),
             }),
             params: vec![Expr::int(1), Expr::int(2), Expr::int(3)],
         });
 
-        test_expr_is("foo(0, bar(1 * 2), 3)", |cx| Expr::Funcall {
+        test_expr_is("foo(0, bar(1 * 2), 3)", || Expr::Funcall {
             func: Box::new(Expr::Var {
-                name: cx.intern("foo"),
+                name: INT.intern("foo"),
             }),
             params: vec![
                 Expr::int(0),
                 Expr::Funcall {
                     func: Box::new(Expr::Var {
-                        name: cx.intern("bar"),
+                        name: INT.intern("bar"),
                     }),
                     params: vec![Expr::BinOp {
                         op: ast::BOp::Mul,
@@ -1199,8 +1199,8 @@ const baz: {} = {}
             ],
         });
 
-        test_expr_is("(1)", |_cx| Expr::int(1));
-        test_expr_is("(((1)))", |_cx| Expr::int(1));
+        test_expr_is("(1)", || Expr::int(1));
+        test_expr_is("(((1)))", || Expr::int(1));
     }
 
     #[test]
@@ -1216,14 +1216,14 @@ const baz: {} = {}
                 3
             end
             "#,
-            |cx| Expr::If {
+            || Expr::If {
                 cases: vec![
                     ast::IfCase {
-                        condition: Box::new(Expr::var(cx, "x")),
+                        condition: Box::new(Expr::var("x")),
                         body: vec![Expr::int(1)],
                     },
                     ast::IfCase {
-                        condition: Box::new(Expr::var(cx, "y")),
+                        condition: Box::new(Expr::var("y")),
                         body: vec![Expr::int(2)],
                     },
                 ],
@@ -1243,14 +1243,14 @@ const baz: {} = {}
                 end
             end
             "#,
-            |cx| Expr::If {
+            || Expr::If {
                 cases: vec![ast::IfCase {
-                    condition: Box::new(Expr::var(cx, "x")),
+                    condition: Box::new(Expr::var("x")),
                     body: vec![Expr::int(1)],
                 }],
                 falseblock: vec![Expr::If {
                     cases: vec![ast::IfCase {
-                        condition: Box::new(Expr::var(cx, "y")),
+                        condition: Box::new(Expr::var("y")),
                         body: vec![Expr::int(2)],
                     }],
                     falseblock: vec![Expr::int(3)],
@@ -1262,13 +1262,13 @@ const baz: {} = {}
     // Test op precedence works
     #[test]
     fn verify_precedence() {
-        test_expr_is("1+2", |_cx| Expr::BinOp {
+        test_expr_is("1+2", || Expr::BinOp {
             op: ast::BOp::Add,
             lhs: Box::new(Expr::int(1)),
             rhs: Box::new(Expr::int(2)),
         });
 
-        test_expr_is("1+2*3", |_cx| Expr::BinOp {
+        test_expr_is("1+2*3", || Expr::BinOp {
             op: ast::BOp::Add,
             lhs: Box::new(Expr::int(1)),
             rhs: Box::new(Expr::BinOp {
@@ -1278,7 +1278,7 @@ const baz: {} = {}
             }),
         });
 
-        test_expr_is("1*2+3", |_cx| Expr::BinOp {
+        test_expr_is("1*2+3", || Expr::BinOp {
             op: ast::BOp::Add,
             lhs: Box::new(Expr::BinOp {
                 op: ast::BOp::Mul,
@@ -1288,20 +1288,20 @@ const baz: {} = {}
             rhs: Box::new(Expr::int(3)),
         });
 
-        test_expr_is("x()", |cx| Expr::Funcall {
+        test_expr_is("x()", || Expr::Funcall {
             func: Box::new(Expr::Var {
-                name: cx.intern("x"),
+                name: INT.intern("x"),
             }),
             params: vec![],
         });
-        test_expr_is("(x())", |cx| Expr::Funcall {
+        test_expr_is("(x())", || Expr::Funcall {
             func: Box::new(Expr::Var {
-                name: cx.intern("x"),
+                name: INT.intern("x"),
             }),
             params: vec![],
         });
 
-        test_expr_is("(1+2)*3", |_cx| Expr::BinOp {
+        test_expr_is("(1+2)*3", || Expr::BinOp {
             op: ast::BOp::Mul,
             lhs: Box::new(Expr::BinOp {
                 op: ast::BOp::Add,
@@ -1314,7 +1314,7 @@ const baz: {} = {}
 
     #[test]
     fn lex_integer_values() {
-        //test_expr_is("43i8", |_cx| Expr::sized_int(43, 1));
+        //test_expr_is("43i8", || Expr::sized_int(43, 1));
         let tests = &[
             // Input string, expected integer, expected integer size
             ("43i8", 43, 1),
@@ -1337,7 +1337,7 @@ const baz: {} = {}
 
     #[test]
     fn parse_integer_values() {
-        test_expr_is("43i8", |_cx| Expr::sized_int(43, 1));
+        test_expr_is("43i8", || Expr::sized_int(43, 1));
         /*
         test_expr_is("{1,2,3}", |_cx| Expr::TupleCtor {
             body: vec![Expr::int(1), Expr::int(2), Expr::int(3)],
@@ -1357,11 +1357,11 @@ const baz: {} = {}
 
     #[test]
     fn parse_tuple_values() {
-        test_expr_is("{}", |_cx| Expr::unit());
-        test_expr_is("{1,2,3}", |_cx| Expr::TupleCtor {
+        test_expr_is("{}", || Expr::unit());
+        test_expr_is("{1,2,3}", || Expr::TupleCtor {
             body: vec![Expr::int(1), Expr::int(2), Expr::int(3)],
         });
-        test_expr_is("{1,2,{1,2,3},3}", |_cx| Expr::TupleCtor {
+        test_expr_is("{1,2,{1,2,3},3}", || Expr::TupleCtor {
             body: vec![
                 Expr::int(1),
                 Expr::int(2),

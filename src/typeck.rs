@@ -6,7 +6,7 @@ use std::borrow::Cow;
 use crate::hir;
 use crate::scope;
 use crate::*;
-use crate::{Cx, TypeDef, TypeSym, VarSym};
+use crate::{Cx, TypeDef, TypeSym, VarSym, INT};
 
 /// A random other error type bundled up with a `Cx`,
 /// so that error can be printed with info from the Cx.
@@ -15,7 +15,7 @@ pub struct CxError<T>(T);
 
 impl std::fmt::Display for CxError<TypeError> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0.format(&INT))
+        write!(f, "{}", self.0.format())
     }
 }
 
@@ -96,9 +96,9 @@ pub enum TypeError {
 }
 
 impl TypeError {
-    pub fn format(&self, cx: &Cx) -> String {
+    pub fn format(&self) -> String {
         match self {
-            TypeError::UnknownVar(sym) => format!("Unknown var: {}", cx.fetch(*sym)),
+            TypeError::UnknownVar(sym) => format!("Unknown var: {}", INT.fetch(*sym)),
             TypeError::InvalidReturn => {
                 format!("return expression happened somewhere that isn't in a function!")
             }
@@ -111,9 +111,9 @@ impl TypeError {
                 expected,
             } => format!(
                 "Function {} returns {} but should return {}",
-                cx.fetch(*fname),
-                cx.fetch_type(*got).get_name(cx),
-                cx.fetch_type(*expected).get_name(cx),
+                INT.fetch(*fname),
+                INT.fetch_type(*got).get_name(),
+                INT.fetch_type(*expected).get_name(),
             ),
             TypeError::BopType {
                 bop,
@@ -123,15 +123,15 @@ impl TypeError {
             } => format!(
                 "Invalid types for BOp {:?}: expected {}, got {} + {}",
                 bop,
-                cx.fetch_type(*expected).get_name(cx),
-                cx.fetch_type(*got1).get_name(cx),
-                cx.fetch_type(*got2).get_name(cx)
+                INT.fetch_type(*expected).get_name(),
+                INT.fetch_type(*got1).get_name(),
+                INT.fetch_type(*got2).get_name()
             ),
             TypeError::UopType { op, got, expected } => format!(
                 "Invalid types for UOp {:?}: expected {}, got {}",
                 op,
-                cx.fetch_type(*expected).get_name(cx),
-                cx.fetch_type(*got).get_name(cx)
+                INT.fetch_type(*expected).get_name(),
+                INT.fetch_type(*got).get_name()
             ),
             TypeError::LetType {
                 name,
@@ -139,31 +139,31 @@ impl TypeError {
                 expected,
             } => format!(
                 "initializer for variable {}: expected {}, got {}",
-                cx.fetch(*name),
-                cx.fetch_type(*expected).get_name(cx),
-                cx.fetch_type(*got).get_name(cx)
+                INT.fetch(*name),
+                INT.fetch_type(*expected).get_name(),
+                INT.fetch_type(*got).get_name()
             ),
             TypeError::IfType { ifpart, elsepart } => format!(
                 "If block return type is {}, but else block returns {}",
-                cx.fetch_type(*ifpart).get_name(cx),
-                cx.fetch_type(*elsepart).get_name(cx),
+                INT.fetch_type(*ifpart).get_name(),
+                INT.fetch_type(*elsepart).get_name(),
             ),
             TypeError::Cond { got } => format!(
                 "If expr condition is {}, not bool",
-                cx.fetch_type(*got).get_name(cx),
+                INT.fetch_type(*got).get_name(),
             ),
             TypeError::Param { got, expected } => format!(
                 "Function wanted type {} in param but got type {}",
-                cx.fetch_type(*got).get_name(cx),
-                cx.fetch_type(*expected).get_name(cx)
+                INT.fetch_type(*got).get_name(),
+                INT.fetch_type(*expected).get_name()
             ),
             TypeError::Call { got } => format!(
                 "Tried to call function but it is not a function, it is a {}",
-                cx.fetch_type(*got).get_name(cx)
+                INT.fetch_type(*got).get_name()
             ),
             TypeError::TupleRef { got } => format!(
                 "Tried to reference tuple but didn't get a tuple, got {}",
-                cx.fetch_type(*got).get_name(cx)
+                INT.fetch_type(*got).get_name()
             ),
             TypeError::TypeMismatch {
                 expr_name,
@@ -172,8 +172,8 @@ impl TypeError {
             } => format!(
                 "Type mismatch in '{}' expresssion, expected {} but got {}",
                 expr_name,
-                cx.fetch_type(*expected).get_name(cx),
-                cx.fetch_type(*got).get_name(cx)
+                INT.fetch_type(*expected).get_name(),
+                INT.fetch_type(*got).get_name()
             ),
             TypeError::Mutability { expr_name } => {
                 format!("Mutability mismatch in '{}' expresssion", expr_name)
@@ -439,10 +439,10 @@ impl InferenceCx {
 /// Currently we have no covariance or contravariance, so this is pretty simple.
 /// Currently it's just, if the symbols match, the types match.
 /// The symbols matching by definition means the structures match.
-fn type_matches(cx: &Cx, wanted: TypeSym, got: TypeSym) -> bool {
+fn type_matches(wanted: TypeSym, got: TypeSym) -> bool {
     // If we want some type, and got Never, then this is always valid
     // because we never hit the expression that expected the `wanted` type
-    if got == cx.never() {
+    if got == INT.never() {
         return true;
     } else {
         wanted == got
@@ -465,9 +465,9 @@ fn type_matches(cx: &Cx, wanted: TypeSym, got: TypeSym) -> bool {
 /// Goes from types that may be unknown to a type that is
 /// totally real, and returns the real type.
 /// Returns `None` if there is not enough info to decide.
-fn infer_type(cx: &Cx, t1: TypeSym, t2: TypeSym) -> Option<TypeSym> {
-    let t1_def = &*cx.fetch_type(t1);
-    let t2_def = &*cx.fetch_type(t2);
+fn infer_type(t1: TypeSym, t2: TypeSym) -> Option<TypeSym> {
+    let t1_def = &*INT.fetch_type(t1);
+    let t2_def = &*INT.fetch_type(t2);
     match (t1_def, t2_def) {
         (TypeDef::UnknownInt, TypeDef::SInt(_)) => Some(t2),
         (TypeDef::SInt(_), TypeDef::UnknownInt) => Some(t1),
@@ -593,13 +593,13 @@ fn reify_types(
 }
 
 /// Try to actually typecheck the given HIR, and return HIR with resolved types.
-pub fn typecheck(cx: &Cx, ir: hir::Ir<()>) -> Result<hir::Ir<TypeSym>, CxError<TypeError>> {
+pub fn typecheck(ir: hir::Ir<()>) -> Result<hir::Ir<TypeSym>, CxError<TypeError>> {
     let symtbl = &mut Symtbl::new();
-    ir.decls.iter().for_each(|d| predeclare_decl(cx, symtbl, d));
+    ir.decls.iter().for_each(|d| predeclare_decl(symtbl, d));
     let checked_decls = ir
         .decls
         .into_iter()
-        .map(|decl| typecheck_decl(cx, symtbl, decl))
+        .map(|decl| typecheck_decl(symtbl, decl))
         .collect::<Result<Vec<hir::Decl<TypeSym>>, CxError<TypeError>>>()?;
     Ok(hir::Ir {
         decls: checked_decls,
@@ -608,14 +608,14 @@ pub fn typecheck(cx: &Cx, ir: hir::Ir<()>) -> Result<hir::Ir<TypeSym>, CxError<T
 
 /// Scan through all decl's and add any bindings to the symbol table,
 /// so we don't need to do anything with forward references.
-fn predeclare_decl(cx: &Cx, symtbl: &mut Symtbl, decl: &hir::Decl<()>) {
+fn predeclare_decl(symtbl: &mut Symtbl, decl: &hir::Decl<()>) {
     match decl {
         hir::Decl::Function {
             name, signature, ..
         } => {
             // Add function to global scope
             let type_params = signature.params.iter().map(|(_name, t)| *t).collect();
-            let function_type = cx.intern_type(&TypeDef::Lambda(type_params, signature.rettype));
+            let function_type = INT.intern_type(&TypeDef::Lambda(type_params, signature.rettype));
             symtbl.add_var(*name, function_type, false);
         }
         hir::Decl::Const { name, typename, .. } => {
@@ -626,7 +626,6 @@ fn predeclare_decl(cx: &Cx, symtbl: &mut Symtbl, decl: &hir::Decl<()>) {
 
 /// Typechecks a single decl
 fn typecheck_decl(
-    cx: &Cx,
     symtbl: &mut Symtbl,
     decl: hir::Decl<()>,
 ) -> Result<hir::Decl<TypeSym>, CxError<TypeError>> {
@@ -650,13 +649,13 @@ fn typecheck_decl(
             // Oh gods, what in the name of Eris do we do if there's
             // a return statement here?
             // Use a Never type, it seems.
-            let typechecked_exprs = typecheck_exprs(cx, symtbl, body, Some(signature.rettype))?;
+            let typechecked_exprs = typecheck_exprs(symtbl, body, Some(signature.rettype))?;
             // Ok, so we *also* need to walk through all the expressions
             // and look for any "return" exprs (or later `?`/`try` exprs
             // also) and see make sure the return types match.
-            let last_expr_type = last_type_of(cx, &typechecked_exprs);
+            let last_expr_type = last_type_of(&typechecked_exprs);
 
-            if !type_matches(cx, signature.rettype, last_expr_type) {
+            if !type_matches(signature.rettype, last_expr_type) {
                 return Err(CxError(TypeError::Return {
                     fname: name,
                     got: last_expr_type,
@@ -678,7 +677,7 @@ fn typecheck_decl(
         } => Ok(hir::Decl::Const {
             name,
             typename,
-            init: typecheck_expr(cx, symtbl, init, None)?,
+            init: typecheck_expr(symtbl, init, None)?,
         }),
     }
 }
@@ -686,7 +685,6 @@ fn typecheck_decl(
 /// Typecheck a vec of expr's and returns them, with type annotations
 /// attached.
 fn typecheck_exprs(
-    cx: &Cx,
     symtbl: &mut Symtbl,
     exprs: Vec<hir::TypedExpr<()>>,
     function_rettype: Option<TypeSym>,
@@ -694,7 +692,7 @@ fn typecheck_exprs(
     // For each expr, figure out what its type *should* be
     exprs
         .into_iter()
-        .map(|e| typecheck_expr(cx, symtbl, e, function_rettype))
+        .map(|e| typecheck_expr(symtbl, e, function_rettype))
         .collect()
 }
 
@@ -715,27 +713,26 @@ fn typecheck_exprs(
 /// return 3
 ///
 /// The type of those expr lists is `Never`,
-fn last_type_of(cx: &Cx, exprs: &[hir::TypedExpr<TypeSym>]) -> TypeSym {
-    exprs.last().map(|e| e.t).unwrap_or_else(|| cx.unit())
+fn last_type_of(exprs: &[hir::TypedExpr<TypeSym>]) -> TypeSym {
+    exprs.last().map(|e| e.t).unwrap_or_else(|| INT.unit())
 }
 
 /// Actually typecheck a single expr
 ///
 /// `function_rettype` is the type that `return` exprs and such must be.
 fn typecheck_expr(
-    cx: &Cx,
     symtbl: &mut Symtbl,
     expr: hir::TypedExpr<()>,
     function_rettype: Option<TypeSym>,
 ) -> Result<hir::TypedExpr<TypeSym>, CxError<TypeError>> {
     use hir::Expr::*;
-    let unittype = cx.unit();
-    let booltype = cx.bool();
+    let unittype = INT.unit();
+    let booltype = INT.bool();
     // TODO: Better name maybe!
     let rar = |e| CxError(e);
     match expr.e {
         Lit { val } => {
-            let t = typecheck_literal(cx, &val).map_err(rar)?;
+            let t = typecheck_literal(&val).map_err(rar)?;
             Ok(hir::TypedExpr { e: Lit { val }, t })
         }
 
@@ -745,18 +742,18 @@ fn typecheck_expr(
         }
         BinOp { op, lhs, rhs } => {
             // Typecheck each arm
-            let lhs1 = typecheck_expr(cx, symtbl, *lhs, function_rettype)?;
-            let rhs1 = typecheck_expr(cx, symtbl, *rhs, function_rettype)?;
+            let lhs1 = typecheck_expr(symtbl, *lhs, function_rettype)?;
+            let rhs1 = typecheck_expr(symtbl, *rhs, function_rettype)?;
             // Find out real type of each arm
-            let input_type = op.input_type(cx);
-            let t_lhs = infer_type(cx, input_type, lhs1.t).ok_or_else(|| {
+            let input_type = op.input_type();
+            let t_lhs = infer_type(input_type, lhs1.t).ok_or_else(|| {
                 rar(TypeError::TypeMismatch {
                     expr_name: format!("{:?}", op).into(),
                     got: lhs1.t,
                     expected: input_type,
                 })
             })?;
-            let t_rhs = infer_type(cx, input_type, rhs1.t).ok_or_else(|| {
+            let t_rhs = infer_type(input_type, rhs1.t).ok_or_else(|| {
                 rar(TypeError::TypeMismatch {
                     expr_name: format!("{:?}", op).into(),
                     got: lhs1.t,
@@ -764,7 +761,7 @@ fn typecheck_expr(
                 })
             })?;
             // Both arms must be a compatible type
-            if let Some(t) = infer_type(cx, t_lhs, t_rhs) {
+            if let Some(t) = infer_type(t_lhs, t_rhs) {
                 let real_lhs = reify_types(t_lhs, t, lhs1);
                 let real_rhs = reify_types(t_rhs, t, rhs1);
                 Ok(hir::TypedExpr {
@@ -785,10 +782,10 @@ fn typecheck_expr(
             }
         }
         UniOp { op, rhs } => {
-            let rhs = typecheck_expr(cx, symtbl, *rhs, function_rettype)?;
+            let rhs = typecheck_expr(symtbl, *rhs, function_rettype)?;
             // Currently, our only valid binops are on numbers.
-            let input_type = op.input_type(cx);
-            if let Some(t) = infer_type(cx, input_type, rhs.t) {
+            let input_type = op.input_type();
+            if let Some(t) = infer_type(input_type, rhs.t) {
                 // Type `t` is compatible with the expr's return type
                 // and the op's input type.
                 // We force it to be our output type too, though that
@@ -810,8 +807,8 @@ fn typecheck_expr(
             }
         }
         Block { body } => {
-            let b = typecheck_exprs(cx, symtbl, body, function_rettype)?;
-            let t = last_type_of(cx, &b);
+            let b = typecheck_exprs(symtbl, body, function_rettype)?;
+            let t = last_type_of(&b);
             Ok(hir::TypedExpr {
                 e: Block { body: b },
                 t,
@@ -823,10 +820,10 @@ fn typecheck_expr(
             init,
             mutable,
         } => {
-            let init_expr = typecheck_expr(cx, symtbl, *init, function_rettype)?;
+            let init_expr = typecheck_expr(symtbl, *init, function_rettype)?;
             let init_type = init_expr.t;
             let typename = typename.expect("No type in let expr but it got past type inference?");
-            if type_matches(cx, init_type, typename) {
+            if type_matches(init_type, typename) {
                 // Add var to symbol table, proceed
                 symtbl.add_var(varname, typename, mutable);
                 Ok(hir::TypedExpr {
@@ -847,16 +844,16 @@ fn typecheck_expr(
             }
         }
         If { cases, falseblock } => {
-            let falseblock = typecheck_exprs(cx, symtbl, falseblock, function_rettype)?;
-            let assumed_type = last_type_of(cx, &falseblock);
+            let falseblock = typecheck_exprs(symtbl, falseblock, function_rettype)?;
+            let assumed_type = last_type_of(&falseblock);
             let mut new_cases = vec![];
             for (cond, body) in cases {
-                let cond_expr = typecheck_expr(cx, symtbl, cond, function_rettype)?;
-                if type_matches(cx, cond_expr.t, booltype) {
+                let cond_expr = typecheck_expr(symtbl, cond, function_rettype)?;
+                if type_matches(cond_expr.t, booltype) {
                     // Proceed to typecheck arms
-                    let ifbody_exprs = typecheck_exprs(cx, symtbl, body, function_rettype)?;
-                    let if_type = last_type_of(cx, &ifbody_exprs);
-                    if !type_matches(cx, if_type, assumed_type) {
+                    let ifbody_exprs = typecheck_exprs(symtbl, body, function_rettype)?;
+                    let if_type = last_type_of(&ifbody_exprs);
+                    if !type_matches(if_type, assumed_type) {
                         return Err(rar(TypeError::IfType {
                             ifpart: if_type,
                             elsepart: assumed_type,
@@ -878,8 +875,8 @@ fn typecheck_expr(
             })
         }
         Loop { body } => {
-            let b = typecheck_exprs(cx, symtbl, body, function_rettype)?;
-            let t = last_type_of(cx, &b);
+            let b = typecheck_exprs(symtbl, body, function_rettype)?;
+            let t = last_type_of(&b);
             Ok(hir::TypedExpr {
                 e: Loop { body: b },
                 t,
@@ -891,11 +888,11 @@ fn typecheck_expr(
             for (paramname, paramtype) in signature.params.iter() {
                 symtbl.add_var(*paramname, *paramtype, false);
             }
-            let body_expr = typecheck_exprs(cx, symtbl, body, function_rettype)?;
-            let bodytype = last_type_of(cx, &body_expr);
+            let body_expr = typecheck_exprs(symtbl, body, function_rettype)?;
+            let bodytype = last_type_of(&body_expr);
             // TODO: validate/unify types
-            if !type_matches(cx, bodytype, signature.rettype) {
-                let function_name = cx.intern("lambda");
+            if !type_matches(bodytype, signature.rettype) {
+                let function_name = INT.intern("lambda");
                 return Err(rar(TypeError::Return {
                     fname: function_name,
                     got: bodytype,
@@ -903,7 +900,7 @@ fn typecheck_expr(
                 }));
             }
             symtbl.pop_scope();
-            let lambdatype = signature.to_type(cx);
+            let lambdatype = signature.to_type();
             Ok(hir::TypedExpr {
                 e: Lambda {
                     signature,
@@ -914,15 +911,15 @@ fn typecheck_expr(
         }
         Funcall { func, params } => {
             // First, get param types
-            let given_params = typecheck_exprs(cx, symtbl, params, function_rettype)?;
+            let given_params = typecheck_exprs(symtbl, params, function_rettype)?;
             // Then, look up function
-            let f = typecheck_expr(cx, symtbl, *func, function_rettype)?;
-            let fdef = &*cx.fetch_type(f.t);
+            let f = typecheck_expr(symtbl, *func, function_rettype)?;
+            let fdef = &*INT.fetch_type(f.t);
             match fdef {
                 TypeDef::Lambda(paramtypes, rettype) => {
                     // Now, make sure all the function's params match what it wants
                     for (given, wanted) in given_params.iter().zip(paramtypes) {
-                        if !type_matches(cx, given.t, *wanted) {
+                        if !type_matches(given.t, *wanted) {
                             return Err(rar(TypeError::Param {
                                 got: given.t,
                                 expected: *wanted,
@@ -945,11 +942,11 @@ fn typecheck_expr(
             if let Some(wanted_type) = function_rettype {
                 // We got a `return` expression in a place where there ain't anything to return
                 // from.
-                let mut body_expr = typecheck_expr(cx, symtbl, *retval, function_rettype)?;
+                let mut body_expr = typecheck_expr(symtbl, *retval, function_rettype)?;
                 let given = body_expr.t;
-                if type_matches(cx, given, wanted_type) {
+                if type_matches(given, wanted_type) {
                     // If you do `let x = return y` the type of `x` is `Never`
-                    body_expr.t = cx.never();
+                    body_expr.t = INT.never();
                     Ok(body_expr)
                 } else {
                     Err(rar(TypeError::TypeMismatch {
@@ -963,17 +960,17 @@ fn typecheck_expr(
             }
         }
         TupleCtor { body } => {
-            let body_exprs = typecheck_exprs(cx, symtbl, body, function_rettype)?;
+            let body_exprs = typecheck_exprs(symtbl, body, function_rettype)?;
             let body_typesyms = body_exprs.iter().map(|te| te.t).collect();
             let body_type = TypeDef::Tuple(body_typesyms);
             Ok(hir::TypedExpr {
-                t: cx.intern_type(&body_type),
+                t: INT.intern_type(&body_type),
                 e: TupleCtor { body: body_exprs },
             })
         }
         TupleRef { expr, elt } => {
-            let body_expr = typecheck_expr(cx, symtbl, *expr, function_rettype)?;
-            let expr_typedef = cx.fetch_type(body_expr.t);
+            let body_expr = typecheck_expr(symtbl, *expr, function_rettype)?;
+            let expr_typedef = INT.fetch_type(body_expr.t);
             if let TypeDef::Tuple(typesyms) = &*expr_typedef {
                 // TODO
                 assert!(elt < typesyms.len());
@@ -989,8 +986,8 @@ fn typecheck_expr(
             }
         }
         Assign { lhs, rhs } => {
-            let lhs_expr = typecheck_expr(cx, symtbl, *lhs, function_rettype)?;
-            let rhs_expr = typecheck_expr(cx, symtbl, *rhs, function_rettype)?;
+            let lhs_expr = typecheck_expr(symtbl, *lhs, function_rettype)?;
+            let rhs_expr = typecheck_expr(symtbl, *rhs, function_rettype)?;
             // So the rules for assignments are, it's good only:
             // If the lhs is an lvalue (just variable or tuple ref currently)
             // (This basically comes down to "somewhere with a location"...)
@@ -1000,7 +997,7 @@ fn typecheck_expr(
                 Err(rar(TypeError::Mutability {
                     expr_name: "assignment".into(),
                 }))
-            } else if !type_matches(cx, lhs_expr.t, rhs_expr.t) {
+            } else if !type_matches(lhs_expr.t, rhs_expr.t) {
                 Err(rar(TypeError::TypeMismatch {
                     expr_name: "assignment".into(),
                     expected: lhs_expr.t,
@@ -1008,7 +1005,7 @@ fn typecheck_expr(
                 }))
             } else {
                 Ok(hir::TypedExpr {
-                    t: cx.unit(),
+                    t: INT.unit(),
                     e: Assign {
                         lhs: Box::new(lhs_expr),
                         rhs: Box::new(rhs_expr),
@@ -1035,11 +1032,11 @@ fn is_mutable_lvalue<T>(symtbl: &Symtbl, expr: &hir::Expr<T>) -> Result<bool, Ty
     }
 }
 
-fn typecheck_literal(cx: &Cx, lit: &hir::Literal) -> Result<TypeSym, TypeError> {
+fn typecheck_literal(lit: &hir::Literal) -> Result<TypeSym, TypeError> {
     match lit {
-        hir::Literal::Integer(_) => Ok(cx.iunknown()),
-        hir::Literal::SizedInteger { vl: _, bytes } => Ok(cx.intern_type(&TypeDef::SInt(*bytes))),
-        hir::Literal::Bool(_) => Ok(cx.bool()),
+        hir::Literal::Integer(_) => Ok(INT.iunknown()),
+        hir::Literal::SizedInteger { vl: _, bytes } => Ok(INT.intern_type(&TypeDef::SInt(*bytes))),
+        hir::Literal::Bool(_) => Ok(INT.bool()),
     }
 }
 
@@ -1053,7 +1050,7 @@ mod tests {
         use crate::parser::Parser;
         let ast = Parser::new(src).parse();
         let ir = hir::lower(&mut rly, &ast);
-        typecheck(&INT, ir)
+        typecheck(ir)
     }
 
     macro_rules! fail_typecheck {
@@ -1070,17 +1067,15 @@ mod tests {
     #[test]
     fn test_typecheck_lit() {
         use hir;
-        let cx = &mut crate::Cx::new();
-        let t_i32 = cx.i32();
-        let t_bool = cx.bool();
+        let t_i32 = INT.i32();
+        let t_bool = INT.bool();
 
         assert!(type_matches(
-            cx,
-            typecheck_literal(cx, &hir::Literal::Integer(9)).unwrap(),
+            typecheck_literal(&hir::Literal::Integer(9)).unwrap(),
             t_i32
         ));
         assert_eq!(
-            typecheck_literal(cx, &hir::Literal::Bool(false)).unwrap(),
+            typecheck_literal(&hir::Literal::Bool(false)).unwrap(),
             t_bool
         );
     }
@@ -1088,11 +1083,10 @@ mod tests {
     /// Test symbol table
     #[test]
     fn test_symtbl() {
-        let cx = &mut crate::Cx::new();
-        let t_foo = cx.intern("foo");
-        let t_bar = cx.intern("bar");
-        let t_i32 = cx.i32();
-        let t_bool = cx.bool();
+        let t_foo = INT.intern("foo");
+        let t_bar = INT.intern("bar");
+        let t_i32 = INT.i32();
+        let t_bool = INT.bool();
         let mut t = Symtbl::new();
 
         // Make sure we can get a value
@@ -1135,27 +1129,25 @@ mod tests {
     /// Test literal type inference
     #[test]
     fn test_type_lit() {
-        let cx = &mut crate::Cx::new();
-        let t_i32 = cx.i32();
-        let t_bool = cx.bool();
+        let t_i32 = INT.i32();
+        let t_bool = INT.bool();
 
         let l1 = hir::Literal::Integer(3);
-        let l1t = typecheck_literal(cx, &l1).unwrap();
+        let l1t = typecheck_literal(&l1).unwrap();
         let l2 = hir::Literal::Bool(true);
-        let l2t = typecheck_literal(cx, &l2).unwrap();
-        assert!(!type_matches(cx, l1t, l2t));
+        let l2t = typecheck_literal(&l2).unwrap();
+        assert!(!type_matches(l1t, l2t));
 
-        assert!(type_matches(cx, l1t, t_i32));
-        assert!(type_matches(cx, l2t, t_bool));
+        assert!(type_matches(l1t, t_i32));
+        assert!(type_matches(l2t, t_bool));
     }
 
     /// Test binop typechecks
     #[test]
     fn test_binop() {
-        let cx = &mut crate::Cx::new();
-        let t_i32 = cx.i32();
-        let t_i16 = cx.i16();
-        let t_iunk = cx.iunknown();
+        let t_i32 = INT.i32();
+        let t_i16 = INT.i16();
+        let t_iunk = INT.iunknown();
         let tbl = &mut Symtbl::new();
 
         use hir::*;
@@ -1171,8 +1163,7 @@ mod tests {
                 }),
             });
             assert!(type_matches(
-                cx,
-                typecheck_expr(cx, tbl, ir, None).unwrap().t,
+                typecheck_expr(tbl, ir, None).unwrap().t,
                 t_iunk
             ));
 
@@ -1185,7 +1176,7 @@ mod tests {
                     val: Literal::Bool(false),
                 }),
             });
-            assert!(typecheck_expr(cx, tbl, bad_ir, None).is_err());
+            assert!(typecheck_expr(tbl, bad_ir, None).is_err());
         }
         // Inference of UnknownInt types
         {
@@ -1199,8 +1190,7 @@ mod tests {
                 }),
             });
             assert!(type_matches(
-                cx,
-                typecheck_expr(cx, tbl, ir, None).unwrap().t,
+                typecheck_expr(tbl, ir, None).unwrap().t,
                 t_i32
             ));
 
@@ -1214,8 +1204,7 @@ mod tests {
                 }),
             });
             assert!(type_matches(
-                cx,
-                typecheck_expr(cx, tbl, ir, None).unwrap().t,
+                typecheck_expr(tbl, ir, None).unwrap().t,
                 t_i16
             ));
         }
@@ -1224,10 +1213,9 @@ mod tests {
     /// Test uniop typechecks
     #[test]
     fn test_uniop() {
-        let cx = &mut crate::Cx::new();
-        let t_i16 = cx.i16();
-        let t_i32 = cx.i32();
-        let t_iunk = cx.iunknown();
+        let t_i16 = INT.i16();
+        let t_i32 = INT.i32();
+        let t_iunk = INT.iunknown();
         let tbl = &mut Symtbl::new();
 
         use hir::*;
@@ -1239,8 +1227,7 @@ mod tests {
                 }),
             });
             assert!(type_matches(
-                cx,
-                typecheck_expr(cx, tbl, ir, None).unwrap().t,
+                typecheck_expr(tbl, ir, None).unwrap().t,
                 t_iunk
             ));
         }
@@ -1252,8 +1239,7 @@ mod tests {
                 }),
             });
             assert!(type_matches(
-                cx,
-                typecheck_expr(cx, tbl, ir, None).unwrap().t,
+                typecheck_expr(tbl, ir, None).unwrap().t,
                 t_i32,
             ));
         }
@@ -1265,8 +1251,7 @@ mod tests {
                 }),
             });
             assert!(type_matches(
-                cx,
-                typecheck_expr(cx, tbl, ir, None).unwrap().t,
+                typecheck_expr(tbl, ir, None).unwrap().t,
                 t_i16
             ));
         }
@@ -1278,7 +1263,7 @@ mod tests {
                     val: Literal::Bool(false),
                 }),
             });
-            assert!(typecheck_expr(cx, tbl, bad_ir, None).is_err());
+            assert!(typecheck_expr(tbl, bad_ir, None).is_err());
         }
     }
 
@@ -1289,11 +1274,10 @@ mod tests {
     /// Do let expr's have the right return?
     #[test]
     fn test_let() {
-        let cx = &mut crate::Cx::new();
         let tbl = &mut Symtbl::new();
-        let t_i32 = cx.i32();
-        let t_unit = cx.unit();
-        let fooname = cx.intern("foo");
+        let t_i32 = INT.i32();
+        let t_unit = INT.unit();
+        let fooname = INT.intern("foo");
 
         use hir::*;
         {
@@ -1306,8 +1290,7 @@ mod tests {
                 mutable: false,
             });
             assert!(type_matches(
-                cx,
-                typecheck_expr(cx, tbl, ir, None).unwrap().t,
+                typecheck_expr(tbl, ir, None).unwrap().t,
                 t_unit
             ));
             // Is the variable now bound in our symbol table?
@@ -1330,13 +1313,12 @@ mod tests {
     /// TODO
     #[test]
     fn test_funcall() {
-        let cx = &mut crate::Cx::new();
         let tbl = &mut Symtbl::new();
-        let t_i32 = cx.intern_type(&TypeDef::SInt(4));
-        let fname = cx.intern("foo");
-        let aname = cx.intern("a");
-        let bname = cx.intern("b");
-        let ftype = cx.intern_type(&TypeDef::Lambda(vec![t_i32, t_i32], t_i32));
+        let t_i32 = INT.intern_type(&TypeDef::SInt(4));
+        let fname = INT.intern("foo");
+        let aname = INT.intern("a");
+        let bname = INT.intern("b");
+        let ftype = INT.intern_type(&TypeDef::Lambda(vec![t_i32, t_i32], t_i32));
 
         use hir::*;
         {
@@ -1362,8 +1344,8 @@ mod tests {
                     params: vec![*plz(Expr::int(3)), *plz(Expr::int(4))],
                 }),
             ];
-            let exprs = &typecheck_exprs(cx, tbl, ir, None).unwrap();
-            assert!(type_matches(cx, last_type_of(cx, exprs), t_i32));
+            let exprs = &typecheck_exprs(tbl, ir, None).unwrap();
+            assert!(type_matches(last_type_of(exprs), t_i32));
             // Is the variable now bound in our symbol table?
             assert_eq!(tbl.get_var(fname).unwrap(), ftype);
         }
@@ -1373,7 +1355,7 @@ mod tests {
             let src = "fn foo(): fn(I32):I32 = fn(x: I32):I32 = x+1 end end";
             let ast = Parser::new(src).parse();
             let ir = hir::lower(&mut rly, &ast);
-            let _ = &typecheck(cx, ir).unwrap();
+            let _ = &typecheck(ir).unwrap();
         }
     }
 
@@ -1432,13 +1414,12 @@ end"#;
     #[test]
     fn test_tuples() {
         use hir::*;
-        let cx = &mut crate::Cx::new();
         let tbl = &mut Symtbl::new();
         assert_eq!(
-            typecheck_expr(cx, tbl, *plz(hir::Expr::unit()), None)
+            typecheck_expr(tbl, *plz(hir::Expr::unit()), None)
                 .unwrap()
                 .t,
-            cx.unit()
+            INT.unit()
         );
     }
 

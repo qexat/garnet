@@ -25,7 +25,7 @@ pub enum Backend {
 }
 
 /// Produce a binary module output of some kind for the given backend.
-pub fn output(backend: Backend, cx: &Cx, program: &hir::Ir<TypeSym>) -> Vec<u8> {
+pub fn output(backend: Backend, program: &hir::Ir<TypeSym>) -> Vec<u8> {
     match backend {
         /*
         Backend::Wasm32 => wasm32::output(cx, program),
@@ -35,7 +35,7 @@ pub fn output(backend: Backend, cx: &Cx, program: &hir::Ir<TypeSym>) -> Vec<u8> 
             lwasm32::output(cx, &lir)
         }
         */
-        Backend::Rust => rust::output(cx, &program),
+        Backend::Rust => rust::output(&program),
         Backend::Null => vec![],
         /*
         Backend::LRust => {

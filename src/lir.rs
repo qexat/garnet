@@ -24,7 +24,7 @@
 use std::collections::BTreeMap;
 
 use crate::hir;
-use crate::{Cx, TypeSym, VarSym};
+use crate::{Cx, TypeSym, VarSym, INT};
 
 /// Shortcut
 type TExpr = hir::TypedExpr<TypeSym>;
@@ -613,9 +613,8 @@ mod tests {
             parser.parse()
         };
         let hir = hir::lower(&mut rly, &ast);
-        let hir = passes::run_passes(&INT, hir);
-        let checked =
-            typeck::typecheck(&INT, hir).unwrap_or_else(|e| panic!("Type check error: {}", e));
+        let hir = passes::run_passes(hir);
+        let checked = typeck::typecheck(hir).unwrap_or_else(|e| panic!("Type check error: {}", e));
         lower_hir(&INT, &checked)
     }
 

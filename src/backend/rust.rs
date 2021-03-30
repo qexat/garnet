@@ -19,7 +19,7 @@ fn prelude() -> &'static str {
 "#
 }
 
-fn compile_typedef(cx: &Cx, td: &TypeDef) -> Cow<'static, str> {
+fn compile_typedef(td: &TypeDef) -> Cow<'static, str> {
     use crate::TypeDef::*;
     match td {
         SInt(16) => "i128".to_owned().into(),
@@ -36,7 +36,7 @@ fn compile_typedef(cx: &Cx, td: &TypeDef) -> Cow<'static, str> {
         Tuple(types) => {
             let mut accm = String::from("(");
             for typ in types {
-                accm += &compile_typedef(cx, &*cx.fetch_type(*typ));
+                accm += &compile_typedef(&*INT.fetch_type(*typ));
                 accm += ", ";
             }
             accm += ")";
@@ -45,19 +45,19 @@ fn compile_typedef(cx: &Cx, td: &TypeDef) -> Cow<'static, str> {
         Lambda(params, ret) => {
             let mut accm = String::from("extern fn (");
             for p in params {
-                accm += &compile_typedef(cx, &*cx.fetch_type(*p));
+                accm += &compile_typedef(&*INT.fetch_type(*p));
                 accm += ", ";
             }
             accm += ") -> ";
-            accm += &compile_typedef(cx, &*cx.fetch_type(*ret));
+            accm += &compile_typedef(&*INT.fetch_type(*ret));
             accm.into()
         }
     }
 }
 
-pub(super) fn output(cx: &Cx, lir: &hir::Ir<TypeSym>) -> Vec<u8> {
+pub(super) fn output(lir: &hir::Ir<TypeSym>) -> Vec<u8> {
     let mut strings = vec![prelude().to_owned()];
-    strings.extend(lir.decls.iter().map(|d| compile_decl(cx, d)));
+    strings.extend(lir.decls.iter().map(|d| compile_decl(d)));
     let s = strings.join("\n");
     s.into_bytes()
 }
@@ -70,16 +70,16 @@ fn mangle_name(s: &str) -> String {
     s.replace("@", "__")
 }
 
-fn compile_decl(cx: &Cx, decl: &hir::Decl<TypeSym>) -> String {
+fn compile_decl(decl: &hir::Decl<TypeSym>) -> String {
     match decl {
         hir::Decl::Function {
             name,
             signature,
             body,
         } => {
-            let nstr = mangle_name(&*cx.fetch(*name));
-            let sstr = compile_fn_signature(cx, signature);
-            let bstr = compile_exprs(cx, body, ";\n");
+            let nstr = mangle_name(&*INT.fetch(*name));
+            let sstr = compile_fn_signature(&INT, signature);
+            let bstr = compile_exprs(&INT, body, ";\n");
             format!(
                 "#[no_mangle]\npub extern fn {}{} {{\n{}\n}}\n",
                 nstr, sstr, bstr
@@ -90,9 +90,9 @@ fn compile_decl(cx: &Cx, decl: &hir::Decl<TypeSym>) -> String {
             typename,
             init,
         } => {
-            let nstr = mangle_name(&*cx.fetch(*name));
-            let tstr = compile_typedef(cx, &*cx.fetch_type(*typename));
-            let istr = compile_expr(cx, init);
+            let nstr = mangle_name(&INT.fetch(*name));
+            let tstr = compile_typedef(&*INT.fetch_type(*typename));
+            let istr = compile_expr(&INT, init);
             format!("const {}: {} = {};", nstr, tstr, istr)
         }
     }
@@ -103,11 +103,11 @@ fn compile_fn_signature(cx: &Cx, sig: &ast::Signature) -> String {
     for (varsym, typesym) in sig.params.iter() {
         accm += &*cx.fetch(*varsym);
         accm += ": ";
-        accm += &compile_typedef(cx, &*cx.fetch_type(*typesym));
+        accm += &compile_typedef(&*INT.fetch_type(*typesym));
         accm += ", ";
     }
     accm += ") -> ";
-    accm += &compile_typedef(cx, &*cx.fetch_type(sig.rettype));
+    accm += &compile_typedef(&*INT.fetch_type(sig.rettype));
     accm
 }
 
@@ -180,7 +180,7 @@ fn compile_expr(cx: &Cx, expr: &hir::TypedExpr<TypeSym>) -> String {
             mutable,
         } => {
             let vstr = mangle_name(&*cx.fetch(*varname));
-            let tstr = compile_typedef(cx, &*cx.fetch_type(typename.unwrap()));
+            let tstr = compile_typedef(&*cx.fetch_type(typename.unwrap()));
             let istr = compile_expr(cx, init);
             if *mutable {
                 format!("let mut {}: {} = {}", vstr, tstr, istr)
