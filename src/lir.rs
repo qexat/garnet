@@ -24,7 +24,7 @@
 use std::collections::BTreeMap;
 
 use crate::hir;
-use crate::{Cx, TypeSym, VarSym, INT};
+use crate::{TypeSym, VarSym, INT};
 
 /// Shortcut
 type TExpr = hir::TypedExpr<TypeSym>;
@@ -287,15 +287,15 @@ impl FuncBuilder {
     }
 }
 
-pub fn lower_hir(cx: &Cx, hir: &hir::Ir<TypeSym>) -> Lir {
+pub fn lower_hir(hir: &hir::Ir<TypeSym>) -> Lir {
     let mut lir = Lir::default();
     for decl in hir.decls.iter() {
-        lower_decl(cx, &mut lir, &decl);
+        lower_decl(&mut lir, &decl);
     }
     lir
 }
 
-fn lower_decl(cx: &Cx, lir: &mut Lir, decl: &hir::Decl<TypeSym>) {
+fn lower_decl(lir: &mut Lir, decl: &hir::Decl<TypeSym>) {
     match decl {
         hir::Decl::Function {
             name,
@@ -309,7 +309,7 @@ fn lower_decl(cx: &Cx, lir: &mut Lir, decl: &hir::Decl<TypeSym>) {
                 fb.add_var(*pname, *ptype, next_var, false);
             }
             // Construct the body
-            let last_var = lower_exprs(cx, &mut fb, body);
+            let last_var = lower_exprs(&mut fb, body);
             let last_block = fb.get_current_block();
             last_block.terminator = Branch::Return(last_var);
             lir.funcs.push(fb.build());
@@ -317,15 +317,15 @@ fn lower_decl(cx: &Cx, lir: &mut Lir, decl: &hir::Decl<TypeSym>) {
         _ => todo!(),
     }
 }
-fn lower_exprs(cx: &Cx, fb: &mut FuncBuilder, exprs: &[TExpr]) -> Option<Var> {
+fn lower_exprs(fb: &mut FuncBuilder, exprs: &[TExpr]) -> Option<Var> {
     let mut last = None;
     for e in exprs {
-        last = Some(lower_expr(cx, fb, e));
+        last = Some(lower_expr(fb, e));
     }
     last
 }
 
-fn lower_expr(cx: &Cx, fb: &mut FuncBuilder, expr: &TExpr) -> Var {
+fn lower_expr(fb: &mut FuncBuilder, expr: &TExpr) -> Var {
     use hir::Expr as E;
     use hir::*;
     match &expr.e {
@@ -357,21 +357,21 @@ fn lower_expr(cx: &Cx, fb: &mut FuncBuilder, expr: &TExpr) -> Var {
             fb.assign(expr.t, op)
         }
         E::BinOp { op, lhs, rhs } => {
-            let v1 = lower_expr(cx, fb, &*lhs);
-            let v2 = lower_expr(cx, fb, &*rhs);
+            let v1 = lower_expr(fb, &*lhs);
+            let v2 = lower_expr(fb, &*rhs);
             let o = Op::BinOpI32(*op, v1, v2);
             fb.assign(expr.t, o)
         }
         E::UniOp { op, rhs } => match op {
             // Turn -x into 0 - x
             hir::UOp::Neg => {
-                let v1 = fb.assign(cx.i32(), Op::ValI32(0));
-                let v2 = lower_expr(cx, fb, &*rhs);
+                let v1 = fb.assign(INT.i32(), Op::ValI32(0));
+                let v2 = lower_expr(fb, &*rhs);
                 let op = Op::BinOpI32(hir::BOp::Sub, v1, v2);
                 fb.assign(expr.t, op)
             }
             hir::UOp::Not => {
-                let v = lower_expr(cx, fb, &*rhs);
+                let v = lower_expr(fb, &*rhs);
                 let op = Op::UniOpI32(hir::UOp::Not, v);
                 fb.assign(expr.t, op)
             }
@@ -382,7 +382,7 @@ fn lower_expr(cx: &Cx, fb: &mut FuncBuilder, expr: &TExpr) -> Var {
             // that is used nowhere
             // If it is used as something other than unit then
             // this (hopefully) doesn't typecheck.
-            lower_exprs(cx, fb, &*body).unwrap_or_else(|| fb.assign(cx.unit(), Op::ValUnit))
+            lower_exprs(fb, &*body).unwrap_or_else(|| fb.assign(INT.unit(), Op::ValUnit))
         }
         E::Let {
             varname,
@@ -390,7 +390,7 @@ fn lower_expr(cx: &Cx, fb: &mut FuncBuilder, expr: &TExpr) -> Var {
             init,
             mutable,
         } => {
-            let v = lower_expr(cx, fb, &*init);
+            let v = lower_expr(fb, &*init);
             fb.add_var(
                 *varname,
                 typename.expect("No type in let expr got past type inference?"),
@@ -479,7 +479,6 @@ fn lower_expr(cx: &Cx, fb: &mut FuncBuilder, expr: &TExpr) -> Var {
             //
             // TODO: Refactor, there's some redundant code here.
             fn recursive_build_bbs(
-                cx: &Cx,
                 fb: &mut FuncBuilder,
                 end_bb: BB,
                 cases: &[(TExpr, Vec<TExpr>)],
@@ -491,15 +490,15 @@ fn lower_expr(cx: &Cx, fb: &mut FuncBuilder, expr: &TExpr) -> Var {
                 if cases.len() == 1 {
                     // We are on the last if statement, wire it up to the else statement.
                     let cond_bb = fb.get_current_block().id;
-                    let cond_result = lower_expr(cx, fb, &cond);
+                    let cond_result = lower_expr(fb, &cond);
 
                     let body_bb = fb.next_block().id;
-                    let body_result = lower_exprs(cx, fb, &ifbody)
-                        .unwrap_or_else(|| fb.assign(cx.unit(), Op::ValUnit));
+                    let body_result = lower_exprs(fb, &ifbody)
+                        .unwrap_or_else(|| fb.assign(INT.unit(), Op::ValUnit));
 
                     let else_body_bb = fb.next_block().id;
-                    let else_result = lower_exprs(cx, fb, elsebody)
-                        .unwrap_or_else(|| fb.assign(cx.unit(), Op::ValUnit));
+                    let else_result = lower_exprs(fb, elsebody)
+                        .unwrap_or_else(|| fb.assign(INT.unit(), Op::ValUnit));
 
                     // Wire all the BB's together
                     fb.get_block(cond_bb).terminator =
@@ -513,14 +512,14 @@ fn lower_expr(cx: &Cx, fb: &mut FuncBuilder, expr: &TExpr) -> Var {
                     cond_bb
                 } else {
                     // Build the next case...
-                    let next_bb = recursive_build_bbs(cx, fb, end_bb, &cases[1..], elsebody, accm);
+                    let next_bb = recursive_build_bbs(fb, end_bb, &cases[1..], elsebody, accm);
                     // Build our cond and body
                     let cond_bb = fb.next_block().id;
-                    let cond_result = lower_expr(cx, fb, &cond);
+                    let cond_result = lower_expr(fb, &cond);
 
                     let body_bb = fb.next_block().id;
-                    let body_result = lower_exprs(cx, fb, &ifbody)
-                        .unwrap_or_else(|| fb.assign(cx.unit(), Op::ValUnit));
+                    let body_result = lower_exprs(fb, &ifbody)
+                        .unwrap_or_else(|| fb.assign(INT.unit(), Op::ValUnit));
 
                     // Wire together BB's
                     fb.get_block(cond_bb).terminator =
@@ -535,7 +534,7 @@ fn lower_expr(cx: &Cx, fb: &mut FuncBuilder, expr: &TExpr) -> Var {
             let end_bb = fb.next_block().id;
             // Make blocks for all the if branches
             let mut accm = vec![];
-            let first_cond_bb = recursive_build_bbs(cx, fb, end_bb, cases, falseblock, &mut accm);
+            let first_cond_bb = recursive_build_bbs(fb, end_bb, cases, falseblock, &mut accm);
 
             // Add a phi instruction combining all the branch results
             let last_result = fb.assign(expr.t, Op::Phi(accm));
@@ -544,7 +543,7 @@ fn lower_expr(cx: &Cx, fb: &mut FuncBuilder, expr: &TExpr) -> Var {
             if let Some(last_value) = fb.get_block(start_bb).last_value() {
                 fb.get_block(start_bb).terminator = Branch::Jump(last_value, first_cond_bb);
             } else {
-                let last_value = fb.assign_block(start_bb, cx.unit(), Op::ValUnit);
+                let last_value = fb.assign_block(start_bb, INT.unit(), Op::ValUnit);
                 fb.get_block(start_bb).terminator = Branch::Jump(last_value, first_cond_bb);
             }
 
@@ -556,14 +555,14 @@ fn lower_expr(cx: &Cx, fb: &mut FuncBuilder, expr: &TExpr) -> Var {
         }
         E::Funcall { func, params } => {
             // First, evaluate the args.
-            let param_vars = params.iter().map(|e| lower_expr(cx, fb, e)).collect();
+            let param_vars = params.iter().map(|e| lower_expr(fb, e)).collect();
             // Then, issue the instruction depending on the type of call.
             match &func.e {
                 E::Var { name } => fb.assign(expr.t, Op::Call(*name, param_vars)),
                 _expr => {
                     // We got some other expr, compile it and do an indirect call 'cause it heckin'
                     // better be a function
-                    let v = lower_expr(cx, fb, &func);
+                    let v = lower_expr(fb, &func);
                     fb.assign(expr.t, Op::CallIndirect(v, param_vars))
                 }
             }
@@ -576,7 +575,7 @@ fn lower_expr(cx: &Cx, fb: &mut FuncBuilder, expr: &TExpr) -> Var {
         E::Assign { lhs, rhs } => match &lhs.e {
             hir::Expr::Var { name } => {
                 // Well, this at least is easy
-                let res = lower_expr(cx, fb, rhs);
+                let res = lower_expr(fb, rhs);
                 // Look up var name.
                 // TODO: Globals
                 let mut binding = None;
@@ -615,7 +614,7 @@ mod tests {
         let hir = hir::lower(&mut rly, &ast);
         let hir = passes::run_passes(hir);
         let checked = typeck::typecheck(hir).unwrap_or_else(|e| panic!("Type check error: {}", e));
-        lower_hir(&INT, &checked)
+        lower_hir(&checked)
     }
 
     #[test]

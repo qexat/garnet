@@ -1,7 +1,7 @@
 //! Backend indirection layer.
 
 use crate::hir;
-use crate::{Cx, TypeSym};
+use crate::TypeSym;
 
 //mod lrust;
 mod rust;
