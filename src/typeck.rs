@@ -6,30 +6,7 @@ use std::borrow::Cow;
 use crate::hir;
 use crate::scope;
 use crate::*;
-use crate::{Cx, TypeDef, TypeSym, VarSym, INT};
-
-/// A random other error type bundled up with a `Cx`,
-/// so that error can be printed with info from the Cx.
-#[derive(Debug, Clone)]
-pub struct CxError<T>(T);
-
-impl std::fmt::Display for CxError<TypeError> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0.format())
-    }
-}
-
-impl std::error::Error for CxError<TypeError> {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        Some(&self.0)
-    }
-}
-
-impl From<CxError<TypeError>> for TypeError {
-    fn from(e: CxError<TypeError>) -> TypeError {
-        e.0
-    }
-}
+use crate::{TypeDef, TypeSym, VarSym, INT};
 
 impl std::error::Error for TypeError {}
 
@@ -593,14 +570,14 @@ fn reify_types(
 }
 
 /// Try to actually typecheck the given HIR, and return HIR with resolved types.
-pub fn typecheck(ir: hir::Ir<()>) -> Result<hir::Ir<TypeSym>, CxError<TypeError>> {
+pub fn typecheck(ir: hir::Ir<()>) -> Result<hir::Ir<TypeSym>, TypeError> {
     let symtbl = &mut Symtbl::new();
     ir.decls.iter().for_each(|d| predeclare_decl(symtbl, d));
     let checked_decls = ir
         .decls
         .into_iter()
         .map(|decl| typecheck_decl(symtbl, decl))
-        .collect::<Result<Vec<hir::Decl<TypeSym>>, CxError<TypeError>>>()?;
+        .collect::<Result<Vec<hir::Decl<TypeSym>>, TypeError>>()?;
     Ok(hir::Ir {
         decls: checked_decls,
     })
@@ -628,7 +605,7 @@ fn predeclare_decl(symtbl: &mut Symtbl, decl: &hir::Decl<()>) {
 fn typecheck_decl(
     symtbl: &mut Symtbl,
     decl: hir::Decl<()>,
-) -> Result<hir::Decl<TypeSym>, CxError<TypeError>> {
+) -> Result<hir::Decl<TypeSym>, TypeError> {
     match decl {
         hir::Decl::Function {
             name,
@@ -656,11 +633,11 @@ fn typecheck_decl(
             let last_expr_type = last_type_of(&typechecked_exprs);
 
             if !type_matches(signature.rettype, last_expr_type) {
-                return Err(CxError(TypeError::Return {
+                return Err(TypeError::Return {
                     fname: name,
                     got: last_expr_type,
                     expected: signature.rettype,
-                }));
+                });
             }
 
             symtbl.pop_scope();
@@ -688,7 +665,7 @@ fn typecheck_exprs(
     symtbl: &mut Symtbl,
     exprs: Vec<hir::TypedExpr<()>>,
     function_rettype: Option<TypeSym>,
-) -> Result<Vec<hir::TypedExpr<TypeSym>>, CxError<TypeError>> {
+) -> Result<Vec<hir::TypedExpr<TypeSym>>, TypeError> {
     // For each expr, figure out what its type *should* be
     exprs
         .into_iter()
@@ -724,20 +701,19 @@ fn typecheck_expr(
     symtbl: &mut Symtbl,
     expr: hir::TypedExpr<()>,
     function_rettype: Option<TypeSym>,
-) -> Result<hir::TypedExpr<TypeSym>, CxError<TypeError>> {
+) -> Result<hir::TypedExpr<TypeSym>, TypeError> {
     use hir::Expr::*;
     let unittype = INT.unit();
     let booltype = INT.bool();
     // TODO: Better name maybe!
-    let rar = |e| CxError(e);
     match expr.e {
         Lit { val } => {
-            let t = typecheck_literal(&val).map_err(rar)?;
+            let t = typecheck_literal(&val)?;
             Ok(hir::TypedExpr { e: Lit { val }, t })
         }
 
         Var { name } => {
-            let t = symtbl.get_var(name).map_err(rar)?;
+            let t = symtbl.get_var(name)?;
             Ok(expr.map_type(&|_| t))
         }
         BinOp { op, lhs, rhs } => {
@@ -746,19 +722,15 @@ fn typecheck_expr(
             let rhs1 = typecheck_expr(symtbl, *rhs, function_rettype)?;
             // Find out real type of each arm
             let input_type = op.input_type();
-            let t_lhs = infer_type(input_type, lhs1.t).ok_or_else(|| {
-                rar(TypeError::TypeMismatch {
-                    expr_name: format!("{:?}", op).into(),
-                    got: lhs1.t,
-                    expected: input_type,
-                })
+            let t_lhs = infer_type(input_type, lhs1.t).ok_or_else(|| TypeError::TypeMismatch {
+                expr_name: format!("{:?}", op).into(),
+                got: lhs1.t,
+                expected: input_type,
             })?;
-            let t_rhs = infer_type(input_type, rhs1.t).ok_or_else(|| {
-                rar(TypeError::TypeMismatch {
-                    expr_name: format!("{:?}", op).into(),
-                    got: lhs1.t,
-                    expected: input_type,
-                })
+            let t_rhs = infer_type(input_type, rhs1.t).ok_or_else(|| TypeError::TypeMismatch {
+                expr_name: format!("{:?}", op).into(),
+                got: lhs1.t,
+                expected: input_type,
             })?;
             // Both arms must be a compatible type
             if let Some(t) = infer_type(t_lhs, t_rhs) {
@@ -773,12 +745,12 @@ fn typecheck_expr(
                     t: t,
                 })
             } else {
-                Err(rar(TypeError::BopType {
+                Err(TypeError::BopType {
                     bop: op,
                     expected: input_type,
                     got1: lhs1.t,
                     got2: rhs1.t,
-                }))
+                })
             }
         }
         UniOp { op, rhs } => {
@@ -799,11 +771,11 @@ fn typecheck_expr(
                     t,
                 })
             } else {
-                Err(rar(TypeError::UopType {
+                Err(TypeError::UopType {
                     op,
                     expected: input_type,
                     got: rhs.t,
-                }))
+                })
             }
         }
         Block { body } => {
@@ -836,11 +808,11 @@ fn typecheck_expr(
                     t: unittype,
                 })
             } else {
-                Err(rar(TypeError::LetType {
+                Err(TypeError::LetType {
                     name: varname,
                     got: init_type,
                     expected: typename,
-                }))
+                })
             }
         }
         If { cases, falseblock } => {
@@ -854,16 +826,16 @@ fn typecheck_expr(
                     let ifbody_exprs = typecheck_exprs(symtbl, body, function_rettype)?;
                     let if_type = last_type_of(&ifbody_exprs);
                     if !type_matches(if_type, assumed_type) {
-                        return Err(rar(TypeError::IfType {
+                        return Err(TypeError::IfType {
                             ifpart: if_type,
                             elsepart: assumed_type,
-                        }));
+                        });
                     }
 
                     // Great, it matches
                     new_cases.push((cond_expr, ifbody_exprs));
                 } else {
-                    return Err(rar(TypeError::Cond { got: cond_expr.t }));
+                    return Err(TypeError::Cond { got: cond_expr.t });
                 }
             }
             Ok(hir::TypedExpr {
@@ -893,11 +865,11 @@ fn typecheck_expr(
             // TODO: validate/unify types
             if !type_matches(bodytype, signature.rettype) {
                 let function_name = INT.intern("lambda");
-                return Err(rar(TypeError::Return {
+                return Err(TypeError::Return {
                     fname: function_name,
                     got: bodytype,
                     expected: signature.rettype,
-                }));
+                });
             }
             symtbl.pop_scope();
             let lambdatype = signature.to_type();
@@ -920,10 +892,10 @@ fn typecheck_expr(
                     // Now, make sure all the function's params match what it wants
                     for (given, wanted) in given_params.iter().zip(paramtypes) {
                         if !type_matches(given.t, *wanted) {
-                            return Err(rar(TypeError::Param {
+                            return Err(TypeError::Param {
                                 got: given.t,
                                 expected: *wanted,
-                            }));
+                            });
                         }
                     }
                     Ok(hir::TypedExpr {
@@ -934,7 +906,7 @@ fn typecheck_expr(
                         t: *rettype,
                     })
                 }
-                _other => Err(rar(TypeError::Call { got: f.t })),
+                _other => Err(TypeError::Call { got: f.t }),
             }
         }
         Break => Ok(expr.map_type(&|_| unittype)),
@@ -949,14 +921,14 @@ fn typecheck_expr(
                     body_expr.t = INT.never();
                     Ok(body_expr)
                 } else {
-                    Err(rar(TypeError::TypeMismatch {
+                    Err(TypeError::TypeMismatch {
                         expr_name: "return".into(),
                         expected: wanted_type,
                         got: given,
-                    }))
+                    })
                 }
             } else {
-                Err(rar(TypeError::InvalidReturn))
+                Err(TypeError::InvalidReturn)
             }
         }
         TupleCtor { body } => {
@@ -982,7 +954,7 @@ fn typecheck_expr(
                     },
                 })
             } else {
-                Err(rar(TypeError::TupleRef { got: body_expr.t }))
+                Err(TypeError::TupleRef { got: body_expr.t })
             }
         }
         Assign { lhs, rhs } => {
@@ -993,16 +965,16 @@ fn typecheck_expr(
             // (This basically comes down to "somewhere with a location"...)
             // If the lhs is mutable
             // If the types of lhs and rhs match.
-            if !is_mutable_lvalue(symtbl, &lhs_expr.e).map_err(rar)? {
-                Err(rar(TypeError::Mutability {
+            if !is_mutable_lvalue(symtbl, &lhs_expr.e)? {
+                Err(TypeError::Mutability {
                     expr_name: "assignment".into(),
-                }))
+                })
             } else if !type_matches(lhs_expr.t, rhs_expr.t) {
-                Err(rar(TypeError::TypeMismatch {
+                Err(TypeError::TypeMismatch {
                     expr_name: "assignment".into(),
                     expected: lhs_expr.t,
                     got: rhs_expr.t,
-                }))
+                })
             } else {
                 Ok(hir::TypedExpr {
                     t: INT.unit(),
@@ -1046,7 +1018,7 @@ mod tests {
     use crate::testutil::*;
     use crate::*;
 
-    fn typecheck_src(src: &str) -> Result<hir::Ir<TypeSym>, CxError<TypeError>> {
+    fn typecheck_src(src: &str) -> Result<hir::Ir<TypeSym>, TypeError> {
         use crate::parser::Parser;
         let ast = Parser::new(src).parse();
         let ir = hir::lower(&mut rly, &ast);
@@ -1057,7 +1029,7 @@ mod tests {
         ( $src: expr, $err_pat: pat ) => {
             match typecheck_src($src) {
                 Ok(_) => panic!("Typecheck succeeded and should have failed!"),
-                Err(CxError($err_pat)) => (),
+                Err($err_pat) => (),
                 Err(x) => panic!("Typecheck gave the wrong error: {}", x),
             }
         };

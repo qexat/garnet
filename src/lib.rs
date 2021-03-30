@@ -217,7 +217,7 @@ impl TypeDef {
     }
 }
 
-/// Compilation context.
+/// Interner context.
 ///
 /// Really this is just an interner for symbols now, and
 /// the original plan of bundling it up into a special context

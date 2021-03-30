@@ -78,8 +78,8 @@ fn compile_decl(decl: &hir::Decl<TypeSym>) -> String {
             body,
         } => {
             let nstr = mangle_name(&*INT.fetch(*name));
-            let sstr = compile_fn_signature(&INT, signature);
-            let bstr = compile_exprs(&INT, body, ";\n");
+            let sstr = compile_fn_signature(signature);
+            let bstr = compile_exprs(body, ";\n");
             format!(
                 "#[no_mangle]\npub extern fn {}{} {{\n{}\n}}\n",
                 nstr, sstr, bstr
@@ -92,16 +92,16 @@ fn compile_decl(decl: &hir::Decl<TypeSym>) -> String {
         } => {
             let nstr = mangle_name(&INT.fetch(*name));
             let tstr = compile_typedef(&*INT.fetch_type(*typename));
-            let istr = compile_expr(&INT, init);
+            let istr = compile_expr(init);
             format!("const {}: {} = {};", nstr, tstr, istr)
         }
     }
 }
 
-fn compile_fn_signature(cx: &Cx, sig: &ast::Signature) -> String {
+fn compile_fn_signature(sig: &ast::Signature) -> String {
     let mut accm = String::from("(");
     for (varsym, typesym) in sig.params.iter() {
-        accm += &*cx.fetch(*varsym);
+        accm += &*INT.fetch(*varsym);
         accm += ": ";
         accm += &compile_typedef(&*INT.fetch_type(*typesym));
         accm += ", ";
@@ -111,8 +111,8 @@ fn compile_fn_signature(cx: &Cx, sig: &ast::Signature) -> String {
     accm
 }
 
-fn compile_exprs(cx: &Cx, exprs: &[hir::TypedExpr<TypeSym>], separator: &str) -> String {
-    let ss: Vec<String> = exprs.iter().map(|e| compile_expr(cx, e)).collect();
+fn compile_exprs(exprs: &[hir::TypedExpr<TypeSym>], separator: &str) -> String {
+    let ss: Vec<String> = exprs.iter().map(|e| compile_expr(e)).collect();
     ss.join(separator)
 }
 
@@ -147,7 +147,7 @@ fn compile_uop(op: hir::UOp) -> &'static str {
     }
 }
 
-fn compile_expr(cx: &Cx, expr: &hir::TypedExpr<TypeSym>) -> String {
+fn compile_expr(expr: &hir::TypedExpr<TypeSym>) -> String {
     use hir::Expr as E;
     match &expr.e {
         E::Lit {
@@ -162,26 +162,26 @@ fn compile_expr(cx: &Cx, expr: &hir::TypedExpr<TypeSym>) -> String {
             let bits = bytes * 8;
             format!("{}i{}", vl, bits)
         }
-        E::Var { name } => mangle_name(&*cx.fetch(*name)),
+        E::Var { name } => mangle_name(&*INT.fetch(*name)),
         E::BinOp { op, lhs, rhs } => format!(
             "({} {} {})",
-            compile_expr(cx, lhs),
+            compile_expr(lhs),
             compile_bop(*op),
-            compile_expr(cx, rhs)
+            compile_expr(rhs)
         ),
         E::UniOp { op, rhs } => {
-            format!("({}{})", compile_uop(*op), compile_expr(cx, rhs))
+            format!("({}{})", compile_uop(*op), compile_expr(rhs))
         }
-        E::Block { body } => format!("{{\n{}\n}}", compile_exprs(cx, body, ";\n")),
+        E::Block { body } => format!("{{\n{}\n}}", compile_exprs(body, ";\n")),
         E::Let {
             varname,
             typename,
             init,
             mutable,
         } => {
-            let vstr = mangle_name(&*cx.fetch(*varname));
-            let tstr = compile_typedef(&*cx.fetch_type(typename.unwrap()));
-            let istr = compile_expr(cx, init);
+            let vstr = mangle_name(&*INT.fetch(*varname));
+            let tstr = compile_typedef(&*INT.fetch_type(typename.unwrap()));
+            let istr = compile_expr(init);
             if *mutable {
                 format!("let mut {}: {} = {}", vstr, tstr, istr)
             } else {
@@ -196,25 +196,25 @@ fn compile_expr(cx: &Cx, expr: &hir::TypedExpr<TypeSym>) -> String {
                 } else {
                     accm += " else if "
                 }
-                accm += &compile_expr(cx, cond);
+                accm += &compile_expr(cond);
                 accm += " {\n";
-                accm += &compile_exprs(cx, &body, ";\n");
+                accm += &compile_exprs(&body, ";\n");
                 accm += "} \n";
             }
             accm += "else {\n";
-            accm += &compile_exprs(cx, falseblock, ";\n");
+            accm += &compile_exprs(falseblock, ";\n");
             accm += "}\n";
             accm
         }
         E::Loop { body } => {
-            format!("loop {{\n{}\n}}\n", compile_exprs(cx, body, ";\n"))
+            format!("loop {{\n{}\n}}\n", compile_exprs(body, ";\n"))
         }
         // TODO: We don't have closures, lambda are just functions, so...
         E::Lambda { signature, body } => {
             format!(
                 "fn {} {{ {} }}",
-                compile_fn_signature(cx, signature),
-                compile_exprs(cx, body, ";\n")
+                compile_fn_signature(signature),
+                compile_exprs(body, ";\n")
             )
         }
         E::Funcall { func, params } => {
@@ -225,34 +225,34 @@ fn compile_expr(cx: &Cx, expr: &hir::TypedExpr<TypeSym>) -> String {
             // fn f() -> i32 { if true { f1 } else { f2 }() }
             //
             // Should this happen in an IR lowering step?  idk.
-            let nstr = compile_expr(cx, func);
-            let pstr = compile_exprs(cx, params, ", ");
+            let nstr = compile_expr(func);
+            let pstr = compile_exprs(params, ", ");
             format!("{{ let __dummy = {}; __dummy({}) }}", nstr, pstr)
         }
         E::Break => {
             format!("break;")
         }
         E::Return { retval } => {
-            format!("return {};", compile_expr(cx, retval))
+            format!("return {};", compile_expr(retval))
         }
         E::TupleCtor { body } => {
             // We *don't* want join() here, we want to append comma's so that
             // `(foo,)` works properly.
             let mut accm = String::from("(");
             for expr in body {
-                accm += &compile_expr(cx, expr);
+                accm += &compile_expr(expr);
                 accm += ", ";
             }
             accm += ")";
             accm
         }
         E::TupleRef { expr, elt } => {
-            format!("{}.{}", compile_expr(cx, expr), elt)
+            format!("{}.{}", compile_expr(expr), elt)
         }
         E::Assign { lhs, rhs } => {
-            format!("{} = {}", compile_expr(cx, lhs), compile_expr(cx, rhs))
+            format!("{} = {}", compile_expr(lhs), compile_expr(rhs))
         }
-        E::Deref { expr } => format!("*{}", compile_expr(cx, expr)),
-        E::Ref { expr } => format!("&{}", compile_expr(cx, expr)),
+        E::Deref { expr } => format!("*{}", compile_expr(expr)),
+        E::Ref { expr } => format!("&{}", compile_expr(expr)),
     }
 }
