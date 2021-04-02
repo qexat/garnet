@@ -476,101 +476,21 @@ fn reify_types(
     } else {
         expr.map_type(&|t| if *t == from { to } else { *t })
     }
-    /*
-    use hir::Expr as E;
-    let new_expr = match expr {
-        E::BinOp { op, lhs, rhs } => E::BinOp {
-            op,
-            lhs: Box::new(reify_types(from, to, lhs)),
-            rhs: Box::new(reify_types(from, to, rhs)),
-        },
-        E::UniOp { op, rhs } => E::UniOp {
-            op,
-            rhs: Box::new(rhs.map(new_t)),
-        },
-        E::Block { body } => E::Block {
-            body: map_vec(body),
-        },
-        E::Let {
-            varname,
-            typename,
-            init,
-            mutable,
-        } => E::Let {
-            varname,
-            typename,
-            init: Box::new(init.map(new_t)),
-            mutable,
-        },
-        E::If { cases, falseblock } => {
-            let new_cases = cases
-                .into_iter()
-                .map(|(c, bod)| (c.map(new_t), map_vec(bod)))
-                .collect();
-            E::If {
-                cases: new_cases,
-                falseblock: map_vec(falseblock),
-            }
-        }
-        E::Loop { body } => E::Loop {
-            body: map_vec(body),
-        },
-        E::Lambda { signature, body } => E::Lambda {
-            signature,
-            body: map_vec(body),
-        },
-        E::Funcall { func, params } => E::Funcall {
-            func: Box::new(func.map(new_t)),
-            params: map_vec(params),
-        },
-        E::Break => E::Break,
-        E::Return { retval } => E::Return {
-            retval: Box::new(retval.map(new_t)),
-        },
-        E::TupleCtor { body } => E::TupleCtor {
-            body: map_vec(body),
-        },
-        E::TupleRef { expr, elt } => E::TupleRef {
-            expr: Box::new(expr.map(new_t)),
-            elt,
-        },
-        E::Assign { lhs, rhs } => E::Assign {
-            lhs: Box::new(lhs.map(new_t)),
-            rhs: Box::new(rhs.map(new_t)),
-        },
-        E::Deref { expr } => E::Deref {
-            expr: Box::new(expr.map(new_t)),
-        },
-        E::Ref { expr } => E::Ref {
-            expr: Box::new(expr.map(new_t)),
-        },
-        let new_e = match expr.e {
-            BinOp { op, lhs, rhs } => {
-            }
-            UniOp { op, rhs } => {}
-            Block { body } => {}
-            Let {
-                varname,
-                typename,
-                init,
-                mutable,
-            } => {}
-            If { cases, falseblock } => {}
-            Loop { body } => {}
-            Lambda { signature, body } => {}
-            Funcall { func, params } => {}
-            Break => {}
-            Return { retval } => {}
-            TupleCtor { body } => {}
-            TupleRef { expr, elt } => {}
-            Assign { lhs, rhs } => {}
-            other => other,
-        };
-        hir::TypedExpr {
-            e: new_e,
-            t: realtype,
-        }
-            */
+}
+
+/// `reify_types()`, called on the last value in a list of expressions such
+/// as a function body.
+fn reify_last_types(
+    from: TypeSym,
+    to: TypeSym,
+    exprs: Vec<hir::TypedExpr<TypeSym>>,
+) -> Vec<hir::TypedExpr<TypeSym>> {
+    assert!(exprs.len() > 0);
+    // We own the vec, so we can do whatever we want to it!  Muahahahahaha!
+    let mut exprs = exprs;
+    let last_expr = exprs.pop().unwrap();
+    exprs.push(reify_types(from, to, last_expr));
+    exprs
 }
 
 /// Try to actually typecheck the given HIR, and return HIR with resolved types.
@@ -866,28 +786,30 @@ fn typecheck_expr(
             for (paramname, paramtype) in signature.params.iter() {
                 symtbl.add_var(*paramname, *paramtype, false);
             }
-            let body_expr = typecheck_exprs(symtbl, body, function_rettype)?;
+            let body_expr = typecheck_exprs(symtbl, body, Some(signature.rettype))?;
             let bodytype = last_type_of(&body_expr);
-            // TODO: validate/unify types
-            if !type_matches(bodytype, signature.rettype) {
+            dbg!(INT.fetch_type(bodytype));
+            if let Some(t) = infer_type(bodytype, signature.rettype) {
+                let new_body = reify_last_types(bodytype, t, body_expr);
+                symtbl.pop_scope();
+                let lambdatype = signature.to_type();
+                Ok(hir::TypedExpr {
+                    e: Lambda {
+                        signature,
+                        body: new_body,
+                    },
+                    t: lambdatype,
+                })
+            } else {
                 let function_name = INT.intern("lambda");
+                symtbl.pop_scope();
                 return Err(TypeError::Return {
                     fname: function_name,
                     got: bodytype,
                     expected: signature.rettype,
                 });
             }
-            symtbl.pop_scope();
-            let lambdatype = signature.to_type();
-            Ok(hir::TypedExpr {
-                e: Lambda {
-                    signature,
-                    body: body_expr,
-                },
-                t: lambdatype,
-            })
         }
-        // TODO: Inference?
         Funcall { func, params } => {
             // First, get param types
             let given_params = typecheck_exprs(symtbl, params, function_rettype)?;
@@ -897,8 +819,12 @@ fn typecheck_expr(
             match fdef {
                 TypeDef::Lambda(paramtypes, rettype) => {
                     // Now, make sure all the function's params match what it wants
-                    for (given, wanted) in given_params.iter().zip(paramtypes) {
-                        if !type_matches(given.t, *wanted) {
+                    let mut inferred_args = vec![];
+                    for (given, wanted) in given_params.into_iter().zip(paramtypes) {
+                        if let Some(t) = infer_type(given.t, *wanted) {
+                            let new_given = reify_types(given.t, t, given);
+                            inferred_args.push(new_given);
+                        } else {
                             return Err(TypeError::Param {
                                 got: given.t,
                                 expected: *wanted,
@@ -908,11 +834,12 @@ fn typecheck_expr(
                     Ok(hir::TypedExpr {
                         e: Funcall {
                             func: Box::new(f),
-                            params: given_params,
+                            params: inferred_args,
                         },
                         t: *rettype,
                     })
                 }
+                // Something was called but it wasn't a function.  Wild.
                 _other => Err(TypeError::Call { got: f.t }),
             }
         }
@@ -953,6 +880,7 @@ fn typecheck_expr(
                 e: TupleCtor { body: body_exprs },
             })
         }
+        // TODO: Inference???
         TupleRef { expr, elt } => {
             let body_expr = typecheck_expr(symtbl, *expr, function_rettype)?;
             let expr_typedef = INT.fetch_type(body_expr.t);
@@ -1330,6 +1258,15 @@ mod tests {
             let src = "fn foo(): fn(I32):I32 = fn(x: I32):I32 = x+1 end end";
             typecheck_src(src).unwrap();
         }
+    }
+
+    #[test]
+    fn test_function_return_inference() {
+        //let src = "fn foo(): I32 = 3 end";
+        //typecheck_src(src).unwrap();
+
+        let src = r#"fn foo(): I32 = 3 end"#;
+        typecheck_src(src).unwrap();
     }
 
     #[test]
