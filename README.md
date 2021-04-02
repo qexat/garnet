@@ -133,6 +133,8 @@ change with time.
    macro for it, but it's kinda less good that you need to.
  * No function currying is rather a pain sometimes, especially when it's
    really just syntactic sugar for a trivial closure.
+ * Rust's trait orphan rules are annoying, but may be too hard to be
+   worth trying to solve.
 
 ## Glory points in Rust to exploit or even enhance
 
@@ -155,7 +157,7 @@ change with time.
  * Though it is tempting, we will NOT do arbitrary-precision integer
    types such as being able to define an integer via an arbitrary range
    such as `[-1, 572)` or arbitrary size such as `i23`.  Maybe later.
- * Don't need to target architectures smaller than 32 bits
+ * Like Rust, we don't need to target architectures smaller than 32 bits
 
 ## Wishlist items
 
@@ -177,11 +179,15 @@ change with time.
 ## Goals
 
  * Being effectively finished someday.
+ * A compilation model that doesn't necessitate a slow compiler
+ * Being able to reason about what kind of code the compiler will
+   actually output
 
 ## Antigoals
 
  * Async, promises, other fanciness for nonblocking I/O
  * Ultimate max performance in all circumstances
+ * Anything requiring a proof solver as part of the type system
 
 # Toolchain
 
@@ -189,8 +195,8 @@ change with time.
  * `logos` lexer
  * custom parser (recursive descent + Pratt)
  * output Rust, just to make things work.
- * argh (for command line opts)
- * codespan (for error reporting)
+ * `argh` for command line opts
+ * `codespan` for error reporting
 
 Things to consider:
 
@@ -264,6 +270,7 @@ MIT
  * <https://boats.gitlab.io/blog/post/notes-on-a-smaller-rust/>
  * <https://without.boats/blog/revisiting-a-smaller-rust/>
  * <https://dl.acm.org/doi/pdf/10.1145/3428195> (on type inference)
+ * <https://queue.acm.org/detail.cfm?id=3212479> (C is not a low level language; the good one)
 
 # Random notes
 
