@@ -4,7 +4,9 @@
 
 An experiment in a systems programming language along the lines of Rust
 but more minimal.  Where Rust is a C++ that doesn't suck, it'd be nice
-for this to be a C that doesn't suck.
+for this to be a C that doesn't suck.  Currently though, it's mostly
+just ideas, though a functioning compiler is slowly gaining more
+features.
 
 Loosely based on <https://wiki.alopex.li/BetterThanC>, far more loosely
 based on <https://wiki.alopex.li/GarnetLanguage> which is an older set
@@ -18,7 +20,8 @@ If it doesn't have something like this, it's a hard error.
  * Unambiguous, context-free syntax
  * Good error messages
  * Cross-compile everywhere
- * Type inference (eventually)
+ * Type inference
+ * Sum types, no null, all that good jazz
 
 # Runtime/language model goals
 
@@ -278,8 +281,12 @@ MIT
 
  * Actual build takes ~1-2 minutes
  * Adding end-to-end unit tests it takes 5 minutes
- * Adding code coverage it takes ~15 minutes -- cargo-tarpaulin ain't instant but most of it is still spent in building it.
+ * Adding code coverage it takes ~15 minutes -- cargo-tarpaulin ain't
+   instant but most of it is still spent in building it rather than
+   running it.
  * Making a `.deb` package for cargo-tarpaulin would help a lot then.
+   Talked to the Debian Rust packaging team and they're in favor, very
+   helpful folks, but of course understaffed.
 
 ## Out Of Context Problems
 
@@ -314,12 +321,15 @@ reasonable/performant way:
 Todo list of other common sources of UB in C, from <https://stackoverflow.com/questions/367633/what-are-all-the-common-undefined-behaviours-that-a-c-programmer-should-know-a>:
 
  * Converting pointers to objects of incompatible types
- * Left-shifting values by a negative amount (right shifts by negative amounts are implementation defined)
+ * Left-shifting values by a negative amount (right shifts by negative
+   amounts are implementation defined)
  * Evaluating an expression that is not mathematically defined (ie, div
    by 0)
  * Evaluating an expression that is not mathematically defined
- * Casting a numeric value into a value that can't be represented by the target type (either directly or via `static_cast`)
- * Attempting to modify a string literal or any other const object during its lifetime
+ * Casting a numeric value into a value that can't be represented by the
+   target type (either directly or via `static_cast`)
+ * Attempting to modify a string literal or any other const object
+   during its lifetime
  * A pile of other things that are mostly C++'s fault
 
 Reading material: <https://blog.regehr.org/archives/213> and the follow-on
@@ -343,3 +353,7 @@ there are as few rules and hidden gotchas as possible for the
 
 Other reading material from people doing interesting unsafe Rust things:
 <https://github.com/TimelyDataflow/abomonation/issues/32>
+
+Mandating a different pointer type for referring to mmapped I/O is
+probably not unreasonable, tbqh, and removes a source of semantic
+weirdness that compilers have problems dealing with.
