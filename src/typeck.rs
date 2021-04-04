@@ -424,19 +424,6 @@ fn type_matches(wanted: TypeSym, got: TypeSym) -> bool {
     } else {
         wanted == got
     }
-    /*
-        let wanted_def = &*cx.fetch_type(wanted);
-        let got_def = &*cx.fetch_type(t2);
-        match (def, td2) {
-            // Numbers match numbers of unknown sizes...
-            // Actually, maybe we need to do this with real type inference.
-            /*
-            (TypeDef::UnknownInt, TypeDef::SInt(_)) => true,
-            (TypeDef::SInt(_), TypeDef::UnknownInt) => true,
-            */
-            (wanted, t2) => wanted == t2,
-        }
-    */
 }
 
 /// Goes from types that may be unknown to a type that is
@@ -453,6 +440,26 @@ fn infer_type(t1: TypeSym, t2: TypeSym) -> Option<TypeSym> {
         // to that expression.
         (TypeDef::Never, _) => Some(t1),
         (_, TypeDef::Never) => Some(t2),
+        // Tuples!  If we can infer the types of their members, then life is good
+        (TypeDef::Tuple(tup1), TypeDef::Tuple(tup2)) => {
+            // If tuples are different lengths, they never match
+            if tup1.len() != tup2.len() {
+                return None;
+            }
+            // I'm sure there's a neat comprehension to do this, but I haven't
+            // been sleeping well lately.
+            let mut accm = vec![];
+            for (item1, item2) in tup1.iter().zip(tup2) {
+                if let Some(t) = infer_type(*item1, *item2) {
+                    accm.push(t);
+                } else {
+                    // Some item in the tuples doesn't match
+                    return None;
+                }
+            }
+            let sym = INT.intern_type(&TypeDef::Tuple(accm));
+            Some(sym)
+        }
         // TODO: Never and Never?  Is that valid, or not?  I THINK it is
         (tt1, tt2) if tt1 == tt2 => Some(t1),
         _ => None,
@@ -555,21 +562,22 @@ fn typecheck_decl(
             // and look for any "return" exprs (or later `?`/`try` exprs
             // also) and see make sure the return types match.
             let last_expr_type = last_type_of(&typechecked_exprs);
-
-            if !type_matches(signature.rettype, last_expr_type) {
-                return Err(TypeError::Return {
+            if let Some(t) = infer_type(last_expr_type, signature.rettype) {
+                let inferred_exprs = reify_last_types(last_expr_type, t, typechecked_exprs);
+                symtbl.pop_scope();
+                Ok(hir::Decl::Function {
+                    name,
+                    signature,
+                    body: inferred_exprs,
+                })
+            } else {
+                //if !type_matches(signature.rettype, last_expr_type) {
+                Err(TypeError::Return {
                     fname: name,
                     got: last_expr_type,
                     expected: signature.rettype,
-                });
+                })
             }
-
-            symtbl.pop_scope();
-            Ok(hir::Decl::Function {
-                name,
-                signature,
-                body: typechecked_exprs,
-            })
         }
         hir::Decl::Const {
             name,
@@ -660,13 +668,17 @@ fn typecheck_expr(
             if let Some(t) = infer_type(t_lhs, t_rhs) {
                 let real_lhs = reify_types(t_lhs, t, lhs1);
                 let real_rhs = reify_types(t_rhs, t, rhs1);
+                // TODO NEXT:
+                // We must also figure out the output type, though.  It depends on the binop!
+                // Sometimes it depends on the input types (number + number => number, number + i32
+                // => i32), and sometimes it doesn't (bool and bool => bool, no guesswork involved)
                 Ok(hir::TypedExpr {
                     e: BinOp {
                         op,
                         lhs: Box::new(real_lhs),
                         rhs: Box::new(real_rhs),
                     },
-                    t: t,
+                    t: op.output_type(),
                 })
             } else {
                 Err(TypeError::BopType {
@@ -692,7 +704,7 @@ fn typecheck_expr(
                         op,
                         rhs: Box::new(new_rhs),
                     },
-                    t,
+                    t: op.output_type(),
                 })
             } else {
                 Err(TypeError::UopType {
@@ -750,6 +762,7 @@ fn typecheck_expr(
                     // Proceed to typecheck arms
                     let ifbody_exprs = typecheck_exprs(symtbl, body, function_rettype)?;
                     let if_type = last_type_of(&ifbody_exprs);
+                    // TODO: Inference?
                     if !type_matches(if_type, assumed_type) {
                         return Err(TypeError::IfType {
                             ifpart: if_type,
