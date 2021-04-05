@@ -546,3 +546,20 @@ end
 "#;
     assert_eq!(eval_program0(src), 12);
 }
+
+#[test]
+fn inference_no_int_widening() {
+    let src = r#"
+
+fn foo(x: I32): I64 =
+    x + 3
+end
+
+fn test(): I64 =
+    let x: I64 = foo(9)
+    x
+end
+"#;
+    // TODO: Check for specific error type
+    assert!(garnet::try_compile(src).is_err());
+}
