@@ -188,9 +188,11 @@ fn compile_expr(expr: &hir::TypedExpr<TypeSym>) -> String {
                 format!("let {}: {} = {}", vstr, tstr, istr)
             }
         }
-        E::If { cases, falseblock } => {
+        E::If { cases } => {
             let mut accm = String::new();
-            for (i, (cond, body)) in cases.iter().enumerate() {
+            let falseblock = cases.last().unwrap().1.clone();
+            let n = cases.len();
+            for (i, (cond, body)) in cases[..(n - 1)].iter().enumerate() {
                 if i == 0 {
                     accm += "if ";
                 } else {
@@ -202,7 +204,7 @@ fn compile_expr(expr: &hir::TypedExpr<TypeSym>) -> String {
                 accm += "} \n";
             }
             accm += "else {\n";
-            accm += &compile_exprs(falseblock, ";\n");
+            accm += &compile_exprs(&falseblock, ";\n");
             accm += "}\n";
             accm
         }

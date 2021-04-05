@@ -425,6 +425,7 @@ fn test(): I32 =
         fn(): I32 = 10 end
     end
     ()
+    -- call the function returned by the expr
 end
 "#;
 

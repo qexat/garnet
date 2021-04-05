@@ -66,11 +66,22 @@ impl BOp {
         }
     }
 
-    /// What the resultant type of the binop is
-    pub fn output_type(&self) -> TypeSym {
+    /// What the resultant type of the binop is.
+    ///
+    /// Needs to know what the type of the expression given to it is,
+    /// but also assumes that the LHS and RHS have the same input type.
+    /// Ensuring that is left as an exercise to the user.
+    pub fn output_type(&self, input_type: TypeSym) -> TypeSym {
         use BOp::*;
         match self {
-            Add | Sub | Mul | Div | Mod => INT.iunknown(),
+            Add | Sub | Mul | Div | Mod => {
+                let def = INT.fetch_type(input_type);
+                if def.is_integer() {
+                    return input_type;
+                } else {
+                    unimplemented!("hmmmm, typechecking should probably never allow this");
+                }
+            }
             Eq | Neq | Gt | Lt | Gte | Lte => INT.bool(),
             And | Or | Xor => INT.bool(),
         }
@@ -120,10 +131,17 @@ impl UOp {
     }
 
     /// What the resultant type of the uop is
-    pub fn output_type(&self) -> TypeSym {
+    pub fn output_type(&self, input_type: TypeSym) -> TypeSym {
         use UOp::*;
         match self {
-            Neg => INT.iunknown(),
+            Neg => {
+                let def = INT.fetch_type(input_type);
+                if def.is_integer() {
+                    return input_type;
+                } else {
+                    unimplemented!("hmmmm, typechecking should probably never allow this");
+                }
+            }
             Not => INT.bool(),
             Ref => todo!(),
             Deref => todo!(),

@@ -46,8 +46,8 @@ pub enum TypeError {
         expected: TypeSym,
     },
     IfType {
-        ifpart: TypeSym,
-        elsepart: TypeSym,
+        expected: TypeSym,
+        got: TypeSym,
     },
     Cond {
         got: TypeSym,
@@ -120,10 +120,10 @@ impl TypeError {
                 INT.fetch_type(*expected).get_name(),
                 INT.fetch_type(*got).get_name()
             ),
-            TypeError::IfType { ifpart, elsepart } => format!(
-                "If block return type is {}, but else block returns {}",
-                INT.fetch_type(*ifpart).get_name(),
-                INT.fetch_type(*elsepart).get_name(),
+            TypeError::IfType { expected, got } => format!(
+                "If block return type is {}, but we thought it should be something like {}",
+                INT.fetch_type(*expected).get_name(),
+                INT.fetch_type(*got).get_name(),
             ),
             TypeError::Cond { got } => format!(
                 "If expr condition is {}, not bool",
@@ -438,8 +438,15 @@ fn infer_type(t1: TypeSym, t2: TypeSym) -> Option<TypeSym> {
         // Anything related to a never type becomes a never type,
         // because by definition control flow never actually gets
         // to that expression.
-        (TypeDef::Never, _) => Some(t1),
-        (_, TypeDef::Never) => Some(t2),
+        //
+        // ...hang on, is that correct?  Think of an `if/else` where
+        // one of the arms returns Never.  One arm never returns, the
+        // other will return a thing.  So the only sensible type for
+        // the expression is the type of the non-Never arm.
+        //
+        // heckin covariance and contravariance, I hate you.
+        (TypeDef::Never, _) => Some(t2),
+        (_, TypeDef::Never) => Some(t1),
         // Tuples!  If we can infer the types of their members, then life is good
         (TypeDef::Tuple(tup1), TypeDef::Tuple(tup2)) => {
             // If tuples are different lengths, they never match
@@ -668,7 +675,6 @@ fn typecheck_expr(
             if let Some(t) = infer_type(t_lhs, t_rhs) {
                 let real_lhs = reify_types(t_lhs, t, lhs1);
                 let real_rhs = reify_types(t_rhs, t, rhs1);
-                // TODO NEXT:
                 // We must also figure out the output type, though.  It depends on the binop!
                 // Sometimes it depends on the input types (number + number => number, number + i32
                 // => i32), and sometimes it doesn't (bool and bool => bool, no guesswork involved)
@@ -678,7 +684,7 @@ fn typecheck_expr(
                         lhs: Box::new(real_lhs),
                         rhs: Box::new(real_rhs),
                     },
-                    t: op.output_type(),
+                    t: op.output_type(t),
                 })
             } else {
                 Err(TypeError::BopType {
@@ -704,7 +710,7 @@ fn typecheck_expr(
                         op,
                         rhs: Box::new(new_rhs),
                     },
-                    t: op.output_type(),
+                    t: op.output_type(t),
                 })
             } else {
                 Err(TypeError::UopType {
@@ -752,17 +758,49 @@ fn typecheck_expr(
                 })
             }
         }
-        If { cases, falseblock } => {
-            let falseblock = typecheck_exprs(symtbl, falseblock, function_rettype)?;
+        If { cases } => {
+            // This is kinda oogly, what we really need to do is find the ret type
+            // of *every* arm, unify them (aka find a type they all agree on), and then
+            // reify them all to have that type.
+            //
+            // ...hang on, that doesn't sound TOO hard.
+            let mut assumed_type = INT.never();
+            let mut new_cases = vec![];
+            for (cond, body) in cases.into_iter() {
+                // First we just check whether all the conds return bools
+                // ...hmm, typecheck_expr() consumes `cond`, which is kinda awkward.
+                let cond_expr = typecheck_expr(symtbl, cond, function_rettype)?;
+                if !type_matches(cond_expr.t, booltype) {
+                    return Err(TypeError::Cond { got: cond_expr.t });
+                }
+
+                // Now we get the type of the body...
+                let body_exprs = typecheck_exprs(symtbl, body, function_rettype)?;
+                let body_type = last_type_of(&body_exprs);
+                // Does it have a type that can match with our other types?
+                if let Some(t) = infer_type(body_type, assumed_type) {
+                    assumed_type = t;
+                    let new_body = reify_last_types(body_type, t, body_exprs);
+                    new_cases.push((cond_expr, new_body));
+                } else {
+                    return Err(TypeError::IfType {
+                        got: body_type,
+                        expected: assumed_type,
+                    });
+                }
+            }
+            Ok(hir::TypedExpr {
+                e: If { cases: new_cases },
+                t: assumed_type,
+            })
+            /*
+            let mut assumed_type = INT.never();
             let assumed_type = last_type_of(&falseblock);
             let mut new_cases = vec![];
-            for (cond, body) in cases {
-                let cond_expr = typecheck_expr(symtbl, cond, function_rettype)?;
-                if type_matches(cond_expr.t, booltype) {
-                    // Proceed to typecheck arms
+
                     let ifbody_exprs = typecheck_exprs(symtbl, body, function_rettype)?;
                     let if_type = last_type_of(&ifbody_exprs);
-                    // TODO: Inference?
+                    if let Some(t) = infer_type(if_type, assumed_type) {}
                     if !type_matches(if_type, assumed_type) {
                         return Err(TypeError::IfType {
                             ifpart: if_type,
@@ -771,11 +809,6 @@ fn typecheck_expr(
                     }
 
                     // Great, it matches
-                    new_cases.push((cond_expr, ifbody_exprs));
-                } else {
-                    return Err(TypeError::Cond { got: cond_expr.t });
-                }
-            }
             Ok(hir::TypedExpr {
                 t: assumed_type,
                 e: If {
@@ -783,6 +816,7 @@ fn typecheck_expr(
                     falseblock,
                 },
             })
+                    */
         }
         Loop { body } => {
             let b = typecheck_exprs(symtbl, body, function_rettype)?;
@@ -801,7 +835,6 @@ fn typecheck_expr(
             }
             let body_expr = typecheck_exprs(symtbl, body, Some(signature.rettype))?;
             let bodytype = last_type_of(&body_expr);
-            dbg!(INT.fetch_type(bodytype));
             if let Some(t) = infer_type(bodytype, signature.rettype) {
                 let new_body = reify_last_types(bodytype, t, body_expr);
                 symtbl.pop_scope();
@@ -883,8 +916,8 @@ fn typecheck_expr(
                 Err(TypeError::InvalidReturn)
             }
         }
-        // TODO: Inference?
         TupleCtor { body } => {
+            // Inference for this is done by `infer_types()` on the member types.
             let body_exprs = typecheck_exprs(symtbl, body, function_rettype)?;
             let body_typesyms = body_exprs.iter().map(|te| te.t).collect();
             let body_type = TypeDef::Tuple(body_typesyms);

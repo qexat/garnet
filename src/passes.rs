@@ -204,7 +204,7 @@ fn lambda_lift_expr(expr: TypedExpr<()>, output_funcs: &mut Vec<D<()>>) -> Typed
             init: Box::new(lambda_lift_expr(*init, output_funcs)),
             mutable,
         },
-        E::If { cases, falseblock } => {
+        E::If { cases } => {
             let new_cases = cases
                 .into_iter()
                 .map(|(test, case)| {
@@ -213,11 +213,7 @@ fn lambda_lift_expr(expr: TypedExpr<()>, output_funcs: &mut Vec<D<()>>) -> Typed
                     (new_test, new_cases)
                 })
                 .collect();
-            let new_falseblock = lambda_lift_exprs(falseblock, output_funcs);
-            E::If {
-                cases: new_cases,
-                falseblock: new_falseblock,
-            }
+            E::If { cases: new_cases }
         }
 
         E::Loop { body } => E::Loop {
