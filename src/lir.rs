@@ -399,7 +399,7 @@ fn lower_expr(fb: &mut FuncBuilder, expr: &TExpr) -> Var {
             );
             fb.assign(expr.t, Op::SetLocal(*varname, v))
         }
-        E::If { cases, falseblock } => {
+        E::If { cases } => {
             // For a single if expr, we make this structure:
             // start:
             //   %1 = cond
@@ -534,7 +534,11 @@ fn lower_expr(fb: &mut FuncBuilder, expr: &TExpr) -> Var {
             let end_bb = fb.next_block().id;
             // Make blocks for all the if branches
             let mut accm = vec![];
-            let first_cond_bb = recursive_build_bbs(fb, end_bb, cases, falseblock, &mut accm);
+            // TODO: This is probably broken 'cause we removed falseblock from hir::Expr::If,
+            // needs verification
+            let falseblock = cases.last().unwrap().1.clone();
+            let cases = &cases[..(cases.len() - 1)];
+            let first_cond_bb = recursive_build_bbs(fb, end_bb, cases, &falseblock, &mut accm);
 
             // Add a phi instruction combining all the branch results
             let last_result = fb.assign(expr.t, Op::Phi(accm));

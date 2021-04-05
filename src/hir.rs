@@ -61,15 +61,12 @@ impl<T> TypedExpr<T> {
                 init: Box::new(init.map_type(f)),
                 mutable: *mutable,
             },
-            If { cases, falseblock } => {
+            If { cases } => {
                 let new_cases = cases
                     .into_iter()
                     .map(|(c, bod)| (c.map_type(f), map_vec(bod)))
                     .collect();
-                If {
-                    cases: new_cases,
-                    falseblock: map_vec(falseblock),
-                }
+                If { cases: new_cases }
             }
             Loop { body } => Loop {
                 body: map_vec(body),
@@ -140,7 +137,6 @@ pub enum Expr<T> {
     },
     If {
         cases: Vec<(TypedExpr<T>, Vec<TypedExpr<T>>)>,
-        falseblock: Vec<TypedExpr<T>>,
     },
     Loop {
         body: Vec<TypedExpr<T>>,
@@ -298,12 +294,19 @@ fn lower_expr<T>(f: &mut dyn FnMut(&hir::Expr<T>) -> T, expr: &ast::Expr) -> Typ
         }
         E::If { cases, falseblock } => {
             assert!(cases.len() > 0, "Should never happen");
-            let cases = cases
+            let mut cases: Vec<_> = cases
                 .iter()
                 .map(|case| (lower_expr(f, &*case.condition), lower_exprs(f, &case.body)))
                 .collect();
-            let falseblock = lower_exprs(f, falseblock);
-            If { cases, falseblock }
+            // Add the "else" case, which we can just make `if true then...`
+            // No idea if this is a good idea, but it makes life easier right
+            // this instant, so.
+            let else_case = E::Lit {
+                val: ast::Literal::Bool(true),
+            };
+            let nelse_case = lower_expr(f, &else_case);
+            cases.push((nelse_case, lower_exprs(f, falseblock)));
+            If { cases }
         }
         E::Loop { body } => {
             let nbody = lower_exprs(f, body);
@@ -443,8 +446,10 @@ mod tests {
             falseblock: vec![A::int(2)],
         };
         let output = *plz(I::If {
-            cases: vec![(*plz(I::bool(false)), vec![*plz(I::int(1))])],
-            falseblock: vec![*plz(I::int(2))],
+            cases: vec![
+                (*plz(I::bool(false)), vec![*plz(I::int(1))]),
+                (*plz(I::bool(true)), vec![*plz(I::int(2))]),
+            ],
         });
         let res = lower_expr(&mut rly, &input);
         assert_eq!(&res, &output);
@@ -471,8 +476,8 @@ mod tests {
             cases: vec![
                 (*plz(I::bool(false)), vec![*plz(I::int(1))]),
                 (*plz(I::bool(true)), vec![*plz(I::int(2))]),
+                (*plz(I::bool(true)), vec![*plz(I::int(3))]),
             ],
-            falseblock: vec![*plz(I::int(3))],
         });
         let res = lower_expr(&mut rly, &input);
         assert_eq!(&res, &output);

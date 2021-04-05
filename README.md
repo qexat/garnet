@@ -207,6 +207,14 @@ Things to consider:
  * lasso or `string-interner` (for string interning)
  * `ryu` for parsing floats
 
+Programs-as-separate-files tests:
+
+ * Roll our own, prolly not that hard
+ * `test-generator` generates Rust code and recompiles if files are
+   changed, demonstrated here:
+   https://github.com/devsnek/scratchc/blob/main/tests/out.rs
+ * `goldentests` crate
+
 ## Backend thoughts
 
 Something I need to consider a little is what I want in terms of a

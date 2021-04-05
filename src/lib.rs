@@ -215,6 +215,15 @@ impl TypeDef {
               */
         }
     }
+
+    /// Returns true if this is a `SInt` or `UnknownInt`.
+    pub fn is_integer(&self) -> bool {
+        match self {
+            TypeDef::SInt(_) => true,
+            TypeDef::UnknownInt => true,
+            _ => false,
+        }
+    }
 }
 
 /// Interner context.
