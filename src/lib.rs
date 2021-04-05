@@ -257,19 +257,25 @@ impl Cx {
 }
 
 /// Main driver function.
-/// Compile a given source string to ~~wasm~~ Rust.
+/// Compile a given source string to ~~wasm~~ Rust, or return an error.
+/// TODO: Parser errors?
 ///
 /// Parse -> lower to IR -> run transformation passes
 /// -> typecheck -> compile to wasm
-pub fn compile(src: &str) -> Vec<u8> {
+pub fn try_compile(src: &str) -> Result<Vec<u8>, typeck::TypeError> {
     let ast = {
         let mut parser = parser::Parser::new(src);
         parser.parse()
     };
     let hir = hir::lower(&mut |_| (), &ast);
     let hir = passes::run_passes(hir);
-    let checked = typeck::typecheck(hir).unwrap_or_else(|e| panic!("Type check error: {}", e));
-    backend::output(backend::Backend::Rust, &checked)
+    let checked = typeck::typecheck(hir)?;
+    Ok(backend::output(backend::Backend::Rust, &checked))
+}
+
+/// For when we don't care about catching results
+pub fn compile(src: &str) -> Vec<u8> {
+    try_compile(src).unwrap_or_else(|e| panic!("Type check error: {}", e))
 }
 
 #[cfg(test)]
