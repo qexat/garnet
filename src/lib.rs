@@ -2,7 +2,6 @@
 //#![deny(missing_docs)]
 
 use std::borrow::Cow;
-use std::collections::HashMap;
 use std::sync::Arc;
 
 pub mod ast;
@@ -22,80 +21,8 @@ pub(crate) mod testutil;
 use once_cell::sync::Lazy;
 /// The interner.  It's the ONLY part we have to actually
 /// carry around anywhere, so I'm experimenting with not
-/// heckin' bothering.
+/// heckin' bothering.  Seems to work pretty okay.
 pub static INT: Lazy<Cx> = Lazy::new(|| Cx::new());
-
-/// The interned name of an inferred type, that may be
-/// known or not
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
-pub struct InfTypeSym(pub usize);
-
-impl From<usize> for InfTypeSym {
-    fn from(i: usize) -> InfTypeSym {
-        InfTypeSym(i)
-    }
-}
-
-impl From<InfTypeSym> for usize {
-    fn from(i: InfTypeSym) -> usize {
-        i.0
-    }
-}
-
-/// What we know about an inferred type
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum TypeInfo {
-    /// Unknown type not inferred yet
-    Unknown,
-    /// Reference saying "this type is the same as that one",
-    /// which may still be unknown.
-    Ref(InfTypeSym),
-    /// Known type.
-    Known(InfTypeDef),
-}
-
-/// An inferred type definition that contains
-/// other inferred info which may or may not be known yet.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum InfTypeDef {
-    /// Signed integer with the given number of bytes
-    SInt(u8),
-    Bool,
-    Never,
-    Tuple(Vec<InfTypeSym>),
-    Lambda(Vec<InfTypeSym>, Box<InfTypeSym>),
-}
-
-pub struct InferenceCx {
-    /// This is NOT an `Interner` because we *modify* what it contains.
-    types: HashMap<InfTypeSym, TypeInfo>,
-    next_idx: usize,
-}
-
-impl InferenceCx {
-    pub fn new() -> Self {
-        let s = Self {
-            types: HashMap::new(),
-            next_idx: 0,
-        };
-        s
-    }
-
-    /// Add a new inferred type and get a symbol for it.
-    pub fn insert(&mut self, def: TypeInfo) -> InfTypeSym {
-        let sym = InfTypeSym(self.next_idx);
-        self.next_idx += 1;
-        self.types.insert(sym, def);
-        sym
-    }
-
-    /// Get what we know about the given inferred type.
-    pub fn get(&self, s: InfTypeSym) -> &TypeInfo {
-        self.types
-            .get(&s)
-            .expect("Unknown inferred type symbol, should never happen")
-    }
-}
 
 /// The interned name of a type
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]

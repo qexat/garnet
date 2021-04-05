@@ -5,7 +5,6 @@ use std::borrow::Cow;
 
 use crate::hir;
 use crate::scope;
-use crate::*;
 use crate::{TypeDef, TypeSym, VarSym, INT};
 
 impl std::error::Error for TypeError {}
@@ -19,10 +18,6 @@ impl std::fmt::Display for TypeError {
 #[derive(Debug, Clone)]
 pub enum TypeError {
     UnknownVar(VarSym),
-    InferenceFailed {
-        t1: InfTypeDef,
-        t2: InfTypeDef,
-    },
     InvalidReturn,
     Return {
         fname: VarSym,
@@ -78,9 +73,6 @@ impl TypeError {
             TypeError::UnknownVar(sym) => format!("Unknown var: {}", INT.fetch(*sym)),
             TypeError::InvalidReturn => {
                 format!("return expression happened somewhere that isn't in a function!")
-            }
-            TypeError::InferenceFailed { t1, t2 } => {
-                format!("Type inference failed: {:?} != {:?}", t1, t2)
             }
             TypeError::Return {
                 fname,
@@ -167,16 +159,6 @@ pub struct VarBinding {
     mutable: bool,
 }
 
-/*
-/// Symbol table.  Stores the scope stack and variable bindings.
-/// Kinda dumb structure, but simple, and using a HashMap is trickier
-/// 'cause we allow shadowing bindings.
-///
-pub struct Symtbl {
-    syms: scope::Symbols<VarSym, VarBinding>,
-}
-
-*/
 type Symtbl = scope::Symbols<VarSym, VarBinding>;
 
 impl Symtbl {
@@ -208,208 +190,6 @@ impl Symtbl {
         Err(TypeError::UnknownVar(name))
     }
 }
-
-/*
-impl InferenceCx {
-    /*
-    /// Take an expression, and update the type symbols to
-    /// represent what we can figure out about it.
-    ///
-    /// Basically walk down the tree and figure out all the facts we
-    /// know for the inference algorithm to work with, and attach them to
-    /// the appropriate expressions.
-    fn heckin_infer(&mut self, expr: hir::TypedExpr<()>) -> hir::TypedExpr<InfTypeSym> {
-        use hir::Expr as E;
-        match expr.e {
-            E::Lit { val } => {
-                let t = self.insert(Self::infer_lit(&val));
-                hir::TypedExpr {
-                    e: E::Lit { val },
-                    t: t,
-                }
-            }
-            E::Var { name } => todo!(),
-            E::BinOp { op, lhs, rhs } => {
-                let t1 = self.heckin_infer(*lhs);
-                let t2 = self.heckin_infer(*rhs);
-                let output_type = op.output_inftype();
-                // "t1 is the same as our input type"
-                // "t2 is the same as our input type"
-                // That occurs in unify() which is a separate step...
-                // We may not have enough info to know what t1 and t2 are yet.
-                //
-                // "The type of this expression is its output type"
-                let t = self.insert(TypeInfo::Known(output_type));
-                hir::TypedExpr {
-                    e: E::BinOp {
-                        op: op,
-                        lhs: Box::new(t1),
-                        rhs: Box::new(t2),
-                    },
-                    t: t,
-                }
-            }
-            E::UniOp { op, rhs } => {
-                let t1 = self.heckin_infer(*rhs);
-                let output_type = op.output_inftype();
-                // "The type of this expression is its output type"
-                let t = self.insert(TypeInfo::Known(output_type));
-                hir::TypedExpr {
-                    e: E::UniOp {
-                        op: op,
-                        rhs: Box::new(t1),
-                    },
-                    t: t,
-                }
-            }
-            E::Block { body } => todo!(),
-            E::Let {
-                varname,
-                typename,
-                init,
-                mutable,
-            } => {
-                let t1 = self.heckin_infer(*init);
-                let t = if let Some(ty) = typename {
-                    // > let x: T = foo
-                    // x has the type T
-                    // foo has the same type as x
-                    //self.insert(TypeInfo::Known(ty))
-                } else {
-                    // > let x = foo
-                    // x has the same type as foo
-                    self.insert(TypeInfo::Ref(t1.t))
-                };
-                hir::TypedExpr {
-                    e: E::Let {
-                        varname,
-                        typename,
-                        init: Box::new(t1),
-                        mutable,
-                    },
-                    t: t,
-                }
-            }
-            E::If { cases, falseblock } => todo!(),
-            E::Loop { body } => todo!(),
-            E::Lambda { signature, body } => todo!(),
-            E::Funcall { func, params } => todo!(),
-            E::Break => todo!(),
-            E::Return { retval } => todo!(),
-            E::TupleCtor { body } => todo!(),
-            E::TupleRef { expr, elt } => todo!(),
-            E::Assign { lhs, rhs } => todo!(),
-            E::Deref { expr } => todo!(),
-            E::Ref { expr } => todo!(),
-        }
-    }
-
-    fn infer_lit(lit: &hir::Literal) -> TypeInfo {
-        match lit {
-            // TODO: Make this an "unknown number" type.
-            hir::Literal::Integer(_) => TypeInfo::Known(InfTypeDef::SInt(4)),
-            hir::Literal::SizedInteger { vl: _, bytes } => {
-                TypeInfo::Known(InfTypeDef::SInt(*bytes))
-            }
-            hir::Literal::Bool(_) => TypeInfo::Known(InfTypeDef::Bool),
-        }
-    }
-    */
-
-    /// Make the types of two terms equivalent, or produce an error if they're in conflict
-    /// TODO: Figure out how to use this
-    /// Aha, can we just make this another pass right before typechecking, fill out the IR tree
-    /// with InfoSym rather than TypeSym or such, and then go from there?
-    /// That might work!
-    /// https://play.rust-lang.org/?version=stable&mode=debug&edition=2018&gist=ba1adacd8659de0587af68cb0e55a471
-    pub fn unify(&mut self, a: InfTypeSym, b: InfTypeSym) -> Result<(), TypeError> {
-        use TypeInfo::*;
-        // TODO someday: clean up clones
-        let def_a = self.get(a).clone();
-        let def_b = self.get(b).clone();
-        match (def_a, def_b) {
-            // Follow references
-            (Ref(a), _) => self.unify(a, b),
-            (_, Ref(b)) => self.unify(a, b),
-
-            // When we don't know about a type, assume they match and
-            // make the one know nothing about refer to the one we may
-            // know something about.
-            //
-            // This involves updating what we know about our types.
-            (Unknown, _) => {
-                self.types.insert(a, Ref(b));
-                Ok(())
-            }
-            (_, Unknown) => {
-                self.types.insert(b, Ref(a));
-                Ok(())
-            }
-
-            (Known(t1), Known(t2)) => self.unify_defs(t1, t2),
-        }
-    }
-
-    /// Unify concrete types.
-    pub fn unify_defs(&mut self, a: InfTypeDef, b: InfTypeDef) -> Result<(), TypeError> {
-        use InfTypeDef::*;
-        match (a, b) {
-            // Primitives are easy to unify
-            (SInt(sa), SInt(sb)) if sa == sb => Ok(()),
-            (SInt(_sa), SInt(_sb)) => todo!(),
-            (Bool, Bool) => Ok(()),
-            // Never is our bottom-ish type
-            (Never, _) => Ok(()),
-
-            // For complex types, we must unify their sub-types.
-            (Tuple(ta), Tuple(tb)) => {
-                for (a, b) in ta.iter().zip(tb) {
-                    self.unify(*a, b)?;
-                }
-                Ok(())
-            }
-            (Lambda(pa, ra), Lambda(pb, rb)) => {
-                for (a, b) in pa.iter().zip(pb) {
-                    self.unify(*a, b)?;
-                }
-                self.unify(*ra, *rb)
-            }
-            // No attempt to match was successful, error.
-            (_t1, _t2) => todo!(),
-        }
-    }
-
-    /// Attempt to reconstruct a concrete type from an inferred type symbol.  This may
-    /// fail if we don't have enough info to figure out what the type is.
-    pub fn reconstruct(&self, cx: &Cx, sym: InfTypeSym) -> Result<TypeSym, TypeError> {
-        let t = &*self.get(sym);
-        use InfTypeDef as I;
-        use TypeDef as C;
-        use TypeInfo::*;
-        let def = match t {
-            Unknown => todo!("No type?"),
-            Ref(id) => return self.reconstruct(cx, *id),
-            Known(I::SInt(i)) => C::SInt(*i),
-            Known(I::Bool) => C::Bool,
-            Known(I::Never) => C::Never,
-            Known(I::Tuple(items)) => {
-                let new_items: Result<Vec<TypeSym>, TypeError> = items
-                    .into_iter()
-                    .map(|i| self.reconstruct(cx, *i))
-                    .collect();
-                C::Tuple(new_items?)
-            }
-            Known(I::Lambda(args, ret)) => {
-                let new_args: Result<Vec<TypeSym>, TypeError> =
-                    args.into_iter().map(|i| self.reconstruct(cx, *i)).collect();
-                let new_ret = self.reconstruct(cx, **ret)?;
-                C::Lambda(new_args?, new_ret)
-            }
-        };
-        Ok(cx.intern_type(&def))
-    }
-}
-*/
 
 /// Does t1 equal t2?
 ///
@@ -793,30 +573,6 @@ fn typecheck_expr(
                 e: If { cases: new_cases },
                 t: assumed_type,
             })
-            /*
-            let mut assumed_type = INT.never();
-            let assumed_type = last_type_of(&falseblock);
-            let mut new_cases = vec![];
-
-                    let ifbody_exprs = typecheck_exprs(symtbl, body, function_rettype)?;
-                    let if_type = last_type_of(&ifbody_exprs);
-                    if let Some(t) = infer_type(if_type, assumed_type) {}
-                    if !type_matches(if_type, assumed_type) {
-                        return Err(TypeError::IfType {
-                            ifpart: if_type,
-                            elsepart: assumed_type,
-                        });
-                    }
-
-                    // Great, it matches
-            Ok(hir::TypedExpr {
-                t: assumed_type,
-                e: If {
-                    cases: new_cases,
-                    falseblock,
-                },
-            })
-                    */
         }
         Loop { body } => {
             let b = typecheck_exprs(symtbl, body, function_rettype)?;
@@ -927,6 +683,7 @@ fn typecheck_expr(
             })
         }
         // TODO: Inference???
+        // Not sure we need it, any integer type should be fine for tuple lookups...
         TupleRef { expr, elt } => {
             let body_expr = typecheck_expr(symtbl, *expr, function_rettype)?;
             let expr_typedef = INT.fetch_type(body_expr.t);
@@ -1447,33 +1204,4 @@ end"#;
 end"#;
         fail_typecheck!(src, TypeError::BopType { .. });
     }
-
-    /*
-    #[test]
-    fn test_inference() {
-        let cx = &mut crate::Cx::new();
-        let mut engine = InferenceCx::new();
-        // Function with unknown input
-        let i = engine.insert(TypeInfo::Unknown);
-        let o = engine.insert(TypeInfo::Known(InfTypeDef::SInt(4)));
-        let f0 = engine.insert(TypeInfo::Known(InfTypeDef::Lambda(vec![i], Box::new(o))));
-
-        // Function with unkown output
-        let i = engine.insert(TypeInfo::Known(InfTypeDef::Bool));
-        let o = engine.insert(TypeInfo::Unknown);
-        let f1 = engine.insert(TypeInfo::Known(InfTypeDef::Lambda(vec![i], Box::new(o))));
-
-        // Unify them...
-        engine.unify(f0, f1).unwrap();
-        // What do we know about these functions?
-        let t0 = engine.reconstruct(cx, f0).unwrap();
-        let t1 = engine.reconstruct(cx, f1).unwrap();
-
-        assert_eq!(
-            t0,
-            cx.intern_type(&TypeDef::Lambda(vec![cx.bool()], cx.i32()),)
-        );
-        assert_eq!(t0, t1);
-    }
-    */
 }
