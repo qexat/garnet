@@ -531,13 +531,12 @@ end
     assert_eq!(eval_program0(src), 20);
 }
 
-/*  This needs to wait for generic-ish binops
 #[test]
 fn add_numbers() {
     let src = r#"
 
 fn foo(x: I64): I64 =
-    x + 3i64
+    x + 3
 end
 
 fn test(): I64 =
@@ -547,4 +546,3 @@ end
 "#;
     assert_eq!(eval_program0(src), 12);
 }
-*/
