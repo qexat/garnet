@@ -58,14 +58,6 @@ impl BOp {
         }
     }
 
-    pub fn input_inftype(&self) -> InfTypeDef {
-        use BOp::*;
-        match self {
-            And | Or | Xor => InfTypeDef::Bool,
-            _ => InfTypeDef::SInt(4),
-        }
-    }
-
     /// What the resultant type of the binop is.
     ///
     /// Needs to know what the type of the expression given to it is,
@@ -84,16 +76,6 @@ impl BOp {
             }
             Eq | Neq | Gt | Lt | Gte | Lte => INT.bool(),
             And | Or | Xor => INT.bool(),
-        }
-    }
-
-    /// What the resultant type of the binop is
-    pub fn output_inftype(&self) -> InfTypeDef {
-        use BOp::*;
-        match self {
-            Add | Sub | Mul | Div | Mod => InfTypeDef::SInt(4),
-            Eq | Neq | Gt | Lt | Gte | Lte => InfTypeDef::Bool,
-            And | Or | Xor => InfTypeDef::Bool,
         }
     }
 }
@@ -120,16 +102,6 @@ impl UOp {
         }
     }
 
-    pub fn input_inftype(&self) -> InfTypeDef {
-        use UOp::*;
-        match self {
-            Neg => InfTypeDef::SInt(4),
-            Not => InfTypeDef::Bool,
-            Ref => todo!(),
-            Deref => todo!(),
-        }
-    }
-
     /// What the resultant type of the uop is
     pub fn output_type(&self, input_type: TypeSym) -> TypeSym {
         use UOp::*;
@@ -143,17 +115,6 @@ impl UOp {
                 }
             }
             Not => INT.bool(),
-            Ref => todo!(),
-            Deref => todo!(),
-        }
-    }
-
-    /// What the resultant type of the uop is
-    pub fn output_inftype(&self) -> InfTypeDef {
-        use UOp::*;
-        match self {
-            Neg => InfTypeDef::SInt(4),
-            Not => InfTypeDef::Bool,
             Ref => todo!(),
             Deref => todo!(),
         }

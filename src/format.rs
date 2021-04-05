@@ -320,7 +320,6 @@ pub fn display_lir(lir: &Lir, out: &mut dyn io::Write) -> io::Result<()> {
 #[cfg(test)]
 mod tests {
     use crate::format::unparse;
-    use crate::INT;
     use std::io::Cursor;
     #[test]
     fn test_reparse() {
