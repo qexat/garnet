@@ -316,6 +316,7 @@ fn predeclare_decl(symtbl: &mut Symtbl, decl: &hir::Decl<()>) {
         hir::Decl::Const { name, typename, .. } => {
             symtbl.add_var(*name, *typename, false);
         }
+        hir::Decl::TypeDef { .. } => todo!(),
     }
 }
 
@@ -375,6 +376,7 @@ fn typecheck_decl(
             typename,
             init: typecheck_expr(symtbl, init, None)?,
         }),
+        hir::Decl::TypeDef { .. } => todo!(),
     }
 }
 

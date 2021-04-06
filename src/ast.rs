@@ -264,6 +264,11 @@ pub enum Decl {
         init: Expr,
         doc_comment: Vec<String>,
     },
+    TypeDef {
+        name: VarSym,
+        typename: TypeSym,
+        doc_comment: Vec<String>,
+    },
 }
 
 /// A compilable chunk of AST.

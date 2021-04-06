@@ -94,6 +94,8 @@ pub enum TokenKind {
     Do,
     #[token("return")]
     Return,
+    #[token("type")]
+    Type,
 
     // Punctuation
     #[token("(")]
@@ -429,6 +431,7 @@ impl<'input> Parser<'input> {
                 }
                 Some(Token { kind: T::Const, .. }) => Some(p.parse_const(doc_comments)),
                 Some(Token { kind: T::Fn, .. }) => Some(p.parse_fn(doc_comments)),
+                Some(Token { kind: T::Type, .. }) => Some(p.parse_typedef(doc_comments)),
                 None => None,
                 other => p.error(other),
             }
@@ -460,6 +463,17 @@ impl<'input> Parser<'input> {
             name,
             signature,
             body,
+            doc_comment,
+        }
+    }
+
+    fn parse_typedef(&mut self, doc_comment: Vec<String>) -> ast::Decl {
+        let name = self.expect_ident();
+        self.expect(T::Equals);
+        let typename = self.parse_type();
+        ast::Decl::TypeDef {
+            name,
+            typename,
             doc_comment,
         }
     }
@@ -1010,18 +1024,30 @@ mod tests {
     }
 
     #[test]
+    fn test_typedef() {
+        test_decl_is("type bop = I32", || ast::Decl::TypeDef {
+            name: INT.intern("bop"),
+            typename: INT.intern_type(&TypeDef::SInt(4)),
+            doc_comment: vec![],
+        });
+    }
+
+    #[test]
     fn test_multiple_decls() {
         let s = r#"
 const foo: I32 = -9
 const bar: Bool = 4
 --- rawr!
 const baz: {} = {}
+type blar = I8
 "#;
         let p = &mut Parser::new(s);
         let foosym = INT.intern("foo");
         let barsym = INT.intern("bar");
         let bazsym = INT.intern("baz");
+        let blarsym = INT.intern("blar");
         let i32_t = INT.i32();
+        let i8_t = INT.i8();
         let bool_t = INT.bool();
         let unit_t = INT.unit();
         let d = p.parse();
@@ -1049,6 +1075,11 @@ const baz: {} = {}
                         typename: unit_t,
                         init: Expr::unit(),
                         doc_comment: vec![String::from(" rawr!\n")],
+                    },
+                    ast::Decl::TypeDef {
+                        name: blarsym,
+                        typename: i8_t,
+                        doc_comment: vec![],
                     }
                 ],
             }

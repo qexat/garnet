@@ -95,6 +95,7 @@ fn compile_decl(decl: &hir::Decl<TypeSym>) -> String {
             let istr = compile_expr(init);
             format!("const {}: {} = {};", nstr, tstr, istr)
         }
+        hir::Decl::TypeDef { .. } => todo!(),
     }
 }
 

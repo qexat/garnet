@@ -72,6 +72,8 @@ pub enum TypeDef<Sym = TypeSym> {
     /// Never is a real type, I guess!
     Never,
     Lambda(Vec<Sym>, Sym),
+    // /// Are names parts of structs?  I guess not.
+    //Struct(Vec<(VarSym, Sym)>),
     /*
     /// TODO: AUGJDKSFLJDSFSLAF
     /// This is basically a type that has been named but we

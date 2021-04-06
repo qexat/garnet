@@ -1,0 +1,41 @@
+--- Messing about with vectors, as a way to experiment with structures
+--- and such.  Mainly just syntax.
+
+struct Vec3 =
+    x: f32
+    y: f32
+    z: f32
+end
+
+fn add(lhs: Vec3, rhs: Vec3): Vec3 =
+    Vec3 {
+        x = lhs.x + rhs.x,
+        y = lhs.y + rhs.y,
+        z = lhs.z + rhs.z,
+    }
+end
+
+--- Why not this?
+--- A more expression-y syntax.  Might fit a more type-metaprogram-y
+--- language.
+type Vec3 = struct
+    x: f32
+    y: f32
+    z: f32
+end
+
+--- hm hm generics.
+struct Vec3[T] =
+    x: T
+    y: T
+    z: T
+end
+
+fn add(lhs: Vec3[T], rhs: Vec3[T]): Vec3[T]
+where T: Add =
+    Vec3 {
+        x = lhs.x + rhs.x,
+        y = lhs.y + rhs.y,
+        z = lhs.z + rhs.z,
+    }
+end
