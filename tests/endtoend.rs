@@ -563,3 +563,16 @@ end
     // TODO: Check for specific error type
     assert!(garnet::try_compile(src).is_err());
 }
+
+#[test]
+fn typedef_simple() {
+    let src = r#"
+type foo = I32
+
+fn test(): I32 =
+    let x: {I32, I32} = {10, 11}
+    x.0 + x.1
+end
+"#;
+    assert_eq!(eval_program0(src), 21);
+}

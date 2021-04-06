@@ -207,6 +207,10 @@ pub enum Decl<T> {
         typename: TypeSym,
         init: TypedExpr<T>,
     },
+    TypeDef {
+        name: VarSym,
+        typename: TypeSym,
+    },
 }
 
 /// A compilable chunk of IR.
@@ -382,6 +386,10 @@ fn lower_decl<T>(f: &mut dyn FnMut(&hir::Expr<T>) -> T, decl: &ast::Decl) -> Dec
             name: *name,
             typename: *typename,
             init: lower_expr(f, init),
+        },
+        D::TypeDef { name, typename, .. } => Decl::TypeDef {
+            name: *name,
+            typename: *typename,
         },
     }
 }
