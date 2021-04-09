@@ -52,6 +52,7 @@ fn compile_typedef(td: &TypeDef) -> Cow<'static, str> {
             accm += &compile_typedef(&*INT.fetch_type(*ret));
             accm.into()
         }
+        Named(sym) => (&*INT.fetch(*sym)).clone().into(),
     }
 }
 

@@ -583,9 +583,14 @@ fn typedef_multiple() {
 type Foo = I32
 type Bar = Foo
 
-fn add_one(thing: Bar): Foo =
+fn add_one(thing: I32): Foo =
+    Foo(thing + 1)
 
 end
+
+--fn add_one_to_bar(thing: Bar): Foo =
+--    Foo(thing.0 + 1)
+--end
 
 fn test(): I32 =
     add_one(3)

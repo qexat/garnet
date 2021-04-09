@@ -247,6 +247,8 @@ fn infer_type(t1: TypeSym, t2: TypeSym) -> Option<TypeSym> {
         // the expression is the type of the non-Never arm.
         //
         // heckin covariance and contravariance, I hate you.
+        //
+        // What about Never and Never?  Is that valid, or not?  I THINK it is
         (TypeDef::Never, _) => Some(t2),
         (_, TypeDef::Never) => Some(t1),
         // Tuples!  If we can infer the types of their members, then life is good
@@ -269,7 +271,6 @@ fn infer_type(t1: TypeSym, t2: TypeSym) -> Option<TypeSym> {
             let sym = INT.intern_type(&TypeDef::Tuple(accm));
             Some(sym)
         }
-        // TODO: Never and Never?  Is that valid, or not?  I THINK it is
         (tt1, tt2) if tt1 == tt2 => Some(t1),
         _ => None,
     }

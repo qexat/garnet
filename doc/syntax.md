@@ -64,6 +64,8 @@ funcall = expr "(" [expr {"," expr}] ")"
 lambda = "fn" fn_signature "=" {expr} "end"
 return = "return" expr
 
+// Pointer ops should be postfix, leads to much nicer chaining of calls.
+
 fn_args = "(" [ident ":" typename {"," ident ":" typename}] ")"
 fn_signature = fn_args [":" typename]
 
@@ -136,4 +138,7 @@ end
 
 let bop: Bop = Bop {3, 4.5}
 let beep: Beep = Beep ${ x = 12 }
+
+Or, could constructors actually just be functions?
+If we have named arguments in functions, then, that could work.
 ```

@@ -74,12 +74,11 @@ pub enum TypeDef<Sym = TypeSym> {
     Lambda(Vec<Sym>, Sym),
     // /// Are names parts of structs?  I guess not.
     //Struct(Vec<(VarSym, Sym)>),
-    /*
-    /// TODO: AUGJDKSFLJDSFSLAF
     /// This is basically a type that has been named but we
     /// don't know what type it actually is until after type checking...
-    Named(String),
-    */
+    ///
+    /// ...This is going to get real sticky once we have modules, I think.
+    Named(VarSym),
 }
 
 impl TypeDef {
@@ -135,13 +134,15 @@ impl TypeDef {
                     }
                 }
                 Cow::Owned(t)
-            } /*
-              TypeDef::Ptr(t) => {
-                  let inner_name = cx.fetch_type(**t).get_name();
-                  let s = format!("{}^", inner_name);
-                  Cow::Owned(s)
-              }
-              */
+            }
+            TypeDef::Named(s) => Cow::Owned((&*INT.fetch(*s)).clone()),
+            /*
+            TypeDef::Ptr(t) => {
+                let inner_name = cx.fetch_type(**t).get_name();
+                let s = format!("{}^", inner_name);
+                Cow::Owned(s)
+            }
+            */
         }
     }
 
@@ -196,6 +197,12 @@ impl Cx {
     /// Intern a type defintion.
     pub fn intern_type(&self, s: &TypeDef) -> TypeSym {
         self.types.intern(&s)
+    }
+
+    /// Intern a "Named" typedef of the given name.
+    pub fn named_type(&self, s: impl AsRef<str>) -> TypeSym {
+        let sym = self.intern(s);
+        self.types.intern(&TypeDef::Named(sym))
     }
 
     /// Get the TypeDef for a type symbol
