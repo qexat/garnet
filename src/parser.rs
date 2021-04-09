@@ -840,7 +840,7 @@ impl<'input> Parser<'input> {
         match t {
             Some(Token {
                 kind: T::Ident(s),
-                span,
+                span: _,
             }) => match s.as_ref() {
                 // TODO: This is a bit too hardwired tbh...
                 "I128" => crate::INT.i128(),
@@ -849,11 +849,13 @@ impl<'input> Parser<'input> {
                 "I16" => crate::INT.i16(),
                 "I8" => crate::INT.i8(),
                 "Bool" => crate::INT.bool(),
-                _ => self.error(Some(Token {
-                    kind: T::Ident(s),
-                    span,
-                })),
+                s => crate::INT.named_type(s),
             },
+            /*self.error(Some(Token {
+                kind: T::Ident(s),
+                span,
+            })),
+                 */
             Some(Token {
                 kind: T::LBrace, ..
             }) => {
