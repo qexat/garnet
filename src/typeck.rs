@@ -2,6 +2,7 @@
 //! Operates on the IR.
 
 use std::borrow::Cow;
+use std::collections::HashMap;
 
 use crate::hir;
 use crate::scope;
@@ -159,11 +160,24 @@ pub struct VarBinding {
     mutable: bool,
 }
 
-type Symtbl = scope::Symbols<VarSym, VarBinding>;
+//type Symtbl = scope::Symbols<VarSym, VarBinding>;
+#[derive(Default)]
+struct Symtbl {
+    vars: scope::Symbols<VarSym, VarBinding>,
+    types: HashMap<VarSym, TypeSym>,
+}
 
 impl Symtbl {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    fn add_type(&mut self, name: VarSym, typedef: TypeSym) {
+        self.types.insert(name, typedef);
+    }
+
+    fn get_typedef(&mut self, name: VarSym) -> Option<TypeSym> {
+        self.types.get(&name).copied()
     }
 
     /// Add a variable to the top level of the scope.
@@ -174,7 +188,7 @@ impl Symtbl {
             typename: typedef.clone(),
             mutable,
         };
-        self.add(name, binding);
+        self.vars.add(name, binding);
     }
 
     /// Get the type of the given variable, or an error
@@ -184,10 +198,18 @@ impl Symtbl {
 
     /// Get the binding of the given variable, or an error
     fn get_binding(&self, name: VarSym) -> Result<&VarBinding, TypeError> {
-        if let Some(binding) = self.get(name) {
+        if let Some(binding) = self.vars.get(name) {
             return Ok(binding);
         }
         Err(TypeError::UnknownVar(name))
+    }
+
+    fn push_scope(&mut self) {
+        self.vars.push_scope();
+    }
+
+    fn pop_scope(&mut self) {
+        self.vars.pop_scope();
     }
 }
 
@@ -316,7 +338,9 @@ fn predeclare_decl(symtbl: &mut Symtbl, decl: &hir::Decl<()>) {
         hir::Decl::Const { name, typename, .. } => {
             symtbl.add_var(*name, *typename, false);
         }
-        hir::Decl::TypeDef { .. } => todo!(),
+        hir::Decl::TypeDef { name, typename } => {
+            symtbl.add_type(*name, *typename);
+        }
     }
 }
 
@@ -376,7 +400,9 @@ fn typecheck_decl(
             typename,
             init: typecheck_expr(symtbl, init, None)?,
         }),
-        hir::Decl::TypeDef { .. } => todo!(),
+        // Don't think we need to do anything here, yet.
+        // TODO: Once we can refer to types by name, then we need to make sure that's valid.
+        hir::Decl::TypeDef { name, typename } => Ok(hir::Decl::TypeDef { name, typename }),
     }
 }
 

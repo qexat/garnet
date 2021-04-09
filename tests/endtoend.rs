@@ -576,3 +576,20 @@ end
 "#;
     assert_eq!(eval_program0(src), 21);
 }
+
+#[test]
+fn typedef_multiple() {
+    let src = r#"
+type Foo = I32
+type Bar = Foo
+
+fn add_one(thing: Bar): Foo =
+
+end
+
+fn test(): I32 =
+    add_one(3)
+end
+"#;
+    assert_eq!(eval_program0(src), 21);
+}

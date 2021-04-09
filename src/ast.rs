@@ -7,7 +7,7 @@
 //!
 //! Though code formatters have different constraints, if they have line
 //! wrapping and stuff at least.  So, it might not be a particularly
-//! great cocde formatter.
+//! great code formatter.
 
 use crate::*;
 

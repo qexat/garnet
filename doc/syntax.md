@@ -91,3 +91,49 @@ typename =
 // references
 
 ```
+
+
+
+Ok I gotta ramble about types and syntax now.  Let's take a full look at
+how Rust does it:
+
+```
+// Alias names
+type Foo = Bar;
+
+// Define a struct with a fixed name that is its own type
+struct Foo {
+};
+
+// Define an enum with a fixed name that is its own type
+enum Bar {
+    Bar1,
+}
+
+// Newtype struct: A kinda weird mix-up that
+struct Foo(i32);
+```
+
+
+Maybe something like:
+
+```
+// Alias names
+alias Foo = {i32, f32}
+alias Bar = struct
+    x: i32
+end
+
+let foo: Foo = {3, 4.5}
+// We need an anonymous struct constructor now, so I guess this is it!
+let bar: Bar = ${ x = 12 }
+
+// Non-interchangable names
+type Bop = {i32, f32}
+type Beep = struct
+    x: i32
+end
+
+let bop: Bop = Bop {3, 4.5}
+let beep: Beep = Beep ${ x = 12 }
+```
