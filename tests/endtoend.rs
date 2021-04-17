@@ -588,9 +588,9 @@ fn add_one(thing: I32): Foo =
 
 end
 
---fn add_one_to_bar(thing: Bar): Foo =
---    Foo(thing.0 + 1)
---end
+fn add_one_to_bar(thing: Bar): Foo =
+    Foo(thing.0 + 1)
+end
 
 fn test(): I32 =
     add_one(3)

@@ -348,13 +348,13 @@ fn predeclare_decl(symtbl: &mut Symtbl, decl: &hir::Decl<()>) {
             //
             // TODO: ...oh we should probably similarly check for duplicate functions
             // or consts.
-            if let Some(t) = symtbl.get_typedef(*name) {
+            if let Some(_) = symtbl.get_typedef(*name) {
                 panic!("Aieeee, redeclaration of type named {}", INT.fetch(*name));
             }
             symtbl.add_type(*name, *typedecl);
         }
         hir::Decl::TypeConstructor { name, signature } => {
-            if let Ok(t) = symtbl.get_var(*name) {
+            if let Ok(_) = symtbl.get_var(*name) {
                 panic!(
                     "Aieeee, redeclaration of function/type constructor named {}",
                     INT.fetch(*name)
@@ -430,7 +430,7 @@ fn typecheck_decl(
             let typedef = &*INT.fetch_type(typedecl);
             match typedef {
                 TypeDef::Named(typename) => {
-                    if let Some(t) = symtbl.get_typedef(*typename) {
+                    if let Some(_) = symtbl.get_typedef(*typename) {
                         // Ok
                         Ok(hir::Decl::TypeDef { name, typedecl })
                     } else {
@@ -442,7 +442,8 @@ fn typecheck_decl(
                 _ => Ok(hir::Decl::TypeDef { name, typedecl })
             }
         }
-        // Don't need to do anything here since we generate them ourselves
+        // Don't need to do anything here since we generate these in the lowering
+        // step and have already verified no names clash.
         hir::Decl::TypeConstructor { name, signature } => {
             Ok(hir::Decl::TypeConstructor { name, signature })
         }
