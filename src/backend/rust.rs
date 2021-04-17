@@ -71,6 +71,7 @@ fn mangle_name(s: &str) -> String {
     s.replace("@", "__")
 }
 
+/// TODO: Make this use Write instead of constructing strings
 fn compile_decl(decl: &hir::Decl<TypeSym>) -> String {
     match decl {
         hir::Decl::Function {
@@ -100,13 +101,23 @@ fn compile_decl(decl: &hir::Decl<TypeSym>) -> String {
         hir::Decl::TypeDef { name, typedecl } => {
             let nstr = mangle_name(&INT.fetch(*name));
             let tstr = compile_typedef(&*INT.fetch_type(*typedecl));
-            format!("struct {}({});", nstr, tstr)
+            format!("pub struct {}({});", nstr, tstr)
         }
         // For these we have to look at the signature and make a
         // function that constructs a struct or tuple or whatever
         // out of it.
         hir::Decl::TypeConstructor { name, signature } => {
-            todo!()
+            let typename = &*INT.fetch(*name);
+            let nstr = mangle_name(typename);
+            let sstr = compile_fn_signature(signature);
+            // Cuuuuuuuurrently, this only does newtype structs,
+            // and the input is always a single arg named "input",
+            // so this is fairly simple
+            let bstr = format!("{}(input)", typename);
+            format!(
+                "#[no_mangle]\npub extern fn __{}_constructor{} {{\n{}\n}}\n",
+                nstr, sstr, bstr)
+
         }
     }
 }
