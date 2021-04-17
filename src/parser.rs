@@ -470,10 +470,10 @@ impl<'input> Parser<'input> {
     fn parse_typedef(&mut self, doc_comment: Vec<String>) -> ast::Decl {
         let name = self.expect_ident();
         self.expect(T::Equals);
-        let typename = self.parse_type();
+        let typedecl = self.parse_type();
         ast::Decl::TypeDef {
             name,
-            typename,
+            typedecl,
             doc_comment,
         }
     }
@@ -1029,7 +1029,7 @@ mod tests {
     fn test_typedef() {
         test_decl_is("type bop = I32", || ast::Decl::TypeDef {
             name: INT.intern("bop"),
-            typename: INT.intern_type(&TypeDef::SInt(4)),
+            typedecl: INT.intern_type(&TypeDef::SInt(4)),
             doc_comment: vec![],
         });
     }
@@ -1080,7 +1080,7 @@ type blar = I8
                     },
                     ast::Decl::TypeDef {
                         name: blarsym,
-                        typename: i8_t,
+                        typedecl: i8_t,
                         doc_comment: vec![],
                     }
                 ],

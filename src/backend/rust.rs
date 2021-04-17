@@ -97,10 +97,16 @@ fn compile_decl(decl: &hir::Decl<TypeSym>) -> String {
             format!("const {}: {} = {};", nstr, tstr, istr)
         }
         // Typedefs compile into newtype structs.
-        hir::Decl::TypeDef { name, typename } => {
+        hir::Decl::TypeDef { name, typedecl } => {
             let nstr = mangle_name(&INT.fetch(*name));
-            let tstr = compile_typedef(&*INT.fetch_type(*typename));
+            let tstr = compile_typedef(&*INT.fetch_type(*typedecl));
             format!("struct {}({});", nstr, tstr)
+        }
+        // For these we have to look at the signature and make a
+        // function that constructs a struct or tuple or whatever
+        // out of it.
+        hir::Decl::TypeConstructor { name, signature } => {
+            todo!()
         }
     }
 }
