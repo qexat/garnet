@@ -567,7 +567,7 @@ end
 #[test]
 fn typedef_simple() {
     let src = r#"
-type foo = I32
+type Foo = I32
 
 fn test(): I32 =
     let x: {I32, I32} = {10, 11}

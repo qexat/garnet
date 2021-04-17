@@ -19,6 +19,7 @@ impl std::fmt::Display for TypeError {
 #[derive(Debug, Clone)]
 pub enum TypeError {
     UnknownVar(VarSym),
+    UnknownType(VarSym),
     InvalidReturn,
     Return {
         fname: VarSym,
@@ -72,6 +73,7 @@ impl TypeError {
     pub fn format(&self) -> String {
         match self {
             TypeError::UnknownVar(sym) => format!("Unknown var: {}", INT.fetch(*sym)),
+            TypeError::UnknownType(sym) => format!("Unknown type: {}", INT.fetch(*sym)),
             TypeError::InvalidReturn => {
                 format!("return expression happened somewhere that isn't in a function!")
             }
@@ -164,6 +166,7 @@ pub struct VarBinding {
 #[derive(Default)]
 struct Symtbl {
     vars: scope::Symbols<VarSym, VarBinding>,
+    /// Bindings for typedefs
     types: HashMap<VarSym, TypeSym>,
 }
 
@@ -339,8 +342,27 @@ fn predeclare_decl(symtbl: &mut Symtbl, decl: &hir::Decl<()>) {
         hir::Decl::Const { name, typename, .. } => {
             symtbl.add_var(*name, *typename, false);
         }
-        hir::Decl::TypeDef { name, typename } => {
-            symtbl.add_type(*name, *typename);
+        hir::Decl::TypeDef { name, typedecl } => {
+            // Gotta make sure there's no duplicate declarations
+            // This kinda has to happen here rather than in typeck()
+            //
+            // TODO: ...oh we should probably similarly check for duplicate functions
+            // or consts.
+            if let Some(t) = symtbl.get_typedef(*name) {
+                panic!("Aieeee, redeclaration of type named {}", INT.fetch(*name));
+            }
+            symtbl.add_type(*name, *typedecl);
+        }
+        hir::Decl::TypeConstructor { name, signature } => {
+            if let Ok(t) = symtbl.get_var(*name) {
+                panic!(
+                    "Aieeee, redeclaration of function/type constructor named {}",
+                    INT.fetch(*name)
+                );
+            }
+            let type_params = signature.params.iter().map(|(_name, t)| *t).collect();
+            let function_type = INT.intern_type(&TypeDef::Lambda(type_params, signature.rettype));
+            symtbl.add_var(*name, function_type, false);
         }
     }
 }
@@ -392,6 +414,7 @@ fn typecheck_decl(
                 })
             }
         }
+        // TODO: ...do we need to check that typename actually exists?
         hir::Decl::Const {
             name,
             typename,
@@ -401,9 +424,28 @@ fn typecheck_decl(
             typename,
             init: typecheck_expr(symtbl, init, None)?,
         }),
-        // Don't think we need to do anything here, yet.
-        // TODO: Once we can refer to types by name, then we need to make sure that's valid.
-        hir::Decl::TypeDef { name, typename } => Ok(hir::Decl::TypeDef { name, typename }),
+        // Ok, we are declaring a new type.  We need to make sure that the typedecl
+        // it's using is real.  We've already checked to make sure it's not a duplicate.
+        hir::Decl::TypeDef { name, typedecl } => {
+            let typedef = &*INT.fetch_type(typedecl);
+            match typedef {
+                TypeDef::Named(typename) => {
+                    if let Some(t) = symtbl.get_typedef(*typename) {
+                        // Ok
+                        Ok(hir::Decl::TypeDef { name, typedecl })
+                    } else {
+                        // Less ok
+                        Err(TypeError::UnknownType(*typename))
+                    }
+                }
+                // It's a built-in type like bool 
+                _ => Ok(hir::Decl::TypeDef { name, typedecl })
+            }
+        }
+        // Don't need to do anything here since we generate them ourselves
+        hir::Decl::TypeConstructor { name, signature } => {
+            Ok(hir::Decl::TypeConstructor { name, signature })
+        }
     }
 }
 

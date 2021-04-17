@@ -61,23 +61,24 @@ impl From<VarSym> for usize {
 ///
 /// A real type def that has had all the inference stuff done
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum TypeDef<Sym = TypeSym> {
+pub enum TypeDef {
     /// Signed integer with the given number of bytes
     SInt(u8),
     /// An integer of unknown size, from an integer literal
     UnknownInt,
     Bool,
     /// We can infer types for tuples
-    Tuple(Vec<Sym>),
+    Tuple(Vec<TypeSym>),
     /// Never is a real type, I guess!
     Never,
-    Lambda(Vec<Sym>, Sym),
+    Lambda(Vec<TypeSym>, TypeSym),
     // /// Are names parts of structs?  I guess not.
     //Struct(Vec<(VarSym, Sym)>),
     /// This is basically a type that has been named but we
     /// don't know what type it actually is until after type checking...
     ///
     /// ...This is going to get real sticky once we have modules, I think.
+    /// Using VarSym for this feels wrong, but, we will leave it for now.
     Named(VarSym),
 }
 
@@ -160,11 +161,7 @@ impl TypeDef {
 ///
 /// Really this is just an interner for symbols now, and
 /// the original plan of bundling it up into a special context
-/// type for each step of compilation hasn't really worked out
-/// (at least for wasm with `walrus`.  TODO: Maybe rename it?
-///
-/// This impl's clone so we can bundle it with error types.
-/// Maybe Rc it instead?
+/// type for each step of compilation hasn't really worked out.
 #[derive(Debug)]
 pub struct Cx {
     /// Interned symbols

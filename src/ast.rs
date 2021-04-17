@@ -266,7 +266,7 @@ pub enum Decl {
     },
     TypeDef {
         name: VarSym,
-        typename: TypeSym,
+        typedecl: TypeSym,
         doc_comment: Vec<String>,
     },
 }

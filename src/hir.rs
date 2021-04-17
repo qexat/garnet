@@ -209,7 +209,18 @@ pub enum Decl<T> {
     },
     TypeDef {
         name: VarSym,
-        typename: TypeSym,
+        typedecl: TypeSym,
+    },
+    /// Our first compiler intrinsic!  \o/
+    ///
+    /// This is a function that is generated along with
+    /// each typedef, which takes the args of that typedef
+    /// and produces that type.  We have no way to write such
+    /// a function by hand, so here we are.  In all other ways
+    /// though we treat it exactly like a function though.
+    TypeConstructor {
+        name: VarSym,
+        signature: Signature,
     },
 }
 
@@ -364,7 +375,10 @@ fn lower_exprs<T>(f: &mut dyn FnMut(&hir::Expr<T>) -> T, exprs: &[ast::Expr]) ->
 }
 
 /// Lower an AST decl to IR.
-fn lower_decl<T>(f: &mut dyn FnMut(&hir::Expr<T>) -> T, decl: &ast::Decl) -> Decl<T> {
+///
+/// Is there a more elegant way of doing this than passing an accumulator?
+/// Returning a vec is lame.  Return an iterator?  Sounds like work.
+fn lower_decl<T>(accm: &mut Vec<Decl<T>>, f: &mut dyn FnMut(&hir::Expr<T>) -> T, decl: &ast::Decl) {
     use ast::Decl as D;
     match decl {
         D::Function {
@@ -372,31 +386,49 @@ fn lower_decl<T>(f: &mut dyn FnMut(&hir::Expr<T>) -> T, decl: &ast::Decl) -> Dec
             signature,
             body,
             ..
-        } => Decl::Function {
+        } => accm.push(Decl::Function {
             name: *name,
             signature: lower_signature(signature),
             body: lower_exprs(f, body),
-        },
+        }),
         D::Const {
             name,
             typename,
             init,
             ..
-        } => Decl::Const {
+        } => accm.push(Decl::Const {
             name: *name,
             typename: *typename,
             init: lower_expr(f, init),
-        },
-        D::TypeDef { name, typename, .. } => Decl::TypeDef {
-            name: *name,
-            typename: *typename,
-        },
+        }),
+        // this needs to generate the typedef AND the type constructor
+        // declaration.
+        D::TypeDef { name, typedecl, .. } => {
+            accm.push(Decl::TypeDef {
+                name: *name,
+                typedecl: *typedecl,
+            });
+            let paramname = INT.intern("input");
+            let rtype = INT.intern_type(&TypeDef::Named(*name));
+            accm.push(Decl::TypeConstructor {
+                name: *name,
+                signature: hir::Signature {
+                    params: vec![(paramname, *typedecl)],
+                    rettype: rtype,
+                },
+            })
+        }
     }
 }
 
 fn lower_decls<T>(f: &mut dyn FnMut(&hir::Expr<T>) -> T, decls: &[ast::Decl]) -> Ir<T> {
+    let mut accm = Vec::with_capacity(decls.len() * 2);
+    for d in decls.iter() {
+        lower_decl(&mut accm, f, d)
+    }
     Ir {
-        decls: decls.iter().map(|d| lower_decl(f, d)).collect(),
+        decls: accm,
+        // decls.iter().map(|d| lower_decl(f, d)).collect(),
     }
 }
 
