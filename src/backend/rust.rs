@@ -8,6 +8,7 @@
 //!  * Use `syn` or something to generate tokens for output rather than strings
 
 use std::borrow::Cow;
+use std::io::{self, Write};
 
 //use crate::lir;
 use crate::hir;
@@ -57,10 +58,12 @@ fn compile_typedef(td: &TypeDef) -> Cow<'static, str> {
 }
 
 pub(super) fn output(lir: &hir::Ir<TypeSym>) -> Vec<u8> {
-    let mut strings = vec![prelude().to_owned()];
-    strings.extend(lir.decls.iter().map(|d| compile_decl(d)));
-    let s = strings.join("\n");
-    s.into_bytes()
+    let mut output = Vec::new();
+    output.extend(prelude().as_bytes());
+    for decl in lir.decls.iter() {
+        compile_decl(&mut output, decl).expect("IO error writing output code.  Out of memory???");
+    }
+    output
 }
 
 /// Mangle/unmangle a name for a function.
@@ -71,8 +74,7 @@ fn mangle_name(s: &str) -> String {
     s.replace("@", "__")
 }
 
-/// TODO: Make this use Write instead of constructing strings
-fn compile_decl(decl: &hir::Decl<TypeSym>) -> String {
+fn compile_decl(w: &mut impl Write, decl: &hir::Decl<TypeSym>) -> io::Result<()> {
     match decl {
         hir::Decl::Function {
             name,
@@ -82,7 +84,7 @@ fn compile_decl(decl: &hir::Decl<TypeSym>) -> String {
             let nstr = mangle_name(&*INT.fetch(*name));
             let sstr = compile_fn_signature(signature);
             let bstr = compile_exprs(body, ";\n");
-            format!(
+            write!(w, 
                 "#[no_mangle]\npub extern fn {}{} {{\n{}\n}}\n",
                 nstr, sstr, bstr
             )
@@ -95,13 +97,13 @@ fn compile_decl(decl: &hir::Decl<TypeSym>) -> String {
             let nstr = mangle_name(&INT.fetch(*name));
             let tstr = compile_typedef(&*INT.fetch_type(*typename));
             let istr = compile_expr(init);
-            format!("const {}: {} = {};", nstr, tstr, istr)
+            write!(w, "const {}: {} = {};", nstr, tstr, istr)
         }
         // Typedefs compile into newtype structs.
         hir::Decl::TypeDef { name, typedecl } => {
             let nstr = mangle_name(&INT.fetch(*name));
             let tstr = compile_typedef(&*INT.fetch_type(*typedecl));
-            format!("pub struct {}({});", nstr, tstr)
+            write!(w, "pub struct {}({});", nstr, tstr)
         }
         // For these we have to look at the signature and make a
         // function that constructs a struct or tuple or whatever
@@ -114,7 +116,7 @@ fn compile_decl(decl: &hir::Decl<TypeSym>) -> String {
             // and the input is always a single arg named "input",
             // so this is fairly simple
             let bstr = format!("{}(input)", typename);
-            format!(
+            write!(w, 
                 "#[no_mangle]\npub extern fn __{}_constructor{} {{\n{}\n}}\n",
                 nstr, sstr, bstr)
 
@@ -135,8 +137,8 @@ fn compile_fn_signature(sig: &ast::Signature) -> String {
     accm
 }
 
-fn compile_exprs(exprs: &[hir::TypedExpr<TypeSym>], separator: &str) -> String {
-    let ss: Vec<String> = exprs.iter().map(|e| compile_expr(e)).collect();
+fn compile_exprs(w: &mut impl Write, exprs: &[hir::TypedExpr<TypeSym>], separator: &str) -> String {
+    let ss: Vec<String> = exprs.iter().map(|e| compile_expr(w, e)).collect();
     ss.join(separator)
 }
 
@@ -171,7 +173,7 @@ fn compile_uop(op: hir::UOp) -> &'static str {
     }
 }
 
-fn compile_expr(expr: &hir::TypedExpr<TypeSym>) -> String {
+fn compile_expr(w: &mut impl Write, expr: &hir::TypedExpr<TypeSym>) -> String {
     use hir::Expr as E;
     match &expr.e {
         E::Lit {
