@@ -84,7 +84,8 @@ fn compile_decl(w: &mut impl Write, decl: &hir::Decl<TypeSym>) -> io::Result<()>
             let nstr = mangle_name(&*INT.fetch(*name));
             let sstr = compile_fn_signature(signature);
             let bstr = compile_exprs(body, ";\n");
-            write!(w, 
+            write!(
+                w,
                 "#[no_mangle]\npub extern fn {}{} {{\n{}\n}}\n",
                 nstr, sstr, bstr
             )
@@ -116,10 +117,11 @@ fn compile_decl(w: &mut impl Write, decl: &hir::Decl<TypeSym>) -> io::Result<()>
             // and the input is always a single arg named "input",
             // so this is fairly simple
             let bstr = format!("{}(input)", typename);
-            write!(w, 
+            write!(
+                w,
                 "#[no_mangle]\npub extern fn __{}_constructor{} {{\n{}\n}}\n",
-                nstr, sstr, bstr)
-
+                nstr, sstr, bstr
+            )
         }
     }
 }
@@ -137,8 +139,8 @@ fn compile_fn_signature(sig: &ast::Signature) -> String {
     accm
 }
 
-fn compile_exprs(w: &mut impl Write, exprs: &[hir::TypedExpr<TypeSym>], separator: &str) -> String {
-    let ss: Vec<String> = exprs.iter().map(|e| compile_expr(w, e)).collect();
+fn compile_exprs(exprs: &[hir::TypedExpr<TypeSym>], separator: &str) -> String {
+    let ss: Vec<String> = exprs.iter().map(|e| compile_expr(e)).collect();
     ss.join(separator)
 }
 
@@ -173,7 +175,7 @@ fn compile_uop(op: hir::UOp) -> &'static str {
     }
 }
 
-fn compile_expr(w: &mut impl Write, expr: &hir::TypedExpr<TypeSym>) -> String {
+fn compile_expr(expr: &hir::TypedExpr<TypeSym>) -> String {
     use hir::Expr as E;
     match &expr.e {
         E::Lit {
