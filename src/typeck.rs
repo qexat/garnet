@@ -353,16 +353,35 @@ fn predeclare_decl(symtbl: &mut Symtbl, decl: &hir::Decl<()>) {
             }
             symtbl.add_type(*name, *typedecl);
         }
-        hir::Decl::TypeConstructor { name, signature } => {
-            if let Ok(_) = symtbl.get_var(*name) {
-                panic!(
-                    "Aieeee, redeclaration of function/type constructor named {}",
-                    INT.fetch(*name)
-                );
+        hir::Decl::Constructor { name, signature } => {
+            {
+                if let Ok(_) = symtbl.get_var(*name) {
+                    panic!(
+                        "Aieeee, redeclaration of function/type constructor named {}",
+                        INT.fetch(*name)
+                    );
+                }
+                let type_params = signature.params.iter().map(|(_name, t)| *t).collect();
+                let function_type =
+                    INT.intern_type(&TypeDef::Lambda(type_params, signature.rettype));
+                symtbl.add_var(*name, function_type, false);
             }
-            let type_params = signature.params.iter().map(|(_name, t)| *t).collect();
-            let function_type = INT.intern_type(&TypeDef::Lambda(type_params, signature.rettype));
-            symtbl.add_var(*name, function_type, false);
+
+            // Also we need to add a deconstructor function.  This is kinda a placeholder, but,
+            // should work for now.
+            {
+                let deconstruct_name = INT.intern(format!("{}_unwrap", INT.fetch(*name)));
+                if let Ok(_) = symtbl.get_var(deconstruct_name) {
+                    panic!(
+                        "Aieeee, redeclaration of function/type destructure named {}",
+                        INT.fetch(deconstruct_name)
+                    );
+                }
+                let type_params = vec![signature.rettype];
+                let rettype = signature.params[0].1;
+                let function_type = INT.intern_type(&TypeDef::Lambda(type_params, rettype));
+                symtbl.add_var(deconstruct_name, function_type, false);
+            }
         }
     }
 }
@@ -438,14 +457,14 @@ fn typecheck_decl(
                         Err(TypeError::UnknownType(*typename))
                     }
                 }
-                // It's a built-in type like bool 
-                _ => Ok(hir::Decl::TypeDef { name, typedecl })
+                // It's a built-in type like bool
+                _ => Ok(hir::Decl::TypeDef { name, typedecl }),
             }
         }
         // Don't need to do anything here since we generate these in the lowering
         // step and have already verified no names clash.
-        hir::Decl::TypeConstructor { name, signature } => {
-            Ok(hir::Decl::TypeConstructor { name, signature })
+        hir::Decl::Constructor { name, signature } => {
+            Ok(hir::Decl::Constructor { name, signature })
         }
     }
 }
