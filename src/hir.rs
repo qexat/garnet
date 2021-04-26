@@ -218,7 +218,7 @@ pub enum Decl<T> {
     /// and produces that type.  We have no way to write such
     /// a function by hand, so here we are.  In all other ways
     /// though we treat it exactly like a function though.
-    TypeConstructor {
+    Constructor {
         name: VarSym,
         signature: Signature,
     },
@@ -402,7 +402,7 @@ fn lower_decl<T>(accm: &mut Vec<Decl<T>>, f: &mut dyn FnMut(&hir::Expr<T>) -> T,
             init: lower_expr(f, init),
         }),
         // this needs to generate the typedef AND the type constructor
-        // declaration.
+        // declaration.  Plus the type deconstructor.
         D::TypeDef { name, typedecl, .. } => {
             accm.push(Decl::TypeDef {
                 name: *name,
@@ -410,13 +410,14 @@ fn lower_decl<T>(accm: &mut Vec<Decl<T>>, f: &mut dyn FnMut(&hir::Expr<T>) -> T,
             });
             let paramname = INT.intern("input");
             let rtype = INT.intern_type(&TypeDef::Named(*name));
-            accm.push(Decl::TypeConstructor {
+            accm.push(Decl::Constructor {
                 name: *name,
                 signature: hir::Signature {
                     params: vec![(paramname, *typedecl)],
                     rettype: rtype,
                 },
-            })
+            });
+            // FOR NOW we just make a
         }
     }
 }

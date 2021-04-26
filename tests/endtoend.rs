@@ -569,12 +569,17 @@ fn typedef_simple() {
     let src = r#"
 type Foo = I32
 
+fn add_one(thing: I32): Foo =
+    Foo(thing + 1)
+end
+
+
 fn test(): I32 =
-    let x: {I32, I32} = {10, 11}
-    x.0 + x.1
+    let x: Foo = add_one(3)
+    Foo_unwrap(x)
 end
 "#;
-    assert_eq!(eval_program0(src), 21);
+    assert_eq!(eval_program0(src), 4);
 }
 
 #[test]
@@ -583,18 +588,14 @@ fn typedef_multiple() {
 type Foo = I32
 type Bar = Foo
 
-fn add_one(thing: I32): Foo =
-    Foo(thing + 1)
-
-end
-
 fn add_one_to_bar(thing: Bar): Foo =
-    Foo(thing.0 + 1)
+    Foo(Foo_unwrap(Bar_unwrap(thing)) + 1)
 end
 
 fn test(): I32 =
-    add_one(3)
+    let x: Bar = Bar(Foo(3))
+    Foo_unwrap(add_one_to_bar(x))
 end
 "#;
-    assert_eq!(eval_program0(src), 21);
+    assert_eq!(eval_program0(src), 4);
 }

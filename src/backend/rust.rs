@@ -84,7 +84,7 @@ fn compile_decl(w: &mut impl Write, decl: &hir::Decl<TypeSym>) -> io::Result<()>
             let nstr = mangle_name(&*INT.fetch(*name));
             let sstr = compile_fn_signature(signature);
             let bstr = compile_exprs(body, ";\n");
-            write!(
+            writeln!(
                 w,
                 "#[no_mangle]\npub extern fn {}{} {{\n{}\n}}\n",
                 nstr, sstr, bstr
@@ -98,29 +98,48 @@ fn compile_decl(w: &mut impl Write, decl: &hir::Decl<TypeSym>) -> io::Result<()>
             let nstr = mangle_name(&INT.fetch(*name));
             let tstr = compile_typedef(&*INT.fetch_type(*typename));
             let istr = compile_expr(init);
-            write!(w, "const {}: {} = {};", nstr, tstr, istr)
+            writeln!(w, "const {}: {} = {};", nstr, tstr, istr)
         }
         // Typedefs compile into newtype structs.
         hir::Decl::TypeDef { name, typedecl } => {
             let nstr = mangle_name(&INT.fetch(*name));
             let tstr = compile_typedef(&*INT.fetch_type(*typedecl));
-            write!(w, "pub struct {}({});", nstr, tstr)
+            writeln!(w, "pub struct {}({});", nstr, tstr)
         }
         // For these we have to look at the signature and make a
         // function that constructs a struct or tuple or whatever
         // out of it.
-        hir::Decl::TypeConstructor { name, signature } => {
+        hir::Decl::Constructor { name, signature } => {
+            /*
+             * Rust's newtype struct constructors are already functions,
+             * so we don't need to actually output a separate constructor
+             * function.  Huh.
+             */
+
             let typename = &*INT.fetch(*name);
             let nstr = mangle_name(typename);
+            /*
             let sstr = compile_fn_signature(signature);
             // Cuuuuuuuurrently, this only does newtype structs,
             // and the input is always a single arg named "input",
             // so this is fairly simple
             let bstr = format!("{}(input)", typename);
-            write!(
+            writeln!(
                 w,
-                "#[no_mangle]\npub extern fn __{}_constructor{} {{\n{}\n}}\n",
+                "#[no_mangle]\npub extern fn {}{} {{\n{}\n}}\n",
                 nstr, sstr, bstr
+            )?;
+            */
+            // We do need to make the destructure function I guess.
+            let destructure_signature = hir::Signature {
+                params: vec![(INT.intern("input"), signature.rettype)],
+                rettype: signature.params[0].1,
+            };
+            let sig_str = compile_fn_signature(&destructure_signature);
+            writeln!(
+                w,
+                "#[no_mangle]\npub extern fn {}_unwrap{} {{ input.0 }}\n",
+                nstr, sig_str,
             )
         }
     }
