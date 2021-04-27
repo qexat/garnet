@@ -282,6 +282,8 @@ MIT
  * <https://without.boats/blog/revisiting-a-smaller-rust/>
  * <https://dl.acm.org/doi/pdf/10.1145/3428195> (on type inference)
  * <https://queue.acm.org/detail.cfm?id=3212479> (C is not a low level language; the good one)
+ * <https://old.reddit.com/r/rust/comments/my3ipa/if_you_could_redesign_rust_from_scratch_today/>
+ * <https://lobste.rs/s/j7zv69/if_you_could_re_design_rust_from_scratch>
 
 # Random notes
 
