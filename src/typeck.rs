@@ -1248,11 +1248,11 @@ end"#;
     #[test]
     fn test_number_types() {
         let src = r#"fn foo() =
-        let x: I8 = 8i8
-        let x: I16 = 9i16
-        let x: I32 = 10i32
-        let y: I64 = 11i64
-        let y: I128 = 12i128
+        let x: I8 = 8_I8
+        let x: I16 = 9_I16
+        let x: I32 = 10_I32
+        let y: I64 = 11_I64
+        let y: I128 = 12_I128
         let x: I32 = 10
 end"#;
         typecheck_src(src).unwrap();
@@ -1280,7 +1280,7 @@ end"#;
     fn test_bad_integer_assignment() {
         let src = r#"fn foo() =
         let x: I32 = 10
-        let mut y: I64 = 11i64
+        let mut y: I64 = 11_I64
         y = x
 end"#;
         fail_typecheck!(src, TypeError::TypeMismatch { .. });
@@ -1290,7 +1290,7 @@ end"#;
     fn test_bad_integer_math() {
         let src = r#"fn foo() =
         let x: I32 = 10
-        let mut y: I64 = 11i64
+        let mut y: I64 = 11_I64
         y + x
 end"#;
         fail_typecheck!(src, TypeError::BopType { .. });

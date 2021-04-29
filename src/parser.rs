@@ -17,34 +17,61 @@ use logos::{Lexer, Logos};
 use crate::ast;
 use crate::*;
 
+fn bounds_check(val: i128, int_size: u8) -> Option<(i128, u8)> {
+    let bound = 2_i128.pow(int_size as u32 * 8);
+    dbg!(val, bound, bound / 2 - 1);
+    if val > (bound / 2) - 1 || val <= -(bound / 2) {
+        None
+    } else {
+        Some((val, int_size))
+    }
+}
+
+/// Turn this into something parse() can parse,
+/// so,
+/// 123_456_I32 becomes 123456
+fn extract_digits(s: &str) -> String {
+    /// Is the char a digit or the separator '_'?
+    fn is_digitish(c: &char) -> bool {
+        c.is_digit(10) || (*c) == '_'
+    }
+    let digits = s
+        .chars()
+        .take_while(is_digitish)
+        .filter(|c| c.is_digit(10))
+        .collect();
+    digits
+}
+
 fn make_i8(lex: &mut Lexer<TokenKind>) -> Option<(i128, u8)> {
-    let slice = lex.slice();
-    let m = slice[..slice.len() - 2].parse().ok()?;
-    // TODO: Bounds check
-    Some((m, 1))
+    let digits = extract_digits(lex.slice());
+    let m = digits.parse().ok()?;
+    bounds_check(m, 1)
 }
 
 fn make_i16(lex: &mut Lexer<TokenKind>) -> Option<(i128, u8)> {
-    let slice = lex.slice();
-    let m = slice[..slice.len() - 3].parse().ok()?;
-    Some((m, 2))
+    let digits = extract_digits(lex.slice());
+    let m = digits.parse().ok()?;
+    bounds_check(m, 2)
 }
 
 fn make_i32(lex: &mut Lexer<TokenKind>) -> Option<(i128, u8)> {
-    let slice = lex.slice();
-    let m = slice[..slice.len() - 3].parse().ok()?;
-    Some((m, 4))
+    let digits = extract_digits(lex.slice());
+    let m = digits.parse().ok()?;
+    bounds_check(m, 4)
 }
 
 fn make_i64(lex: &mut Lexer<TokenKind>) -> Option<(i128, u8)> {
-    let slice = lex.slice();
-    let m = slice[..slice.len() - 3].parse().ok()?;
-    Some((m, 8))
+    let digits = extract_digits(lex.slice());
+    let m = digits.parse().ok()?;
+    bounds_check(m, 8)
 }
 
 fn make_i128(lex: &mut Lexer<TokenKind>) -> Option<(i128, u8)> {
-    let slice = lex.slice();
-    let m = slice[..slice.len() - 4].parse().ok()?;
+    let digits = extract_digits(lex.slice());
+    let m = digits.parse().ok()?;
+    // No bounds check, since our internal type is i128 anyway.
+    //bounds_check(m, 16)
     Some((m, 16))
 }
 
@@ -54,14 +81,14 @@ pub enum TokenKind {
     Ident(String),
     #[regex("true|false", |lex| lex.slice().parse())]
     Bool(bool),
+    #[regex("[0-9][0-9_]*I8", make_i8)]
+    #[regex("[0-9][0-9_]*I16", make_i16)]
+    #[regex("[0-9][0-9_]*I32", make_i32)]
+    #[regex("[0-9][0-9_]*I64", make_i64)]
+    #[regex("[0-9][0-9_]*I128", make_i128)]
+    IntegerSize((i128, u8)),
     #[regex("[0-9][0-9_]*", |lex| lex.slice().parse())]
     Integer(i128),
-    #[regex("[0-9][0-9_]*i8", make_i8)]
-    #[regex("[0-9][0-9_]*i16", make_i16)]
-    #[regex("[0-9][0-9_]*i32", make_i32)]
-    #[regex("[0-9][0-9_]*i64", make_i64)]
-    #[regex("[0-9][0-9_]*i128", make_i128)]
-    IntegerSize((i128, u8)),
 
     // Decl stuff
     #[token("const")]
@@ -152,7 +179,6 @@ pub enum TokenKind {
 
     // We save comment strings so we can use this same
     // parser as a reformatter or such.
-    // TODO: How do we skip these in the parser?
     #[regex(r"--.*\n", |lex| lex.slice().to_owned())]
     Comment(String),
 
@@ -1347,14 +1373,15 @@ type blar = I8
 
     #[test]
     fn lex_integer_values() {
-        //test_expr_is("43i8", || Expr::sized_int(43, 1));
         let tests = &[
             // Input string, expected integer, expected integer size
-            ("43i8", 43, 1),
-            ("22i16", 22, 2),
-            ("33i32", 33, 4),
-            ("91i64", 91, 8),
-            ("9i128", 9, 16),
+            ("999_888I32", 999_888, 4),
+            ("43_I8", 43, 1),
+            ("127_I8", 127, 1),
+            ("22_I16", 22, 2),
+            ("33_I32", 33, 4),
+            ("91_I64", 91, 8),
+            ("9_I128", 9, 16),
         ];
         for (s, expected_int, expected_bytes) in tests {
             let mut p = Parser::new(s);
@@ -1368,9 +1395,30 @@ type blar = I8
         }
     }
 
+    /// Make sure out-of-bounds integer literals are errors.
+    ///
+    /// ...we actually don't have negative literals
+    #[test]
+    fn lex_integer_value_invalid() {
+        let tests = &[
+            // Input string, expected integer, expected integer size
+            "999_I8",
+            "256_I8",
+            "128_I8",
+            "65_536_I16",
+            "32_768_I16",
+            "999_999_I16",
+        ];
+        for s in tests {
+            let mut p = Parser::new(s);
+            assert_eq!(p.next().unwrap().kind, TokenKind::Error);
+            assert!(p.next().is_none());
+        }
+    }
+
     #[test]
     fn parse_integer_values() {
-        test_expr_is("43i8", || Expr::sized_int(43, 1));
+        test_expr_is("43_I8", || Expr::sized_int(43, 1));
         /*
         test_expr_is("{1,2,3}", |_cx| Expr::TupleCtor {
             body: vec![Expr::int(1), Expr::int(2), Expr::int(3)],
