@@ -17,6 +17,9 @@ use crate::*;
 /// Whatever prefix stuff we want in the Rust program.
 fn prelude() -> &'static str {
     r#"
+fn __println(x: i32) {
+    println!("{}", x);
+}
 "#
 }
 
@@ -84,11 +87,7 @@ fn compile_decl(w: &mut impl Write, decl: &hir::Decl<TypeSym>) -> io::Result<()>
             let nstr = mangle_name(&*INT.fetch(*name));
             let sstr = compile_fn_signature(signature);
             let bstr = compile_exprs(body, ";\n");
-            writeln!(
-                w,
-                "#[no_mangle]\npub extern fn {}{} {{\n{}\n}}\n",
-                nstr, sstr, bstr
-            )
+            writeln!(w, "pub fn {}{} {{\n{}\n}}\n", nstr, sstr, bstr)
         }
         hir::Decl::Const {
             name,
@@ -136,11 +135,7 @@ fn compile_decl(w: &mut impl Write, decl: &hir::Decl<TypeSym>) -> io::Result<()>
                 rettype: signature.params[0].1,
             };
             let sig_str = compile_fn_signature(&destructure_signature);
-            writeln!(
-                w,
-                "#[no_mangle]\npub extern fn {}_unwrap{} {{ input.0 }}\n",
-                nstr, sig_str,
-            )
+            writeln!(w, "fn {}_unwrap{} {{ input.0 }}\n", nstr, sig_str,)
         }
     }
 }

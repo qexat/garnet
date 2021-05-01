@@ -1,4 +1,6 @@
--- Basic fibonacci function/bench
+-- run: -r
+-- expected stdout:
+-- 21
 
 fn fib(x: I32): I32 =
     if x < 2 then 1
@@ -7,6 +9,5 @@ fn fib(x: I32): I32 =
 end
 
 fn main(): {} =
-    __println(fib(40))
-    {}
+    __println(fib(7))
 end
