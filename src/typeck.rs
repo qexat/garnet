@@ -172,7 +172,12 @@ struct Symtbl {
 
 impl Symtbl {
     pub fn new() -> Self {
-        Self::default()
+        let mut x = Self::default();
+        // We add a built-in function for printing, currently.
+        let name = INT.intern("__println");
+        let typesym = INT.intern_type(&TypeDef::Lambda(vec![INT.i32()], INT.unit()));
+        x.add_var(name, typesym, false);
+        x
     }
 
     fn add_type(&mut self, name: VarSym, typedef: TypeSym) {
