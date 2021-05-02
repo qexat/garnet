@@ -20,6 +20,14 @@ fn prelude() -> &'static str {
 fn __println(x: i32) {
     println!("{}", x);
 }
+
+fn __println_bool(x: bool) {
+    println!("{}", x);
+}
+
+fn __println_i64(x: i64) {
+    println!("{}", x);
+}
 "#
 }
 

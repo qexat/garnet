@@ -11,5 +11,5 @@ end
 
 fn main(): {} =
     let x: I64 = foo(9)
-    __println(x)
+    __println_i64(x)
 end
