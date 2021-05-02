@@ -1,0 +1,18 @@
+-- Compile:
+--   status: success
+--
+-- Run:
+--   status: success
+--   stdout: 4
+
+type Foo = I32
+
+fn add_one(thing: I32): Foo =
+    Foo(thing + 1)
+end
+
+
+fn main(): {} =
+    let x: Foo = add_one(3)
+    __println(Foo_unwrap(x))
+end

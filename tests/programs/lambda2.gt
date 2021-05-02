@@ -1,0 +1,17 @@
+-- Compile:
+--   status: success
+--
+-- Run:
+--   status: success
+--   stdout: 1
+
+fn main(): {} =
+    __println(if true then
+        fn(): I32 = 1 end
+    else
+        fn(): I32 = 10 end
+    end
+    ()
+    )
+    -- call the function returned by the expr
+end

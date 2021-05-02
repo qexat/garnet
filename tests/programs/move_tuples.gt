@@ -1,0 +1,18 @@
+-- Compile:
+--   status: success
+--
+-- Run:
+--   status: success
+--   stdout: 10
+
+--- TODO: This is a little weird... apparently Rust tuples
+--- automatically implement Copy if all their contents
+--- do?
+fn main(): {} =
+    let x: {I32, I32} = {10, 11}
+    let mut y: {I32, I32} = {20, 21}
+    let mut z: {I32, I32} = {30, 31}
+    y = x
+    z = x
+    __println(z.0)
+end

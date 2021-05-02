@@ -1,0 +1,11 @@
+-- Compile:
+--   status: success
+--
+-- Run:
+--   status: success
+--   stdout: 21
+
+fn main(): {} =
+    let x: {I32, I32} = {10, 11}
+    __println(x.0 + x.1)
+end

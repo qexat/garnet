@@ -1,0 +1,12 @@
+-- Compile:
+--   status: success
+--
+-- Run:
+--   status: success
+--   stdout: 20
+
+fn main(): {} =
+    let mut x: I32 = 10
+    x = 20
+    __println(x)
+end

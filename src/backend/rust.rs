@@ -47,7 +47,7 @@ fn compile_typedef(td: &TypeDef) -> Cow<'static, str> {
             accm.into()
         }
         Lambda(params, ret) => {
-            let mut accm = String::from("extern fn (");
+            let mut accm = String::from("fn (");
             for p in params {
                 accm += &compile_typedef(&*INT.fetch_type(*p));
                 accm += ", ";
