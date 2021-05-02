@@ -1,0 +1,11 @@
+-- Compile:
+--   status: success
+--
+-- Run:
+--   status: success
+--   stdout: 12
+
+--- Doc comments go here
+fn main(): {} =
+    __println(12)
+end

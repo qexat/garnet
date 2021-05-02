@@ -1,0 +1,7 @@
+-- Compile:
+--   status: error
+
+fn main(): {} =
+    --- Doc comments don't go here
+    __println(12)
+end

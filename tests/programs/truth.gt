@@ -1,0 +1,38 @@
+-- Compile:
+--   status: success
+--
+-- Run:
+--   status: success
+--   stdout:
+--     true
+--     false
+--     false
+--     false
+--     true
+--     true
+--     true
+--     false
+--     false
+--     true
+--     true
+--     false
+--     false
+--     true
+
+--- Truth tables, huzzah!
+fn main(): {} =
+    __println(true and true)
+    __println(true and false)
+    __println(false and true)
+    __println(false and false)
+    __println(true or true)
+    __println(true or false)
+    __println(false or true)
+    __println(false or false)
+    __println(true xor true)
+    __println(true xor false)
+    __println(false xor true)
+    __println(false xor false)
+    __println(not true)
+    __println(not false)
+end
