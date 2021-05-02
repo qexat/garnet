@@ -174,9 +174,21 @@ impl Symtbl {
     pub fn new() -> Self {
         let mut x = Self::default();
         // We add a built-in function for printing, currently.
-        let name = INT.intern("__println");
-        let typesym = INT.intern_type(&TypeDef::Lambda(vec![INT.i32()], INT.unit()));
-        x.add_var(name, typesym, false);
+        {
+            let name = INT.intern("__println");
+            let typesym = INT.intern_type(&TypeDef::Lambda(vec![INT.i32()], INT.unit()));
+            x.add_var(name, typesym, false);
+        }
+        {
+            let name = INT.intern("__println_bool");
+            let typesym = INT.intern_type(&TypeDef::Lambda(vec![INT.bool()], INT.unit()));
+            x.add_var(name, typesym, false);
+        }
+        {
+            let name = INT.intern("__println_i64");
+            let typesym = INT.intern_type(&TypeDef::Lambda(vec![INT.i64()], INT.unit()));
+            x.add_var(name, typesym, false);
+        }
         x
     }
 
