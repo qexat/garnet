@@ -826,7 +826,7 @@ impl<'input> Parser<'input> {
         ast::Expr::Loop { body }
     }
 
-    /// block = "block" {expr} "end"
+    /// block = "do" {expr} "end"
     fn parse_block(&mut self) -> ast::Expr {
         self.expect(T::Do);
         let body = self.parse_exprs();

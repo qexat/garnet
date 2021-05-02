@@ -1,5 +1,9 @@
 -- Compile:
 --   status: error
+--   stderr:
+--     ...
+--     ...Parse error on got token DocComment...
+--     ...
 
 fn main(): {} =
     --- Doc comments don't go here

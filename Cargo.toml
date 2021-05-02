@@ -10,8 +10,8 @@ name = "garnetc"
 path = "src/main.rs"
 
 [[test]]
-name = "goldentests"
-path = "tests/goldentests.rs"
+name = "endtoend"
+path = "tests/endtoend.rs"
 harness = false
 
 [dependencies]
