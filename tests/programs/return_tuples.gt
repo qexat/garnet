@@ -1,0 +1,15 @@
+-- Compile:
+--   status: success
+--
+-- Run:
+--   status: success
+--   stdout: 20
+
+fn foo(): {I32, I32} =
+    {10, 20}
+end
+
+fn main(): {} =
+    let x: {I32, I32} = foo()
+    __println(x.1)
+end

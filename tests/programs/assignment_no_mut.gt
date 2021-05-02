@@ -1,0 +1,8 @@
+-- Compile:
+--   status: error
+
+fn main(): {} =
+    let x: I32 = 10
+    x = 20
+    __println(x)
+end
