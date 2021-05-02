@@ -1,0 +1,14 @@
+-- Compile:
+--   status: success
+--
+-- Run:
+--   status: success
+--   stdout: 12
+
+-- foo
+        -- bar
+fn main(): {} =
+    -- baz
+    __println(12) -- bop
+end  -- bleg
+    -- blar

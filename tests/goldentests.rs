@@ -1,3 +1,10 @@
+//! Test suite that runs reference programs from `tests/programs/`
+//! and checks their output.
+//!
+//! Uses the `lang_tester` crate, which is a little wobbly in places,
+//! but the best I can find.  `goldentests` is too magical and not flexible
+//! enough, and `compiletests` is too Rust-specific and under-documented.
+
 use std::{fs::read_to_string, path::PathBuf, process::Command};
 
 use lang_tester::LangTester;
