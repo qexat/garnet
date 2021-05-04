@@ -224,6 +224,10 @@ impl Symtbl {
         Err(TypeError::UnknownVar(name))
     }
 
+    fn binding_exists(&self, name: VarSym) -> bool {
+        self.get_binding(name).is_ok()
+    }
+
     fn push_scope(&mut self) {
         self.vars.push_scope();
     }
@@ -351,22 +355,25 @@ fn predeclare_decl(symtbl: &mut Symtbl, decl: &hir::Decl<()>) {
         hir::Decl::Function {
             name, signature, ..
         } => {
+            if symtbl.binding_exists(*name) {
+                panic!("Tried to redeclare function {}!", INT.fetch(*name));
+            }
             // Add function to global scope
             let type_params = signature.params.iter().map(|(_name, t)| *t).collect();
             let function_type = INT.intern_type(&TypeDef::Lambda(type_params, signature.rettype));
             symtbl.add_var(*name, function_type, false);
         }
         hir::Decl::Const { name, typename, .. } => {
+            if symtbl.binding_exists(*name) {
+                panic!("Tried to redeclare const {}!", INT.fetch(*name));
+            }
             symtbl.add_var(*name, *typename, false);
         }
         hir::Decl::TypeDef { name, typedecl } => {
             // Gotta make sure there's no duplicate declarations
             // This kinda has to happen here rather than in typeck()
-            //
-            // TODO: ...oh we should probably similarly check for duplicate functions
-            // or consts.
-            if let Some(_) = symtbl.get_typedef(*name) {
-                panic!("Aieeee, redeclaration of type named {}", INT.fetch(*name));
+            if symtbl.get_typedef(*name).is_some() {
+                panic!("Tried to redeclare type {}!", INT.fetch(*name));
             }
             symtbl.add_type(*name, *typedecl);
         }
@@ -416,7 +423,6 @@ fn typecheck_decl(
         } => {
             // Push scope, typecheck and add params to symbol table
             symtbl.push_scope();
-            // TODO: How to handle return statements, hm?
             for (pname, ptype) in signature.params.iter() {
                 symtbl.add_var(*pname, *ptype, false);
             }
@@ -455,11 +461,17 @@ fn typecheck_decl(
             name,
             typename,
             init,
-        } => Ok(hir::Decl::Const {
-            name,
-            typename,
-            init: typecheck_expr(symtbl, init, None)?,
-        }),
+        } => {
+            if !symtbl.get_typedef(typename).is_some() {
+                Err(TypeError::UnknownType(typename))
+            } else {
+                Ok(hir::Decl::Const {
+                    name,
+                    typename,
+                    init: typecheck_expr(symtbl, init, None)?,
+                })
+            }
+        }
         // Ok, we are declaring a new type.  We need to make sure that the typedecl
         // it's using is real.  We've already checked to make sure it's not a duplicate.
         hir::Decl::TypeDef { name, typedecl } => {
