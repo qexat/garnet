@@ -1,0 +1,12 @@
+-- Compile:
+--   status: error
+--   stderr:
+--     ...
+--     ...Unknown type: Foo...
+--     ...
+
+const FOO: Foo = 91
+
+fn main(): {} =
+    __println(12)
+end

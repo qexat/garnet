@@ -200,6 +200,21 @@ impl Symtbl {
         self.types.get(&name).copied()
     }
 
+    /// Returns Ok if the type exists, or a TypeError of the appropriate
+    /// kind if it does not.
+    fn type_exists(&mut self, tsym: TypeSym) -> Result<(), TypeError> {
+        match &*INT.fetch_type(tsym) {
+            TypeDef::Named(name) => {
+                if self.types.get(&name).is_some() {
+                    Ok(())
+                } else {
+                    Err(TypeError::UnknownType(*name))
+                }
+            }
+            _ => Ok(()),
+        }
+    }
+
     /// Add a variable to the top level of the scope.
     /// Allows shadowing.
     fn add_var(&mut self, name: VarSym, typedef: TypeSym, mutable: bool) {
@@ -462,33 +477,20 @@ fn typecheck_decl(
             typename,
             init,
         } => {
-            if !symtbl.get_typedef(typename).is_some() {
-                Err(TypeError::UnknownType(typename))
-            } else {
-                Ok(hir::Decl::Const {
-                    name,
-                    typename,
-                    init: typecheck_expr(symtbl, init, None)?,
-                })
-            }
+            // Make sure the const's type exists
+            symtbl.type_exists(typename)?;
+            Ok(hir::Decl::Const {
+                name,
+                typename,
+                init: typecheck_expr(symtbl, init, None)?,
+            })
         }
         // Ok, we are declaring a new type.  We need to make sure that the typedecl
         // it's using is real.  We've already checked to make sure it's not a duplicate.
         hir::Decl::TypeDef { name, typedecl } => {
-            let typedef = &*INT.fetch_type(typedecl);
-            match typedef {
-                TypeDef::Named(typename) => {
-                    if let Some(_) = symtbl.get_typedef(*typename) {
-                        // Ok
-                        Ok(hir::Decl::TypeDef { name, typedecl })
-                    } else {
-                        // Less ok
-                        Err(TypeError::UnknownType(*typename))
-                    }
-                }
-                // It's a built-in type like bool
-                _ => Ok(hir::Decl::TypeDef { name, typedecl }),
-            }
+            // Make sure the body of the typedef is a real type.
+            symtbl.type_exists(typedecl)?;
+            Ok(hir::Decl::TypeDef { name, typedecl })
         }
         // Don't need to do anything here since we generate these in the lowering
         // step and have already verified no names clash.
