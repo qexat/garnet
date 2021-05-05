@@ -281,9 +281,7 @@ fn compile_expr(expr: &hir::TypedExpr<TypeSym>) -> String {
             let pstr = compile_exprs(params, ", ");
             format!("{{ let __dummy = {}; __dummy({}) }}", nstr, pstr)
         }
-        E::Break => {
-            format!("break;")
-        }
+        E::Break => "break;".to_string(),
         E::Return { retval } => {
             format!("return {};", compile_expr(retval))
         }

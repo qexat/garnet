@@ -485,7 +485,7 @@ fn lower_expr(fb: &mut FuncBuilder, expr: &TExpr) -> Var {
                 elsebody: &[TExpr],
                 accm: &mut Vec<BB>,
             ) -> BB {
-                assert!(cases.len() != 0);
+                assert!(!cases.is_empty());
                 let (cond, ifbody) = &cases[0];
                 if cases.len() == 1 {
                     // We are on the last if statement, wire it up to the else statement.

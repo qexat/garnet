@@ -75,7 +75,7 @@ impl TypeError {
             TypeError::UnknownVar(sym) => format!("Unknown var: {}", INT.fetch(*sym)),
             TypeError::UnknownType(sym) => format!("Unknown type: {}", INT.fetch(*sym)),
             TypeError::InvalidReturn => {
-                format!("return expression happened somewhere that isn't in a function!")
+                "return expression happened somewhere that isn't in a function!".to_string()
             }
             TypeError::Return {
                 fname,
@@ -220,7 +220,7 @@ impl Symtbl {
     fn add_var(&mut self, name: VarSym, typedef: TypeSym, mutable: bool) {
         let binding = VarBinding {
             name,
-            typename: typedef.clone(),
+            typename: typedef,
             mutable,
         };
         self.vars.add(name, binding);
@@ -228,7 +228,7 @@ impl Symtbl {
 
     /// Get the type of the given variable, or an error
     fn get_var(&self, name: VarSym) -> Result<TypeSym, TypeError> {
-        Ok(self.get_binding(name)?.typename.clone())
+        Ok(self.get_binding(name)?.typename)
     }
 
     /// Get the binding of the given variable, or an error
@@ -261,7 +261,7 @@ fn type_matches(wanted: TypeSym, got: TypeSym) -> bool {
     // If we want some type, and got Never, then this is always valid
     // because we never hit the expression that expected the `wanted` type
     if got == INT.never() {
-        return true;
+        true
     } else {
         wanted == got
     }
@@ -328,7 +328,7 @@ fn reify_types(
 ) -> hir::TypedExpr<TypeSym> {
     // We're done?
     if expr.t == to {
-        return expr;
+        expr
     } else {
         expr.map_type(&|t| if *t == from { to } else { *t })
     }
@@ -341,7 +341,7 @@ fn reify_last_types(
     to: TypeSym,
     exprs: Vec<hir::TypedExpr<TypeSym>>,
 ) -> Vec<hir::TypedExpr<TypeSym>> {
-    assert!(exprs.len() > 0);
+    assert!(!exprs.is_empty());
     // We own the vec, so we can do whatever we want to it!  Muahahahahaha!
     let mut exprs = exprs;
     let last_expr = exprs.pop().unwrap();
@@ -394,7 +394,7 @@ fn predeclare_decl(symtbl: &mut Symtbl, decl: &hir::Decl<()>) {
         }
         hir::Decl::Constructor { name, signature } => {
             {
-                if let Ok(_) = symtbl.get_var(*name) {
+                if symtbl.get_var(*name).is_ok() {
                     panic!(
                         "Aieeee, redeclaration of function/type constructor named {}",
                         INT.fetch(*name)
@@ -410,7 +410,7 @@ fn predeclare_decl(symtbl: &mut Symtbl, decl: &hir::Decl<()>) {
             // should work for now.
             {
                 let deconstruct_name = INT.intern(format!("{}_unwrap", INT.fetch(*name)));
-                if let Ok(_) = symtbl.get_var(deconstruct_name) {
+                if symtbl.get_var(deconstruct_name).is_ok() {
                     panic!(
                         "Aieeee, redeclaration of function/type destructure named {}",
                         INT.fetch(deconstruct_name)
@@ -727,11 +727,11 @@ fn typecheck_expr(
             } else {
                 let function_name = INT.intern("lambda");
                 symtbl.pop_scope();
-                return Err(TypeError::Return {
+                Err(TypeError::Return {
                     fname: function_name,
                     got: bodytype,
                     expected: signature.rettype,
-                });
+                })
             }
         }
         Funcall { func, params } => {

@@ -1,7 +1,6 @@
 use std::path::PathBuf;
 
 use argh::FromArgs;
-use garnet;
 
 /// Garnet compiler
 #[derive(Debug, FromArgs)]
@@ -38,7 +37,7 @@ fn main() -> std::io::Result<()> {
     }
     // Invoke rustc
     let exe_file = if let Some(out) = opt.out {
-        out.clone()
+        out
     } else {
         let mut exe_file = opt.file.clone();
         exe_file.set_extension(std::env::consts::EXE_EXTENSION);
@@ -72,5 +71,5 @@ fn main() -> std::io::Result<()> {
         std::fs::remove_file(&exe_file).unwrap();
         res.expect("Failed to run program");
     }
-    return Ok(());
+    Ok(())
 }
