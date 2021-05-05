@@ -78,7 +78,9 @@ pub enum TypeDef {
     /// don't know what type it actually is until after type checking...
     ///
     /// ...This is going to get real sticky once we have modules, I think.
-    /// Using VarSym for this feels wrong, but, we will leave it for now.
+    /// Using `VarSym` for this feels wrong, but, we will leave it for now.
+    /// I think this actually *has* to be `VarSym` or else we lose the actual
+    /// name, which is important.
     Named(VarSym),
 }
 
