@@ -33,8 +33,7 @@ impl<T> TypedExpr<T> {
     /// not recurse to alter its children...
     pub(crate) fn map_type<T2>(&self, f: &impl Fn(&T) -> T2) -> TypedExpr<T2> {
         use Expr::*;
-        let map_vec =
-            |e: &Vec<TypedExpr<T>>| e.into_iter().map(|te| te.map_type(f)).collect::<Vec<_>>();
+        let map_vec = |e: &Vec<TypedExpr<T>>| e.iter().map(|te| te.map_type(f)).collect::<Vec<_>>();
         let new_e = match &self.e {
             Lit { val } => Lit { val: val.clone() },
             Var { name } => Var { name: *name },
@@ -63,7 +62,7 @@ impl<T> TypedExpr<T> {
             },
             If { cases } => {
                 let new_cases = cases
-                    .into_iter()
+                    .iter()
                     .map(|(c, bod)| (c.map_type(f), map_vec(bod)))
                     .collect();
                 If { cases: new_cases }
@@ -251,11 +250,11 @@ fn lower_lit(lit: &ast::Literal) -> Literal {
 }
 
 fn lower_bop(bop: &ast::BOp) -> BOp {
-    bop.clone()
+    *bop
 }
 
 fn lower_uop(uop: &ast::UOp) -> UOp {
-    uop.clone()
+    *uop
 }
 
 fn lower_signature(sig: &ast::Signature) -> Signature {
@@ -302,13 +301,13 @@ fn lower_expr<T>(f: &mut dyn FnMut(&hir::Expr<T>) -> T, expr: &ast::Expr) -> Typ
             let ninit = Box::new(lower_expr(f, init));
             Let {
                 varname: *varname,
-                typename: typename.clone(),
+                typename: *typename,
                 init: ninit,
                 mutable: *mutable,
             }
         }
         E::If { cases, falseblock } => {
-            assert!(cases.len() > 0, "Should never happen");
+            assert!(!cases.is_empty(), "Should never happen");
             let mut cases: Vec<_> = cases
                 .iter()
                 .map(|case| (lower_expr(f, &*case.condition), lower_exprs(f, &case.body)))
@@ -438,7 +437,7 @@ fn lower_decls<T>(f: &mut dyn FnMut(&hir::Expr<T>) -> T, decls: &[ast::Decl]) ->
 ///
 /// TODO: Better name?
 pub(crate) fn plz(e: Expr<()>) -> Box<TypedExpr<()>> {
-    Box::new(TypedExpr { t: (), e: e })
+    Box::new(TypedExpr { t: (), e })
 }
 
 #[cfg(test)]

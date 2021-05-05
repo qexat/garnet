@@ -69,7 +69,7 @@ impl BOp {
             Add | Sub | Mul | Div | Mod => {
                 let def = INT.fetch_type(input_type);
                 if def.is_integer() {
-                    return input_type;
+                    input_type
                 } else {
                     unimplemented!("hmmmm, typechecking should probably never allow this");
                 }
@@ -109,7 +109,7 @@ impl UOp {
             Neg => {
                 let def = INT.fetch_type(input_type);
                 if def.is_integer() {
-                    return input_type;
+                    input_type
                 } else {
                     unimplemented!("hmmmm, typechecking should probably never allow this");
                 }

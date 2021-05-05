@@ -329,7 +329,7 @@ impl<'input> Parser<'input> {
         if let Some(Token { span, .. }) = token {
             let diag = Diagnostic::error()
                 .with_message("Parse error: got unexpected/unknown token")
-                .with_labels(vec![Label::primary(self.err.file_id, span.clone())]);
+                .with_labels(vec![Label::primary(self.err.file_id, span)]);
 
             self.err.error(&diag);
         } else {
@@ -356,7 +356,7 @@ impl<'input> Parser<'input> {
                 );
                 let diag = Diagnostic::error()
                     .with_message(msg)
-                    .with_labels(vec![Label::primary(self.err.file_id, t.span.clone())]);
+                    .with_labels(vec![Label::primary(self.err.file_id, t.span)]);
 
                 self.err.error(&diag);
             }
@@ -643,12 +643,7 @@ impl<'input> Parser<'input> {
         };
         // Parse a prefix, postfix or infix expression with a given
         // binding power or greater.
-        loop {
-            let op_token = match self.lex.peek().cloned() {
-                Some((maybe_op, _span)) => maybe_op,
-                // End of input
-                _other => break,
-            };
+        while let Some((op_token, _span)) = self.lex.peek().cloned() {
             // Is our token a postfix op?
             if let Some((l_bp, ())) = postfix_binding_power(&op_token) {
                 if l_bp < min_bp {

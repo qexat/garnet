@@ -22,7 +22,7 @@ use once_cell::sync::Lazy;
 /// The interner.  It's the ONLY part we have to actually
 /// carry around anywhere, so I'm experimenting with not
 /// heckin' bothering.  Seems to work pretty okay.
-pub static INT: Lazy<Cx> = Lazy::new(|| Cx::new());
+pub static INT: Lazy<Cx> = Lazy::new(Cx::new);
 
 /// The interned name of a type
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
@@ -111,7 +111,7 @@ impl TypeDef {
             TypeDef::Bool => Cow::Borrowed("Bool"),
             TypeDef::Never => Cow::Borrowed("Never"),
             TypeDef::Tuple(v) => {
-                if v.len() == 0 {
+                if v.is_empty() {
                     Cow::Borrowed("{}")
                 } else {
                     let mut res = String::from("{");
@@ -127,7 +127,7 @@ impl TypeDef {
                 t += ")";
                 let ret_def = INT.fetch_type(*rettype);
                 match &*ret_def {
-                    TypeDef::Tuple(x) if x.len() == 0 => {
+                    TypeDef::Tuple(x) if x.is_empty() => {
                         // pass, implicitly return unit
                     }
                     x => {
@@ -175,12 +175,11 @@ pub struct Cx {
 
 impl Cx {
     pub fn new() -> Self {
-        let s = Cx {
+        Cx {
             syms: intern::Interner::new(),
             types: intern::Interner::new(),
             //files: cs::files::SimpleFiles::new(mod_name.to_owned(), source.to_owned()),
-        };
-        s
+        }
     }
 
     /// Intern the symbol.

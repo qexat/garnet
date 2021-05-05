@@ -160,7 +160,7 @@ fn unparse_expr(e: &Expr, indent: usize, out: &mut dyn io::Write) -> io::Result<
                 writeln!(out, "then")?;
                 unparse_exprs(&case.body, indent + 1, out)?;
             }
-            if falseblock.len() > 0 {
+            if !falseblock.is_empty() {
                 writeln!(out, "else")?;
                 unparse_exprs(falseblock, indent + 1, out)?;
             }
@@ -169,7 +169,7 @@ fn unparse_expr(e: &Expr, indent: usize, out: &mut dyn io::Write) -> io::Result<
         E::Loop { body } => {
             writeln!(out, "loop")?;
             unparse_exprs(body, indent + 1, out)?;
-            writeln!(out, "")?;
+            writeln!(out)?;
             writeln!(out, "end")
         }
         E::Lambda { signature, body } => {
@@ -177,7 +177,7 @@ fn unparse_expr(e: &Expr, indent: usize, out: &mut dyn io::Write) -> io::Result<
             unparse_sig(signature, out)?;
             writeln!(out, " =")?;
             unparse_exprs(body, indent + 1, out)?;
-            writeln!(out, "")?;
+            writeln!(out)?;
             writeln!(out, "end")
         }
         E::Funcall { func, params } => {
