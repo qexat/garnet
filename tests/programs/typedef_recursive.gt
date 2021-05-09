@@ -1,0 +1,15 @@
+-- Compile:
+--   status: error
+
+-- TODO:
+-- I'm not sure quite how to solve this, actually.
+-- In Rust it dies when it gets to the "what is the layout of Foo?"
+-- or even earlier at "Is Bar: Sized true?"
+type Foo = Bar
+type Bar = Foo
+
+
+
+fn main(): {} =
+    __println(3)
+end
