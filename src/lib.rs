@@ -82,6 +82,8 @@ pub enum TypeDef {
     /// I think this actually *has* to be `VarSym` or else we lose the actual
     /// name, which is important.
     Named(VarSym),
+    /// A bare struct
+    Struct(Vec<(VarSym, TypeSym)>),
 }
 
 impl TypeDef {
