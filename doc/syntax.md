@@ -1,16 +1,22 @@
 Broad syntax thoughts, yanked from parser
 
-Everything is an expression
-Go for Lua-style preference of keywords rather than punctuation
-But don't go ham sacrificing familiarity for How It Should Be
+ * Everything is an expression
+ * Go for Lua-style preference of keywords rather than punctuation
+ * But don't go ham sacrificing familiarity for How It Should Be
 
-Keyword-delimited blocks instead of curly braces
-and/or/not keywords for logical operators instead of ||, && etc
-Keep | and & and ~ for binary operations
-Make sure trailing commas are always allowed
+So essentially Rust-like syntax, but:
+
+ * Keyword-delimited blocks instead of curly braces
+ * and/or/not keywords for logical operators instead of ||, && etc
+ * Keep | and & and ~ for binary operations
+ * Make sure trailing commas are always allowed
+ * [] or maybe () instead of <> for generics
+ * {} instead of () for tuples, that should keep things unambiguous
+ * {} for structs as well, to emphasize relationship with tuples
 
 
 Deliberate choices so that we don't go ham:
+
  * we use C/Lua-style function application
    `foo(bar, baz)` instead of Lisp style `(foo bar baz)` or ML/Haskell
    style `foo bar baz`.
@@ -22,6 +28,9 @@ Deliberate choices so that we don't go ham:
    emphasizes the equivalence between structs and tuples.
  * Tempting as it is, use `fn foo() ...` for functions, not `let foo = fn() ...`
    or other OCaml-y variations on it.
+
+The result looks quite pleasing, IMO!  And we can mostly use Rust syntax
+highlighting.
 
 
 ```
@@ -105,7 +114,7 @@ type Foo = Bar;
 
 // Define a struct with a fixed name that is its own type
 struct Foo {
-};
+}
 
 // Define an enum with a fixed name that is its own type
 enum Bar {
