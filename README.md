@@ -284,6 +284,11 @@ MIT
  * <https://queue.acm.org/detail.cfm?id=3212479> (C is not a low level language; the good one)
  * <https://old.reddit.com/r/rust/comments/my3ipa/if_you_could_redesign_rust_from_scratch_today/>
  * <https://lobste.rs/s/j7zv69/if_you_could_re_design_rust_from_scratch>
+ * <https://people.mpi-sws.org/~rossberg/1ml/> -- 1ML programming language
+
+Technically-irrelelvant but cool papers:
+
+ * <https://www.mathematik.uni-marburg.de/~rendel/rendel10invertible.pdf> -- Invertable parsers
 
 # Random notes
 
