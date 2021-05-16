@@ -253,6 +253,9 @@ and the representation gets optimized down when `some_const_value` is
 known at compile-time?  Hmmmmm.  Two `Box<[i32]>`'s are the same type
 even when the `[i32]`'s are different lengths, so...
 
+Dang it, the Rust people are ahead of me once again: https://doc.rust-lang.org/nightly/std/ptr/trait.Pointee.html
+and https://doc.rust-lang.org/nightly/std/ptr/struct.DynMetadata.html
+
 # Characters and strings
 
 Do what Rust does.  No need to innovate here.  String slices, like array
