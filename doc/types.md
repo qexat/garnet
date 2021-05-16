@@ -227,6 +227,32 @@ around slices-to-arrays, references, references-to-arrays,
 references-to-Vec, iterators, etc. and it would be nice to just toss it
 all out and see how it looks raw and unadorned.
 
+```rust
+let x: I32[3] = [1, 2, 3]
+let y: Slice['a, I32] = x.as_slice()
+
+```
+
+This raises the question of how to write something like Rust's
+`Box<[i32]>`.  `[i32]` is an unsized type, and it *seems* like this
+results in Rust sneakily stashing away the length of the value with the
+pointer to it.  This is the cause of some of the Magic I want to avoid,
+a `Box<i32>` and a `Box<[i32]>` are different, so `Box` actually has two
+different representations.  Same with `&i32` vs `&[i32]`.
+
+So, does this mean that the representation of `Box` is really
+
+```rust
+struct Box<T, some_const_value> {
+    contents: *T,
+    size = some_const_value,
+}
+```
+
+and the representation gets optimized down when `some_const_value` is
+known at compile-time?  Hmmmmm.  Two `Box<[i32]>`'s are the same type
+even when the `[i32]`'s are different lengths, so...
+
 # Characters and strings
 
 Do what Rust does.  No need to innovate here.  String slices, like array
@@ -236,11 +262,24 @@ slices, being non-magical sounds nice though.
 
 References are called "shared" and "unique", not "mutable" and
 "immutable".  Otherwise they should work like Rust.  A postfix notation
-sounds interesting, let's try it and see how it works.  I also kinda
+for reference and dereference operators sounds interesting and potentially
+smoother to write, let's try it and see how it works.  I also kinda
 hate `&` and `*`, let's use `^` for "pointer type" and "make reference".  What
 do we use for "dereference"?  Maybe `*` anyway.  Pascal uses `^` for
 "pointer type" and "dereference", which Feels Right but is backwards
 from what Rust and C do.
+
+Heck I need to think of a lifetime syntax.  Oh well, let's experiment
+with something like this:
+
+```rust
+let x: I32 = 3
+let y: I32^ = x -- lifetime is inferred
+let z: I32 'a^ = x -- Lifetime explicit,
+
+-- this keeps you reading the type left to right
+-- So I guess let's just keep rolling with
+```
 
 # Functions and closures
 
