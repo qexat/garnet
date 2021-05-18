@@ -25,15 +25,9 @@ might end up being there anyway.
 
 I also want nice enums for numerical values.
 
-I was thinking of NOT having arbitrary-sized numbers (ie, `I8 =
-Number(-128,127)`), buuuuuuut....  might be a useful case.
-
 I do *not* want dependent types, because cool as they are, it seems like
 they add a lot of complexity.  A limited form of dependent types for
 variable-length arrays may be acceptable.
-
-Don't be too scared of doing runtime checks for bounded numbers and
-such, and trusting the backend to optimize them out.
 
 I *really* want to be able to be polymorphic over owned types, shared
 borrows, and unique borrows.  Unfortunately nobody seems to know how the
@@ -82,12 +76,33 @@ and `ISize`, which is the size of a pointer offset.  TODO: Maybe call
 them `Size` and `Offset` or something?  hm, idk.  Maybe we shouldn't get
 fancy.
 
+TODO: I was thinking of NOT having arbitrary-sized numbers (ie, `I8 =
+Number(-128,127)`), buuuuuuut....  it might be a useful case.  Not going
+to worry about it now.  If we do, don't be too scared of doing runtime
+checks for bounded numbers and such, and trusting the backend to
+optimize them out.
+
 # Typedef's and aliases
+
+A typedef creates a new nominal type that is not exchangable with any
+other type, and contains a single member.  This is similar to Rust's
+"typedef struct"'s, but while Rust's approach of having it be a
+single-element tuple is kinda nice, in reality it's just a slightly
+weird construct to learn.  So maybe it will be nicer to have a specific
+operators for constructing and deconstructing values of this type.
+
+TODO: Figure out whether this is actually true, and figure out syntax
+for reals.  Right now the compiler just generates functions for
+wrapping/unwrapping typedefs, which is a little silly.  If we can make
+those functions generic then maybe that's fine though.
+
+Aliases create a new name for a type.  They should work as well as a
+textual search-and-replace would.
 
 # Enumerations
 
 There are two intertwined kinds of enumerations: enums and sum types.
-TODO: Better names would be welcome.
+TODO: Better names would be welcome, if there are any to be had.
 
 Enums are what Rust people tend to call "C-like enums": they are a set
 of integers with no duplicates, where each integer gets a constant name
@@ -158,6 +173,7 @@ end
 -- This lets you make strongly-typed constructors and deconstructors...
 fn bar_from(f: {I32, I32}: Foo.Bar = ... end
 -- TODO: Anonymous struct; is that a good idea?
+-- We don't have anonymous structs anywhere else, so...
 fn bop_from(f: ${x: I32, y: I32}: Foo.Bop = ... end
 
 fn foo_from_bar(f: Foo.Bar): Foo = ... end
@@ -215,6 +231,76 @@ implications:
    fields of that other struct, just stuffed inline into it"?  That's a
    way people tend to do things like inheritance-like struct extension.
    On the other hand, Rust don't need no inheritance, so fuckit.
+
+```rust
+-- To experiment with this, let's define Rust's std::ops::Add trait
+struct Add[Lhs, Rhs] =
+    type Output
+    pub add: fn(self: Lhs, rhs: Rhs): Output
+end
+
+-- implement for I32
+-- We know all these values at compile time, so this just gets
+-- inlined away hopefully?  Can we make a comptime attribute or such
+-- so it's an error if it doesn't?
+const AddI32: Add[I32, I32] = Self {
+    output = type I32,
+    add = fn(self: I32, rhs: I32): I32 = ... end
+}
+
+-- Call it
+let x: I32 = 3
+AddI32.add(x, 4)
+
+-- Ooooor, we can use postfix syntax of some kind...
+-- How the heck do we disambiguate it from our path syntax?
+x:AddI32.add(4)
+
+-- Import the definition I suppose
+use AddI32.add
+x:add(4)
+```
+
+```rust
+-- Trying to give this idea a workout.  Can we implement some handy Rust
+-- traits?
+--
+-- TODO: Think about the Self type
+-- TODO: Think about references
+-- TODO: Think about generic syntax
+-- TODO: We can make default methods pretty easy if we just have default
+-- values for structs in general
+
+-- Hmm, think about Self
+struct Hasher =
+    type Self
+    pub finish: fn(self: Self&): U64
+    pub write_u8: fn(self: Self mut&, i: U8): {}
+    pub write_i8: fn(self: Self mut&, i: U8): {}
+    ...
+end
+
+-- TODO:
+-- The type constraints here are wacky, how does that work?
+-- In Rust it's this:
+-- pub trait Hash {
+--    pub fn hash<H>(&self, state: &mut H)
+--    where H: Hasher;
+-- }
+
+struct Hash =
+    pub hash: fn[H](self: Self&, state: H mut&, impl: Hasher&): {}
+    -- Or like this???
+    pub hash: fn[H](self: Self&, hasher: Hasher&, state: hasher.Self): {}
+end
+
+-- What if we define the implementation via a functor or something?
+fn impl_hash(t: Type, hasher: Hasher): Hash =
+    Hash {
+        hash = fn(self: t&, state: hasher.Self): {}
+    }
+end
+```
 
 
 # Arrays and slices
