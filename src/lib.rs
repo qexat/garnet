@@ -82,8 +82,8 @@ pub enum TypeDef {
     /// I think this actually *has* to be `VarSym` or else we lose the actual
     /// name, which is important.
     Named(VarSym),
-    /// A bare struct
-    Struct(Vec<(VarSym, TypeSym)>),
+    /// A struct
+    Struct(VarSym, Vec<(VarSym, TypeSym)>),
 }
 
 impl TypeDef {
@@ -141,6 +141,7 @@ impl TypeDef {
                 Cow::Owned(t)
             }
             TypeDef::Named(s) => Cow::Owned((&*INT.fetch(*s)).clone()),
+            TypeDef::Struct(s, _) => Cow::Owned((&*INT.fetch(*s)).clone()),
             /*
             TypeDef::Ptr(t) => {
                 let inner_name = cx.fetch_type(**t).get_name();

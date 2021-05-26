@@ -65,6 +65,22 @@ fn compile_typedef(td: &TypeDef) -> Cow<'static, str> {
             accm.into()
         }
         Named(sym) => (&*INT.fetch(*sym)).clone().into(),
+        Struct(sym, vals) => {
+            let mut accm = String::from("struct ");
+            let name = &*INT.fetch(*sym);
+            accm += name;
+            accm += "{ \n";
+            for (nm, ty) in vals {
+                let nm_str = &*INT.fetch(*nm);
+                let vl_str = INT.fetch_type(*ty);
+                accm += nm_str;
+                accm += ": ";
+                accm += &vl_str.get_name();
+                accm += ",\n";
+            }
+            accm += "}\n";
+            accm.into()
+        }
     }
 }
 
