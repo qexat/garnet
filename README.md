@@ -286,6 +286,12 @@ MIT
  * <https://lobste.rs/s/j7zv69/if_you_could_re_design_rust_from_scratch>
  * <https://people.mpi-sws.org/~rossberg/1ml/> -- 1ML programming language
 
+References on IR stuff:
+
+ * <https://github.com/bytecodealliance/wasmtime/blob/main/cranelift/docs/ir.md>
+ * <https://blog.rust-lang.org/2016/04/19/MIR.html>
+ * <https://llvm.org/docs/LangRef.html>
+
 Technically-irrelelvant but cool papers:
 
  * <https://www.mathematik.uni-marburg.de/~rendel/rendel10invertible.pdf> -- Invertable parsers
@@ -340,7 +346,6 @@ Todo list of other common sources of UB in C, from <https://stackoverflow.com/qu
    amounts are implementation defined)
  * Evaluating an expression that is not mathematically defined (ie, div
    by 0)
- * Evaluating an expression that is not mathematically defined
  * Casting a numeric value into a value that can't be represented by the
    target type (either directly or via `static_cast`)
  * Attempting to modify a string literal or any other const object
@@ -371,4 +376,6 @@ Other reading material from people doing interesting unsafe Rust things:
 
 Mandating a different pointer type for referring to mmapped I/O is
 probably not unreasonable, tbqh, and removes a source of semantic
-weirdness that compilers have problems dealing with.
+weirdness that compilers have problems dealing with.  Basically have a
+`MMIOPtr[T]` type that is kinda similar to Rust's `UnsafeCell<T>`,
+but doesn't allow reads/writes to be reordered or optimized away.
