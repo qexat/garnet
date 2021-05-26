@@ -1,0 +1,21 @@
+-- Compile:
+--   status: success
+--
+-- Run:
+--   status: success
+--   stdout: 4
+
+struct Foo {
+    x: I32,
+    y: F32,
+    z: I8,
+}
+
+fn main(): {} =
+    let f: Foo = Foo {
+        x = 1,
+        y = 2.0,
+        z = 4,
+    }
+    __println(t.z)
+end

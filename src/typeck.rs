@@ -392,6 +392,9 @@ fn predeclare_decl(symtbl: &mut Symtbl, decl: &hir::Decl<()>) {
             }
             symtbl.add_type(*name, *typedecl);
         }
+        hir::Decl::StructDef { .. } => {
+            todo!()
+        }
         hir::Decl::Constructor { name, signature } => {
             {
                 if symtbl.get_var(*name).is_ok() {
@@ -491,6 +494,9 @@ fn typecheck_decl(
             // Make sure the body of the typedef is a real type.
             symtbl.type_exists(typedecl)?;
             Ok(hir::Decl::TypeDef { name, typedecl })
+        }
+        hir::Decl::StructDef { .. } => {
+            todo!()
         }
         // Don't need to do anything here since we generate these in the lowering
         // step and have already verified no names clash.
