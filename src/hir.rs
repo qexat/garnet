@@ -210,6 +210,10 @@ pub enum Decl<T> {
         name: VarSym,
         typedecl: TypeSym,
     },
+    StructDef {
+        name: VarSym,
+        fields: Vec<(VarSym, TypeSym)>,
+    },
     /// Our first compiler intrinsic!  \o/
     ///
     /// This is a function that is generated along with
@@ -416,7 +420,9 @@ fn lower_decl<T>(accm: &mut Vec<Decl<T>>, f: &mut dyn FnMut(&hir::Expr<T>) -> T,
                     rettype: rtype,
                 },
             });
-            // FOR NOW we just make a
+        }
+        D::StructDef { .. } => {
+            todo!()
         }
     }
 }

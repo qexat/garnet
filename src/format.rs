@@ -46,6 +46,7 @@ fn unparse_decl(d: &Decl, out: &mut dyn io::Write) -> io::Result<()> {
             writeln!(out)
         }
         Decl::TypeDef { .. } => todo!(),
+        Decl::StructDef { .. } => todo!(),
     }
 }
 

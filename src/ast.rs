@@ -269,6 +269,11 @@ pub enum Decl {
         typedecl: TypeSym,
         doc_comment: Vec<String>,
     },
+    StructDef {
+        name: VarSym,
+        fields: Vec<(VarSym, TypeSym)>,
+        doc_comment: Vec<String>,
+    },
 }
 
 /// A compilable chunk of AST.

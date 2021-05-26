@@ -129,6 +129,14 @@ fn compile_decl(w: &mut impl Write, decl: &hir::Decl<TypeSym>) -> io::Result<()>
             let tstr = compile_typedef(&*INT.fetch_type(*typedecl));
             writeln!(w, "pub struct {}({});", nstr, tstr)
         }
+        hir::Decl::StructDef { name, fields } => {
+            let nstr = mangle_name(&INT.fetch(*name));
+            let mut accm = String::new();
+            for (n, t) in fields {
+                accm += &format!("{}: {},\n", &INT.fetch(*n), INT.fetch_type(*t).get_name());
+            }
+            writeln!(w, "pub struct {} {{\n {} }}\n", nstr, accm)
+        }
         // For these we have to look at the signature and make a
         // function that constructs a struct or tuple or whatever
         // out of it.
