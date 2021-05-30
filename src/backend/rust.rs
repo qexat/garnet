@@ -133,7 +133,11 @@ fn compile_decl(w: &mut impl Write, decl: &hir::Decl<TypeSym>) -> io::Result<()>
             let nstr = mangle_name(&INT.fetch(*name));
             let mut accm = String::new();
             for (n, t) in fields {
-                accm += &format!("{}: {},\n", &INT.fetch(*n), INT.fetch_type(*t).get_name());
+                accm += &format!(
+                    "{}: {},\n",
+                    &INT.fetch(*n),
+                    compile_typedef(&*INT.fetch_type(*t))
+                );
             }
             writeln!(w, "pub struct {} {{\n {} }}\n", nstr, accm)
         }
