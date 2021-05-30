@@ -8,6 +8,7 @@
 //! with a precendence that's defined trivially by a simple look-up function.
 //! I like it a lot.
 
+use std::mem::Discriminant as Discr;
 use std::ops::Range;
 
 use codespan_reporting as cs;
@@ -123,6 +124,8 @@ pub enum TokenKind {
     Return,
     #[token("type")]
     Type,
+    #[token("struct")]
+    Struct,
 
     // Punctuation
     #[token("(")]
@@ -185,6 +188,13 @@ pub enum TokenKind {
     #[error]
     #[regex(r"[ \t\n\f]+", logos::skip)]
     Error,
+}
+
+impl TokenKind {
+    /// Shortcut for std::mem::discriminant()
+    fn discr(&self) -> Discr<Self> {
+        std::mem::discriminant(self)
+    }
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -374,10 +384,18 @@ impl<'input> Parser<'input> {
         }
     }
 
-    /// Returns whether the next token in the stream is what is expected
-    fn peek_is(&mut self, expected: TokenKind) -> bool {
+    /// Returns whether the next token in the stream is what is expected.
+    ///
+    /// Basically, we can't (easily) pass in a strongly-typed enum discriminant
+    /// and have only that checked, we have to pass the full enum.
+    /// Ironically, this is exactly the sort of thing I want Garnet to be
+    /// able to do nicely.
+    ///
+    /// ...double ironically, the above paragraph is incorrect as of 1.21,
+    /// because std::mem::discriminant() is better than I thought.
+    fn peek_is(&mut self, expected: Discr<TokenKind>) -> bool {
         if let Some(got) = self.peek() {
-            got.kind == expected
+            std::mem::discriminant(&got.kind) == expected
         } else {
             false
         }
@@ -458,6 +476,9 @@ impl<'input> Parser<'input> {
                 Some(Token { kind: T::Const, .. }) => Some(p.parse_const(doc_comments)),
                 Some(Token { kind: T::Fn, .. }) => Some(p.parse_fn(doc_comments)),
                 Some(Token { kind: T::Type, .. }) => Some(p.parse_typedef(doc_comments)),
+                Some(Token {
+                    kind: T::Struct, ..
+                }) => Some(p.parse_structdef(doc_comments)),
                 None => None,
                 other => p.error(other),
             }
@@ -504,10 +525,22 @@ impl<'input> Parser<'input> {
         }
     }
 
+    fn parse_structdef(&mut self, doc_comment: Vec<String>) -> ast::Decl {
+        let name = self.expect_ident();
+        self.expect(T::LBrace);
+        let fields = self.parse_struct_fields();
+        self.expect(T::RBrace);
+        ast::Decl::StructDef {
+            name,
+            fields,
+            doc_comment,
+        }
+    }
+
     /// signature = fn_args [":" typename]
     fn parse_fn_signature(&mut self) -> ast::Signature {
         let params = self.parse_fn_args();
-        let rettype = if self.peek_is(T::Colon) {
+        let rettype = if self.peek_is(T::Colon.discr()) {
             self.expect(T::Colon);
             self.parse_type()
         } else {
@@ -528,7 +561,7 @@ impl<'input> Parser<'input> {
             let tname = self.parse_type();
             args.push((name, tname));
 
-            if self.peek_is(T::Comma) {
+            if self.peek_is(T::Comma.discr()) {
                 self.expect(T::Comma);
             } else {
                 break;
@@ -540,7 +573,7 @@ impl<'input> Parser<'input> {
 
     fn parse_fn_type(&mut self) -> TypeDef {
         let params = self.parse_fn_type_args();
-        let rettype = if self.peek_is(T::Colon) {
+        let rettype = if self.peek_is(T::Colon.discr()) {
             self.expect(T::Colon);
             self.parse_type()
         } else {
@@ -553,11 +586,11 @@ impl<'input> Parser<'input> {
         let mut args = vec![];
         self.expect(T::LParen);
 
-        while !self.peek_is(T::RParen) {
+        while !self.peek_is(T::RParen.discr()) {
             let tname = self.parse_type();
             args.push(tname);
 
-            if self.peek_is(T::Comma) {
+            if self.peek_is(T::Comma.discr()) {
                 self.expect(T::Comma);
             } else {
                 break;
@@ -567,14 +600,33 @@ impl<'input> Parser<'input> {
         args
     }
 
+    fn parse_struct_fields(&mut self) -> Vec<(VarSym, TypeSym)> {
+        let mut args = vec![];
+
+        // TODO someday: Doc comments on struct fields
+        while let Some((T::Ident(_i), _span)) = self.lex.peek() {
+            let name = self.expect_ident();
+            self.expect(T::Colon);
+            let tname = self.parse_type();
+            args.push((name, tname));
+
+            if self.peek_is(T::Comma.discr()) {
+                self.expect(T::Comma);
+            } else {
+                break;
+            }
+        }
+        args
+    }
+
     fn parse_tuple_type(&mut self) -> TypeDef {
         let mut body = vec![];
-        while !self.peek_is(T::RBrace) {
+        while !self.peek_is(T::RBrace.discr()) {
             //while let Some(expr) = self.parse_type() {
             let t = self.parse_type();
             body.push(t);
 
-            if self.peek_is(T::Comma) {
+            if self.peek_is(T::Comma.discr()) {
                 self.expect(T::Comma);
             } else {
                 break;
@@ -659,11 +711,24 @@ impl<'input> Parser<'input> {
                     }
                     T::Period => {
                         self.expect(T::Period);
-                        let elt = self.expect_int();
-                        assert!(elt > -1);
-                        ast::Expr::TupleRef {
-                            expr: Box::new(lhs),
-                            elt: elt as usize,
+                        let next_token = self.next().unwrap_or_else(|| self.error(None));
+                        // If the period is followed by an int, it's a
+                        // tuple ref, otherwise it's a struct ref.
+                        match next_token.kind.clone() {
+                            T::Ident(i) => ast::Expr::StructRef {
+                                expr: Box::new(lhs),
+                                elt: INT.intern(i),
+                            },
+                            // Following Rust, we do not allow numbers
+                            // with suffixes as tuple indices.
+                            T::Integer(elt) => {
+                                assert!(elt > -1);
+                                ast::Expr::TupleRef {
+                                    expr: Box::new(lhs),
+                                    elt: elt as usize,
+                                }
+                            }
+                            _ => self.error(Some(next_token)),
                         }
                     }
                     T::Ampersand => {
@@ -717,7 +782,7 @@ impl<'input> Parser<'input> {
         // There's now three places it's used and it's only going to grow.
         while let Some(expr) = self.parse_expr(0) {
             params.push(expr);
-            if !self.peek_is(T::Comma) {
+            if !self.peek_is(T::Comma.discr()) {
                 break;
             }
             self.expect(T::Comma);
@@ -729,7 +794,7 @@ impl<'input> Parser<'input> {
     /// let = "let" ident ":" typename "=" expr
     fn parse_let(&mut self) -> ast::Expr {
         self.expect(T::Let);
-        let mutable = if self.peek_is(T::Mut) {
+        let mutable = if self.peek_is(T::Mut.discr()) {
             self.expect(T::Mut);
             true
         } else {
@@ -763,7 +828,7 @@ impl<'input> Parser<'input> {
 
     /// {"elseif" expr "then" {expr}}
     fn parse_elif(&mut self, accm: &mut Vec<ast::IfCase>) {
-        while self.peek_is(T::Elseif) {
+        while self.peek_is(T::Elseif.discr()) {
             self.expect(T::Elseif);
             let condition = self
                 .parse_expr(0)
@@ -846,7 +911,7 @@ impl<'input> Parser<'input> {
         while let Some(expr) = self.parse_expr(0) {
             body.push(expr);
 
-            if self.peek_is(T::Comma) {
+            if self.peek_is(T::Comma.discr()) {
                 self.expect(T::Comma);
             } else {
                 break;

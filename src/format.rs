@@ -208,6 +208,10 @@ fn unparse_expr(e: &Expr, indent: usize, out: &mut dyn io::Write) -> io::Result<
             unparse_expr(&*expr, indent, out)?;
             write!(out, ".{}", elt)
         }
+        E::StructRef { expr, elt } => {
+            unparse_expr(&*expr, indent, out)?;
+            write!(out, ".{}", INT.fetch(*elt))
+        }
         E::Ref { expr } => {
             unparse_expr(&*expr, indent, out)?;
             write!(out, "&")

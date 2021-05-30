@@ -323,6 +323,9 @@ fn compile_expr(expr: &hir::TypedExpr<TypeSym>) -> String {
         E::TupleRef { expr, elt } => {
             format!("{}.{}", compile_expr(expr), elt)
         }
+        E::StructRef { expr, elt } => {
+            format!("{}.{}", compile_expr(expr), INT.fetch(*elt))
+        }
         E::Assign { lhs, rhs } => {
             format!("{} = {}", compile_expr(lhs), compile_expr(rhs))
         }

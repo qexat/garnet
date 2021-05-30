@@ -201,6 +201,11 @@ pub enum Expr {
         expr: Box<Expr>,
         elt: usize,
     },
+    /// Struct element reference
+    StructRef {
+        expr: Box<Expr>,
+        elt: VarSym,
+    },
     Ref {
         expr: Box<Expr>,
     },

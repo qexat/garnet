@@ -89,6 +89,10 @@ impl<T> TypedExpr<T> {
                 expr: Box::new(expr.map_type(f)),
                 elt: *elt,
             },
+            StructRef { expr, elt } => StructRef {
+                expr: Box::new(expr.map_type(f)),
+                elt: *elt,
+            },
             Assign { lhs, rhs } => Assign {
                 lhs: Box::new(lhs.map_type(f)),
                 rhs: Box::new(rhs.map_type(f)),
@@ -158,6 +162,10 @@ pub enum Expr<T> {
     TupleRef {
         expr: Box<TypedExpr<T>>,
         elt: usize,
+    },
+    StructRef {
+        expr: Box<TypedExpr<T>>,
+        elt: VarSym,
     },
     Assign {
         lhs: Box<TypedExpr<T>>,
@@ -357,6 +365,10 @@ fn lower_expr<T>(f: &mut dyn FnMut(&hir::Expr<T>) -> T, expr: &ast::Expr) -> Typ
             expr: Box::new(lower_expr(f, expr)),
             elt: *elt,
         },
+        E::StructRef { expr, elt } => Expr::StructRef {
+            expr: Box::new(lower_expr(f, expr)),
+            elt: *elt,
+        },
         E::Deref { expr } => Expr::Deref {
             expr: Box::new(lower_expr(f, expr)),
         },
@@ -421,9 +433,10 @@ fn lower_decl<T>(accm: &mut Vec<Decl<T>>, f: &mut dyn FnMut(&hir::Expr<T>) -> T,
                 },
             });
         }
-        D::StructDef { .. } => {
-            todo!()
-        }
+        D::StructDef { name, fields, .. } => accm.push(Decl::StructDef {
+            name: *name,
+            fields: fields.clone(),
+        }),
     }
 }
 
