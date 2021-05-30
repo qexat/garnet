@@ -10,7 +10,7 @@ struct Bar {
 
 struct Foo {
     x: I32,
-    y: F32,
+    y: I16,
     z: I8,
 }
 
@@ -22,4 +22,5 @@ fn main(): {} =
     }
     let g: Bar = Bar {}
     __println(t.z)
+
 end

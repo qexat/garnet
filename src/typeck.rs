@@ -401,8 +401,13 @@ fn predeclare_decl(symtbl: &mut Symtbl, decl: &hir::Decl<()>) {
             }
             symtbl.add_type(*name, *typedecl);
         }
-        hir::Decl::StructDef { .. } => {
-            todo!()
+        hir::Decl::StructDef { name, fields } => {
+            let typ = TypeDef::Struct(*name, fields.clone());
+            if symtbl.get_typedef(*name).is_some() {
+                panic!("Tried to redeclare struct {}!", INT.fetch(*name));
+            }
+            let typesym = INT.intern_type(&typ);
+            symtbl.add_type(*name, typesym)
         }
         hir::Decl::Constructor { name, signature } => {
             {
@@ -504,8 +509,13 @@ fn typecheck_decl(
             symtbl.type_exists(typedecl)?;
             Ok(hir::Decl::TypeDef { name, typedecl })
         }
-        hir::Decl::StructDef { .. } => {
-            todo!()
+        hir::Decl::StructDef { name, fields } => {
+            let typedecl = INT.intern_type(&TypeDef::Struct(name, fields.clone()));
+            symtbl.type_exists(typedecl)?;
+            Ok(hir::Decl::StructDef {
+                name,
+                fields: fields.clone(),
+            })
         }
         // Don't need to do anything here since we generate these in the lowering
         // step and have already verified no names clash.
