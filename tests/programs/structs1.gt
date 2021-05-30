@@ -5,6 +5,9 @@
 --   status: success
 --   stdout: 4
 
+struct Bar {
+}
+
 struct Foo {
     x: I32,
     y: F32,
@@ -17,5 +20,6 @@ fn main(): {} =
         y = 2.0,
         z = 4,
     }
+    let g: Bar = Bar {}
     __println(t.z)
 end

@@ -59,6 +59,10 @@ pub enum TypeError {
     TupleRef {
         got: TypeSym,
     },
+    StructRef {
+        got: VarSym,
+        expected: TypeSym,
+    },
     TypeMismatch {
         expr_name: Cow<'static, str>,
         got: TypeSym,
@@ -136,6 +140,11 @@ impl TypeError {
             TypeError::TupleRef { got } => format!(
                 "Tried to reference tuple but didn't get a tuple, got {}",
                 INT.fetch_type(*got).get_name()
+            ),
+            TypeError::StructRef { got, expected } => format!(
+                "Tried to reference field {} of struct, but struct is {}",
+                INT.fetch(*got),
+                INT.fetch_type(*expected).get_name()
             ),
             TypeError::TypeMismatch {
                 expr_name,
@@ -817,6 +826,7 @@ fn typecheck_expr(
             let expr_typedef = INT.fetch_type(body_expr.t);
             if let TypeDef::Tuple(typesyms) = &*expr_typedef {
                 // TODO
+                // ...what do we have to do here?
                 assert!(elt < typesyms.len());
                 Ok(hir::TypedExpr {
                     t: typesyms[elt],
@@ -825,6 +835,29 @@ fn typecheck_expr(
                         elt,
                     },
                 })
+            } else {
+                Err(TypeError::TupleRef { got: body_expr.t })
+            }
+        }
+        StructRef { expr, elt } => {
+            let body_expr = typecheck_expr(symtbl, *expr, function_rettype)?;
+            let expr_typedef = INT.fetch_type(body_expr.t);
+            if let TypeDef::Struct(_name, fields) = &*expr_typedef {
+                if let Some((_name, vl)) = fields.iter().find(|(nm, _)| *nm == elt) {
+                    // The referenced field exists in the struct type
+                    Ok(hir::TypedExpr {
+                        t: *vl,
+                        e: StructRef {
+                            expr: Box::new(body_expr),
+                            elt,
+                        },
+                    })
+                } else {
+                    Err(TypeError::StructRef {
+                        got: elt,
+                        expected: body_expr.t,
+                    })
+                }
             } else {
                 Err(TypeError::TupleRef { got: body_expr.t })
             }

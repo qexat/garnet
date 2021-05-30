@@ -575,6 +575,7 @@ fn lower_expr(fb: &mut FuncBuilder, expr: &TExpr) -> Var {
         E::Return { retval: _ } => todo!(),
         E::TupleCtor { body: _ } => todo!(),
         E::TupleRef { expr: _, elt: _ } => todo!(),
+        E::StructRef { expr: _, elt: _ } => todo!(),
 
         E::Assign { lhs, rhs } => match &lhs.e {
             hir::Expr::Var { name } => {
