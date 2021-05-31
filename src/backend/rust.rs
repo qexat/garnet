@@ -324,6 +324,18 @@ fn compile_expr(expr: &hir::TypedExpr<TypeSym>) -> String {
             accm += ")";
             accm
         }
+        E::StructCtor { name, body } => {
+            let mut accm = String::from(&*INT.fetch(*name));
+            accm += " {\n";
+            for (nm, vl) in body {
+                accm += &*INT.fetch(*nm);
+                accm += ": ";
+                accm += &compile_expr(vl);
+                accm += ",\n";
+            }
+            accm += "}\n";
+            accm
+        }
         E::TupleRef { expr, elt } => {
             format!("{}.{}", compile_expr(expr), elt)
         }
