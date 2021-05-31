@@ -488,7 +488,6 @@ fn typecheck_decl(
                 })
             }
         }
-        // TODO: ...do we need to check that typename actually exists?
         hir::Decl::Const {
             name,
             typename,
@@ -827,6 +826,29 @@ fn typecheck_expr(
             Ok(hir::TypedExpr {
                 t: INT.intern_type(&body_type),
                 e: TupleCtor { body: body_exprs },
+            })
+        }
+        StructCtor { name, body } => {
+            // This is a kinda weird amount of structure-fiddling, but okay
+            let body_exprs: Vec<(VarSym, hir::TypedExpr<TypeSym>)> = body
+                .iter()
+                .map(|(nm, vl)| {
+                    let expr = typecheck_expr(symtbl, vl.clone(), function_rettype)?;
+                    Ok((*nm, expr))
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            let struct_type = symtbl
+                .get_typedef(name)
+                .map(|t| Ok(t))
+                .unwrap_or(Err(TypeError::UnknownType(name)))?;
+            // TODO: Make sure all our struct fields exist in the struct type,
+            // and we aren't missing any or have any excess
+            Ok(hir::TypedExpr {
+                t: struct_type,
+                e: StructCtor {
+                    name,
+                    body: body_exprs,
+                },
             })
         }
         // TODO: Inference???

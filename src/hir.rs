@@ -85,6 +85,10 @@ impl<T> TypedExpr<T> {
             TupleCtor { body } => TupleCtor {
                 body: map_vec(body),
             },
+            StructCtor { name, body } => {
+                let body = body.iter().map(|(nm, vl)| (*nm, vl.map_type(f))).collect();
+                StructCtor { name: *name, body }
+            }
             TupleRef { expr, elt } => TupleRef {
                 expr: Box::new(expr.map_type(f)),
                 elt: *elt,
