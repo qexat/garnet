@@ -159,6 +159,10 @@ pub enum Expr<T> {
     TupleCtor {
         body: Vec<TypedExpr<T>>,
     },
+    StructCtor {
+        name: VarSym,
+        body: Vec<(VarSym, TypedExpr<T>)>,
+    },
     TupleRef {
         expr: Box<TypedExpr<T>>,
         elt: usize,
@@ -361,6 +365,16 @@ fn lower_expr<T>(f: &mut dyn FnMut(&hir::Expr<T>) -> T, expr: &ast::Expr) -> Typ
         E::TupleCtor { body } => Expr::TupleCtor {
             body: lower_exprs(f, body),
         },
+        E::StructCtor { name, body } => {
+            let lowered_body = body
+                .iter()
+                .map(|(nm, expr)| (*nm, lower_expr(f, expr)))
+                .collect();
+            Expr::StructCtor {
+                name: *name,
+                body: lowered_body,
+            }
+        }
         E::TupleRef { expr, elt } => Expr::TupleRef {
             expr: Box::new(lower_expr(f, expr)),
             elt: *elt,

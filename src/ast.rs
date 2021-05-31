@@ -196,6 +196,10 @@ pub enum Expr {
     TupleCtor {
         body: Vec<Expr>,
     },
+    StructCtor {
+        name: VarSym,
+        body: Vec<(VarSym, Expr)>,
+    },
     /// Tuple element reference
     TupleRef {
         expr: Box<Expr>,
