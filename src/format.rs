@@ -204,6 +204,15 @@ fn unparse_expr(e: &Expr, indent: usize, out: &mut dyn io::Write) -> io::Result<
             }
             write!(out, "}}")
         }
+        E::StructCtor { name, body } => {
+            writeln!(out, "{} {{", INT.fetch(*name))?;
+            for (nm, expr) in body {
+                write!(out, "{} = ", INT.fetch(*nm))?;
+                unparse_expr(expr, 0, out)?;
+                writeln!(out, ",")?;
+            }
+            write!(out, "}}")
+        }
         E::TupleRef { expr, elt } => {
             unparse_expr(&*expr, indent, out)?;
             write!(out, ".{}", elt)
