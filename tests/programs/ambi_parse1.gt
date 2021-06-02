@@ -1,0 +1,45 @@
+-- Compile:
+--   status: success
+--
+-- Run:
+--   status: success
+--   stdout:
+--     1
+--     1
+--     2
+--     1
+--     -2
+--     -3
+
+-- Test tricky parser expressions
+
+fn foo(): I32 =
+    let y: I32 = 2
+    -1;
+    y
+end
+
+fn bar(): I32 =
+    let y: I32 = 2;
+    -y
+end
+
+fn baz(): I32 =
+    let y: I32 = 3
+    return -y
+end
+
+fn main(): {} =
+    let x: I32 = 2 - 1
+    let y: I32 = 2
+    -1
+    let z: I32 = 2;
+    -1
+    __println(x)
+    __println(y)
+    __println(z)
+    __println(foo())
+    __println(bar())
+    __println(baz())
+    {}
+end
