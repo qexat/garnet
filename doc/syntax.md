@@ -39,7 +39,7 @@ decl =
   | const_decl
 
 const_decl = DOC_COMMENT "const" ident ":" typename "=" expr
-function_decl = DOC_COMMENT "fn" ident fn_signature "=" {expr} "end"
+function_decl = DOC_COMMENT "fn" ident fn_signature "=" exprs "end"
 
 value =
   | NUMBER
@@ -50,6 +50,9 @@ value =
 constructor =
   // Tuple constructor
   | "{" [expr {"," expr} [","] "}"
+
+// We may have separators between expressions
+exprs = expr [";"] [expr]
 
 expr =
   | let
@@ -66,11 +69,11 @@ expr =
 
 // Currently, type inference is not a thing
 let = "let" ident ":" typename "=" expr
-if = "if" expr "then" {expr} {"else" "if" expr "then" {expr}} ["else" {expr}] "end"
-loop = "loop" {expr} "end"
-block = "do" {expr} "end"
+if = "if" expr "then" exprs {"else" "if" expr "then" exprs} ["else" exprs] "end"
+loop = "loop" exprs "end"
+block = "do" exprs "end"
 funcall = expr "(" [expr {"," expr}] ")"
-lambda = "fn" fn_signature "=" {expr} "end"
+lambda = "fn" fn_signature "=" exprs "end"
 return = "return" expr
 
 // Pointer ops should be postfix, leads to much nicer chaining of calls.
@@ -151,3 +154,13 @@ let beep: Beep = Beep ${ x = 12 }
 Or, could constructors actually just be functions?
 If we have named arguments in functions, then, that could work.
 ```
+
+
+Universal function call syntax is `foo:bar(baz)` which simply parses into
+the same thing as `bar(foo, baz)`.  This means it is not ambiguous wiht
+a struct `foo` with a field `bar` that happnens to be callable; that
+would be `foo.bar(baz)`.  The exact rule is that `COLON` is a postfix
+operator, so it parses `expr COLON IDENT funargs`.  It's an ident
+instead of an arbitrary expression because that gets the job done,
+prevents `x : y (z)` becoming some kind of ternary operator thing, and
+it means we can't do horrible things like `foo:fn(x) = println(x) end()`

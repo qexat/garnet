@@ -102,10 +102,6 @@ pub enum TokenKind {
     Let,
     #[token("mut")]
     Mut,
-    #[token(":")]
-    Colon,
-    #[token("=")]
-    Equals,
     #[token("end")]
     End,
     #[token("if")]
@@ -140,6 +136,12 @@ pub enum TokenKind {
     Comma,
     #[token(".")]
     Period,
+    #[token(":")]
+    Colon,
+    #[token(";")]
+    Semicolon,
+    #[token("=")]
+    Equals,
 
     // Operators
     #[token("+")]
@@ -639,6 +641,10 @@ impl<'input> Parser<'input> {
     fn parse_exprs(&mut self) -> Vec<ast::Expr> {
         let mut exprs = vec![];
         while let Some(e) = self.parse_expr(0) {
+            // Hey and if we have a semicolon after an expr we can just eat it
+            if self.peek_is(T::Semicolon.discr()) {
+                self.drop();
+            }
             exprs.push(e);
         }
         exprs
@@ -709,6 +715,17 @@ impl<'input> Parser<'input> {
                             params,
                         }
                     }
+                    T::Colon => {
+                        self.expect(T::Colon);
+                        let ident = self.expect_ident();
+                        let ident_expr = ast::Expr::Var { name: ident };
+                        let mut params = self.parse_function_args();
+                        params.insert(0, lhs);
+                        ast::Expr::Funcall {
+                            func: Box::new(ident_expr),
+                            params,
+                        }
+                    }
                     T::Period => {
                         self.expect(T::Period);
                         let next_token = self.next().unwrap_or_else(|| self.error(None));
@@ -754,17 +771,21 @@ impl<'input> Parser<'input> {
                 }
                 self.drop();
                 let rhs = self.parse_expr(r_bp).unwrap();
-                lhs = if op_token == T::Equals {
-                    ast::Expr::Assign {
+                // Not all things that parse like binary operations
+                // actually produce the "BinOp" expression type.
+                lhs = match op_token {
+                    // x = y
+                    T::Equals => ast::Expr::Assign {
                         lhs: Box::new(lhs),
                         rhs: Box::new(rhs),
-                    }
-                } else {
-                    let bop = bop_for(&op_token).unwrap();
-                    ast::Expr::BinOp {
-                        op: bop,
-                        lhs: Box::new(lhs),
-                        rhs: Box::new(rhs),
+                    },
+                    _ => {
+                        let bop = bop_for(&op_token).unwrap();
+                        ast::Expr::BinOp {
+                            op: bop,
+                            lhs: Box::new(lhs),
+                            rhs: Box::new(rhs),
+                        }
                     }
                 };
                 continue;
@@ -937,11 +958,6 @@ impl<'input> Parser<'input> {
                 "Bool" => crate::INT.bool(),
                 s => crate::INT.named_type(s),
             },
-            /*self.error(Some(Token {
-                kind: T::Ident(s),
-                span,
-            })),
-                 */
             Some(Token {
                 kind: T::LBrace, ..
             }) => {
@@ -955,42 +971,6 @@ impl<'input> Parser<'input> {
             other => self.error(other),
         }
     }
-
-    /*
-    fn parse_inf_type(&mut self) -> TypeInfo {
-        use crate::*;
-        let t = self.next();
-        match t {
-            Some(Token {
-                kind: T::Ident(s),
-                span,
-            }) => match s.as_ref() {
-                // TODO: This is a bit too hardwired tbh...
-                "I128" => TypeInfo::Known(InfTypeDef::SInt(16)),
-                "I64" => TypeInfo::Known(InfTypeDef::SInt(8)),
-                "I32" => TypeInfo::Known(InfTypeDef::SInt(4)),
-                "I16" => TypeInfo::Known(InfTypeDef::SInt(2)),
-                "I8" => TypeInfo::Known(InfTypeDef::SInt(1)),
-                "Bool" => TypeInfo::Known(InfTypeDef::Bool),
-                _ => self.error(Some(Token {
-                    kind: T::Ident(s),
-                    span,
-                })),
-            },
-            Some(Token {
-                kind: T::LBrace, ..
-            }) => {
-                let tuptype = self.parse_tuple_type();
-                self.cx.intern_type(&tuptype)
-            }
-            Some(Token { kind: T::Fn, .. }) => {
-                let fntype = self.parse_fn_type();
-                self.cx.intern_type(&fntype)
-            }
-            other => self.error(other),
-        }
-    }
-    */
 }
 
 /// Specifies binding power of prefix operators.
@@ -1008,10 +988,12 @@ fn prefix_binding_power(op: &TokenKind) -> ((), usize) {
 /// Specifies binding power of postfix operators.
 fn postfix_binding_power(op: &TokenKind) -> Option<(usize, ())> {
     match op {
-        // "(" opening function call args
-        T::LParen => Some((120, ())),
         // "." for tuple/struct references.
         T::Period => Some((130, ())),
+        // "(" opening function call args
+        T::LParen => Some((120, ())),
+        // ":" universal function call syntax
+        T::Colon => Some((115, ())),
         // "^" for pointer derefs.  TODO: Check precedence?
         T::Carat => Some((105, ())),
         T::Ampersand => Some((105, ())),

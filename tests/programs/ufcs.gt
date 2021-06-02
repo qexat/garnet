@@ -1,0 +1,35 @@
+-- Compile:
+--   status: success
+--
+-- Run:
+--   status: success
+--   stdout:
+--     99
+--     99
+--     99
+--     99
+--     19
+
+
+fn ufcs(x: I32, y: I32): {} =
+    __println(x + y)
+end
+
+fn addchain(x: I32, y: I32): I32 =
+    x + y
+end
+
+fn main(): {} =
+    ufcs(90, 9)
+    90:ufcs(9)
+    let x: I32 = 9
+    -- Need the semicolon to disambiguate
+    x:ufcs(90);
+    (100 - 10):ufcs(9)
+    let y: I32 =
+      x:addchain(1)
+       :addchain(2)
+       :addchain(3)
+       :addchain(4)
+    __println(y)
+end
