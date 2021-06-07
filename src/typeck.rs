@@ -269,6 +269,7 @@ impl Symtbl {
 fn type_matches(wanted: TypeSym, got: TypeSym) -> bool {
     // If we want some type, and got Never, then this is always valid
     // because we never hit the expression that expected the `wanted` type
+    println!("Testing {:?} against {:?}", wanted, got);
     if got == INT.never() {
         true
     } else {
@@ -319,6 +320,7 @@ fn infer_type(t1: TypeSym, t2: TypeSym) -> Option<TypeSym> {
             let sym = INT.intern_type(&TypeDef::Tuple(accm));
             Some(sym)
         }
+        (TypeDef::Struct(n1, _), TypeDef::Struct(n2, _)) if n1 == n2 => Some(t1),
         (tt1, tt2) if tt1 == tt2 => Some(t1),
         _ => None,
     }
@@ -407,6 +409,7 @@ fn predeclare_decl(symtbl: &mut Symtbl, decl: &hir::Decl<()>) {
                 panic!("Tried to redeclare struct {}!", INT.fetch(*name));
             }
             let typesym = INT.intern_type(&typ);
+            println!("Adding struct of type {}", INT.fetch(*name));
             symtbl.add_type(*name, typesym)
         }
         hir::Decl::Constructor { name, signature } => {
@@ -677,6 +680,9 @@ fn typecheck_expr(
                     t: unittype,
                 })
             } else {
+                dbg!(&init_expr.t, &typename);
+                dbg!(INT.fetch_type(init_expr.t), INT.fetch_type(typename));
+
                 Err(TypeError::LetType {
                     name: varname,
                     got: init_expr.t,
@@ -837,19 +843,24 @@ fn typecheck_expr(
                     Ok((*nm, expr))
                 })
                 .collect::<Result<Vec<_>, _>>()?;
-            let struct_type = symtbl
-                .get_typedef(name)
-                .map(|t| Ok(t))
-                .unwrap_or(Err(TypeError::UnknownType(name)))?;
-            // TODO: Make sure all our struct fields exist in the struct type,
-            // and we aren't missing any or have any excess
-            Ok(hir::TypedExpr {
-                t: struct_type,
-                e: StructCtor {
-                    name,
-                    body: body_exprs,
-                },
-            })
+            println!("Looking up struct named {}", INT.fetch(name));
+            let struct_type = symtbl.get_typedef(name);
+
+            println!("Got: {:?}", struct_type);
+            if let Some(tsym) = struct_type {
+                println!("Which is: {:?}", INT.fetch_type(tsym));
+                // TODO: Make sure all our struct fields exist in the struct type,
+                // and we aren't missing any or have any excess
+                Ok(hir::TypedExpr {
+                    t: tsym,
+                    e: StructCtor {
+                        name,
+                        body: body_exprs,
+                    },
+                })
+            } else {
+                Err(TypeError::UnknownType(name))
+            }
         }
         // TODO: Inference???
         // Not sure we need it, any integer type should be fine for tuple lookups...

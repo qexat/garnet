@@ -612,6 +612,26 @@ impl<'input> Parser<'input> {
             let tname = self.parse_type();
             args.push((name, tname));
 
+            // TODO: Figure out how to not make this comma parsing jank af
+            if self.peek_is(T::Comma.discr()) {
+                self.expect(T::Comma);
+            } else {
+                break;
+            }
+        }
+        args
+    }
+
+    fn parse_struct_lit_fields(&mut self) -> Vec<(VarSym, ast::Expr)> {
+        let mut args = vec![];
+
+        while let Some((T::Ident(_i), _span)) = self.lex.peek() {
+            let name = self.expect_ident();
+            self.expect(T::Equals);
+            let tname = self.parse_expr(0).unwrap();
+            args.push((name, tname));
+
+            // TODO: Figure out how to not make this comma parsing jank af
             if self.peek_is(T::Comma.discr()) {
                 self.expect(T::Comma);
             } else {
@@ -669,7 +689,11 @@ impl<'input> Parser<'input> {
             T::LBrace => self.parse_constructor(),
             T::Ident(_) => {
                 let ident = self.expect_ident();
-                ast::Expr::Var { name: ident }
+                if self.peek_is(TokenKind::LBrace.discr()) {
+                    self.parse_struct_literal(ident)
+                } else {
+                    ast::Expr::Var { name: ident }
+                }
             }
             T::Let => self.parse_let(),
             T::If => self.parse_if(),
@@ -940,6 +964,13 @@ impl<'input> Parser<'input> {
         }
         self.expect(T::RBrace);
         ast::Expr::TupleCtor { body }
+    }
+
+    fn parse_struct_literal(&mut self, name: VarSym) -> ast::Expr {
+        self.expect(T::LBrace);
+        let body = self.parse_struct_lit_fields();
+        self.expect(T::RBrace);
+        ast::Expr::StructCtor { name, body }
     }
 
     fn parse_type(&mut self) -> TypeSym {

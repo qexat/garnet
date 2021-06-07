@@ -11,7 +11,7 @@
 --     -2
 --     -3
 
--- Test tricky parser expressions
+-- Test tricky parse expressions
 
 fn foo(): I32 =
     let y: I32 = 2
