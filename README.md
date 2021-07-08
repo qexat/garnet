@@ -46,29 +46,12 @@ change with time.
    that this remains Dark Magic outside of anything that isn't Lisp or
    Erlang.  (That said, when you don't want this, you REALLY don't want
    it.)
- * No undefined behavior -- This may be hard to do, but it would be
-   really nice to eliminate this scourge from existence, or at least
-   demonstrate that it can be eliminated in a reasonable way.
- * Some more thoughts on the lack of undefined behavior is... you COULD
-   define "read an invalid pointer" to be "return unknown value, or
-   crash the program".  But only if you knew that pointer could never
-   aim at memory-mapped I/O.  *Writing* to an invalid pointer could
-   literally do anything in terms of corrupting program state.  Some
-   slightly-heated discussion with `devsnek` breaks the problem down
-   into two parts: For example, WASM does not have undefined behavior.
-   If you look at a computer from the point of view of assembly
-   language + OS, it MOSTLY lacks undefined behavior, though some things
-   like data races still can result in it.  If you smash a stack in
-   assembly you can look at it and define what *is* going to happen.
-   But from the point of view of the assumptions made by a higher-level
-   language, especially one free to tinker with the ABI a little,
-   there's no way you can define what will happen when a stack gets
-   smashed.  And even if you're writing in assembly on a microcontroller
-   then you might still end up doing Undefined things by poking
-   memory-mapped I/O.  So, Undefined Behavior isn't really Undefined,
-   rather it's defined by a system out of the scope of the language
-   definition.  So let's just stop calling it Undefined Behavior and
-   call it an `out of context problem`.
+ * As little undefined behavior as possible -- If the compiler is
+   allowed to assume something can't happen, then the language should
+   prevent it from happening if at all feasible.  Let's stop calling it
+   "undefined behavior" and call it an `out of context problem`, since
+   it's often not undefine*able*, but rather it's something that the
+   compiler doesn't have the information to reason about.
  * I am not CONVINCED that a linker is the best way to handle things.
    This has implications on things like distributing libraries, defining
    ABI's, using DLL's, and parallelizing the compiler itself.  No solid
@@ -260,8 +243,15 @@ Options:
    build process, but will work.  Might be useful if we can proof
    whatever borrow checking type stuff we implement against Rust's
 
-Current thoughts: Try out QBE and Cranelift, then if those don't work out
-either output Rust or WASM.
+Output Rust for right now, bootstrap the compiler, then think about it.
+
+Trying out QBE and Cranelift both seem reasonable choices, and writing a
+not-super-sophisticated backend that outputs many targets seems
+semi-reasonable.  Outputting WASM is probably the simplest low-level
+thing to get started with, but is a little weird since it is kinda an IR
+itself, so to turn an SSA IR into wasm you need a step such as LLVM's
+"relooper".  So one might end up with non-optimized WASM that leans on
+the implementation's optimizer.
 
 # License
 
@@ -293,6 +283,11 @@ References on IR stuff:
  * <https://blog.rust-lang.org/2016/04/19/MIR.html>
  * <https://llvm.org/docs/LangRef.html>
 
+References on backend stuff:
+
+ * <http://troubles.md/posts/wasm-is-not-a-stack-machine/> and the
+   following posts -- Interesting thoughts on webassembly's design
+
 Technically-irrelelvant but cool papers:
 
  * <https://www.mathematik.uni-marburg.de/~rendel/rendel10invertible.pdf> -- Invertable parsers
@@ -314,6 +309,27 @@ Technically-irrelelvant but cool papers:
 
 nee "Undefined Behavior"
 
+Some more thoughts on the lack of undefined behavior is... you COULD
+define "read an invalid pointer" to be "return unknown value, or crash
+the program".  But only if you knew that pointer could never aim at
+memory-mapped I/O.  *Writing* to an invalid pointer could literally do
+anything in terms of corrupting program state.  Some slightly-heated
+discussion with `devsnek` breaks the problem down into two parts: For
+example, WASM does not have undefined behavior.  If you look at a
+computer from the point of view of assembly language + OS, it MOSTLY
+lacks undefined behavior, though some things like data races still can
+result in it.  If you smash a stack in assembly you can look at it and
+define what *is* going to happen.  But from the point of view of the
+assumptions made by a higher-level language, especially one free to
+tinker with the ABI a little, there's no way you can define what will
+happen when a stack gets smashed.  And even if you're writing in
+assembly on a microcontroller then you might still be able to do things
+that put the hardware in an inconsistent state by poking memory-mapped
+I/O.  So, Undefined Behavior usually isn't really Undefined, rather it's
+defined by a system out of the scope of the language definition.  So
+let's just stop calling it Undefined Behavior and call it an `out of
+context problem`.
+
 Things that I think we CAN define context for:
 
  * Integer overflow either overflows or panics.
@@ -332,6 +348,9 @@ Things that I think we CAN define context for:
    runtime checks for reading uninitialized data before it's been
    written.
  * Order of evaluation of function arguments.
+ * Constructing an impossible value, such as having an enum representing
+   integer values 0-5 and stuffing the integer 6 into its slot.  Not
+   sure *how* to deal with this, but it's a case that needs handling.
 
 Here's a list of things that I don't see a way of defining in any
 reasonable/performant way:
@@ -339,6 +358,9 @@ reasonable/performant way:
  * **Writing** an undefined pointer may do anything, ie by smashing the
    stack.  If correctly executing a program requires assuming an
    un-smashed stack, well, that's tricky.
+ * Reading a pointer pointing to mmapped I/O may similarly do anything.
+   A notable recent experience was when reading a value from memory was
+   *required* to acknowledge an interrupt.
 
 Todo list of other common sources of UB in C, from <https://stackoverflow.com/questions/367633/what-are-all-the-common-undefined-behaviours-that-a-c-programmer-should-know-a>:
 
@@ -379,4 +401,6 @@ Mandating a different pointer type for referring to mmapped I/O is
 probably not unreasonable, tbqh, and removes a source of semantic
 weirdness that compilers have problems dealing with.  Basically have a
 `MMIOPtr[T]` type that is kinda similar to Rust's `UnsafeCell<T>`,
-but doesn't allow reads/writes to be reordered or optimized away.
+but doesn't allow reads/writes to be reordered or optimized away, and
+which has different constraints on what values are allowed for it than a
+normal pointer does.
