@@ -1,5 +1,4 @@
 //! Garnet compiler guts.
-//#![deny(missing_docs)]
 
 use std::borrow::Cow;
 use std::sync::Arc;
@@ -9,7 +8,6 @@ pub mod backend;
 pub mod format;
 pub mod hir;
 pub mod intern;
-pub mod lir;
 pub mod parser;
 pub mod passes;
 mod scope;

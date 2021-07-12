@@ -10,7 +10,6 @@
 use std::borrow::Cow;
 use std::io::{self, Write};
 
-//use crate::lir;
 use crate::hir;
 use crate::*;
 

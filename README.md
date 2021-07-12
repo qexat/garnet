@@ -276,6 +276,7 @@ MIT
  * <https://lobste.rs/s/j7zv69/if_you_could_re_design_rust_from_scratch>
  * <https://people.mpi-sws.org/~rossberg/1ml/> -- 1ML programming language
  * <http://moscova.inria.fr/~maranget/papers/ml05e-maranget.pdf> -- Compiling pattern matching
+ * <https://research.swtch.com/gomm> and related posts in introduction -- Memory models
 
 References on IR stuff:
 
