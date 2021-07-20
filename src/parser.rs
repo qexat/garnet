@@ -76,6 +76,7 @@ fn make_i128(lex: &mut Lexer<TokenKind>) -> Option<(i128, u8)> {
     Some((m, 16))
 }
 
+#[allow(missing_docs)]
 #[derive(Logos, Debug, PartialEq, Clone)]
 pub enum TokenKind {
     #[regex("[a-zA-Z_][a-zA-Z0-9_]*", |lex| lex.slice().to_owned())]

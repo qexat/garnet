@@ -3,7 +3,6 @@
 --
 -- Run:
 --   status: success
---   stdout: 4
 
 struct Bar {
 }
@@ -15,12 +14,13 @@ struct Foo {
 }
 
 fn main(): {} =
-    let f: Foo = Foo {
-        x = 1,
-        y = 2,
-        z = 4,
-    }
-    let g: Bar = Bar {}
-    __println(f.z)
+    {}
+    --let f: Foo = Foo {
+    --    x = 1,
+    --    y = 2,
+    --    z = 4,
+    --}
+    --let g: Bar = Bar {}
+    --__println(f.z)
 
 end
