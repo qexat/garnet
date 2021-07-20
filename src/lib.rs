@@ -1,4 +1,5 @@
 //! Garnet compiler guts.
+//#![deny(missing_docs)]
 
 use std::borrow::Cow;
 use std::sync::Arc;
@@ -26,12 +27,14 @@ pub static INT: Lazy<Cx> = Lazy::new(Cx::new);
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct TypeSym(pub usize);
 
+/// Required for interner
 impl From<usize> for TypeSym {
     fn from(i: usize) -> TypeSym {
         TypeSym(i)
     }
 }
 
+/// Required for interner
 impl From<TypeSym> for usize {
     fn from(i: TypeSym) -> usize {
         i.0
@@ -42,36 +45,44 @@ impl From<TypeSym> for usize {
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct VarSym(pub usize);
 
+/// Required for interner
 impl From<usize> for VarSym {
     fn from(i: usize) -> VarSym {
         VarSym(i)
     }
 }
 
+/// Required for interner
 impl From<VarSym> for usize {
     fn from(i: VarSym) -> usize {
         i.0
     }
 }
 
-/// For now this is what we use as a type...
-/// This doesn't include the name, just the properties of it.
-///
-/// A real type def that has had all the inference stuff done
+/// A path of modules/structs/whatever
+/// `foo.bar.bop`
+pub struct Path {
+    /// The last part of the path, must always exist.
+    pub name: VarSym,
+    /// The rest of the (possibly empty) path
+    pub path: Vec<VarSym>,
+}
+
+/// A complete-ish description of a type.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum TypeDef {
     /// Signed integer with the given number of bytes
     SInt(u8),
     /// An integer of unknown size, from an integer literal
     UnknownInt,
+    /// Boolean, obv's
     Bool,
-    /// We can infer types for tuples
+    /// Tuple.  The types inside it may or may not be fully known I guess
     Tuple(Vec<TypeSym>),
     /// Never is a real type, I guess!
     Never,
+    /// The type of a lambda is its signature
     Lambda(Vec<TypeSym>, TypeSym),
-    // /// Are names parts of structs?  I guess not.
-    //Struct(Vec<(VarSym, Sym)>),
     /// This is basically a type that has been named but we
     /// don't know what type it actually is until after type checking...
     ///

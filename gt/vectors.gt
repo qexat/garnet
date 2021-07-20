@@ -2,9 +2,9 @@
 --- and such.  Mainly just syntax.
 
 struct Vec3 =
-    x: f32
-    y: f32
-    z: f32
+    x: F32
+    y: F32
+    z: F32
 end
 
 fn add(lhs: Vec3, rhs: Vec3): Vec3 =
@@ -15,14 +15,19 @@ fn add(lhs: Vec3, rhs: Vec3): Vec3 =
     }
 end
 
---- Why not this?
---- A more expression-y syntax.  Might fit a more type-metaprogram-y
---- language.
-type Vec3 = struct
-    x: f32
-    y: f32
-    z: f32
+const VecAdd: Add[Vec3] = Add[Vec3] {
+    Output = Vec3,
+    add = add,
+}
+
+fn foo(a: Vec3, b: Vec3): Vec3 =
+    -- So all these are equivalent...
+    add(a, b)
+    a.add(b)
+    a + b
+    VecAdd.add(a, b)
 end
+
 
 --- hm hm generics.
 struct Vec3[T] =

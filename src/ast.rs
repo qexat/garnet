@@ -18,13 +18,17 @@ pub enum Literal {
     Integer(i128),
     /// An integer with a known size
     SizedInteger {
+        /// Literal value
         vl: i128,
+        /// The size of the integer, in bytes
         bytes: u8,
     },
+    /// A bool literal
     Bool(bool),
 }
 
 /// Binary operation
+#[allow(missing_docs)]
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub enum BOp {
     // Math
@@ -81,6 +85,7 @@ impl BOp {
 }
 
 /// Unary operation
+#[allow(missing_docs)]
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum UOp {
     Neg,
@@ -125,14 +130,18 @@ impl UOp {
 /// Includes the initial `if`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct IfCase {
+    /// the expr in `if expr then ...`
     pub condition: Box<Expr>,
+    /// The body of the if expr
     pub body: Vec<Expr>,
 }
 
 /// A function type signature
 #[derive(Debug, Clone, PartialEq)]
 pub struct Signature {
+    /// Parameters
     pub params: Vec<(VarSym, TypeSym)>,
+    /// Return type
     pub rettype: TypeSym,
 }
 
@@ -147,6 +156,7 @@ impl Signature {
 
 /// Any expression.
 /// So, basically anything not a top-level decl.
+#[allow(missing_docs)]
 #[derive(Debug, Clone, PartialEq)]
 pub enum Expr {
     Lit {

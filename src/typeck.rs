@@ -16,6 +16,24 @@ impl std::fmt::Display for TypeError {
     }
 }
 
+/// A simplified `TypeDef` that can only represent things
+/// we know are valid.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum TypeDeffo {
+    /// Signed integer with the given number of bytes
+    SInt(u8),
+    /// Boolean, obv's
+    Bool,
+    /// Tuple.  The types inside it may or may not be fully known I guess
+    Tuple(Vec<Self>),
+    /// Never is a real type, I guess!
+    Never,
+    /// The type of a lambda is its signature
+    Lambda(Vec<Self>, Box<Self>),
+    /// A struct
+    Struct(VarSym, Vec<(VarSym, Self)>),
+}
+
 #[derive(Debug, Clone)]
 pub enum TypeError {
     UnknownVar(VarSym),
