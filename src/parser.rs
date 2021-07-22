@@ -316,7 +316,7 @@ impl<'input> Parser<'input> {
     fn next(&mut self) -> Option<Token> {
         let t = self.lex.next().map(|(tok, span)| Token::new(tok, span));
         match t {
-            // Skip comments
+            // Recurse to skip comments
             Some(Token {
                 kind: T::Comment(_),
                 ..
@@ -345,17 +345,27 @@ impl<'input> Parser<'input> {
         }
     }
 
-    /// Shortcut to panic with an "unknown token" parse error.
-    fn error(&self, token: Option<Token>) -> ! {
-        if let Some(Token { span, .. }) = token {
-            let diag = Diagnostic::error()
-                .with_message("Parse error: got unexpected/unknown token")
-                .with_labels(vec![Label::primary(self.err.file_id, span)]);
-
-            self.err.error(&diag);
+    /// Takes a string describing what it expected, and a token that is what
+    /// it actually got.
+    fn error(&self, expected: &str, token_or_eof: Option<Token>) -> ! {
+        let diag = if let Some(got) = token_or_eof {
+            let msg = format!(
+                "Parse error on token {:?} from str {}.  Expected {}",
+                got.kind,
+                &self.source[got.span.clone()],
+                expected
+            );
+            Diagnostic::error()
+                .with_message(msg)
+                .with_labels(vec![Label::primary(self.err.file_id, got.span)])
         } else {
-            panic!("Unexpected end of file!")
-        }
+            let len = self.source.len();
+            let msg = format!("Parse error on end of file.  Expected {}", expected);
+            Diagnostic::error()
+                .with_message(msg)
+                .with_labels(vec![Label::primary(self.err.file_id, len..len)])
+        };
+        self.err.error(&diag);
     }
 
     /// Consume a token, we don't care what it is.
@@ -370,7 +380,7 @@ impl<'input> Parser<'input> {
             Some(t) if t.kind == expected => (),
             Some(t) => {
                 let msg = format!(
-                    "Parse error on got token {:?} from str {}.  Expected token: {:?}",
+                    "Parse error on token {:?} from str {}.  Expected token: {:?}",
                     t.kind,
                     &self.source[t.span.clone()],
                     expected
@@ -490,8 +500,8 @@ impl<'input> Parser<'input> {
                 Some(Token {
                     kind: T::Struct, ..
                 }) => Some(p.parse_structdef(doc_comments)),
+                Some(other) => p.error("start of decl", Some(other)),
                 None => None,
-                other => p.error(other),
             }
         }
         parse_decl_inner(self, vec![])
@@ -525,6 +535,7 @@ impl<'input> Parser<'input> {
         }
     }
 
+    /// typedef = "type" ident "=" type
     fn parse_typedef(&mut self, doc_comment: Vec<String>) -> ast::Decl {
         let name = self.expect_ident();
         self.expect(T::Equals);
@@ -536,6 +547,7 @@ impl<'input> Parser<'input> {
         }
     }
 
+    /// structdef = ident "{" [struct_field]* "}"
     fn parse_structdef(&mut self, doc_comment: Vec<String>) -> ast::Decl {
         let name = self.expect_ident();
         self.expect(T::LBrace);
@@ -622,6 +634,8 @@ impl<'input> Parser<'input> {
             args.push((name, tname));
 
             // TODO: Figure out how to not make this comma parsing jank af
+            // maybe
+            // {term ","} [term [","]]
             if self.peek_is(T::Comma.discr()) {
                 self.expect(T::Comma);
             } else {
@@ -641,6 +655,7 @@ impl<'input> Parser<'input> {
             args.push((name, tname));
 
             // TODO: Figure out how to not make this comma parsing jank af
+            // same as above
             if self.peek_is(T::Comma.discr()) {
                 self.expect(T::Comma);
             } else {
@@ -653,7 +668,6 @@ impl<'input> Parser<'input> {
     fn parse_tuple_type(&mut self) -> TypeDef {
         let mut body = vec![];
         while !self.peek_is(T::RBrace.discr()) {
-            //while let Some(expr) = self.parse_type() {
             let t = self.parse_type();
             body.push(t);
 
@@ -732,7 +746,7 @@ impl<'input> Parser<'input> {
             // Something else not a valid expr
             _x => return None,
         };
-        // Parse a prefix, postfix or infix expression with a given
+        // Parse a postfix or infix expression with a given
         // binding power or greater.
         while let Some((op_token, _span)) = self.lex.peek().cloned() {
             // Is our token a postfix op?
@@ -761,24 +775,24 @@ impl<'input> Parser<'input> {
                     }
                     T::Period => {
                         self.expect(T::Period);
-                        let next_token = self.next().unwrap_or_else(|| self.error(None));
                         // If the period is followed by an int, it's a
                         // tuple ref, otherwise it's a struct ref.
-                        match next_token.kind.clone() {
-                            T::Ident(i) => ast::Expr::StructRef {
+                        let tok = self.next();
+                        match tok.clone().map(|t| t.kind) {
+                            Some(T::Ident(i)) => ast::Expr::StructRef {
                                 expr: Box::new(lhs),
                                 elt: INT.intern(i),
                             },
                             // Following Rust, we do not allow numbers
                             // with suffixes as tuple indices.
-                            T::Integer(elt) => {
+                            Some(T::Integer(elt)) => {
                                 assert!(elt > -1);
                                 ast::Expr::TupleRef {
                                     expr: Box::new(lhs),
                                     elt: elt as usize,
                                 }
                             }
-                            _ => self.error(Some(next_token)),
+                            _other => self.error("ident or integer", tok),
                         }
                     }
                     T::Ampersand => {
@@ -924,7 +938,7 @@ impl<'input> Parser<'input> {
                 self.expect(T::End);
                 elsepart
             }
-            other => self.error(other),
+            other => self.error("else, elseif block or end", other),
         };
         ast::Expr::If {
             cases: ifcases,
@@ -975,6 +989,7 @@ impl<'input> Parser<'input> {
         ast::Expr::TupleCtor { body }
     }
 
+    /// struct literal = ident "{" ... "}"
     fn parse_struct_literal(&mut self, name: VarSym) -> ast::Expr {
         self.expect(T::LBrace);
         let body = self.parse_struct_lit_fields();
@@ -1005,7 +1020,7 @@ impl<'input> Parser<'input> {
                 let fntype = self.parse_fn_type();
                 crate::INT.intern_type(&fntype)
             }
-            other => self.error(other),
+            other => self.error("type", other),
         }
     }
 }
@@ -1032,6 +1047,9 @@ fn postfix_binding_power(op: &TokenKind) -> Option<(usize, ())> {
         // ":" universal function call syntax
         T::Colon => Some((115, ())),
         // "^" for pointer derefs.  TODO: Check precedence?
+        // This gets a little weird since it's postfix, not used
+        // to thinking about it.  So it's like...
+        // (-foo)^ vs -(foo^)
         T::Carat => Some((105, ())),
         T::Ampersand => Some((105, ())),
         _x => None,
