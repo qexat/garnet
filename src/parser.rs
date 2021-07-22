@@ -1,10 +1,9 @@
-//! We're just going to do a simple LL recursive-descent parser.
-//! It's simple, robust, fast, and pretty hard to screw up.
+//! We're just going to do a simple LL recursive-descent parser, with Pratt parsing for infix
+//! expressions.  It's simple, robust, fast, and pretty hard to screw up.
 //!
-//! This does get enhanced for parsing expressions into a Pratt
-//! parser, as described  here:
+//! Pratt parsing is best described here:
 //! <https://matklad.github.io/2020/04/13/simple-but-powerful-pratt-parsing.html>
-//! This is extremely nice for parsing infix and postfix operators
+//! It is extremely nice for parsing infix and postfix operators
 //! with a precendence that's defined trivially by a simple look-up function.
 //! I like it a lot.
 
@@ -18,9 +17,11 @@ use logos::{Lexer, Logos};
 use crate::ast;
 use crate::*;
 
+/// Checks whether the given value can fit in `int_size` number
+/// of bits.
 fn bounds_check(val: i128, int_size: u8) -> Option<(i128, u8)> {
     let bound = 2_i128.pow(int_size as u32 * 8);
-    dbg!(val, bound, bound / 2 - 1);
+    //dbg!(val, bound, bound / 2 - 1);
     if val > (bound / 2) - 1 || val <= -(bound / 2) {
         None
     } else {
@@ -28,20 +29,23 @@ fn bounds_check(val: i128, int_size: u8) -> Option<(i128, u8)> {
     }
 }
 
-/// Turn this into something parse() can parse,
+/// Turn a valid number string into something Rust's `str::parse()` can parse,
 /// so,
-/// 123_456_I32 becomes 123456
+/// 123_456_I32 becomes 123456.
+///
+/// Ignores/chops off any trailing characters that are not digits or `_`, so
+/// it's up to some other function to make sure that part is correct.
+///
+/// Only works for integers right now, but who needs floats anyway, amirite?
 fn extract_digits(s: &str) -> String {
     /// Is the char a digit or the separator '_'?
     fn is_digitish(c: &char) -> bool {
         c.is_digit(10) || (*c) == '_'
     }
-    let digits = s
-        .chars()
+    s.chars()
         .take_while(is_digitish)
         .filter(|c| c.is_digit(10))
-        .collect();
-    digits
+        .collect()
 }
 
 fn make_i8(lex: &mut Lexer<TokenKind>) -> Option<(i128, u8)> {
@@ -281,6 +285,9 @@ impl ErrorReporter {
     }
 }
 
+/// The core parser struct.  It provides basic methods for
+/// manipulating the input stream, and the `parse()` method to
+/// try to drive the given input to completion.
 pub struct Parser<'input> {
     lex: std::iter::Peekable<logos::SpannedIter<'input, TokenKind>>,
     source: &'input str,
@@ -288,9 +295,9 @@ pub struct Parser<'input> {
 }
 
 impl<'input> Parser<'input> {
-    pub fn new(source: &'input str) -> Self {
+    pub fn new(filename: &str, source: &'input str) -> Self {
         let lex = TokenKind::lexer(source).spanned().peekable();
-        let err = ErrorReporter::new("module", source);
+        let err = ErrorReporter::new(filename, source);
         Parser { lex, source, err }
     }
 
@@ -308,8 +315,8 @@ impl<'input> Parser<'input> {
     /// Returns the next token, with span.
     fn next(&mut self) -> Option<Token> {
         let t = self.lex.next().map(|(tok, span)| Token::new(tok, span));
-        // Skip comments
         match t {
+            // Skip comments
             Some(Token {
                 kind: T::Comment(_),
                 ..
@@ -324,8 +331,8 @@ impl<'input> Parser<'input> {
             .lex
             .peek()
             .map(|(tok, span)| Token::new(tok.clone(), span.clone()));
-        // Skip comments
         match t {
+            // Skip comments
             Some(Token {
                 kind: T::Comment(_),
                 ..
@@ -338,6 +345,7 @@ impl<'input> Parser<'input> {
         }
     }
 
+    /// Shortcut to panic with an "unknown token" parse error.
     fn error(&self, token: Option<Token>) -> ! {
         if let Some(Token { span, .. }) = token {
             let diag = Diagnostic::error()
@@ -980,16 +988,13 @@ impl<'input> Parser<'input> {
             Some(Token {
                 kind: T::Ident(s),
                 span: _,
-            }) => match s.as_ref() {
-                // TODO: This is a bit too hardwired tbh...
-                "I128" => crate::INT.i128(),
-                "I64" => crate::INT.i64(),
-                "I32" => crate::INT.i32(),
-                "I16" => crate::INT.i16(),
-                "I8" => crate::INT.i8(),
-                "Bool" => crate::INT.bool(),
-                s => crate::INT.named_type(s),
-            },
+            }) => {
+                if let Some(t) = TypeDef::get_primitive_type(s.as_ref()) {
+                    crate::INT.intern_type(&t)
+                } else {
+                    crate::INT.named_type(s)
+                }
+            }
             Some(Token {
                 kind: T::LBrace, ..
             }) => {
@@ -1065,7 +1070,7 @@ mod tests {
     /// AST is actually something that you want, or anything at all.
     fn test_parse_with<T>(f: impl Fn(&mut Parser) -> T, strs: &[&str]) {
         for s in strs {
-            let mut p = Parser::new(s);
+            let mut p = Parser::new("unittest", s);
             f(&mut p);
             // Make sure we've parsed the whole string.
             assert_eq!(p.lex.peek(), None);
@@ -1079,7 +1084,7 @@ mod tests {
     /// For now it's just for expr's, since that's most of the language.
     fn test_expr_is(s: &str, f: impl Fn() -> Expr) {
         let ast = f();
-        let mut p = Parser::new(s);
+        let mut p = Parser::new("unittest", s);
         let parsed_expr = p.parse_expr(0).unwrap();
         assert_eq!(&ast, &parsed_expr);
         // Make sure we've parsed the whole string.
@@ -1089,7 +1094,7 @@ mod tests {
     /// Same as test_expr_is but with decl's
     fn test_decl_is(s: &str, f: impl Fn() -> ast::Decl) {
         let ast = f();
-        let mut p = Parser::new(s);
+        let mut p = Parser::new("unittest", s);
         let parsed_decl = p.parse_decl().unwrap();
         assert_eq!(&ast, &parsed_decl);
         // Make sure we've parsed the whole string.
@@ -1143,7 +1148,7 @@ const bar: Bool = 4
 const baz: {} = {}
 type blar = I8
 "#;
-        let p = &mut Parser::new(s);
+        let p = &mut Parser::new("unittest", s);
         let foosym = INT.intern("foo");
         let barsym = INT.intern("bar");
         let bazsym = INT.intern("baz");
@@ -1458,7 +1463,7 @@ type blar = I8
             ("9_I128", 9, 16),
         ];
         for (s, expected_int, expected_bytes) in tests {
-            let mut p = Parser::new(s);
+            let mut p = Parser::new("unittest", s);
             assert_eq!(
                 p.next().unwrap().kind,
                 TokenKind::IntegerSize((*expected_int, *expected_bytes))
@@ -1484,7 +1489,7 @@ type blar = I8
             "999_999_I16",
         ];
         for s in tests {
-            let mut p = Parser::new(s);
+            let mut p = Parser::new("unittest", s);
             assert_eq!(p.next().unwrap().kind, TokenKind::Error);
             assert!(p.next().is_none());
         }

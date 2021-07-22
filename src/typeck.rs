@@ -991,7 +991,7 @@ mod tests {
 
     fn typecheck_src(src: &str) -> Result<hir::Ir<TypeSym>, TypeError> {
         use crate::parser::Parser;
-        let ast = Parser::new(src).parse();
+        let ast = Parser::new("unittest", src).parse();
         let ir = hir::lower(&mut rly, &ast);
         typecheck(ir).map_err(|e| {
             eprintln!("typecheck_src got error: {}", e);

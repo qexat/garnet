@@ -258,7 +258,7 @@ end
 
 "#;
         let ast = {
-            let mut parser = crate::parser::Parser::new(src);
+            let mut parser = crate::parser::Parser::new("unittest", src);
             parser.parse()
         };
         let mut output = Cursor::new(vec![]);
