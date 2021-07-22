@@ -636,6 +636,8 @@ impl<'input> Parser<'input> {
             // TODO: Figure out how to not make this comma parsing jank af
             // maybe
             // {term ","} [term [","]]
+            // or
+            // [THING { "," THING } [","]]
             if self.peek_is(T::Comma.discr()) {
                 self.expect(T::Comma);
             } else {
