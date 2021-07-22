@@ -1,11 +1,11 @@
 --- Messing about with vectors, as a way to experiment with structures
 --- and such.  Mainly just syntax.
 
-struct Vec3 =
-    x: F32
-    y: F32
-    z: F32
-end
+struct Vec3 {
+    x: F32,
+    y: F32,
+    z: F32,
+}
 
 fn add(lhs: Vec3, rhs: Vec3): Vec3 =
     Vec3 {

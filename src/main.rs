@@ -30,7 +30,7 @@ fn main() -> std::io::Result<()> {
     // Output to file
     {
         let src = std::fs::read_to_string(&opt.file)?;
-        let output = garnet::compile(&src);
+        let output = garnet::compile(&opt.file.to_str().unwrap(), &src);
         rust_file = opt.file.clone();
         rust_file.set_extension("rs");
         std::fs::write(&rust_file, &output)?;

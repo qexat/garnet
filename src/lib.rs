@@ -19,22 +19,22 @@ pub(crate) mod testutil;
 
 use once_cell::sync::Lazy;
 /// The interner.  It's the ONLY part we have to actually
-/// carry around anywhere, so I'm experimenting with not
-/// heckin' bothering.  Seems to work pretty okay.
+/// carry around anywhere, so I'm experimenting with making
+/// it a global.  Seems to work pretty okay.
 pub static INT: Lazy<Cx> = Lazy::new(Cx::new);
 
 /// The interned name of a type
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct TypeSym(pub usize);
 
-/// Required for interner
+/// Required for interner interface.
 impl From<usize> for TypeSym {
     fn from(i: usize) -> TypeSym {
         TypeSym(i)
     }
 }
 
-/// Required for interner
+/// Required for interner interface.
 impl From<TypeSym> for usize {
     fn from(i: TypeSym) -> usize {
         i.0
@@ -45,14 +45,14 @@ impl From<TypeSym> for usize {
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct VarSym(pub usize);
 
-/// Required for interner
+/// Required for interner interface.
 impl From<usize> for VarSym {
     fn from(i: usize) -> VarSym {
         VarSym(i)
     }
 }
 
-/// Required for interner
+/// Required for interner interface.
 impl From<VarSym> for usize {
     fn from(i: VarSym) -> usize {
         i.0
@@ -64,7 +64,8 @@ impl From<VarSym> for usize {
 pub struct Path {
     /// The last part of the path, must always exist.
     pub name: VarSym,
-    /// The rest of the (possibly empty) path
+    /// The rest of the (possibly empty) path.
+    /// TODO: Whether this must be absolute or could be relative is currently undefined.
     pub path: Vec<VarSym>,
 }
 
@@ -91,15 +92,34 @@ pub enum TypeDef {
     /// I think this actually *has* to be `VarSym` or else we lose the actual
     /// name, which is important.
     Named(VarSym),
-    /// A struct
+    /// A struct.  Structs must have a name, they are normatively typed.
     Struct(VarSym, Vec<(VarSym, TypeSym)>),
 }
 
 impl TypeDef {
-    /// Get a string for the name of the given type.
+    /// Takes a string and matches it against the builtin/
+    /// primitive types, returning the appropriate `TypeDef`
     ///
-    /// TODO: We need a good way to go the other way around as well,
-    /// for built-in types like I32 and Bool.
+    /// If it is not a built-in type, or is a compound such
+    /// as a tuple or struct, returns None.
+    ///
+    /// The effective inverse of `TypeDef::get_name()`.  Compound
+    /// types take more parsing to turn from strings to `TypeDef`'s
+    /// and are handled in `parser::parse_type()`.
+    pub fn get_primitive_type(s: &str) -> Option<TypeDef> {
+        match s {
+            "I8" => Some(TypeDef::SInt(1)),
+            "I16" => Some(TypeDef::SInt(2)),
+            "I32" => Some(TypeDef::SInt(4)),
+            "I64" => Some(TypeDef::SInt(8)),
+            "I128" => Some(TypeDef::SInt(16)),
+            "Bool" => Some(TypeDef::Bool),
+            "Never" => Some(TypeDef::Never),
+            _ => None,
+        }
+    }
+
+    /// Get a string for the name of the given type.
     pub fn get_name(&self) -> Cow<'static, str> {
         let join_types_with_commas = |lst: &[TypeSym]| {
             let p_strs = lst
@@ -276,14 +296,14 @@ impl Cx {
 }
 
 /// Main driver function.
-/// Compile a given source string to ~~wasm~~ Rust, or return an error.
+/// Compile a given source string to Rust source code, or return an error.
 /// TODO: Parser errors?
 ///
 /// Parse -> lower to IR -> run transformation passes
 /// -> typecheck -> compile to wasm
-pub fn try_compile(src: &str) -> Result<Vec<u8>, typeck::TypeError> {
+pub fn try_compile(filename: &str, src: &str) -> Result<Vec<u8>, typeck::TypeError> {
     let ast = {
-        let mut parser = parser::Parser::new(src);
+        let mut parser = parser::Parser::new(filename, src);
         parser.parse()
     };
     let hir = hir::lower(&mut |_| (), &ast);
@@ -293,8 +313,8 @@ pub fn try_compile(src: &str) -> Result<Vec<u8>, typeck::TypeError> {
 }
 
 /// For when we don't care about catching results
-pub fn compile(src: &str) -> Vec<u8> {
-    try_compile(src).unwrap_or_else(|e| panic!("Type check error: {}", e))
+pub fn compile(filename: &str, src: &str) -> Vec<u8> {
+    try_compile(filename, src).unwrap_or_else(|e| panic!("Type check error: {}", e))
 }
 
 #[cfg(test)]
@@ -308,5 +328,26 @@ mod tests {
         let gotten_name = def.get_name();
         let desired_name = "fn(I32, Bool): I32";
         assert_eq!(&gotten_name, desired_name);
+    }
+
+    /// Make sure that `TypeDef::get_name()` and `TypeDef::get_primitive_type()`
+    /// are inverses for all primitive types.
+    ///
+    /// TODO: This currently requires that we have a list of all primitive types here,
+    /// which is somewhat annoying.
+    #[test]
+    fn check_primitive_names() {
+        let prims = vec![
+            TypeDef::SInt(1),
+            TypeDef::SInt(2),
+            TypeDef::SInt(4),
+            TypeDef::SInt(8),
+            TypeDef::SInt(16),
+            TypeDef::Never,
+            TypeDef::Bool,
+        ];
+        for p in &prims {
+            assert_eq!(p, &TypeDef::get_primitive_type(&p.get_name()).unwrap());
+        }
     }
 }
