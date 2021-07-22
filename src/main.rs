@@ -1,3 +1,5 @@
+//! The main compiler driver program.
+
 use std::path::PathBuf;
 
 use argh::FromArgs;

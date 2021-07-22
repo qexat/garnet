@@ -5,9 +5,8 @@
 //! eventually use the same structure for a code formatter and not
 //! have it nuke anything.
 //!
-//! Though code formatters have different constraints, if they have line
-//! wrapping and stuff at least.  So, it might not be a particularly
-//! great code formatter.
+//! Though code formatters have different constraints and priorities, if they have line wrapping
+//! and stuff at least.  So, it might not be a particularly great code formatter.
 
 use crate::*;
 
@@ -130,7 +129,7 @@ impl UOp {
 /// Includes the initial `if`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct IfCase {
-    /// the expr in `if expr then ...`
+    /// the expr in `if expr then body ...`
     pub condition: Box<Expr>,
     /// The body of the if expr
     pub body: Vec<Expr>,
@@ -220,16 +219,16 @@ pub enum Expr {
         expr: Box<Expr>,
         elt: VarSym,
     },
+    /// Separate from a BinOp because its typechecking rules are different.
+    Assign {
+        lhs: Box<Expr>,
+        rhs: Box<Expr>,
+    },
     Ref {
         expr: Box<Expr>,
     },
     Deref {
         expr: Box<Expr>,
-    },
-    /// Separate from a BinOp because its typechecking rules are different.
-    Assign {
-        lhs: Box<Expr>,
-        rhs: Box<Expr>,
     },
 }
 
