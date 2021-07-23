@@ -4,7 +4,8 @@
 //!
 //! Potential improvements:
 //!  * Use something smarter than strings to collect output -- could just
-//!    output to a stream like the formatter does
+//!    output to a stream like the formatter does.  This is a little weird though 'cause
+//!    we often want to build pieces of code, and then combine them together at the end.
 //!  * Use `syn` or something to generate tokens for output rather than strings
 
 use std::borrow::Cow;
@@ -33,11 +34,11 @@ fn __println_i64(x: i64) {
 fn compile_typedef(td: &TypeDef) -> Cow<'static, str> {
     use crate::TypeDef::*;
     match td {
-        SInt(16) => "i128".to_owned().into(),
-        SInt(8) => "i64".to_owned().into(),
-        SInt(4) => "i32".to_owned().into(),
-        SInt(2) => "i16".to_owned().into(),
-        SInt(1) => "i8".to_owned().into(),
+        SInt(16) => "i128".into(),
+        SInt(8) => "i64".into(),
+        SInt(4) => "i32".into(),
+        SInt(2) => "i16".into(),
+        SInt(1) => "i8".into(),
         SInt(e) => {
             unreachable!("Invalid integer size: {}", e)
         }
@@ -144,26 +145,11 @@ fn compile_decl(w: &mut impl Write, decl: &hir::Decl<TypeSym>) -> io::Result<()>
         // function that constructs a struct or tuple or whatever
         // out of it.
         hir::Decl::Constructor { name, signature } => {
-            /*
-             * Rust's newtype struct constructors are already functions,
-             * so we don't need to actually output a separate constructor
-             * function.  Huh.
-             */
-
+            // Rust's newtype struct constructors are already functions,
+            // so we don't need to actually output a separate constructor
+            // function.  Huh.
             let typename = &*INT.fetch(*name);
             let nstr = mangle_name(typename);
-            /*
-            let sstr = compile_fn_signature(signature);
-            // Cuuuuuuuurrently, this only does newtype structs,
-            // and the input is always a single arg named "input",
-            // so this is fairly simple
-            let bstr = format!("{}(input)", typename);
-            writeln!(
-                w,
-                "#[no_mangle]\npub extern fn {}{} {{\n{}\n}}\n",
-                nstr, sstr, bstr
-            )?;
-            */
             // We do need to make the destructure function I guess.
             let destructure_signature = hir::Signature {
                 params: vec![(INT.intern("input"), signature.rettype)],
@@ -214,6 +200,7 @@ fn compile_bop(op: hir::BOp) -> &'static str {
         BOp::Xor => "^",
     }
 }
+
 fn compile_uop(op: hir::UOp) -> &'static str {
     use hir::UOp;
     match op {

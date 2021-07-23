@@ -209,7 +209,7 @@ impl<T> Expr<T> {
     }
 
     /// Shortcut function for making literal unit
-    pub fn unit() -> Self {
+    pub const fn unit() -> Self {
         Self::TupleCtor { body: vec![] }
     }
 }
@@ -262,11 +262,8 @@ pub struct Ir<T> {
 /// Transforms AST into IR
 ///
 /// The function `f` is a function that should generate whatever value we need
-/// for our type info attached to the HIR node.  For real code it generally generates
-/// a new `InfTypeSym` saying "we don't know anything about this type yet", but
-/// for test code it's also useful to make it return unit, and after inference
-/// I think we're going to just reify our types by turning them all into concrete
-/// `TypeSym`'s...  zomg.
+/// for our type info attached to the HIR node.  To start with it's a unit, 'cause
+/// we have no type information.
 pub fn lower<T>(f: &mut dyn FnMut(&hir::Expr<T>) -> T, ast: &ast::Ast) -> Ir<T> {
     lower_decls(f, &ast.decls)
 }
@@ -475,10 +472,7 @@ fn lower_decls<T>(f: &mut dyn FnMut(&hir::Expr<T>) -> T, decls: &[ast::Decl]) ->
     for d in decls.iter() {
         lower_decl(&mut accm, f, d)
     }
-    Ir {
-        decls: accm,
-        // decls.iter().map(|d| lower_decl(f, d)).collect(),
-    }
+    Ir { decls: accm }
 }
 
 /// Shortcut to take an Expr and wrap it
