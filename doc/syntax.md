@@ -28,6 +28,8 @@ Deliberate choices so that we don't go ham:
    emphasizes the equivalence between structs and tuples.
  * Tempting as it is, use `fn foo() ...` for functions, not `let foo = fn() ...`
    or other OCaml-y variations on it.
+ * Don't bother letting type decl's or `fn foo()` functions be nested
+   inside functions
 
 The result looks quite pleasing, IMO!  And we can mostly use Rust syntax
 highlighting.

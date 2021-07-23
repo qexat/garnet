@@ -1,5 +1,5 @@
 //! Typechecking and other semantic checking.
-//! Operates on the IR.
+//! Operates on the HIR.
 
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -17,7 +17,7 @@ impl std::fmt::Display for TypeError {
 }
 
 /// A simplified `TypeDef` that can only represent things
-/// we know are valid.
+/// we know are valid and complete.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum TypeDeffo {
     /// Signed integer with the given number of bytes
@@ -189,7 +189,7 @@ pub struct VarBinding {
     mutable: bool,
 }
 
-//type Symtbl = scope::Symbols<VarSym, VarBinding>;
+///
 #[derive(Default)]
 struct Symtbl {
     vars: scope::Symbols<VarSym, VarBinding>,
@@ -198,6 +198,9 @@ struct Symtbl {
 }
 
 impl Symtbl {
+    /// Create new symbol table with some built-in functions.
+    ///
+    /// Also see the prelude defined in `backend/rust.rs`
     pub fn new() -> Self {
         let mut x = Self::default();
         // We add a built-in function for printing, currently.
@@ -243,7 +246,7 @@ impl Symtbl {
     }
 
     /// Add a variable to the top level of the scope.
-    /// Allows shadowing.
+    /// Shadows the old var if it already exists in that scope.
     fn add_var(&mut self, name: VarSym, typedef: TypeSym, mutable: bool) {
         let binding = VarBinding {
             name,
@@ -284,10 +287,11 @@ impl Symtbl {
 /// Currently we have no covariance or contravariance, so this is pretty simple.
 /// Currently it's just, if the symbols match, the types match.
 /// The symbols matching by definition means the structures match.
+///
+/// If we want some type, and got Never, then this is always true
+/// because we never hit the expression that expected the `wanted` type
 fn type_matches(wanted: TypeSym, got: TypeSym) -> bool {
-    // If we want some type, and got Never, then this is always valid
-    // because we never hit the expression that expected the `wanted` type
-    println!("Testing {:?} against {:?}", wanted, got);
+    //println!("Testing {:?} against {:?}", wanted, got);
     if got == INT.never() {
         true
     } else {
@@ -296,8 +300,11 @@ fn type_matches(wanted: TypeSym, got: TypeSym) -> bool {
 }
 
 /// Goes from types that may be unknown to a type that is
-/// totally real, and returns the real type.
-/// Returns `None` if there is not enough info to decide.
+/// totally real, and fits the constraints of both input
+/// types, and returns the real type.
+///
+/// Returns `None` if there is not enough info to decide,
+/// or if the types are not compatible with each other.
 fn infer_type(t1: TypeSym, t2: TypeSym) -> Option<TypeSym> {
     let t1_def = &*INT.fetch_type(t1);
     let t2_def = &*INT.fetch_type(t2);
@@ -484,9 +491,8 @@ fn typecheck_decl(
             // if the function has no body, otherwise return the
             // type of the last expression.
             //
-            // Oh gods, what in the name of Eris do we do if there's
-            // a return statement here?
-            // Use a Never type, it seems.
+            // If there's a return expr, we just return the Never type
+            // for it and it all shakes out to work.
             let typechecked_exprs = typecheck_exprs(symtbl, body, Some(signature.rettype))?;
             // Ok, so we *also* need to walk through all the expressions
             // and look for any "return" exprs (or later `?`/`try` exprs
