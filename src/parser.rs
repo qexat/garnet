@@ -123,6 +123,8 @@ pub enum TokenKind {
     Do,
     #[token("return")]
     Return,
+    #[token("break")]
+    Break,
     #[token("type")]
     Type,
     #[token("struct")]
@@ -726,6 +728,10 @@ impl<'input> Parser<'input> {
             T::Do => self.parse_block(),
             T::Fn => self.parse_lambda(),
             T::Return => self.parse_return(),
+            T::Break => {
+                self.expect(T::Break);
+                ast::Expr::Break
+            }
             // Parenthesized expr's
             T::LParen => {
                 self.drop();

@@ -815,7 +815,7 @@ fn typecheck_expr(
                 _other => Err(TypeError::Call { got: f.t }),
             }
         }
-        Break => Ok(expr.map_type(&|_| unittype)),
+        Break => Ok(expr.map_type(&|_| INT.never())),
         Return { retval } => {
             if let Some(wanted_type) = function_rettype {
                 let retval_expr = typecheck_expr(symtbl, *retval, function_rettype)?;

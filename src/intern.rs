@@ -1,6 +1,6 @@
 //! Simple generic interner
 //!
-//! Does not free its contents; free the whole thing.
+//! Does not free its contents; you should just free the whole thing when you're done with it.
 
 use std::collections::HashMap;
 use std::hash::Hash;
@@ -14,15 +14,13 @@ where
     Val: Eq + Hash,
     Ky: From<usize> + Into<usize> + Copy + Clone,
 {
+    /// Map from index/key to value
     /// We just Arc the value type, which is fine.
     /// This saves us the trouble of returning copies of it anyway.
     data: RwLock<Vec<Arc<Val>>>,
+    /// Map back from value to key
     map: RwLock<HashMap<Arc<Val>, Ky>>,
 }
-
-/// The type for an interned thingy.
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Hash, Debug)]
-pub struct Sym(pub usize);
 
 impl<Ky, Val> Interner<Ky, Val>
 where
@@ -35,7 +33,7 @@ where
             map: RwLock::new(HashMap::new()),
         }
     }
-    /// Intern the string, if necessary, returning a token for it.
+    /// Intern a value if necessary, returning a key/handle uniquely identifying it.
     pub fn intern(&self, s: &Val) -> Ky {
         // Apparently I'm not smart enough to use entry() currently.
         let mut data = self.data.write().unwrap();
@@ -44,7 +42,7 @@ where
             // We have it, great
             *sym
         } else {
-            // We create the index from the length of the data.
+            // We create the key from the length of the data.
             // This works because we never remove elements.
             let sym = Ky::from(data.len());
             let s = Arc::new(s.clone());

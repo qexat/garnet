@@ -3,21 +3,17 @@
 //! basically the result of a lowering/desugaring pass.  This might give us a nice place to do
 //! other simple optimization-like things like constant folding, dead code detection, etc.
 //!
-//! So... do we want it to be an expression tree like AST is, or SSA form, or a control-
-//! flow graph, or what?  Ponder this, since different things are easy to do on different
-//! representations. ...well, the FIRST thing we need to do is type checking and related
-//! junk anyway, so, this should just be a slightly-lowered syntax tree.
-//!
 //! Currently it's not really lowered by much!  If's and maybe loops or something.
-//! It's mostly a layer of indirection for further stuff to happen to.
+//! It's mostly a layer of indirection for further stuff to happen to, so we can change
+//! the parser without changing the typecheckin and such.
 
 use crate::ast::{self};
 pub use crate::ast::{BOp, IfCase, Literal, Signature, UOp};
 use crate::*;
 
-/// An expression with an optional type annotation.
+/// An expression with a type annotation.
 /// Currently will be () for something that hasn't been
-/// typechecked, or a TypeSym with the appropriate type
+/// typechecked, or a `TypeSym` with the appropriate type
 /// after type checking has been done.
 #[derive(Debug, Clone, PartialEq)]
 pub struct TypedExpr<T> {
@@ -29,8 +25,18 @@ pub struct TypedExpr<T> {
 
 impl<T> TypedExpr<T> {
     /// Takes a function that transforms a typedexpr and applies it to every single node
-    /// in the expr tree.  The function should really only transform the node it's called on,
-    /// not recurse to alter its children...
+    /// in the expr tree.
+    ///
+    /// BUGGO: The function should really only transform the node it's called on,
+    /// not recurse to alter its children...????????????
+    ///
+    /// Really?  If so then it's super easy to do, we just change the `t` field in the typedexpr.
+    /// The whole point of this is to recurse.  But it can't recurse down the whole expression tree
+    /// because there is probably stuff in there that needs something other than a simple pure
+    /// function to decide on its type.
+    ///
+    /// This is really only used in a few odd places, now that I actually look at it...
+    /// Investigate more.
     pub(crate) fn map_type<T2>(&self, f: &impl Fn(&T) -> T2) -> TypedExpr<T2> {
         use Expr::*;
         let map_vec = |e: &Vec<TypedExpr<T>>| e.iter().map(|te| te.map_type(f)).collect::<Vec<_>>();
@@ -334,12 +340,18 @@ fn lower_expr<T>(f: &mut dyn FnMut(&hir::Expr<T>) -> T, expr: &ast::Expr) -> Typ
                 .collect();
             // Add the "else" case, which we can just make `if true then...`
             // No idea if this is a good idea, but it makes life easier right
-            // this instant, so.
+            // this instant, so.  Hasn't bit me yet, so it's not a *bad* idea.
             let else_case = E::Lit {
                 val: ast::Literal::Bool(true),
             };
             let nelse_case = lower_expr(f, &else_case);
-            cases.push((nelse_case, lower_exprs(f, falseblock)));
+            // Empty false block becomes a false block that returns unit
+            let false_exprs = if falseblock.len() == 0 {
+                lower_exprs(f, &vec![ast::Expr::TupleCtor { body: vec![] }])
+            } else {
+                lower_exprs(f, falseblock)
+            };
+            cases.push((nelse_case, false_exprs));
             If { cases }
         }
         E::Loop { body } => {
