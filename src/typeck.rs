@@ -606,7 +606,10 @@ fn typecheck_expr(
 
         Var { name } => {
             let t = symtbl.get_var(name)?;
-            Ok(expr.map_type(&|_| t))
+            Ok(hir::TypedExpr {
+                e: Var { name },
+                t: t,
+            })
         }
         BinOp { op, lhs, rhs } => {
             // Typecheck each arm
@@ -821,7 +824,10 @@ fn typecheck_expr(
                 _other => Err(TypeError::Call { got: f.t }),
             }
         }
-        Break => Ok(expr.map_type(&|_| INT.never())),
+        Break => Ok(hir::TypedExpr {
+            e: Break,
+            t: INT.never(),
+        }),
         Return { retval } => {
             if let Some(wanted_type) = function_rettype {
                 let retval_expr = typecheck_expr(symtbl, *retval, function_rettype)?;
