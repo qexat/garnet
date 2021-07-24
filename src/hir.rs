@@ -27,16 +27,8 @@ impl<T> TypedExpr<T> {
     /// Takes a function that transforms a typedexpr and applies it to every single node
     /// in the expr tree.
     ///
-    /// BUGGO: The function should really only transform the node it's called on,
-    /// not recurse to alter its children...????????????
-    ///
-    /// Really?  If so then it's super easy to do, we just change the `t` field in the typedexpr.
-    /// The whole point of this is to recurse.  But it can't recurse down the whole expression tree
-    /// because there is probably stuff in there that needs something other than a simple pure
-    /// function to decide on its type.
-    ///
-    /// This is really only used in a few odd places, now that I actually look at it...
-    /// Investigate more.
+    /// Only `typeck::reify_types()` actually uses the full functionality of this... do we really
+    /// need it, in the end?  idk.
     pub(crate) fn map_type<T2>(&self, f: &impl Fn(&T) -> T2) -> TypedExpr<T2> {
         use Expr::*;
         let map_vec = |e: &Vec<TypedExpr<T>>| e.iter().map(|te| te.map_type(f)).collect::<Vec<_>>();
