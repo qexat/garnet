@@ -132,10 +132,12 @@ impl TypeError {
                 got,
                 expected,
             } => format!(
-                "initializer for variable {}: expected {}, got {}",
+                "initializer for variable {}: expected {} ({:?}), got {} ({:?})",
                 INT.fetch(*name),
                 INT.fetch_type(*expected).get_name(),
-                INT.fetch_type(*got).get_name()
+                *expected,
+                INT.fetch_type(*got).get_name(),
+                *got,
             ),
             TypeError::IfType { expected, got } => format!(
                 "If block return type is {}, but we thought it should be something like {}",
@@ -148,8 +150,8 @@ impl TypeError {
             ),
             TypeError::Param { got, expected } => format!(
                 "Function wanted type {} in param but got type {}",
-                INT.fetch_type(*got).get_name(),
-                INT.fetch_type(*expected).get_name()
+                INT.fetch_type(*expected).get_name(),
+                INT.fetch_type(*got).get_name()
             ),
             TypeError::Call { got } => format!(
                 "Tried to call function but it is not a function, it is a {}",
@@ -230,6 +232,19 @@ impl Symtbl {
         self.types.get(&name).copied()
     }
 
+    /// Looks up a typedef and if it is `Named` try to keep looking
+    /// it up until we find the actual concrete type.  Returns None
+    /// if it can't.
+    fn follow_typedef(&mut self, name: VarSym) -> Option<TypeSym> {
+        match self.types.get(&name) {
+            Some(tsym) => match &*INT.fetch_type(*tsym) {
+                &TypeDef::Named(vsym) => self.follow_typedef(vsym),
+                _other => Some(*tsym),
+            },
+            None => None,
+        }
+    }
+
     /// Returns Ok if the type exists, or a TypeError of the appropriate
     /// kind if it does not.
     fn type_exists(&mut self, tsym: TypeSym) -> Result<(), TypeError> {
@@ -241,6 +256,7 @@ impl Symtbl {
                     Err(TypeError::UnknownType(*name))
                 }
             }
+            // Primitive type
             _ => Ok(()),
         }
     }
@@ -346,6 +362,10 @@ fn infer_type(t1: TypeSym, t2: TypeSym) -> Option<TypeSym> {
             Some(sym)
         }
         (TypeDef::Struct(n1, _), TypeDef::Struct(n2, _)) if n1 == n2 => Some(t1),
+        // TODO: This is kinda fucky and I hate it; if a type is named we need to resolve
+        // it to a real struct type of some kind
+        (TypeDef::Named(n1), TypeDef::Struct(n2, _)) if n1 == n2 => Some(t2),
+        (TypeDef::Struct(n1, _), TypeDef::Named(n2)) if n1 == n2 => Some(t1),
         (tt1, tt2) if tt1 == tt2 => Some(t1),
         _ => None,
     }
@@ -874,7 +894,7 @@ fn typecheck_expr(
                 })
                 .collect::<Result<Vec<_>, _>>()?;
             println!("Looking up struct named {}", INT.fetch(name));
-            let struct_type = symtbl.get_typedef(name);
+            let struct_type = symtbl.follow_typedef(name);
 
             println!("Got: {:?}", struct_type);
             if let Some(tsym) = struct_type {

@@ -121,6 +121,8 @@ change with time.
    really just syntactic sugar for a trivial closure.
  * Rust's trait orphan rules are annoying, but may be too hard to be
    worth trying to solve.
+ * Heckin gorram `->` vs `=>` still bleedin' trips me up after five
+   years
 
 ## Glory points in Rust to exploit or even enhance
 
