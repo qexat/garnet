@@ -31,40 +31,10 @@ fn __println_i64(x: i64) {
 "#
 }
 
+/// Compiles a `TypeDef` into a declaration statement.
 fn compile_typedef(td: &TypeDef) -> Cow<'static, str> {
     use crate::TypeDef::*;
     match td {
-        SInt(16) => "i128".into(),
-        SInt(8) => "i64".into(),
-        SInt(4) => "i32".into(),
-        SInt(2) => "i16".into(),
-        SInt(1) => "i8".into(),
-        SInt(e) => {
-            unreachable!("Invalid integer size: {}", e)
-        }
-        UnknownInt => unreachable!("Backend got an integer of unknown size, should never happen!"),
-        Bool => "bool".into(),
-        Never => panic!("Stable rust can't quite do this yet..."),
-        Tuple(types) => {
-            let mut accm = String::from("(");
-            for typ in types {
-                accm += &compile_typedef(&*INT.fetch_type(*typ));
-                accm += ", ";
-            }
-            accm += ")";
-            accm.into()
-        }
-        Lambda(params, ret) => {
-            let mut accm = String::from("fn (");
-            for p in params {
-                accm += &compile_typedef(&*INT.fetch_type(*p));
-                accm += ", ";
-            }
-            accm += ") -> ";
-            accm += &compile_typedef(&*INT.fetch_type(*ret));
-            accm.into()
-        }
-        Named(sym) => (&*INT.fetch(*sym)).clone().into(),
         Struct(sym, vals) => {
             let mut accm = String::from("struct ");
             let name = &*INT.fetch(*sym);
@@ -81,6 +51,48 @@ fn compile_typedef(td: &TypeDef) -> Cow<'static, str> {
             accm += "}\n";
             accm.into()
         }
+        _other => compile_typename(td),
+    }
+}
+
+/// Similar to `compile_typedef` but only gets names, not full definitions.
+///
+/// Needed for when we do `let x: Foo = ...` rather than `struct Foo { ... }`
+fn compile_typename(td: &TypeDef) -> Cow<'static, str> {
+    use crate::TypeDef::*;
+    match td {
+        SInt(16) => "i128".into(),
+        SInt(8) => "i64".into(),
+        SInt(4) => "i32".into(),
+        SInt(2) => "i16".into(),
+        SInt(1) => "i8".into(),
+        SInt(e) => {
+            unreachable!("Invalid integer size: {}", e)
+        }
+        UnknownInt => unreachable!("Backend got an integer of unknown size, should never happen!"),
+        Bool => "bool".into(),
+        Never => panic!("Stable rust can't quite do this yet..."),
+        Tuple(types) => {
+            let mut accm = String::from("(");
+            for typ in types {
+                accm += &compile_typename(&*INT.fetch_type(*typ));
+                accm += ", ";
+            }
+            accm += ")";
+            accm.into()
+        }
+        Lambda(params, ret) => {
+            let mut accm = String::from("fn (");
+            for p in params {
+                accm += &compile_typename(&*INT.fetch_type(*p));
+                accm += ", ";
+            }
+            accm += ") -> ";
+            accm += &compile_typename(&*INT.fetch_type(*ret));
+            accm.into()
+        }
+        Named(sym) => (&*INT.fetch(*sym)).clone().into(),
+        Struct(sym, _vals) => (&*INT.fetch(*sym)).clone().into(),
     }
 }
 
@@ -166,11 +178,11 @@ fn compile_fn_signature(sig: &ast::Signature) -> String {
     for (varsym, typesym) in sig.params.iter() {
         accm += &*INT.fetch(*varsym);
         accm += ": ";
-        accm += &compile_typedef(&*INT.fetch_type(*typesym));
+        accm += &compile_typename(&*INT.fetch_type(*typesym));
         accm += ", ";
     }
     accm += ") -> ";
-    accm += &compile_typedef(&*INT.fetch_type(sig.rettype));
+    accm += &compile_typename(&*INT.fetch_type(sig.rettype));
     accm
 }
 
@@ -244,7 +256,7 @@ fn compile_expr(expr: &hir::TypedExpr<TypeSym>) -> String {
             mutable,
         } => {
             let vstr = mangle_name(&*INT.fetch(*varname));
-            let tstr = compile_typedef(&*INT.fetch_type(typename.unwrap()));
+            let tstr = compile_typename(&*INT.fetch_type(typename.unwrap()));
             let istr = compile_expr(init);
             if *mutable {
                 format!("let mut {}: {} = {}", vstr, tstr, istr)
