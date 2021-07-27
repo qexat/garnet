@@ -81,6 +81,10 @@ pub enum TypeError {
         fieldname: VarSym,
         got: TypeSym,
     },
+    StructField {
+        expected: Vec<VarSym>,
+        got: Vec<VarSym>,
+    },
     TypeMismatch {
         expr_name: Cow<'static, str>,
         got: TypeSym,
@@ -165,6 +169,10 @@ impl TypeError {
                 "Tried to reference field {} of struct, but struct is {}",
                 INT.fetch(*fieldname),
                 INT.fetch_type(*got).get_name(),
+            ),
+            TypeError::StructField { expected, got } => format!(
+                "Invalid field in struct constructor: expected {:?}, but got {:?}",
+                expected, got
             ),
             TypeError::TypeMismatch {
                 expr_name,
@@ -912,21 +920,50 @@ fn typecheck_expr(
                     Ok((*nm, expr))
                 })
                 .collect::<Result<Vec<_>, _>>()?;
-            //println!("Looking up struct named {}", INT.fetch(name));
-            let struct_type = symtbl.follow_typedef(name);
+            let struct_type = symtbl
+                .follow_typedef(name)
+                .ok_or(TypeError::UnknownType(name))?;
 
-            //println!("Got: {:?}", struct_type);
-            if let Some(tsym) = struct_type {
-                //println!("Which is: {:?}", INT.fetch_type(tsym));
-                // TODO: Make sure all our struct fields exist in the struct type,
+            if let TypeDef::Struct(_nm, body) = &*INT.fetch_type(struct_type) {
+                // Make sure all our struct fields exist in the struct type,
                 // and we aren't missing any or have any excess
-                Ok(hir::TypedExpr {
-                    t: tsym,
-                    e: StructCtor {
-                        name,
-                        body: body_exprs,
-                    },
-                })
+                use std::collections::BTreeSet;
+                let given_fields: BTreeSet<VarSym> =
+                    body_exprs.iter().map(|(nm, _expr)| *nm).collect();
+
+                let expected_fields: BTreeSet<VarSym> = body.iter().map(|(nm, _ty)| *nm).collect();
+                let expected_fieldses: HashMap<VarSym, TypeSym> =
+                    body.iter().map(|(nm, ty)| (*nm, *ty)).collect();
+                if given_fields == expected_fields {
+                    // Make sure the given field has a type compatible with the expected type.
+                    let mut unhecked_exprs = vec![];
+                    for (given_nm, given_expr) in &body_exprs {
+                        let expected_type = expected_fieldses[given_nm];
+                        if let Some(concrete_type) = infer_type(expected_type, given_expr.t) {
+                            unhecked_exprs.push((
+                                *given_nm,
+                                reify_types(given_expr.t, concrete_type, given_expr.clone()),
+                            ));
+                        } else {
+                            return Err(TypeError::StructField {
+                                expected: expected_fields.into_iter().collect(),
+                                got: given_fields.into_iter().collect(),
+                            });
+                        }
+                    }
+                    Ok(hir::TypedExpr {
+                        t: struct_type,
+                        e: StructCtor {
+                            name,
+                            body: unhecked_exprs,
+                        },
+                    })
+                } else {
+                    Err(TypeError::StructField {
+                        expected: expected_fields.into_iter().collect(),
+                        got: given_fields.into_iter().collect(),
+                    })
+                }
             } else {
                 Err(TypeError::UnknownType(name))
             }
