@@ -25,7 +25,7 @@ tasks:
     # programs.
     # If the hg repo is compromised though... well, it compromises the
     # ci account on the server, but that's all.
-    echo '9f0462d0400aa15cf888aae2f74ade53570a9a8ccd7551cd0cffb3c518aef5d2063e2ee0c96bcc939a9bba0cf33801a78604ee1c0de6226c1d7703fcca8feef9' > ~/cargo-tarpaulin.sha512
+    echo '9f0462d0400aa15cf888aae2f74ade53570a9a8ccd7551cd0cffb3c518aef5d2063e2ee0c96bcc939a9bba0cf33801a78604ee1c0de6226c1d7703fcca8feef9 cargo-tarpaulin' > ~/cargo-tarpaulin.sha512
     sha512sum -c ~/cargo-tarpaulin.sha512
     chmod +x ~/cargo-tarpaulin
     cd garnet
