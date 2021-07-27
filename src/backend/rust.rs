@@ -28,6 +28,10 @@ fn __println_bool(x: bool) {
 fn __println_i64(x: i64) {
     println!("{}", x);
 }
+
+fn __println_i16(x: i16) {
+    println!("{}", x);
+}
 "#
 }
 
