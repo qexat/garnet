@@ -1,0 +1,22 @@
+-- Compile:
+--   status: error
+--   stderr:
+--     ...
+--     ...Type check error: Invalid field in struct constructor...
+--     ...
+
+struct Foo {
+    x: I32,
+    y: I16,
+    z: I64,
+}
+
+fn main(): {} =
+    let f: Foo = Foo {
+        x = 1,
+        y = 2,
+        z = true,
+        t = 99,
+    }
+    __println(f.x)
+end

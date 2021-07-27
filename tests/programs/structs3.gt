@@ -1,0 +1,21 @@
+-- Compile:
+--   status: error
+--   stderr:
+--     ...
+--     ...Type check error: Tried to reference field q of struct...
+--     ...
+
+struct Foo {
+    x: I32,
+    y: I16,
+    z: I64,
+}
+
+fn main(): {} =
+    let f: Foo = Foo {
+        x = 1,
+        y = 2,
+        z = 4,
+    }
+    __println(f.q)
+end
