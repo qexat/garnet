@@ -78,8 +78,12 @@ pub enum TypeError {
         got: TypeSym,
     },
     StructRef {
-        got: VarSym,
-        expected: TypeSym,
+        fieldname: VarSym,
+        got: TypeSym,
+    },
+    StructField {
+        expected: Vec<VarSym>,
+        got: Vec<VarSym>,
     },
     TypeMismatch {
         expr_name: Cow<'static, str>,
@@ -132,10 +136,12 @@ impl TypeError {
                 got,
                 expected,
             } => format!(
-                "initializer for variable {}: expected {}, got {}",
+                "initializer for variable {}: expected {} ({:?}), got {} ({:?})",
                 INT.fetch(*name),
                 INT.fetch_type(*expected).get_name(),
-                INT.fetch_type(*got).get_name()
+                *expected,
+                INT.fetch_type(*got).get_name(),
+                *got,
             ),
             TypeError::IfType { expected, got } => format!(
                 "If block return type is {}, but we thought it should be something like {}",
@@ -148,8 +154,8 @@ impl TypeError {
             ),
             TypeError::Param { got, expected } => format!(
                 "Function wanted type {} in param but got type {}",
-                INT.fetch_type(*got).get_name(),
-                INT.fetch_type(*expected).get_name()
+                INT.fetch_type(*expected).get_name(),
+                INT.fetch_type(*got).get_name()
             ),
             TypeError::Call { got } => format!(
                 "Tried to call function but it is not a function, it is a {}",
@@ -159,10 +165,14 @@ impl TypeError {
                 "Tried to reference tuple but didn't get a tuple, got {}",
                 INT.fetch_type(*got).get_name()
             ),
-            TypeError::StructRef { got, expected } => format!(
+            TypeError::StructRef { fieldname, got } => format!(
                 "Tried to reference field {} of struct, but struct is {}",
-                INT.fetch(*got),
-                INT.fetch_type(*expected).get_name()
+                INT.fetch(*fieldname),
+                INT.fetch_type(*got).get_name(),
+            ),
+            TypeError::StructField { expected, got } => format!(
+                "Invalid field in struct constructor: expected {:?}, but got {:?}",
+                expected, got
             ),
             TypeError::TypeMismatch {
                 expr_name,
@@ -219,6 +229,11 @@ impl Symtbl {
             let typesym = INT.intern_type(&TypeDef::Lambda(vec![INT.i64()], INT.unit()));
             x.add_var(name, typesym, false);
         }
+        {
+            let name = INT.intern("__println_i16");
+            let typesym = INT.intern_type(&TypeDef::Lambda(vec![INT.i16()], INT.unit()));
+            x.add_var(name, typesym, false);
+        }
         x
     }
 
@@ -228,6 +243,33 @@ impl Symtbl {
 
     fn get_typedef(&mut self, name: VarSym) -> Option<TypeSym> {
         self.types.get(&name).copied()
+    }
+
+    /// Looks up a typedef and if it is `Named` try to keep looking
+    /// it up until we find the actual concrete type.  Returns None
+    /// if it can't.
+    ///
+    /// TODO: This is weird, currently necessary for structs though.
+    fn follow_typedef(&mut self, name: VarSym) -> Option<TypeSym> {
+        match self.types.get(&name) {
+            Some(tsym) => match &*INT.fetch_type(*tsym) {
+                &TypeDef::Named(vsym) => self.follow_typedef(vsym),
+                _other => Some(*tsym),
+            },
+            None => None,
+        }
+    }
+
+    /// Take a typesym and look it up to a concrete type definition of some kind.
+    /// Recursively follows named types, which might or might not be a good idea...
+    ///
+    /// TODO: This is weird, currently necessary for structs though.
+    fn resolve_typedef(&mut self, t: TypeSym) -> Option<std::sync::Arc<TypeDef>> {
+        let tdef = INT.fetch_type(t);
+        match &*tdef {
+            TypeDef::Named(vsym) => self.follow_typedef(*vsym).map(|sym| INT.fetch_type(sym)),
+            _other => Some(tdef),
+        }
     }
 
     /// Returns Ok if the type exists, or a TypeError of the appropriate
@@ -241,6 +283,7 @@ impl Symtbl {
                     Err(TypeError::UnknownType(*name))
                 }
             }
+            // Primitive type
             _ => Ok(()),
         }
     }
@@ -346,6 +389,10 @@ fn infer_type(t1: TypeSym, t2: TypeSym) -> Option<TypeSym> {
             Some(sym)
         }
         (TypeDef::Struct(n1, _), TypeDef::Struct(n2, _)) if n1 == n2 => Some(t1),
+        // TODO: This is kinda fucky and I hate it; if a type is named we need to resolve
+        // it to a real struct type of some kind
+        (TypeDef::Named(n1), TypeDef::Struct(n2, _)) if n1 == n2 => Some(t2),
+        (TypeDef::Struct(n1, _), TypeDef::Named(n2)) if n1 == n2 => Some(t1),
         (tt1, tt2) if tt1 == tt2 => Some(t1),
         _ => None,
     }
@@ -434,7 +481,7 @@ fn predeclare_decl(symtbl: &mut Symtbl, decl: &hir::Decl<()>) {
                 panic!("Tried to redeclare struct {}!", INT.fetch(*name));
             }
             let typesym = INT.intern_type(&typ);
-            println!("Adding struct of type {}", INT.fetch(*name));
+            //println!("Adding struct of type {}", INT.fetch(*name));
             symtbl.add_type(*name, typesym)
         }
         hir::Decl::Constructor { name, signature } => {
@@ -872,21 +919,50 @@ fn typecheck_expr(
                     Ok((*nm, expr))
                 })
                 .collect::<Result<Vec<_>, _>>()?;
-            println!("Looking up struct named {}", INT.fetch(name));
-            let struct_type = symtbl.get_typedef(name);
+            let struct_type = symtbl
+                .follow_typedef(name)
+                .ok_or(TypeError::UnknownType(name))?;
 
-            println!("Got: {:?}", struct_type);
-            if let Some(tsym) = struct_type {
-                println!("Which is: {:?}", INT.fetch_type(tsym));
-                // TODO: Make sure all our struct fields exist in the struct type,
+            if let TypeDef::Struct(_nm, body) = &*INT.fetch_type(struct_type) {
+                // Make sure all our struct fields exist in the struct type,
                 // and we aren't missing any or have any excess
-                Ok(hir::TypedExpr {
-                    t: tsym,
-                    e: StructCtor {
-                        name,
-                        body: body_exprs,
-                    },
-                })
+                use std::collections::BTreeSet;
+                let given_fields: BTreeSet<VarSym> =
+                    body_exprs.iter().map(|(nm, _expr)| *nm).collect();
+
+                let expected_fields: BTreeSet<VarSym> = body.iter().map(|(nm, _ty)| *nm).collect();
+                let expected_fieldses: HashMap<VarSym, TypeSym> =
+                    body.iter().map(|(nm, ty)| (*nm, *ty)).collect();
+                if given_fields == expected_fields {
+                    // Make sure the given field has a type compatible with the expected type.
+                    let mut unhecked_exprs = vec![];
+                    for (given_nm, given_expr) in &body_exprs {
+                        let expected_type = expected_fieldses[given_nm];
+                        if let Some(concrete_type) = infer_type(expected_type, given_expr.t) {
+                            unhecked_exprs.push((
+                                *given_nm,
+                                reify_types(given_expr.t, concrete_type, given_expr.clone()),
+                            ));
+                        } else {
+                            return Err(TypeError::StructField {
+                                expected: expected_fields.into_iter().collect(),
+                                got: given_fields.into_iter().collect(),
+                            });
+                        }
+                    }
+                    Ok(hir::TypedExpr {
+                        t: struct_type,
+                        e: StructCtor {
+                            name,
+                            body: unhecked_exprs,
+                        },
+                    })
+                } else {
+                    Err(TypeError::StructField {
+                        expected: expected_fields.into_iter().collect(),
+                        got: given_fields.into_iter().collect(),
+                    })
+                }
             } else {
                 Err(TypeError::UnknownType(name))
             }
@@ -913,25 +989,34 @@ fn typecheck_expr(
         }
         StructRef { expr, elt } => {
             let body_expr = typecheck_expr(symtbl, *expr, function_rettype)?;
-            let expr_typedef = INT.fetch_type(body_expr.t);
-            if let TypeDef::Struct(_name, fields) = &*expr_typedef {
-                if let Some((_name, vl)) = fields.iter().find(|(nm, _)| *nm == elt) {
-                    // The referenced field exists in the struct type
-                    Ok(hir::TypedExpr {
-                        t: *vl,
-                        e: StructRef {
-                            expr: Box::new(body_expr),
-                            elt,
-                        },
-                    })
-                } else {
-                    Err(TypeError::StructRef {
-                        got: elt,
-                        expected: body_expr.t,
-                    })
+            //let expr_typedef = INT.fetch_type(body_expr.t);
+            let expr_typedef = symtbl
+                .resolve_typedef(body_expr.t)
+                .expect("Type does not exist?");
+            match &*expr_typedef {
+                TypeDef::Struct(_name, fields) => {
+                    if let Some((_name, vl)) = fields.iter().find(|(nm, _)| *nm == elt) {
+                        // The referenced field exists in the struct type
+                        Ok(hir::TypedExpr {
+                            t: *vl,
+                            e: StructRef {
+                                expr: Box::new(body_expr),
+                                elt,
+                            },
+                        })
+                    } else {
+                        Err(TypeError::StructRef {
+                            fieldname: elt,
+                            got: body_expr.t,
+                        })
+                    }
                 }
-            } else {
-                Err(TypeError::TupleRef { got: body_expr.t })
+                // We should never get a named type out of this.
+                _other => Err(TypeError::TypeMismatch {
+                    expr_name: "struct ref".into(),
+                    got: body_expr.t,
+                    expected: INT.unit(),
+                }),
             }
         }
         Assign { lhs, rhs } => {

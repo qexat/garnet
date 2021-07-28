@@ -24,7 +24,7 @@ use once_cell::sync::Lazy;
 pub static INT: Lazy<Cx> = Lazy::new(Cx::new);
 
 /// The interned name of a type
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct TypeSym(pub usize);
 
 /// Required for interner interface.
@@ -42,7 +42,7 @@ impl From<TypeSym> for usize {
 }
 
 /// The interned name of a variable/value
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct VarSym(pub usize);
 
 /// Required for interner interface.

@@ -3,15 +3,22 @@
 --
 -- Run:
 --   status: success
-
-struct Bar {
-}
+--   stdout:
+--      1
+--      2
+--      4
 
 struct Foo {
     x: I32,
     y: I16,
-    z: I8,
+    z: I64,
 }
+
+fn print_foo(f: Foo): {} =
+    __println(f.x)
+    __println_i16(f.y)
+    __println_i64(f.z)
+end
 
 fn main(): {} =
     let f: Foo = Foo {
@@ -19,7 +26,5 @@ fn main(): {} =
         y = 2,
         z = 4,
     }
-    let g: Bar = Bar {}
-    __println(f.x)
-
+    print_foo(f)
 end

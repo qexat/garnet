@@ -1,0 +1,27 @@
+-- Compile:
+--   status: success
+--
+-- Run:
+--   status: success
+--   stdout: 21
+
+fn main(): {} =
+    __println(fib(8))
+end
+
+-- Iterative fib implementation, to prove that loops work.
+-- Someday maybe make this a for loop XD
+fn fib(num: I32): I32 =
+    let mut x: I32 = 0
+    let mut y: I32 = 1
+    let mut z: I32 = 0
+    let mut i: I32 = 0
+    loop
+        if i >= num then break end
+        z = x + y
+        x = y
+        y = z
+        i = i + 1
+    end
+    x
+end
