@@ -786,7 +786,7 @@ impl<'input> Parser<'input> {
                         // If the period is followed by an int, it's a
                         // tuple ref, otherwise it's a struct ref.
                         let tok = self.next();
-                        match tok.clone().map(|t| t.kind) {
+                        match tok.as_ref().map(|t| &t.kind) {
                             Some(T::Ident(i)) => ast::Expr::StructRef {
                                 expr: Box::new(lhs),
                                 elt: INT.intern(i),
@@ -794,10 +794,10 @@ impl<'input> Parser<'input> {
                             // Following Rust, we do not allow numbers
                             // with suffixes as tuple indices.
                             Some(T::Integer(elt)) => {
-                                assert!(elt > -1);
+                                assert!(*elt > -1);
                                 ast::Expr::TupleRef {
                                     expr: Box::new(lhs),
-                                    elt: elt as usize,
+                                    elt: *elt as usize,
                                 }
                             }
                             _other => self.error("ident or integer", tok),
