@@ -136,7 +136,7 @@ pub enum Expr<T> {
     },
     Let {
         varname: VarSym,
-        typename: Option<TypeSym>,
+        typename: TypeSym,
         init: Box<TypedExpr<T>>,
         mutable: bool,
     },

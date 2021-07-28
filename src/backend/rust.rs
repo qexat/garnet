@@ -244,7 +244,7 @@ fn compile_expr(expr: &hir::TypedExpr<TypeSym>) -> String {
             mutable,
         } => {
             let vstr = mangle_name(&*INT.fetch(*varname));
-            let tstr = compile_typedef(&*INT.fetch_type(typename.unwrap()));
+            let tstr = compile_typedef(&*INT.fetch_type(*typename));
             let istr = compile_expr(init);
             if *mutable {
                 format!("let mut {}: {} = {}", vstr, tstr, istr)

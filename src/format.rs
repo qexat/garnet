@@ -138,10 +138,8 @@ fn unparse_expr(e: &Expr, indent: usize, out: &mut dyn io::Write) -> io::Result<
                 write!(out, "mut ")?;
             }
             write!(out, "{} ", name)?;
-            if let Some(typename) = typename {
-                let tname = INT.fetch_type(*typename).get_name();
-                write!(out, ": {} ", tname)?;
-            }
+            let tname = INT.fetch_type(*typename).get_name();
+            write!(out, ": {} ", tname)?;
             write!(out, "= ")?;
 
             unparse_expr(init, 0, out)?;
