@@ -691,7 +691,6 @@ fn typecheck_expr(
             mutable,
         } => {
             let init_expr = typecheck_expr(symtbl, *init, function_rettype)?;
-            let typename = typename.expect("TODO: Try to do type inference here if we can?");
             // If the init expression can match with the declared let type, life is good
             if let Some(t) = infer_type(typename, init_expr.t) {
                 let new_init = reify_types(init_expr.t, t, init_expr);
@@ -700,7 +699,7 @@ fn typecheck_expr(
                 Ok(hir::TypedExpr {
                     e: Let {
                         varname,
-                        typename: Some(t),
+                        typename: t,
                         init: Box::new(new_init),
                         mutable,
                     },
@@ -1224,7 +1223,7 @@ mod tests {
         {
             let ir = *plz(Expr::Let {
                 varname: fooname,
-                typename: Some(t_i32.clone()),
+                typename: t_i32.clone(),
                 init: plz(Expr::Lit {
                     val: Literal::Integer(42),
                 }),
@@ -1266,7 +1265,7 @@ mod tests {
             let ir = vec![
                 *plz(Expr::Let {
                     varname: fname,
-                    typename: Some(ftype),
+                    typename: ftype,
                     mutable: false,
                     init: plz(Expr::Lambda {
                         signature: Signature {
