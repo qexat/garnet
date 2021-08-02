@@ -1,0 +1,36 @@
+-- Compile:
+--   status: success
+--
+-- Run:
+--   status: success
+--   stdout:
+--     12
+--     21
+
+struct IPrint {
+    type T,
+    print: fn(T): {},
+    println: fn(T): {},
+}
+
+fn print(vt: IPrint, vl: I32): {} =
+    vt.print(vl)
+end
+
+fn println(vt: IPrint, vl: I32): {} =
+    vt.println(vl)
+end
+
+fn _print_i32(vl: I32): {} = __println(vl) end
+fn _println_i32(vl: I32): {} = __println(vl) end
+
+const PrintI32: IPrint = IPrint {
+    type T = I32,
+    print = _print_i32,
+    println = _println_i32,
+}
+
+fn main(): {} =
+    print(PrintI32, 12)
+    PrintI32:println(21)
+end
