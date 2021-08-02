@@ -289,7 +289,7 @@ pub enum Decl {
     },
     StructDef {
         name: VarSym,
-        fields: Vec<(VarSym, TypeSym)>,
+        fields: BTreeMap<VarSym, TypeSym>,
         doc_comment: Vec<String>,
     },
 }

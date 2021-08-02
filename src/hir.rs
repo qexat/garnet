@@ -226,7 +226,7 @@ pub enum Decl<T> {
     },
     StructDef {
         name: VarSym,
-        fields: Vec<(VarSym, TypeSym)>,
+        fields: BTreeMap<VarSym, TypeSym>,
     },
     /// Our first compiler intrinsic!  \o/
     ///
