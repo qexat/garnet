@@ -2,7 +2,7 @@
 //! Operates on the HIR.
 
 use std::borrow::Cow;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::hir;
 use crate::scope;
@@ -204,7 +204,7 @@ pub struct VarBinding {
 struct Symtbl {
     vars: scope::Symbols<VarSym, VarBinding>,
     /// Bindings for typedefs
-    types: HashMap<VarSym, TypeSym>,
+    types: BTreeMap<VarSym, TypeSym>,
 }
 
 impl Symtbl {
@@ -388,11 +388,13 @@ fn infer_type(t1: TypeSym, t2: TypeSym) -> Option<TypeSym> {
             let sym = INT.intern_type(&TypeDef::Tuple(accm));
             Some(sym)
         }
-        (TypeDef::Struct(n1, _), TypeDef::Struct(n2, _)) if n1 == n2 => Some(t1),
+        (TypeDef::Struct { name: n1, .. }, TypeDef::Struct { name: n2, .. }) if n1 == n2 => {
+            Some(t1)
+        }
         // TODO: This is kinda fucky and I hate it; if a type is named we need to resolve
         // it to a real struct type of some kind
-        (TypeDef::Named(n1), TypeDef::Struct(n2, _)) if n1 == n2 => Some(t2),
-        (TypeDef::Struct(n1, _), TypeDef::Named(n2)) if n1 == n2 => Some(t1),
+        (TypeDef::Named(n1), TypeDef::Struct { name: n2, .. }) if n1 == n2 => Some(t2),
+        (TypeDef::Struct { name: n1, .. }, TypeDef::Named(n2)) if n1 == n2 => Some(t1),
         (tt1, tt2) if tt1 == tt2 => Some(t1),
         _ => None,
     }
@@ -476,7 +478,11 @@ fn predeclare_decl(symtbl: &mut Symtbl, decl: &hir::Decl<()>) {
             symtbl.add_type(*name, *typedecl);
         }
         hir::Decl::StructDef { name, fields } => {
-            let typ = TypeDef::Struct(*name, fields.clone());
+            let typ = TypeDef::Struct {
+                name: *name,
+                fields: fields.clone(),
+                types: std::collections::BTreeMap::new(),
+            };
             if symtbl.get_typedef(*name).is_some() {
                 panic!("Tried to redeclare struct {}!", INT.fetch(*name));
             }
@@ -583,7 +589,11 @@ fn typecheck_decl(
             Ok(hir::Decl::TypeDef { name, typedecl })
         }
         hir::Decl::StructDef { name, fields } => {
-            let typedecl = INT.intern_type(&TypeDef::Struct(name, fields.clone()));
+            let typedecl = INT.intern_type(&TypeDef::Struct {
+                name: name,
+                fields: fields.clone(),
+                types: std::collections::BTreeMap::new(),
+            });
             symtbl.type_exists(typedecl)?;
             Ok(hir::Decl::StructDef {
                 name,
@@ -923,17 +933,16 @@ fn typecheck_expr(
                 .follow_typedef(name)
                 .ok_or(TypeError::UnknownType(name))?;
 
-            if let TypeDef::Struct(_nm, body) = &*INT.fetch_type(struct_type) {
+            if let TypeDef::Struct { fields, .. } = &*INT.fetch_type(struct_type) {
                 // Make sure all our struct fields exist in the struct type,
                 // and we aren't missing any or have any excess
-                use std::collections::BTreeSet;
-                let given_fields: BTreeSet<VarSym> =
+                let given_names: BTreeSet<VarSym> =
                     body_exprs.iter().map(|(nm, _expr)| *nm).collect();
 
-                let expected_fields: BTreeSet<VarSym> = body.iter().map(|(nm, _ty)| *nm).collect();
-                let expected_fieldses: HashMap<VarSym, TypeSym> =
-                    body.iter().map(|(nm, ty)| (*nm, *ty)).collect();
-                if given_fields == expected_fields {
+                let expected_names: BTreeSet<VarSym> = body.iter().map(|(nm, _ty)| *nm).collect();
+                let expected_fieldses: BTreeMap<VarSym, TypeSym> =
+                    fields.iter().map(|(nm, ty)| (*nm, *ty)).collect();
+                if given_names == expected_names {
                     // Make sure the given field has a type compatible with the expected type.
                     let mut unhecked_exprs = vec![];
                     for (given_nm, given_expr) in &body_exprs {
@@ -945,8 +954,8 @@ fn typecheck_expr(
                             ));
                         } else {
                             return Err(TypeError::StructField {
-                                expected: expected_fields.into_iter().collect(),
-                                got: given_fields.into_iter().collect(),
+                                expected: expected_names.into_iter().collect(),
+                                got: given_names.into_iter().collect(),
                             });
                         }
                     }
@@ -959,8 +968,8 @@ fn typecheck_expr(
                     })
                 } else {
                     Err(TypeError::StructField {
-                        expected: expected_fields.into_iter().collect(),
-                        got: given_fields.into_iter().collect(),
+                        expected: expected_names.into_iter().collect(),
+                        got: given_names.into_iter().collect(),
                     })
                 }
             } else {
@@ -994,8 +1003,8 @@ fn typecheck_expr(
                 .resolve_typedef(body_expr.t)
                 .expect("Type does not exist?");
             match &*expr_typedef {
-                TypeDef::Struct(_name, fields) => {
-                    if let Some((_name, vl)) = fields.iter().find(|(nm, _)| *nm == elt) {
+                TypeDef::Struct { fields, .. } => {
+                    if let Some((_name, vl)) = fields.iter().find(|(nm, _)| **nm == elt) {
                         // The referenced field exists in the struct type
                         Ok(hir::TypedExpr {
                             t: *vl,

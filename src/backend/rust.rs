@@ -39,12 +39,12 @@ fn __println_i16(x: i16) {
 fn compile_typedef(td: &TypeDef) -> Cow<'static, str> {
     use crate::TypeDef::*;
     match td {
-        Struct(sym, vals) => {
+        Struct { name, fields, .. } => {
             let mut accm = String::from("struct ");
-            let name = &*INT.fetch(*sym);
+            let name = &*INT.fetch(*name);
             accm += name;
             accm += "{ \n";
-            for (nm, ty) in vals {
+            for (nm, ty) in fields {
                 let nm_str = &*INT.fetch(*nm);
                 let vl_str = INT.fetch_type(*ty);
                 accm += nm_str;
@@ -96,7 +96,7 @@ fn compile_typename(td: &TypeDef) -> Cow<'static, str> {
             accm.into()
         }
         Named(sym) => (&*INT.fetch(*sym)).clone().into(),
-        Struct(sym, _vals) => (&*INT.fetch(*sym)).clone().into(),
+        Struct { name, .. } => (&*INT.fetch(*name)).clone().into(),
     }
 }
 

@@ -2,6 +2,7 @@
 //#![deny(missing_docs)]
 
 use std::borrow::Cow;
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 pub mod ast;
@@ -93,7 +94,11 @@ pub enum TypeDef {
     /// name, which is important.
     Named(VarSym),
     /// A struct.  Structs must have a name, they are normatively typed.
-    Struct(VarSym, Vec<(VarSym, TypeSym)>),
+    Struct {
+        name: VarSym,
+        fields: BTreeMap<VarSym, TypeSym>,
+        types: BTreeMap<VarSym, TypeSym>,
+    },
 }
 
 impl TypeDef {
@@ -170,7 +175,7 @@ impl TypeDef {
                 Cow::Owned(t)
             }
             TypeDef::Named(s) => Cow::Owned((&*INT.fetch(*s)).clone()),
-            TypeDef::Struct(s, _) => Cow::Owned((&*INT.fetch(*s)).clone()),
+            TypeDef::Struct { name, .. } => Cow::Owned((&*INT.fetch(*name)).clone()),
             /*
             TypeDef::Ptr(t) => {
                 let inner_name = cx.fetch_type(**t).get_name();

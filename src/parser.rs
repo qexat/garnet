@@ -7,6 +7,7 @@
 //! with a precendence that's defined trivially by a simple look-up function.
 //! I like it a lot.
 
+use std::collections::BTreeMap;
 use std::mem::Discriminant as Discr;
 use std::ops::Range;
 
@@ -625,15 +626,15 @@ impl<'input> Parser<'input> {
         args
     }
 
-    fn parse_struct_fields(&mut self) -> Vec<(VarSym, TypeSym)> {
-        let mut args = vec![];
+    fn parse_struct_fields(&mut self) -> BTreeMap<VarSym, TypeSym> {
+        let mut args = BTreeMap::new();
 
         // TODO someday: Doc comments on struct fields
         while let Some((T::Ident(_i), _span)) = self.lex.peek() {
             let name = self.expect_ident();
             self.expect(T::Colon);
             let tname = self.parse_type();
-            args.push((name, tname));
+            args.insert(name, tname);
 
             // TODO: Figure out how to not make this comma parsing jank af
             // maybe
