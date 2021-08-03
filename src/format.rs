@@ -202,8 +202,13 @@ fn unparse_expr(e: &Expr, indent: usize, out: &mut dyn io::Write) -> io::Result<
             }
             write!(out, "}}")
         }
-        E::StructCtor { name, body } => {
+        E::StructCtor { name, body, types } => {
             writeln!(out, "{} {{", INT.fetch(*name))?;
+            for (nm, ty) in types {
+                let tname = INT.fetch_type(*ty).get_name();
+                write!(out, "type {} = {}", INT.fetch(*nm), tname)?;
+                writeln!(out, ",")?;
+            }
             for (nm, expr) in body {
                 write!(out, "{} = ", INT.fetch(*nm))?;
                 unparse_expr(expr, 0, out)?;

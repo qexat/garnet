@@ -207,6 +207,7 @@ pub enum Expr {
     },
     StructCtor {
         name: VarSym,
+        types: BTreeMap<VarSym, TypeSym>,
         body: Vec<(VarSym, Expr)>,
     },
     /// Tuple element reference
@@ -290,6 +291,7 @@ pub enum Decl {
     StructDef {
         name: VarSym,
         fields: BTreeMap<VarSym, TypeSym>,
+        typefields: BTreeSet<VarSym>,
         doc_comment: Vec<String>,
     },
 }

@@ -204,7 +204,7 @@ pub struct VarBinding {
 struct Symtbl {
     vars: scope::Symbols<VarSym, VarBinding>,
     /// Bindings for typedefs
-    types: BTreeMap<VarSym, TypeSym>,
+    types: scope::Symbols<VarSym, TypeSym>,
 }
 
 impl Symtbl {
@@ -238,11 +238,11 @@ impl Symtbl {
     }
 
     fn add_type(&mut self, name: VarSym, typedef: TypeSym) {
-        self.types.insert(name, typedef);
+        self.types.add(name, typedef);
     }
 
     fn get_typedef(&mut self, name: VarSym) -> Option<TypeSym> {
-        self.types.get(&name).copied()
+        self.types.get(name).copied()
     }
 
     /// Looks up a typedef and if it is `Named` try to keep looking
@@ -251,7 +251,7 @@ impl Symtbl {
     ///
     /// TODO: This is weird, currently necessary for structs though.
     fn follow_typedef(&mut self, name: VarSym) -> Option<TypeSym> {
-        match self.types.get(&name) {
+        match self.types.get(name) {
             Some(tsym) => match &*INT.fetch_type(*tsym) {
                 &TypeDef::Named(vsym) => self.follow_typedef(vsym),
                 _other => Some(*tsym),
@@ -277,7 +277,7 @@ impl Symtbl {
     fn type_exists(&mut self, tsym: TypeSym) -> Result<(), TypeError> {
         match &*INT.fetch_type(tsym) {
             TypeDef::Named(name) => {
-                if self.types.get(&name).is_some() {
+                if self.types.get(*name).is_some() {
                     Ok(())
                 } else {
                     Err(TypeError::UnknownType(*name))
@@ -322,6 +322,14 @@ impl Symtbl {
 
     fn pop_scope(&mut self) {
         self.vars.pop_scope();
+    }
+
+    fn push_type_scope(&mut self) {
+        self.types.push_scope();
+    }
+
+    fn pop_type_scope(&mut self) {
+        self.types.pop_scope();
     }
 }
 
@@ -477,11 +485,15 @@ fn predeclare_decl(symtbl: &mut Symtbl, decl: &hir::Decl<()>) {
             }
             symtbl.add_type(*name, *typedecl);
         }
-        hir::Decl::StructDef { name, fields } => {
+        hir::Decl::StructDef {
+            name,
+            fields,
+            typefields,
+        } => {
             let typ = TypeDef::Struct {
                 name: *name,
                 fields: fields.clone(),
-                types: std::collections::BTreeMap::new(),
+                typefields: typefields.clone(),
             };
             if symtbl.get_typedef(*name).is_some() {
                 panic!("Tried to redeclare struct {}!", INT.fetch(*name));
@@ -588,16 +600,21 @@ fn typecheck_decl(
             symtbl.type_exists(typedecl)?;
             Ok(hir::Decl::TypeDef { name, typedecl })
         }
-        hir::Decl::StructDef { name, fields } => {
+        hir::Decl::StructDef {
+            name,
+            fields,
+            typefields,
+        } => {
             let typedecl = INT.intern_type(&TypeDef::Struct {
                 name: name,
                 fields: fields.clone(),
-                types: std::collections::BTreeMap::new(),
+                typefields: BTreeSet::new(),
             });
             symtbl.type_exists(typedecl)?;
             Ok(hir::Decl::StructDef {
                 name,
                 fields: fields.clone(),
+                typefields: typefields.clone(),
             })
         }
         // Don't need to do anything here since we generate these in the lowering
@@ -920,7 +937,8 @@ fn typecheck_expr(
                 e: TupleCtor { body: body_exprs },
             })
         }
-        StructCtor { name, body } => {
+        StructCtor { name, body, types } => {
+            symtbl.push_type_scope();
             // This is a kinda weird amount of structure-fiddling, but okay
             let body_exprs: Vec<(VarSym, hir::TypedExpr<TypeSym>)> = body
                 .iter()
@@ -933,26 +951,28 @@ fn typecheck_expr(
                 .follow_typedef(name)
                 .ok_or(TypeError::UnknownType(name))?;
 
-            if let TypeDef::Struct { fields, .. } = &*INT.fetch_type(struct_type) {
+            let res = if let TypeDef::Struct {
+                fields, typefields, ..
+            } = &*INT.fetch_type(struct_type)
+            {
                 // Make sure all our struct fields exist in the struct type,
                 // and we aren't missing any or have any excess
                 let given_names: BTreeSet<VarSym> =
                     body_exprs.iter().map(|(nm, _expr)| *nm).collect();
 
                 let expected_names: BTreeSet<VarSym> = body.iter().map(|(nm, _ty)| *nm).collect();
-                let expected_fieldses: BTreeMap<VarSym, TypeSym> =
-                    fields.iter().map(|(nm, ty)| (*nm, *ty)).collect();
                 if given_names == expected_names {
                     // Make sure the given field has a type compatible with the expected type.
                     let mut unhecked_exprs = vec![];
                     for (given_nm, given_expr) in &body_exprs {
-                        let expected_type = expected_fieldses[given_nm];
+                        let expected_type = fields[given_nm];
                         if let Some(concrete_type) = infer_type(expected_type, given_expr.t) {
                             unhecked_exprs.push((
                                 *given_nm,
                                 reify_types(given_expr.t, concrete_type, given_expr.clone()),
                             ));
                         } else {
+                            // TODO: Pop type scope?
                             return Err(TypeError::StructField {
                                 expected: expected_names.into_iter().collect(),
                                 got: given_names.into_iter().collect(),
@@ -964,6 +984,7 @@ fn typecheck_expr(
                         e: StructCtor {
                             name,
                             body: unhecked_exprs,
+                            types,
                         },
                     })
                 } else {
@@ -974,7 +995,9 @@ fn typecheck_expr(
                 }
             } else {
                 Err(TypeError::UnknownType(name))
-            }
+            };
+            symtbl.pop_type_scope();
+            res
         }
         // TODO: Inference???
         // Not sure we need it, any integer type should be fine for tuple lookups...
