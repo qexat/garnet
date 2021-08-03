@@ -2,7 +2,7 @@
 //#![deny(missing_docs)]
 
 use std::borrow::Cow;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 pub mod ast;
@@ -97,7 +97,7 @@ pub enum TypeDef {
     Struct {
         name: VarSym,
         fields: BTreeMap<VarSym, TypeSym>,
-        types: BTreeMap<VarSym, TypeSym>,
+        typefields: BTreeSet<VarSym>,
     },
 }
 

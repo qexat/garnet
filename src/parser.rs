@@ -554,11 +554,12 @@ impl<'input> Parser<'input> {
     fn parse_structdef(&mut self, doc_comment: Vec<String>) -> ast::Decl {
         let name = self.expect_ident();
         self.expect(T::LBrace);
-        let fields = self.parse_struct_fields();
+        let (fields, typefields) = self.parse_struct_fields();
         self.expect(T::RBrace);
         ast::Decl::StructDef {
             name,
             fields,
+            typefields,
             doc_comment,
         }
     }
@@ -626,15 +627,26 @@ impl<'input> Parser<'input> {
         args
     }
 
-    fn parse_struct_fields(&mut self) -> BTreeMap<VarSym, TypeSym> {
-        let mut args = BTreeMap::new();
+    fn parse_struct_fields(&mut self) -> (BTreeMap<VarSym, TypeSym>, BTreeSet<VarSym>) {
+        let mut fields = BTreeMap::new();
+        let mut typefields = BTreeSet::new();
 
         // TODO someday: Doc comments on struct fields
-        while let Some((T::Ident(_i), _span)) = self.lex.peek() {
-            let name = self.expect_ident();
-            self.expect(T::Colon);
-            let tname = self.parse_type();
-            args.insert(name, tname);
+        loop {
+            match self.lex.peek() {
+                Some((T::Ident(_i), _span)) => {
+                    let name = self.expect_ident();
+                    self.expect(T::Colon);
+                    let tname = self.parse_type();
+                    fields.insert(name, tname);
+                }
+                Some((T::Type, _span)) => {
+                    self.expect(T::Type);
+                    let name = self.expect_ident();
+                    typefields.insert(name);
+                }
+                _ => break,
+            }
 
             // TODO: Figure out how to not make this comma parsing jank af
             // maybe
@@ -647,27 +659,44 @@ impl<'input> Parser<'input> {
                 break;
             }
         }
-        args
+        (fields, typefields)
     }
 
-    fn parse_struct_lit_fields(&mut self) -> Vec<(VarSym, ast::Expr)> {
-        let mut args = vec![];
+    fn parse_struct_lit_fields(&mut self) -> (Vec<(VarSym, ast::Expr)>, BTreeMap<VarSym, TypeSym>) {
+        let mut typefields = BTreeMap::new();
+        let mut fields = vec![];
 
-        while let Some((T::Ident(_i), _span)) = self.lex.peek() {
-            let name = self.expect_ident();
-            self.expect(T::Equals);
-            let tname = self.parse_expr(0).unwrap();
-            args.push((name, tname));
+        // TODO someday: Doc comments on struct fields
+        loop {
+            match self.lex.peek() {
+                Some((T::Ident(_i), _span)) => {
+                    let name = self.expect_ident();
+                    self.expect(T::Equals);
+                    let tname = self.parse_expr(0).unwrap();
+                    fields.push((name, tname));
+                }
+                Some((T::Type, _span)) => {
+                    self.expect(T::Type);
+                    let name = self.expect_ident();
+                    self.expect(T::Equals);
+                    let ty = self.parse_type();
+                    typefields.insert(name, ty);
+                }
+                _ => break,
+            }
 
             // TODO: Figure out how to not make this comma parsing jank af
-            // same as above
+            // maybe
+            // {term ","} [term [","]]
+            // or
+            // [THING { "," THING } [","]]
             if self.peek_is(T::Comma.discr()) {
                 self.expect(T::Comma);
             } else {
                 break;
             }
         }
-        args
+        (fields, typefields)
     }
 
     fn parse_tuple_type(&mut self) -> TypeDef {
@@ -1001,9 +1030,9 @@ impl<'input> Parser<'input> {
     /// struct literal = ident "{" ... "}"
     fn parse_struct_literal(&mut self, name: VarSym) -> ast::Expr {
         self.expect(T::LBrace);
-        let body = self.parse_struct_lit_fields();
+        let (body, types) = self.parse_struct_lit_fields();
         self.expect(T::RBrace);
-        ast::Expr::StructCtor { name, body }
+        ast::Expr::StructCtor { name, body, types }
     }
 
     fn parse_type(&mut self) -> TypeSym {

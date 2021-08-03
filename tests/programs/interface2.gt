@@ -26,8 +26,8 @@ fn _println_i32(vl: I32): {} = __println(vl) end
 
 const PrintI32: IPrint = IPrint {
     type T = I32,
-    print = _print_i32,
-    println = _println_i32,
+    print = fn(vl: I32): {} = __println(vl) end,
+    println = fn(vl: I32): {} = __println(vl) end,
 }
 
 fn main(): {} =

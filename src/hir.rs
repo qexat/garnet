@@ -83,9 +83,13 @@ impl<T> TypedExpr<T> {
             TupleCtor { body } => TupleCtor {
                 body: map_vec(body),
             },
-            StructCtor { name, body } => {
+            StructCtor { name, body, types } => {
                 let body = body.iter().map(|(nm, vl)| (*nm, vl.map_type(f))).collect();
-                StructCtor { name: *name, body }
+                StructCtor {
+                    name: *name,
+                    body,
+                    types: types.clone(),
+                }
             }
             TupleRef { expr, elt } => TupleRef {
                 expr: Box::new(expr.map_type(f)),
@@ -164,6 +168,7 @@ pub enum Expr<T> {
     StructCtor {
         name: VarSym,
         body: Vec<(VarSym, TypedExpr<T>)>,
+        types: BTreeMap<VarSym, TypeSym>,
     },
     TupleRef {
         expr: Box<TypedExpr<T>>,
@@ -227,6 +232,7 @@ pub enum Decl<T> {
     StructDef {
         name: VarSym,
         fields: BTreeMap<VarSym, TypeSym>,
+        typefields: BTreeSet<VarSym>,
     },
     /// Our first compiler intrinsic!  \o/
     ///
@@ -370,7 +376,7 @@ fn lower_expr<T>(f: &mut dyn FnMut(&hir::Expr<T>) -> T, expr: &ast::Expr) -> Typ
         E::TupleCtor { body } => Expr::TupleCtor {
             body: lower_exprs(f, body),
         },
-        E::StructCtor { name, body } => {
+        E::StructCtor { name, body, types } => {
             let lowered_body = body
                 .iter()
                 .map(|(nm, expr)| (*nm, lower_expr(f, expr)))
@@ -378,6 +384,7 @@ fn lower_expr<T>(f: &mut dyn FnMut(&hir::Expr<T>) -> T, expr: &ast::Expr) -> Typ
             Expr::StructCtor {
                 name: *name,
                 body: lowered_body,
+                types: types.clone(),
             }
         }
         E::TupleRef { expr, elt } => Expr::TupleRef {
@@ -452,9 +459,15 @@ fn lower_decl<T>(accm: &mut Vec<Decl<T>>, f: &mut dyn FnMut(&hir::Expr<T>) -> T,
                 },
             });
         }
-        D::StructDef { name, fields, .. } => accm.push(Decl::StructDef {
+        D::StructDef {
+            name,
+            fields,
+            typefields,
+            ..
+        } => accm.push(Decl::StructDef {
             name: *name,
             fields: fields.clone(),
+            typefields: typefields.clone(),
         }),
     }
 }
