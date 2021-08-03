@@ -13,24 +13,24 @@ struct IPrint {
     println: fn(T): {},
 }
 
-fn print(vt: IPrint, vl: I32): {} =
-    vt.print(vl)
-end
-
-fn println(vt: IPrint, vl: I32): {} =
-    vt.println(vl)
-end
+--fn print(vt: IPrint, vl: I32): {} =
+--    vt.print(vl)
+--end
+--
+--fn println(vt: IPrint, vl: I32): {} =
+--    vt.println(vl)
+--end
 
 fn _print_i32(vl: I32): {} = __println(vl) end
 fn _println_i32(vl: I32): {} = __println(vl) end
 
 const PrintI32: IPrint = IPrint {
     type T = I32,
-    print = fn(vl: I32): {} = __println(vl) end,
-    println = fn(vl: I32): {} = __println(vl) end,
+    print = fn(vl: T): {} = __println(3) end,
+    println = fn(vl: T): {} = __println(4) end,
 }
 
 fn main(): {} =
-    print(PrintI32, 12)
-    PrintI32:println(21)
+    --print(PrintI32, 12)
+    PrintI32.println(21)
 end

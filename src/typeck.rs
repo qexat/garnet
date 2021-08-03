@@ -2,7 +2,7 @@
 //! Operates on the HIR.
 
 use std::borrow::Cow;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 
 use crate::hir;
 use crate::scope;
@@ -242,7 +242,7 @@ impl Symtbl {
     }
 
     fn get_typedef(&mut self, name: VarSym) -> Option<TypeSym> {
-        self.types.get(name).copied()
+        self.types.get(name)
     }
 
     /// Looks up a typedef and if it is `Named` try to keep looking
@@ -252,9 +252,9 @@ impl Symtbl {
     /// TODO: This is weird, currently necessary for structs though.
     fn follow_typedef(&mut self, name: VarSym) -> Option<TypeSym> {
         match self.types.get(name) {
-            Some(tsym) => match &*INT.fetch_type(*tsym) {
+            Some(tsym) => match &*INT.fetch_type(tsym) {
                 &TypeDef::Named(vsym) => self.follow_typedef(vsym),
-                _other => Some(*tsym),
+                _other => Some(tsym),
             },
             None => None,
         }
@@ -305,7 +305,7 @@ impl Symtbl {
     }
 
     /// Get the binding of the given variable, or an error
-    fn get_binding(&self, name: VarSym) -> Result<&VarBinding, TypeError> {
+    fn get_binding(&self, name: VarSym) -> Result<VarBinding, TypeError> {
         if let Some(binding) = self.vars.get(name) {
             return Ok(binding);
         }
@@ -316,20 +316,12 @@ impl Symtbl {
         self.get_binding(name).is_ok()
     }
 
-    fn push_scope(&mut self) {
-        self.vars.push_scope();
+    fn push_scope(&mut self) -> scope::ScopeGuard<VarSym, VarBinding> {
+        self.vars.push_scope()
     }
 
-    fn pop_scope(&mut self) {
-        self.vars.pop_scope();
-    }
-
-    fn push_type_scope(&mut self) {
-        self.types.push_scope();
-    }
-
-    fn pop_type_scope(&mut self) {
-        self.types.pop_scope();
+    fn push_type_scope(&mut self) -> scope::ScopeGuard<VarSym, TypeSym> {
+        self.types.push_scope()
     }
 }
 
@@ -547,7 +539,7 @@ fn typecheck_decl(
             body,
         } => {
             // Push scope, typecheck and add params to symbol table
-            symtbl.push_scope();
+            let _g = symtbl.push_scope();
             for (pname, ptype) in signature.params.iter() {
                 symtbl.add_var(*pname, *ptype, false);
             }
@@ -565,7 +557,6 @@ fn typecheck_decl(
             let last_expr_type = last_type_of(&typechecked_exprs);
             if let Some(t) = infer_type(last_expr_type, signature.rettype) {
                 let inferred_exprs = reify_last_types(last_expr_type, t, typechecked_exprs);
-                symtbl.pop_scope();
                 Ok(hir::Decl::Function {
                     name,
                     signature,
@@ -836,7 +827,7 @@ fn typecheck_expr(
         }
         // TODO: Inference?
         Lambda { signature, body } => {
-            symtbl.push_scope();
+            let _g = symtbl.push_scope();
             // add params to symbol table
             for (paramname, paramtype) in signature.params.iter() {
                 symtbl.add_var(*paramname, *paramtype, false);
@@ -845,7 +836,6 @@ fn typecheck_expr(
             let bodytype = last_type_of(&body_expr);
             if let Some(t) = infer_type(bodytype, signature.rettype) {
                 let new_body = reify_last_types(bodytype, t, body_expr);
-                symtbl.pop_scope();
                 let lambdatype = signature.to_type();
                 Ok(hir::TypedExpr {
                     e: Lambda {
@@ -856,7 +846,6 @@ fn typecheck_expr(
                 })
             } else {
                 let function_name = INT.intern("lambda");
-                symtbl.pop_scope();
                 Err(TypeError::Return {
                     fname: function_name,
                     got: bodytype,
@@ -938,66 +927,80 @@ fn typecheck_expr(
             })
         }
         StructCtor { name, body, types } => {
-            symtbl.push_type_scope();
-            // This is a kinda weird amount of structure-fiddling, but okay
-            let body_exprs: Vec<(VarSym, hir::TypedExpr<TypeSym>)> = body
-                .iter()
-                .map(|(nm, vl)| {
-                    let expr = typecheck_expr(symtbl, vl.clone(), function_rettype)?;
-                    Ok((*nm, expr))
-                })
-                .collect::<Result<Vec<_>, _>>()?;
+            dbg!("Types in struct ctor:", types.len());
             let struct_type = symtbl
                 .follow_typedef(name)
                 .ok_or(TypeError::UnknownType(name))?;
-
-            let res = if let TypeDef::Struct {
+            let _g = symtbl.push_type_scope();
+            if let TypeDef::Struct {
                 fields, typefields, ..
             } = &*INT.fetch_type(struct_type)
             {
                 // Make sure all our struct fields exist in the struct type,
                 // and we aren't missing any or have any excess
-                let given_names: BTreeSet<VarSym> =
-                    body_exprs.iter().map(|(nm, _expr)| *nm).collect();
+                let given_names: BTreeSet<VarSym> = body.iter().map(|x| x.0).collect();
+                let expected_names: BTreeSet<VarSym> =
+                    fields.iter().map(|x| x.0).copied().collect();
 
-                let expected_names: BTreeSet<VarSym> = body.iter().map(|(nm, _ty)| *nm).collect();
-                if given_names == expected_names {
-                    // Make sure the given field has a type compatible with the expected type.
-                    let mut unhecked_exprs = vec![];
-                    for (given_nm, given_expr) in &body_exprs {
-                        let expected_type = fields[given_nm];
-                        if let Some(concrete_type) = infer_type(expected_type, given_expr.t) {
-                            unhecked_exprs.push((
-                                *given_nm,
-                                reify_types(given_expr.t, concrete_type, given_expr.clone()),
-                            ));
-                        } else {
-                            // TODO: Pop type scope?
-                            return Err(TypeError::StructField {
-                                expected: expected_names.into_iter().collect(),
-                                got: given_names.into_iter().collect(),
-                            });
-                        }
-                    }
-                    Ok(hir::TypedExpr {
-                        t: struct_type,
-                        e: StructCtor {
-                            name,
-                            body: unhecked_exprs,
-                            types,
-                        },
-                    })
-                } else {
-                    Err(TypeError::StructField {
-                        expected: expected_names.into_iter().collect(),
-                        got: given_names.into_iter().collect(),
-                    })
+                let given_types: BTreeSet<VarSym> = types.iter().map(|x| x.0).copied().collect();
+                let expected_types: BTreeSet<VarSym> = typefields.clone();
+                let name_mismatch = || TypeError::StructField {
+                    expected: expected_names.iter().copied().collect(),
+                    got: given_names.iter().copied().collect(),
+                };
+
+                let type_mismatch = || TypeError::StructField {
+                    expected: expected_types.iter().copied().collect(),
+                    got: given_types.iter().copied().collect(),
+                };
+
+                if given_names != expected_names {
+                    return Err(name_mismatch());
                 }
+                if given_types != expected_types {
+                    return Err(type_mismatch());
+                }
+
+                // Add all the types declared in the struct to the local type scope
+                for (nm, ty) in &types {
+                    dbg!("Adding type", nm, ty);
+                    symtbl.add_type(*nm, *ty);
+                }
+
+                // Typecheck the expressions we have been given.
+                // This is a kinda weird amount of structure-fiddling, but okay
+                let body_exprs: Vec<(VarSym, hir::TypedExpr<TypeSym>)> = body
+                    .iter()
+                    .map(|(nm, vl)| {
+                        let expr = typecheck_expr(symtbl, vl.clone(), function_rettype)?;
+                        Ok((*nm, expr))
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
+
+                // Make sure the given field has a type compatible with the expected type.
+                let mut unhecked_exprs = vec![];
+                for (given_nm, given_expr) in &body_exprs {
+                    let expected_type = fields[given_nm];
+                    if let Some(concrete_type) = infer_type(expected_type, given_expr.t) {
+                        unhecked_exprs.push((
+                            *given_nm,
+                            reify_types(given_expr.t, concrete_type, given_expr.clone()),
+                        ));
+                    } else {
+                        return Err(name_mismatch());
+                    }
+                }
+                Ok(hir::TypedExpr {
+                    t: struct_type,
+                    e: StructCtor {
+                        name,
+                        body: unhecked_exprs,
+                        types,
+                    },
+                })
             } else {
                 Err(TypeError::UnknownType(name))
-            };
-            symtbl.pop_type_scope();
-            res
+            }
         }
         // TODO: Inference???
         // Not sure we need it, any integer type should be fine for tuple lookups...
@@ -1154,16 +1157,16 @@ mod tests {
         assert!(t.get_var(t_bar).is_err());
 
         // Push scope, verify behavior is the same.
-        t.push_scope();
-        assert_eq!(t.get_var(t_foo).unwrap(), t_i32);
-        assert!(t.get_var(t_bar).is_err());
-        // Add var, make sure we can get it
-        t.add_var(t_bar, t_bool, false);
-        assert_eq!(t.get_var(t_foo).unwrap(), t_i32);
-        assert_eq!(t.get_var(t_bar).unwrap(), t_bool);
-
+        {
+            let _g = t.push_scope();
+            assert_eq!(t.get_var(t_foo).unwrap(), t_i32);
+            assert!(t.get_var(t_bar).is_err());
+            // Add var, make sure we can get it
+            t.add_var(t_bar, t_bool, false);
+            assert_eq!(t.get_var(t_foo).unwrap(), t_i32);
+            assert_eq!(t.get_var(t_bar).unwrap(), t_bool);
+        }
         // Pop scope, make sure bar is gone.
-        t.pop_scope();
         assert_eq!(t.get_var(t_foo).unwrap(), t_i32);
         assert!(t.get_var(t_bar).is_err());
 
@@ -1174,6 +1177,7 @@ mod tests {
         // TODO: Check to make sure the shadowed var is still there.
     }
 
+    /* Can't happen with new scope guard API
     /// Make sure an empty symtbl gives errors
     #[test]
     #[should_panic]
@@ -1182,6 +1186,7 @@ mod tests {
         t.pop_scope();
         t.pop_scope();
     }
+    */
 
     /// Test literal type inference
     #[test]
