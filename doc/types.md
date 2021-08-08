@@ -69,12 +69,23 @@ when you add floats to the mix you get more complicated cases:
    an integer that needs a rounding strategy.  Is this conceptually the
    same as the case above?  I was thinking "beyond the domain" vs.
    "within the domain but not representable" (ie, 5.5 in an `I32`) would
-   be different cases, but maybe they're not.
+   be different cases, but maybe they're not.  You can also do this by
+   say, a `F64` turning into an `F32`.
+
+So there's three possibilities in the end:
+
+ * `A` just turns into `B` and cannot fail
+ * `A` turns into `B` with Something happening at the end points --
+   truncation, saturation, rounding, whatever.
+ * `A` turns into `B` and Something Happens at the end points, plus it
+   needs a rounding strategy for things that "don't fit in the cracks"
+   between numbers.
 
 Like Rust, we also have `USize`, which is the size of an array index,
 and `ISize`, which is the size of a pointer offset.  TODO: Maybe call
 them `Size` and `Offset` or something?  hm, idk.  Maybe we shouldn't get
-fancy.
+fancy.  Though having `ISize` be called `Offset` is a lot more
+informative tbh.
 
 TODO: I was thinking of NOT having arbitrary-sized numbers (ie, `I8 =
 Number(-128,127)`), buuuuuuut....  it might be a useful case.  Not going
@@ -91,13 +102,26 @@ single-element tuple is kinda nice, in reality it's just a slightly
 weird construct to learn.  So maybe it will be nicer to have a specific
 operators for constructing and deconstructing values of this type.
 
-TODO: Figure out whether this is actually true, and figure out syntax
-for reals.  Right now the compiler just generates functions for
-wrapping/unwrapping typedefs, which is a little silly.  If we can make
-those functions generic then maybe that's fine though.
+```
+type Foo = Bar
+let x: Foo = Foo(some_bar) -- Just a function call
+let y: Bar = Foo_unwrap(x) -- Also just a function call
+
+-- TODO: Foo_unwrap really needs a better name/syntax though.
+-- But with method syntax we can do:
+x:Foo_unwrap()
+-- so keeping it Just A Function is good.  If we can make it
+-- a generic function or such then it might be good enough?
+```
 
 Aliases create a new name for a type.  They should work as well as a
 textual search-and-replace would.
+
+```
+alias Foo = Bar
+let x: Foo = whatever
+let Y: Bar = x            -- This works
+```
 
 # Enumerations
 
@@ -191,6 +215,10 @@ fn foo_to_raw(f: Foo): {Foo.Discriminant, [U8;size_of_foo]} = ... end
 
 C-like unions might be a thing in the future, but are currently not
 useful or interesting, so we don't have them.
+
+TODO: Having arrays that can be indexed by enums sounds pretty useful,
+if the enum can be proven dense and unique.  Modula 2 does this and it
+seems convenient.
 
 # Structs
 
@@ -301,6 +329,116 @@ fn impl_hash(t: Type, hasher: Hasher): Hash =
     }
 end
 ```
+
+## Discussion on structs
+
+
+
+```
+icefox — Today at 12:27 PM
+Okay, so...  I really want structs to be nominal, not structural, because in practice I often want two structs that look similar to be different things
+
+repnop, Resident RISC-V Shill — Today at 12:27 PM
+the answer is: have both
+
+icefox — Today at 12:28 PM
+but having structural types makes lots of metaprogramming-ish things simpler
+
+repnop, Resident RISC-V Shill — Today at 12:28 PM
+named structs and anonymous structs
+[12:28 PM]
+(that you can optionally alias to a name)
+
+icefox — Today at 12:28 PM
+Like, functions with keywords can trivially become functions that take a struct with a little syntactic sugar
+
+522 resident cargo-fuzz shill — Today at 12:29 PM
+structs are by default nominal but you can do structural casts between them?
+
+icefox — Today at 12:29 PM
+foo(val: struct { x: I32, y: F32 }) -> foo(x: I32, y: F32)
+[12:29 PM]
+The main problem with structural casts is my experience with OCaml suggests they are a pain in the ass to actually deal with in nontrivial cases.
+[12:30 PM]
+But maybe I should suck it up and deal
+
+522 resident cargo-fuzz shill — Today at 12:30 PM
+struct A {a: i32}
+struct B {a: i32}
+
+let a: A = returns_B(); // fails
+let x: A = returns_B() as A; // passes
+[12:30 PM]
+maybe allow B to have additional fields (that are chopped off)
+
+MBones — Today at 12:33 PM
+you could also have two kinds of structs, with different names, that have different semantics, like how OCaml has both records and classes
+
+repnop, Resident RISC-V Shill — Today at 12:33 PM
+or allow structural types to decompose and implicitly convert when able
+[12:34 PM]
+e.g. .{ a: A, b: B } coerces to .{ a: A }
+[12:34 PM]
+while nominal types can't
+
+icefox — Today at 12:37 PM
+Hmmmmm, not a terrible idea
+[12:38 PM]
+I do want to be able to more easily boss around struct layouts than what Rust offers
+
+@MBones
+you could also have two kinds of structs, with different names, that have different semantics, like how OCaml has both records and classes
+
+icefox — Today at 12:39 PM
+This makes my quest for minimalism paradoxically add more distinct language features. XD
+[12:39 PM]
+Which is maybe a sign that this quest is at the point of diminishing returns
+I do want to be able to more easily boss around struct layouts than what Rust offers
+
+repnop, Resident RISC-V Shill — Today at 12:39 PM
+in the end, all languages converge to bismite
+
+icefox — Today at 12:40 PM
+I mean, I'm really trying to make this language not necessarily turn into Zig
+[12:40 PM]
+Despite having similar goals
+
+icefox — Today at 12:40 PM
+So here's a philosophical question: what's the difference between a structural type with a fixed ordering to its fields, and a tuple?
+
+repnop, Resident RISC-V Shill — Today at 12:42 PM
+depends if you define the layout for tuples
+
+repnop, Resident RISC-V Shill — Today at 12:43 PM
+in general I'd say tuples are the most anonymousousus of the types
+[12:43 PM]
+also shorter to type if things are unnamed
+[12:44 PM]
+so if you just want a bag of values without much meaning attached, tuples are better
+[12:47 PM]
+or, if you're rust, tuples are literally just structs with integer field names:
+repnop, Resident RISC-V Shill — Today at 12:49 PM
+?eval #[derive(Debug)] struct TupleStruct(u32, i32); let a: TupleStruct = TupleStruct { 0: 1, 1: 2 }; a
+￼
+Ferris 🦀
+BOT
+ — Today at 12:49 PM
+TupleStruct(1, 2)
+
+(in the case of tuple structs since you can't name the tuple type like that)
+[12:50 PM]
+IMO all 3 have different usecases and value based on what you're doing
+```
+
+Okay lemme change how I think about it a little
+
+If I embrace anonymous structs, then:
+
+ * We have anonymous structs, which are structurally typed:
+   `let x: ??? = {foo: 1, bar: 2}`
+ * Tuples are sugar for anonymous structs.  `{x, y, z}` -> `{0: x, 1: y, 2: z}`
+ * Then we just have a way to name things: `type Baz = { foo: I32, bar:
+   I32}` followed by `let y: Baz = Foo(x)`
 
 
 # Arrays and slices
