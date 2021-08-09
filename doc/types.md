@@ -13,12 +13,14 @@ some way or another.
 
 # Specific goals
 
-Nominal types instead of structural.  Because I like it when types are
-real, instead of just pretending they're real.
+Both nominal types (`A` and `B` are not the same type even if they have
+the same declaration) and structural types, because both are useful for
+different things.
 
 I want to be able to have modules and structs be basically
 interchangable, 'cause...  modules are just compile-time singleton
-structs.  Zig does something like this.
+structs.  Zig does something like this.  Structs are potentially
+also essentially a trait/interface definition.
 
 I'm not sure I want to have explicit compile-time evaluation, though it
 might end up being there anyway.
@@ -33,8 +35,7 @@ I *really* want to be able to be polymorphic over owned types, shared
 borrows, and unique borrows.  Unfortunately nobody seems to know how the
 hell to do this.
 
-TODO: We haven't even talked about borrowing and move semantics yet,
-heck.
+We *must* have move semantics, RAII and a borrow checker.
 
 # Numbers
 
@@ -75,8 +76,8 @@ when you add floats to the mix you get more complicated cases:
 So there's three possibilities in the end:
 
  * `A` just turns into `B` and cannot fail
- * `A` turns into `B` with Something happening at the end points --
-   truncation, saturation, rounding, whatever.
+ * `A` turns into `B` with Something happening at one or both end points
+   -- truncation, saturation, rounding, whatever.
  * `A` turns into `B` and Something Happens at the end points, plus it
    needs a rounding strategy for things that "don't fit in the cracks"
    between numbers.
@@ -133,21 +134,22 @@ of integers with no duplicates, where each integer gets a constant name
 attached to it.  By default they're consecutive positive integers
 starting from 0, but the programmer may assign arbitrary values to them.
 Because of these they are always an integer number type under the hood,
-and TODO we need to define what the default is; `U32`?  `Usize`?  TODO
-we also need to be able to specify what the type is, a la Rust's `repr`
+by default the smallest integer type that they will fit into.
+
+TODO we also need to be able to specify what the type is, a la Rust's `repr`
 declaration.
 
 There's also some common operations on enums that we would like to
-support, via auto-generated functions or whatever: iterate over them,
-tell whether or not an integer is a valid member of the set (ie,
-do a checked conversion), to convert them to and from strings, and to be
-able to combine them into bitmasks.  Because we have nominal types
-everywhere, the values of an enum may not be treated as an integer, they
-need an explicit cast.
+support, via auto-generated functions or whatever: iterate over all
+their members, tell whether or not an integer is a valid member of the
+set (ie, do a checked conversion), to convert them to and from strings,
+and to be able to combine them into bitmasks.  Because we have nominal
+types everywhere, the values of an enum may not be treated as an
+integer, they need an explicit cast, but that cast is always valid.
 
 Sums are real tagged unions, like Rust's enum types.  There's a few
-differences: Each member is its own type, and can be separated from the
-discriminant.
+differences from Rust: Each member is its own type, and can be separated
+from the discriminant.
 
 ```rust
 -- The $ syntax denotes a struct instead of a tuple; TODO: This is
@@ -505,8 +507,29 @@ let y: I32^ = x -- lifetime is inferred
 let z: I32 'a^ = x -- Lifetime explicit,
 
 -- this keeps you reading the type left to right
--- So I guess let's just keep rolling with
+-- So I guess let's just keep rolling with that
 ```
+
+In Rust, all references and pointers are actually a tuple of two things,
+the actual pointer and an (often zero-sized) metadata type, see trait
+for `core::ptr::Pointee`.  So that's something to think about.
+
+## Raw pointers
+
+Two kinds: one for normal memory, one for mmapped I/O.
+
+Raw pointers can be const or mut, mut pointers cannot alias with each
+other(?).  I dunno about that honestly, Rust basically uses UnsafeCell
+as the escape hatch for that, but the rules around it are kinda opaque
+and it reeks of compiler magic.  So idk if I want to emulate that.
+(Or maybe it doesn't!  "The uniqueness guarantee for mutable references
+is unaffected. There is no legal way to obtain aliasing &mut, not even
+with UnsafeCell<T>.", which I didn't know.  So, that kinda proves the
+point.)
+
+I/O pointers basically make everything accessed them through them
+volatile, and make no constraints on alignment of things behind
+them(?).
 
 # Functions and closures
 
@@ -517,6 +540,11 @@ Pure, noalloc, can-be-evaluated-at-compile-time, no-panic, etc.
 
 If we do the Zig thing and explicitly pass allocator objects around
 everywhere, then "noalloc" just kinda vanishes.
+
+Function attributes may include: Pure (no side effects for realsies),
+no alloc (No heap allocation, may be unnecessary), no panic, fixed stack
+size (no recursion that can't be tail-optimized, no alloca as if we'd do
+that in the first place)
 
 # Generics
 
