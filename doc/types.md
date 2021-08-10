@@ -37,6 +37,13 @@ hell to do this.
 
 We *must* have move semantics, RAII and a borrow checker.
 
+We need to be able to handle certain "magical" values, or at least types
+that can be sensibly represented as 0 or maybe `-1` or other bounds
+values.  See
+<https://lobste.rs/s/rt9nzg/when_zero_cost_abstractions_aren_t_zero> for
+an interesting wrinkle where that can remove a lot of cases of
+uninitialized memory.
+
 # Numbers
 
 There are multiple number types with different domains.  `U8`, `I8`,
