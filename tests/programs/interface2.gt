@@ -13,13 +13,13 @@ struct IPrint {
     println: fn(T): {},
 }
 
---fn print(vt: IPrint, vl: I32): {} =
---    vt.print(vl)
---end
---
---fn println(vt: IPrint, vl: I32): {} =
---    vt.println(vl)
---end
+fn print(vt: IPrint, vl: vt.T): {} =
+    vt.print(vl)
+end
+
+fn println(vt: IPrint, vl: vt.T): {} =
+    vt.println(vl)
+end
 
 fn _print_i32(vl: I32): {} = __println(vl) end
 fn _println_i32(vl: I32): {} = __println(vl) end
