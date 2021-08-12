@@ -407,3 +407,37 @@ weirdness that compilers have problems dealing with.  Basically have a
 but doesn't allow reads/writes to be reordered or optimized away, and
 which has different constraints on what values are allowed for it than a
 normal pointer does.
+
+## On Motivation
+
+A quote from Graydon, original creator of Rust, from
+<https://github.com/graydon/rust-prehistory>:
+
+While reading this -- if you're foolish enough to try -- keep in mind
+that I was balanced between near-total disbelief that it would ever come
+to anything and miniscule hope that if I kept at experiments and
+fiddling long enough, maybe I could do a thing.
+
+I had been criticizing, picking apart, ranting about other languages for
+years, and making doodles and marginalia notes about how to do one "right"
+or "differently" to myself for almost as long.  This lineage representes
+the very gradual coaxing-into-belief that I could actually make
+something that runs
+
+As such, there are long periods of nothing, lots of revisions of
+position, long periods of just making notes, arguing with myself,
+several false starts, digressions into minutiae that seem completely
+absurd from today's vantage point (don't get me started on how long I
+spent learning x86 mod r/m bytes and PE import table structures, why?)
+and self-important frippery.
+
+The significant thing here is that I had to get to the point of
+convincing myself that there was something *there* before bothering to
+show anyone; the uptick in work in mid-to-late 2009 is when Mozilla
+started funding me on the clock to work on it, but it's significant that
+there were years and years of just puttering around in circles, the kind
+of snowball-rolling that's necessary to go from nothing to "well...
+maybe..."
+
+I'd encourage reading it in this light: Delusional dreams very gradually
+coming into focus, not any sort of grand plan being executed.

@@ -602,6 +602,22 @@ type PlicLayout = ${
 }
 ```
 
+Things not addressed by this that Erlang's bitfield syntax does:
+Endianness, bit flags.  In something like that syntax, the above would
+be something more like:
+
+```erlang
+ThresholdAndClaim = <<?
+    threshold:32/little-integer,
+    claim:32/little-integer,
+    _padding:(0x1000-8)*8/bitstring,
+>>
+
+PlicLayout = <<?
+    ...TODO...
+>>
+```
+
 # Arrays and slices
 
 Mostly, do what Rust does.  Can we manage const generics, at least for
