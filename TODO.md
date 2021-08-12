@@ -1,8 +1,3 @@
-Short-term todo list:
-
- * Make type inference work, even if it's primitive
- * Make binops work on any integer type
-
 
 Things that kinda go together:
 

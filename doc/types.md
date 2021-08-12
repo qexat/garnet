@@ -44,11 +44,51 @@ values.  See
 an interesting wrinkle where that can remove a lot of cases of
 uninitialized memory.
 
+...On the flip side though, we must also have a zero-memory operation
+that cannot be elided, for use in security applications.  Something that
+makes memory "actually zero" instead of "indistinguishable from zero".
+At least as much as the CPU and OS allow.
+
+# Properties
+
+Without yet defining too much about how properties *work*, here is a
+list of things that we want to be able to describe:
+
+ * Zero is a valid value
+ * Maybe some other magic-ish numbers are valid values
+ * Any bit pattern is a valid value (for example, true for integers,
+   true-ish for floats, false for char's)
+ * Maybe any bit pattern within a contiguous range is a valid value (ie,
+   an enum with values for 0-512)
+ * Rust's `Ord`
+ * Rust's `Eq`
+ * Rust's `Copy`
+ * Rust's `Sized`?
+ * Rust's `Send`
+ * Rust's `Sync`
+ * Struct layouts: repr(C), repr(rust) aka repr(arbitrary)
+
 # Numbers
 
-There are multiple number types with different domains.  `U8`, `I8`,
+## Integers
+
+There are multiple integer types with different domains.  `U8`, `I8`,
 etc, increasing by powers of two up to 64 or 128 bits.  Numbers are not
 interchangable without casts, there is no automatic conversion.
+
+Like Rust, we also have `USize`, which is the size of an array index,
+and `ISize`, which is the size of a pointer offset.  TODO: Maybe call
+them `Size` and `Offset` or something?  hm, idk.  Maybe we shouldn't get
+fancy.  Though having `ISize` be called `Offset` is a lot more
+informative tbh.
+
+TODO: I was thinking of NOT having arbitrary-sized numbers (ie, `I8 =
+Number(-128,127)`), buuuuuuut....  it might be a useful case.  Not going
+to worry about it now.  If we do, don't be too scared of doing runtime
+checks for bounded numbers and such, and trusting the backend to
+optimize them out.
+
+## Floating point etc.
 
 Manual conversion needs to be precise.  Rust is doing a little bit of
 flailing in the process of discovering this: they have an `x as Y`
@@ -89,17 +129,17 @@ So there's three possibilities in the end:
    needs a rounding strategy for things that "don't fit in the cracks"
    between numbers.
 
-Like Rust, we also have `USize`, which is the size of an array index,
-and `ISize`, which is the size of a pointer offset.  TODO: Maybe call
-them `Size` and `Offset` or something?  hm, idk.  Maybe we shouldn't get
-fancy.  Though having `ISize` be called `Offset` is a lot more
-informative tbh.
+NOTE: IEEE 754 rev 2008 specifies a total ordering for NaN's.  See
+conversation in <https://github.com/rust-lang/rust/pull/72568> for more
+info.
 
-TODO: I was thinking of NOT having arbitrary-sized numbers (ie, `I8 =
-Number(-128,127)`), buuuuuuut....  it might be a useful case.  Not going
-to worry about it now.  If we do, don't be too scared of doing runtime
-checks for bounded numbers and such, and trusting the backend to
-optimize them out.
+ * If x and y are unordered numerically because x or y is NaN:
+ * 1) totalOrder(−NaN,  y) is true where  −NaN represents a NaN with negative sign bit and  y   is a floating-point number.
+ * 2) totalOrder(x, +NaN) is true where +NaN represents a NaN with positive sign bit and  x   is a floating-point number.
+ * 3) If x and y are both NaNs, then totalOrder reflects a total ordering based on:
+  * i) negative sign orders below positive sign
+  * ii) signaling orders below quiet for +NaN, reverse for −NaN
+  * iii) lesser   payload,   when  regarded   as   an   integer,   orders   below   greater   payload   for   +NaN, reverse for −NaN.
 
 # Typedef's and aliases
 
@@ -228,6 +268,16 @@ useful or interesting, so we don't have them.
 TODO: Having arrays that can be indexed by enums sounds pretty useful,
 if the enum can be proven dense and unique.  Modula 2 does this and it
 seems convenient.
+
+# Tuples
+
+Structs without field names, instead referred to by number.  Thus they
+are intrinsically ordered.
+
+Tuples are delimited by curly brackets: `{foo, bar}`.  Parentheses are
+more common in Rust, OCaml, Haskell etc but a) I like curlies as an
+homage to Erlang, and b) structs use curlies a la Rust and I want
+structs and tuples to be similar.
 
 # Structs
 
@@ -449,6 +499,108 @@ If I embrace anonymous structs, then:
  * Then we just have a way to name things: `type Baz = { foo: I32, bar:
    I32}` followed by `let y: Baz = Foo(x)`
 
+The main irritation with anonymous structs is specifying them as types.
+You basically have to repeat the whole struct definition and if it
+changes in one place it has to change everywhere.  So it's probably best
+to actually name anonymous structs as seldom as possible.
+
+## Struct layouts
+
+Remember, I also really want to be able to make explicit layouts for
+structs without needing to manually stuff in padding or such.  Erlang's
+bit patterns may be the best way to do this, but if we carry on in the
+C/Rust tradition of just making structs that plop over memory of the
+correct layout, it might look something like this (from RISC-V PLIC
+spec):
+
+```rust
+// A struct corresponding to the memory map layout for the PLIC
+//
+// Memory map from https://github.com/riscv/riscv-plic-spec/blob/master/riscv-plic.adoc
+// base + 0x0000_0000: Reserved (interrupt source 0 does not exist)
+// base + 0x0000_0004: Interrupt source 1 priority
+// base + 0x0000_0008: Interrupt source 2 priority
+// ...
+// base + 0x0000_0FFC: Interrupt source 1023 priority
+// base + 0x0000_1000: Interrupt Pending bit 0-31
+// base + 0x0000_107C: Interrupt Pending bit 992-1023
+// ...
+// base + 0x0000_2000: Enable bits for sources 0-31 on context 0
+// base + 0x0000_2004: Enable bits for sources 32-63 on context 0
+// ...
+// base + 0x0000_207F: Enable bits for sources 992-1023 on context 0
+// base + 0x0000_2080: Enable bits for sources 0-31 on context 1
+// base + 0x0000_2084: Enable bits for sources 32-63 on context 1
+// ...
+// base + 0x0000_20FF: Enable bits for sources 992-1023 on context 1
+// base + 0x0000_2100: Enable bits for sources 0-31 on context 2
+// base + 0x0000_2104: Enable bits for sources 32-63 on context 2
+// ...
+// base + 0x0000_217F: Enable bits for sources 992-1023 on context 2
+// ...
+// base + 0x001F_1F80: Enable bits for sources 0-31 on context 15871
+// base + 0x001F_1F84: Enable bits for sources 32-63 on context 15871
+// base + 0x001F_1FFF: Enable bits for sources 992-1023 on context 15871
+// ...
+// base + 0x001F_FFFC: Reserved
+// base + 0x0020_0000: Priority threshold for context 0
+// base + 0x0020_0004: Claim/complete for context 0
+// base + 0x0020_0008: Reserved
+// ...
+// base + 0x0020_0FFC: Reserved
+// base + 0x0020_1000: Priority threshold for context 1
+// base + 0x0020_1004: Claim/complete for context 1
+// ...
+// base + 0x003F_FE000: Priority threshold for context 15871
+// base + 0x003F_FE004: Claim/complete for context 15871
+// base + 0x003F_FE008: Reserved
+// ...
+// base + 0x3FFF_FFC: Reserved
+
+// Rust code implementing this layout:
+#[repr(C)]
+struct PlicLayout {
+    // Offset 0x0000_0000
+    priority: [u32; 1024],
+    // Offset 0x0000_1000
+    pending: [u32; 32],
+    _padding1: [u32; 992],
+    // Offset 0x0000_2000
+    enable_for_context: [[u32; 32]; 15872],
+    _padding2: [u32; 0x3800],
+    // Offset 0x0020_0000
+    // Only the first two cells of each of these are valid,
+    // the next 1022 are padding.
+    threshold_and_claim: [[u32; 1024]; 15872],
+}
+
+
+-- Garnet code, or something approximating it
+type ThresholdAndClaim = ${
+    #[offset(0x0)]
+    threshold: U32,
+    #[offset(0x4)]
+    claim: U32,
+    -- Pads the size of the struct out to the given offset.
+    #[offset(0x1000)]
+    _padding: {}
+}
+type PlicLayout = ${
+    #[offset(0x0000)]
+    priority: [U32; 1024],
+    -- No padding necessary here, but specifying the offset can make the
+    -- compiler tell you if you've screwed up an offset and have fields
+    -- overlapping
+    #[offset(0x1000)]
+    pending: [U32; 32],
+    -- Padding gets inserted here
+    #[offset(0x2000)]
+    enable_for_context: [[U32; 32]; 15872],
+    -- More padding happens here
+    #[offset(0x20_0000)]
+    threshold_and_claim: [ThresholdAndClaim; 15872],
+}
+```
 
 # Arrays and slices
 
