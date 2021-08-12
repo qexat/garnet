@@ -13,6 +13,7 @@ pub mod intern;
 pub mod parser;
 pub mod passes;
 mod scope;
+pub mod typechonk;
 pub mod typeck;
 
 #[cfg(test)]
