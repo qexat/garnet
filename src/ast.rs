@@ -206,7 +206,6 @@ pub enum Expr {
         body: Vec<Expr>,
     },
     StructCtor {
-        name: VarSym,
         types: BTreeMap<VarSym, TypeSym>,
         body: Vec<(VarSym, Expr)>,
     },
@@ -286,12 +285,6 @@ pub enum Decl {
     TypeDef {
         name: VarSym,
         typedecl: TypeSym,
-        doc_comment: Vec<String>,
-    },
-    StructDef {
-        name: VarSym,
-        fields: BTreeMap<VarSym, TypeSym>,
-        typefields: BTreeSet<VarSym>,
         doc_comment: Vec<String>,
     },
 }

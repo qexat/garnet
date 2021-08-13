@@ -83,10 +83,9 @@ impl<T> TypedExpr<T> {
             TupleCtor { body } => TupleCtor {
                 body: map_vec(body),
             },
-            StructCtor { name, body, types } => {
+            StructCtor { body, types } => {
                 let body = body.iter().map(|(nm, vl)| (*nm, vl.map_type(f))).collect();
                 StructCtor {
-                    name: *name,
                     body,
                     types: types.clone(),
                 }
@@ -166,7 +165,6 @@ pub enum Expr<T> {
         body: Vec<TypedExpr<T>>,
     },
     StructCtor {
-        name: VarSym,
         body: Vec<(VarSym, TypedExpr<T>)>,
         types: BTreeMap<VarSym, TypeSym>,
     },
@@ -228,11 +226,6 @@ pub enum Decl<T> {
     TypeDef {
         name: VarSym,
         typedecl: TypeSym,
-    },
-    StructDef {
-        name: VarSym,
-        fields: BTreeMap<VarSym, TypeSym>,
-        typefields: BTreeSet<VarSym>,
     },
     /// Our first compiler intrinsic!  \o/
     ///
@@ -376,13 +369,12 @@ fn lower_expr<T>(f: &mut dyn FnMut(&hir::Expr<T>) -> T, expr: &ast::Expr) -> Typ
         E::TupleCtor { body } => Expr::TupleCtor {
             body: lower_exprs(f, body),
         },
-        E::StructCtor { name, body, types } => {
+        E::StructCtor { body, types } => {
             let lowered_body = body
                 .iter()
                 .map(|(nm, expr)| (*nm, lower_expr(f, expr)))
                 .collect();
             Expr::StructCtor {
-                name: *name,
                 body: lowered_body,
                 types: types.clone(),
             }
@@ -459,16 +451,6 @@ fn lower_decl<T>(accm: &mut Vec<Decl<T>>, f: &mut dyn FnMut(&hir::Expr<T>) -> T,
                 },
             });
         }
-        D::StructDef {
-            name,
-            fields,
-            typefields,
-            ..
-        } => accm.push(Decl::StructDef {
-            name: *name,
-            fields: fields.clone(),
-            typefields: typefields.clone(),
-        }),
     }
 }
 

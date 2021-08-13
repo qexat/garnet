@@ -388,6 +388,8 @@ fn infer_type(t1: TypeSym, t2: TypeSym) -> Option<TypeSym> {
             let sym = INT.intern_type(&TypeDef::Tuple(accm));
             Some(sym)
         }
+        // TODO: Structs
+        /*
         (TypeDef::Struct { name: n1, .. }, TypeDef::Struct { name: n2, .. }) if n1 == n2 => {
             Some(t1)
         }
@@ -395,6 +397,7 @@ fn infer_type(t1: TypeSym, t2: TypeSym) -> Option<TypeSym> {
         // it to a real struct type of some kind
         (TypeDef::Named(n1), TypeDef::Struct { name: n2, .. }) if n1 == n2 => Some(t2),
         (TypeDef::Struct { name: n1, .. }, TypeDef::Named(n2)) if n1 == n2 => Some(t1),
+        */
         (tt1, tt2) if tt1 == tt2 => Some(t1),
         _ => None,
     }
@@ -476,23 +479,6 @@ fn predeclare_decl(symtbl: &mut Symtbl, decl: &hir::Decl<()>) {
                 panic!("Tried to redeclare type {}!", INT.fetch(*name));
             }
             symtbl.add_type(*name, *typedecl);
-        }
-        hir::Decl::StructDef {
-            name,
-            fields,
-            typefields,
-        } => {
-            let typ = TypeDef::Struct {
-                name: *name,
-                fields: fields.clone(),
-                typefields: typefields.clone(),
-            };
-            if symtbl.get_typedef(*name).is_some() {
-                panic!("Tried to redeclare struct {}!", INT.fetch(*name));
-            }
-            let typesym = INT.intern_type(&typ);
-            //println!("Adding struct of type {}", INT.fetch(*name));
-            symtbl.add_type(*name, typesym)
         }
         hir::Decl::Constructor { name, signature } => {
             {
@@ -590,23 +576,6 @@ fn typecheck_decl(
             // Make sure the body of the typedef is a real type.
             symtbl.type_exists(typedecl)?;
             Ok(hir::Decl::TypeDef { name, typedecl })
-        }
-        hir::Decl::StructDef {
-            name,
-            fields,
-            typefields,
-        } => {
-            let typedecl = INT.intern_type(&TypeDef::Struct {
-                name: name,
-                fields: fields.clone(),
-                typefields: BTreeSet::new(),
-            });
-            symtbl.type_exists(typedecl)?;
-            Ok(hir::Decl::StructDef {
-                name,
-                fields: fields.clone(),
-                typefields: typefields.clone(),
-            })
         }
         // Don't need to do anything here since we generate these in the lowering
         // step and have already verified no names clash.
@@ -926,15 +895,11 @@ fn typecheck_expr(
                 e: TupleCtor { body: body_exprs },
             })
         }
-        StructCtor { name, body, types } => {
+        StructCtor { body, types } => {
+            todo!()
+                /*
             dbg!("Types in struct ctor:", types.len());
-            let struct_type = symtbl
-                .follow_typedef(name)
-                .ok_or(TypeError::UnknownType(name))?;
-            let _g = symtbl.push_type_scope();
-            if let TypeDef::Struct {
-                fields, typefields, ..
-            } = &*INT.fetch_type(struct_type)
+            let _guard = symtbl.push_type_scope();
             {
                 // Make sure all our struct fields exist in the struct type,
                 // and we aren't missing any or have any excess
@@ -993,14 +958,12 @@ fn typecheck_expr(
                 Ok(hir::TypedExpr {
                     t: struct_type,
                     e: StructCtor {
-                        name,
                         body: unhecked_exprs,
                         types,
                     },
                 })
-            } else {
-                Err(TypeError::UnknownType(name))
             }
+                */
         }
         // TODO: Inference???
         // Not sure we need it, any integer type should be fine for tuple lookups...
