@@ -323,7 +323,7 @@ fn predeclare_decl(symtbl: &mut Symtbl, decl: &hir::Decl<()>) {
 
 /// Try to walk through the IR and return one with types that have some kind of
 /// guesstimated info attached to them.
-pub fn typecheck(ir: hir::Ir<()>) -> Result<hir::Ir<IType>, TypeError> {
+pub fn typecheck1(ir: hir::Ir<()>) -> Result<hir::Ir<IType>, TypeError> {
     let symtbl = &mut Symtbl::new();
     ir.decls.iter().for_each(|d| predeclare_decl(symtbl, d));
     let checked_decls = ir
@@ -338,7 +338,88 @@ pub fn typecheck(ir: hir::Ir<()>) -> Result<hir::Ir<IType>, TypeError> {
 
 fn typecheck_decl(symtbl: &mut Symtbl, d: hir::Decl<()>) -> Result<hir::Decl<IType>, TypeError> {
     match d {
-        _ => todo!()
+    match decl {
+        hir::Decl::Function {
+            name,
+            signature,
+            body,
+        } => {
+            // Push scope, typecheck and add params to symbol table
+            let _g = symtbl.push_scope();
+            for (pname, ptype) in signature.params.iter() {
+                symtbl.add_var(*pname, *ptype, false);
+            }
+
+            // This is squirrelly; basically, we want to return unit
+            // if the function has no body, otherwise return the
+            // type of the last expression.
+            //
+            // If there's a return expr, we just return the Never type
+            // for it and it all shakes out to work.
+            let typechecked_exprs = typecheck_exprs(symtbl, body, Some(signature.rettype))?;
+            // Ok, so we *also* need to walk through all the expressions
+            // and look for any "return" exprs (or later `?`/`try` exprs
+            // also) and see make sure the return types match.
+            let last_expr_type = last_type_of(&typechecked_exprs);
+            if let Some(t) = infer_type(last_expr_type, signature.rettype) {
+                let inferred_exprs = reify_last_types(last_expr_type, t, typechecked_exprs);
+                Ok(hir::Decl::Function {
+                    name,
+                    signature,
+                    body: inferred_exprs,
+                })
+            } else {
+                //if !type_matches(signature.rettype, last_expr_type) {
+                Err(TypeError::Return {
+                    fname: name,
+                    got: last_expr_type,
+                    expected: signature.rettype,
+                })
+            }
+        }
+        hir::Decl::Const {
+            name,
+            typename,
+            init,
+        } => {
+            // Make sure the const's type exists
+            symtbl.type_exists(typename)?;
+            Ok(hir::Decl::Const {
+                name,
+                typename,
+                init: typecheck_expr(symtbl, init, None)?,
+            })
+        }
+        // Ok, we are declaring a new type.  We need to make sure that the typedecl
+        // it's using is real.  We've already checked to make sure it's not a duplicate.
+        hir::Decl::TypeDef { name, typedecl } => {
+            // Make sure the body of the typedef is a real type.
+            symtbl.type_exists(typedecl)?;
+            Ok(hir::Decl::TypeDef { name, typedecl })
+        }
+        hir::Decl::StructDef {
+            name,
+            fields,
+            typefields,
+        } => {
+            let typedecl = INT.intern_type(&TypeDef::Struct {
+                name: name,
+                fields: fields.clone(),
+                typefields: BTreeSet::new(),
+            });
+            symtbl.type_exists(typedecl)?;
+            Ok(hir::Decl::StructDef {
+                name,
+                fields: fields.clone(),
+                typefields: typefields.clone(),
+            })
+        }
+        // Don't need to do anything here since we generate these in the lowering
+        // step and have already verified no names clash.
+        hir::Decl::Constructor { name, signature } => {
+            Ok(hir::Decl::Constructor { name, signature })
+        }
+    }
 
     }
 }

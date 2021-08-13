@@ -408,6 +408,210 @@ but doesn't allow reads/writes to be reordered or optimized away, and
 which has different constraints on what values are allowed for it than a
 normal pointer does.
 
+## On pointers/references
+
+```
+Evy
+A downside of your #[offset] design is that you can create a lot of nonsense and (partial) overlaps all of which you have to check for.  May i suggest a different approach instead? Where you have nominally ordered struct layouts, have a field type padding. Padding is a parameterised type that can take either an alignment/offset, or a size. padding(size: 4) inserts 4 bytes of padding, padding(align: 16) rounds the offset of the next field up to the next multiple of 16 bytes, padding(offset: 0x100) rounds up to offset 256, may be zero-sized, and will error out of the fields before the padding exceed that offset. And padding cannot be used in types which's fields aren't nominally ordered.
+￼
+icefox — Today at 12:03 PM
+Oooo
+￼
+Evy
+So e.g.:
+type PlicLayout = #[ordered] ${
+  priority:             [U32; 1024]               padding(align:     0x1000),
+  pending:              [U32;   32]               padding(align:     0x1000),
+  enable_for_context:  [[U32;   32]      ; 15872] padding(offset: 0x20_0000),
+  threshold_and_claim: [ThresholdAndClaim; 15872] padding(align:     0x1000),
+}
+
+You can even make align and size paddings available for arbitrary fields or variables. Like:
+let mut x: Atomic(U32) align(cache) padding(align: cache) = 0;
+
+let mut raw_u32_le: [u8; 4] align(4) = …;
+￼
+icefox — Today at 12:06 PM
+ooooOOOOOooooOOOOOooo
+Downside is I'd have to figure out how all those options interact
+￼
+Evy
+In this example, the type of priority is actually ([U32; 1024], [Garbage; PaddingSize]), except that you can only safely touch the .0 payload. In this case, PaddingSize = 0. For enable_for_context it's however much padding is needed to round up to offset 0x20_0000, etc.  Now, two funny things happen now:
+
+1. You could simply demand that types with padded fields will automagically be nominally ordered. Then you can throw the redundant #[ordered] away. If you didn't, well… let's just say that ordering padded fields optimally is not trivial, significantly more complex than a vanilla order by align, size desc.
+
+2. For things like fast zero-copy serialisation, you can demand padding to have specific values instead of »undefined/uninit«. For example by annotating: x: T padding(align: N, fill: 0x00)
+3. To create a paddingless C-like struct, all that's needed is to append padding(offset: 0) to the first field.
+￼
+icefox — Today at 12:16 PM
+1) If you need to have things ordered properly in memory then its up to you to define the ordering. That's fine.
+￼
+Evy
+Btw.: [Atomic(U32) align(cache); N] align(page)
+Nicely flexible.
+￼
+Evy
+This raises the question of how to write something like Rust's
+Box<[i32]>.
+This one is tricky. Technically there are two competing pointer types: Single element pointers and pointers to arrays. The latter ones are fat pointers with a length attached. And actually you get even more pointer types. Like pointers to &dyn T things, where it's data-pointer and vtable-pointer packed together. Or function pointers, which on some platforms are magical.
+
+If you have a more powerful type system than Rust 1.0 had, you wouldn't store a contents: *T, but instead a contents: impl Pointer, no second field needed.
+Nice, when did Rust finally get these traits?
+I feel like reading TWiR is useless, given how often awesome stuff went below my radar.
+￼
+repnop, Resident RISC-V Shill — Today at 12:35 PM
+Yeah it's definitely a toss up
+￼
+Evy
+#![feature(ptr_metadata)]
+
+assert_eq!(std::ptr::metadata("foo"), 3_usize);
+
+I could've used that a century ago! D:
+[12:39 PM]
+# Characters and strings
+
+Do what Rust does.  No need to innovate here.
+@icefox Do what Swift does. :<
+￼
+icefox — Today at 12:42 PM
+What does Swift do?
+￼
+@Evy
+I feel like reading TWiR is useless, given how often awesome stuff went below my radar.
+￼
+icefox — Today at 12:43 PM
+The problem is what is useful varies by person, and often starts small and slow
+But yes
+￼
+Evy
+@icefox
+# References and pointers
+Having looked plenty at proglangs like Herb Sutter's simplified C++ or Ada or in parts C#, i came to have the opinion that this is the wrong approach when designing proglangs. What seems to be a better design is having in, out, in out, move, forward function args. If you think you explicitly need pointers or references, use generic library types like Ptr(T) or Ref(T). Even mutability wrappers like Ptr(Box(T)) (Lisp naming style.) or Ref(Mut(T)) (Rust naming style.). In all other scenarios, it's better to let the language and calling conventions decide whether to use copies or references or what. For example, for tiny args the proglang may decide to turn an in out T into pass-by-value-and-return-by-value behind the scenes. Plus, these annotations allow for way better static checking whether you actually used your function args accordingly to what you specified.
+￼
+Evy
+> @icefox
+> What does Swift do?  ￼
+It doesn't just have UTF-8 slice plus Unicode Scalar Values, but also has built-in Grapheme Cluster support.(edited)
+￼
+icefox — Today at 12:48 PM
+You still need raw pointers sometimes, but that's an interesting idea. Do you have any references for the "simplified C++"?
+￼
+Evy
+Swift is the proglang with the currently best Unicode handling out there. »Best« being defined by how much spec is covered by the letter.
+￼
+icefox — Today at 12:48 PM
+The flip side of that is, how do you specify those things in struct fields?
+￼
+@icefox
+You still need raw pointers sometimes, but that's an interesting idea. Do you have any references for the "simplified C++"?
+￼
+Evy
+Lemme try find the paper.
+https://github.com/hsutter/708
+￼
+￼
+@icefox
+The flip side of that is, how do you specify those things in struct fields?
+￼
+Evy
+What things?
+Pointers?
+Same thing, wrapper types.
+￼
+icefox — Today at 12:52 PM
+Like, how do you say &mut Foo or &Foo in that in/out/etc paradigm
+Especially mutability
+￼
+Evy
+The sexy thing about in, out,… is that it gives you a lot of »dark magic« and other patterns for free and safely. in T automagically picks whether to use memcpy(T) or &T or &mut T behind the scenes. You you never have to overload functions or traits based on referenceness. And out T gives you safe access to uninitialised buffers, because the compiler can guarantee you never read before you write. forward is »in, until the last use, which is move«, etc.
+￼
+@icefox
+Like, how do you say &mut Foo or &Foo in that in/out/etc paradigm
+￼
+Evy
+&mut T etc. are impl-details.
+
+If you take an argument in and don't modify it, use in T. If you take it in and observably modify it, you take in out T. If you only return something but never read what you got in (e.g. uninitialised buffers) you use out T. If you take ownership, you use move T. If you are allowed to inspect the data without modifying and then pass along however the caller intended (whether to move or borrow or whatever), you use forward T.
+
+The compiler is free to decide whether or not to use pointers or pass by register or what not. You are 100% oblivious to whether pointers or copies are given.
+￼
+icefox — Today at 12:57 PM
+No no
+￼
+Evy
+So if you e.g. must have a pointer, e.g. to map a physical address to a virtual one, you take e.g. virt: in Pointer(T).
+￼
+icefox — Today at 12:57 PM
+Not for functions
+For structs
+Oh, the wrapper type
+￼
+@icefox
+For structs
+￼
+Evy
+Vec = struct(T: type) {
+  ptr: Ptr(Mut(T)),
+  len: USize,
+  cap: USize,
+}
+￼
+Evy
+Btw., a mutability wrapper would allow for some crazy code patterns. For example, you only need to impl iterators once, and they'll handily allow you to use the same generic iterator type to iterate over T, Ref(Mut(T)),  or just Ref(T). And it gives you dark magic interior mutability patterns like having a field Mut(Bool) for storing a dirty bit. And it does what Rust wants, getting rid of static mut by instead having a static wrapper with interior mutability.
+I/O pointers
+Ptr(T, volatile: true) or something-something. Maybe even Ptr(Volatile(T)). Where  stand-aloneVolatile(T) does its thing depending on in out etc. (i.e. standalone is useless)(edited)
+fn, Fn, FnMut, FnOnce, sigh... can we do anything about that?
+The problem is that upvalues, aka. closure captures, are magic hidden payloads, directly contradicting the explicit self design. If you want to get rid of the army of function traits, you have to make captures explicit. Then your »onceness« or »mutness« etc. emerge from whether your captures are in, in out, etc.
+If any of your captures is out or in out, you got a FnMut. Got a move, it may be a FnOnce. Etc.
+Ada goes a step further by distinguishing between procedures and functions, the latter being allowed to have magic, the former not. The former can even only return stuff via out parameters.
+￼
+@icefox
+You still need raw pointers sometimes, but that's an interesting idea. Do you have any references for the "simplified C++"?
+￼
+Phlopsi — Today at 2:36 PM
+only because we use programming languages, that are too close to the hardware.
+￼
+icefox — Today at 3:17 PM
+Sometimes you need to be close to the hardware.
+I wait with bated breath for someone to write a UART driver in Haskell.
+￼
+@Phlopsi
+only because we use programming languages, that are too close to the hardware.  @Evy I agree with you on all the in out stuff. I still don't get the practical usefulness about forward, but I'm tired, so that's fine. ￼
+￼
+Evy
+Imagine things like debug-logging your stuff you pass right through. Your debug logger just says: fn debug(T: type)(x: forward T) -> forward T. If it came in as move, it comes out as move. If it came in as in out, it comes out as in out, etc. But within debug it is treated as an in.
+￼
+Evy
+@icefox
+Sometimes you need to be close to the hardware.  ￼
+Ideally only when you're smarter than the compiler/language and making the compiler/language smarter than you is too hard of a problem to solve.
+
+C++ is the perfect example for why e.g. in out is better in the 99% case than spelling out refs vs. moves vs. mutable refs. For an utterly extreme example, look at the amount of junk you need to program to implement a correct forwarding function using current C++. Further more, look at the amount of overload code bloat needed to fine-tune your code for all possible kinds of function args and returns. And that complexity grows exponentially with every added argument or return value. Having in out reduces hundreds of lines of »perfect« C++ code to what looks like a pretty naïve single function.
+
+And i'm frequently wondering whether there are also better ways to abstract over data sharing and memory-mapped structures. I have not yet found the answer.
+'cause like in function args, pointers only give you a »how«, not a »what«. And we apply patches and bandages to things like »volatile« and magical linker scripts etc. to add a »what« to the implemented »how«.
+￼
+icefox — Today at 3:39 PM
+Sure, and Rust performs the exact same kind of abstraction of arg representation you're talking about
+￼
+Evy
+Rust is like C++ just a »how«.
+The only thing Rust has over C++ is that you can state what ref input a ref output belongs to.
+Which is a biggie, no downplaying that.
+￼
+icefox — Today at 3:49 PM
+Not really, functions have no defined ABI
+The compiler can and does turn references into copies and vice versa
+And, there's always going to be times when I'm smarter than the language. The lang is an amplifier for my own reasoning capabilities, and a special purpose amplifier is going to give me a lot more leverage (for lower cost in its problem domain) than one that tries to be equally good at everything.
+￼
+Evy
+Very limitedly. Copies to refs is demanded by ABI if your struct size exceeds two registers, or if you have too many args. The reverse is a magical recent optimisation of LLVM. But it gives you none of the semantics and semantic guarantees. You still have to overload traits and shit for ref vs. move, you still cannot distinguish between out and in out with a &mut T (it's always treated as in out), etc.
+￼
+icefox — Today at 3:55 PM
+Yeah that part I'm definitely interested in
+```
+
 ## On Motivation
 
 A quote from Graydon, original creator of Rust, from
