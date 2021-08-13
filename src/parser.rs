@@ -500,9 +500,6 @@ impl<'input> Parser<'input> {
                 Some(Token { kind: T::Const, .. }) => Some(p.parse_const(doc_comments)),
                 Some(Token { kind: T::Fn, .. }) => Some(p.parse_fn(doc_comments)),
                 Some(Token { kind: T::Type, .. }) => Some(p.parse_typedef(doc_comments)),
-                Some(Token {
-                    kind: T::Struct, ..
-                }) => Some(p.parse_structdef(doc_comments)),
                 Some(other) => p.error("start of decl", Some(other)),
                 None => None,
             }
@@ -550,6 +547,7 @@ impl<'input> Parser<'input> {
         }
     }
 
+    /*
     /// structdef = ident "{" [struct_field]* "}"
     fn parse_structdef(&mut self, doc_comment: Vec<String>) -> ast::Decl {
         let name = self.expect_ident();
@@ -563,6 +561,7 @@ impl<'input> Parser<'input> {
             doc_comment,
         }
     }
+    */
 
     /// signature = fn_args [":" typename]
     fn parse_fn_signature(&mut self) -> ast::Signature {
@@ -715,6 +714,17 @@ impl<'input> Parser<'input> {
         TypeDef::Tuple(body)
     }
 
+    fn parse_struct_type(&mut self) -> TypeDef {
+        self.expect(T::LBrace);
+        let (fields, typefields) = self.parse_struct_fields();
+        self.expect(T::RBrace);
+        TypeDef::Struct {
+            fields,
+            typefields,
+        }
+    }
+
+
     fn parse_exprs(&mut self) -> Vec<ast::Expr> {
         let mut exprs = vec![];
         while let Some(e) = self.parse_expr(0) {
@@ -744,13 +754,25 @@ impl<'input> Parser<'input> {
             T::IntegerSize((_str, size)) => ast::Expr::sized_int(self.expect_int() as i128, *size),
             // Tuple literal
             T::LBrace => self.parse_constructor(),
+            T::Struct => {
+                // TODO: Decide on a syntax that doesn't suck ass.
+                // `struct { foo: 1, bar: 2}`
+                // ${ foo: 1, bar: 2 }
+                // { foo: 1, bar: 2 }
+                // { :foo 1, :bar 2 }
+                // ???
+                self.parse_struct_literal()
+            }
             T::Ident(_) => {
                 let ident = self.expect_ident();
+                ast::Expr::Var { name: ident }
+                /*
                 if self.peek_is(TokenKind::LBrace.discr()) {
                     self.parse_struct_literal(ident)
                 } else {
                     ast::Expr::Var { name: ident }
                 }
+                */
             }
             T::Let => self.parse_let(),
             T::If => self.parse_if(),
@@ -1027,12 +1049,12 @@ impl<'input> Parser<'input> {
         ast::Expr::TupleCtor { body }
     }
 
-    /// struct literal = ident "{" ... "}"
-    fn parse_struct_literal(&mut self, name: VarSym) -> ast::Expr {
+    /// struct literal = "struct" "{" ... "}"
+    fn parse_struct_literal(&mut self) -> ast::Expr {
         self.expect(T::LBrace);
         let (body, types) = self.parse_struct_lit_fields();
         self.expect(T::RBrace);
-        ast::Expr::StructCtor { name, body, types }
+        ast::Expr::StructCtor { body, types }
     }
 
     fn parse_type(&mut self) -> TypeSym {
@@ -1056,6 +1078,10 @@ impl<'input> Parser<'input> {
             }
             Some(Token { kind: T::Fn, .. }) => {
                 let fntype = self.parse_fn_type();
+                crate::INT.intern_type(&fntype)
+            }
+            Some(Token { kind: T::Struct, .. }) => {
+                let fntype = self.parse_struct_type();
                 crate::INT.intern_type(&fntype)
             }
             other => self.error("type", other),

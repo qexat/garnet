@@ -39,7 +39,9 @@ fn __println_i16(x: i16) {
 fn compile_typedef(td: &TypeDef) -> Cow<'static, str> {
     use crate::TypeDef::*;
     match td {
-        Struct { name, fields, .. } => {
+        Struct { fields, .. } => {
+            todo!()
+                /*
             let mut accm = String::from("struct ");
             let name = &*INT.fetch(*name);
             accm += name;
@@ -54,6 +56,7 @@ fn compile_typedef(td: &TypeDef) -> Cow<'static, str> {
             }
             accm += "}\n";
             accm.into()
+                */
         }
         _other => compile_typename(td),
     }
@@ -96,7 +99,7 @@ fn compile_typename(td: &TypeDef) -> Cow<'static, str> {
             accm.into()
         }
         Named(sym) => (&*INT.fetch(*sym)).clone().into(),
-        Struct { name, .. } => (&*INT.fetch(*name)).clone().into(),
+        Struct { .. } => todo!(), //(&*INT.fetch(*name)).clone().into(),
     }
 }
 
@@ -145,6 +148,7 @@ fn compile_decl(w: &mut impl Write, decl: &hir::Decl<TypeSym>) -> io::Result<()>
             let tstr = compile_typedef(&*INT.fetch_type(*typedecl));
             writeln!(w, "pub struct {}({});", nstr, tstr)
         }
+        /*
         hir::Decl::StructDef {
             name,
             fields,
@@ -161,6 +165,7 @@ fn compile_decl(w: &mut impl Write, decl: &hir::Decl<TypeSym>) -> io::Result<()>
             }
             writeln!(w, "pub struct {} {{\n {} }}\n", nstr, accm)
         }
+        */
         // For these we have to look at the signature and make a
         // function that constructs a struct or tuple or whatever
         // out of it.
@@ -330,7 +335,9 @@ fn compile_expr(expr: &hir::TypedExpr<TypeSym>) -> String {
             accm += ")";
             accm
         }
-        E::StructCtor { name, body, types } => {
+        E::StructCtor { body, types } => {
+            todo!()
+                /*
             let mut accm = String::from(&*INT.fetch(*name));
             accm += " {\n";
             for (nm, vl) in body {
@@ -341,6 +348,7 @@ fn compile_expr(expr: &hir::TypedExpr<TypeSym>) -> String {
             }
             accm += "}\n";
             accm
+                */
         }
         E::TupleRef { expr, elt } => {
             format!("{}.{}", compile_expr(expr), elt)

@@ -46,7 +46,6 @@ fn unparse_decl(d: &Decl, out: &mut dyn io::Write) -> io::Result<()> {
             writeln!(out)
         }
         Decl::TypeDef { .. } => todo!(),
-        Decl::StructDef { .. } => todo!(),
     }
 }
 
@@ -202,8 +201,8 @@ fn unparse_expr(e: &Expr, indent: usize, out: &mut dyn io::Write) -> io::Result<
             }
             write!(out, "}}")
         }
-        E::StructCtor { name, body, types } => {
-            writeln!(out, "{} {{", INT.fetch(*name))?;
+        E::StructCtor { body, types } => {
+            writeln!(out, "struct {{")?;
             for (nm, ty) in types {
                 let tname = INT.fetch_type(*ty).get_name();
                 write!(out, "type {} = {}", INT.fetch(*nm), tname)?;

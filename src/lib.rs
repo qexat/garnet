@@ -13,7 +13,7 @@ pub mod intern;
 pub mod parser;
 pub mod passes;
 mod scope;
-pub mod typechonk;
+//pub mod typechonk;
 pub mod typeck;
 
 #[cfg(test)]
@@ -94,9 +94,8 @@ pub enum TypeDef {
     /// I think this actually *has* to be `VarSym` or else we lose the actual
     /// name, which is important.
     Named(VarSym),
-    /// A struct.  Structs must have a name, they are normatively typed.
+    /// A struct.
     Struct {
-        name: VarSym,
         fields: BTreeMap<VarSym, TypeSym>,
         typefields: BTreeSet<VarSym>,
     },
@@ -133,6 +132,17 @@ impl TypeDef {
                 .map(|ptype| {
                     let ptype_def = INT.fetch_type(*ptype);
                     ptype_def.get_name()
+                })
+                .collect::<Vec<_>>();
+            p_strs.join(", ")
+        };
+        let join_vars_with_commas = |lst: &BTreeMap<VarSym, TypeSym>| {
+            let p_strs = lst
+                .iter()
+                .map(|(pname, ptype)| {
+                    let ptype_def = INT.fetch_type(*ptype);
+                    let pname = INT.fetch(*pname);
+                    format!("{}: {}", pname, ptype_def.get_name())
                 })
                 .collect::<Vec<_>>();
             p_strs.join(", ")
@@ -176,14 +186,12 @@ impl TypeDef {
                 Cow::Owned(t)
             }
             TypeDef::Named(s) => Cow::Owned((&*INT.fetch(*s)).clone()),
-            TypeDef::Struct { name, .. } => Cow::Owned((&*INT.fetch(*name)).clone()),
-            /*
-            TypeDef::Ptr(t) => {
-                let inner_name = cx.fetch_type(**t).get_name();
-                let s = format!("{}^", inner_name);
-                Cow::Owned(s)
+            TypeDef::Struct { fields, .. } => {
+                    let mut res = String::from("struct {");
+                    res += &join_vars_with_commas(fields);
+                    res += "}";
+                    Cow::Owned(res)
             }
-            */
         }
     }
 
