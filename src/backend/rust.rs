@@ -37,29 +37,7 @@ fn __println_i16(x: i16) {
 
 /// Compiles a `TypeDef` into a declaration statement.
 fn compile_typedef(td: &TypeDef) -> Cow<'static, str> {
-    use crate::TypeDef::*;
-    match td {
-        Struct { fields, .. } => {
-            todo!()
-                /*
-            let mut accm = String::from("struct ");
-            let name = &*INT.fetch(*name);
-            accm += name;
-            accm += "{ \n";
-            for (nm, ty) in fields {
-                let nm_str = &*INT.fetch(*nm);
-                let vl_str = INT.fetch_type(*ty);
-                accm += nm_str;
-                accm += ": ";
-                accm += &vl_str.get_name();
-                accm += ",\n";
-            }
-            accm += "}\n";
-            accm.into()
-                */
-        }
-        _other => compile_typename(td),
-    }
+    compile_typename(td)
 }
 
 /// Similar to `compile_typedef` but only gets names, not full definitions.
@@ -99,7 +77,20 @@ fn compile_typename(td: &TypeDef) -> Cow<'static, str> {
             accm.into()
         }
         Named(sym) => (&*INT.fetch(*sym)).clone().into(),
-        Struct { .. } => todo!(), //(&*INT.fetch(*name)).clone().into(),
+        Struct { fields, typefields } => {
+            // We compile our structs into Rust tuples.
+            // Our fields are always ordered via BTreeMap etc,
+            // so it's okay
+            if typefields.len() > 0 {
+                todo!("Figure out type thingies");
+            }
+            let mut accm = String::from("(");
+            for (nm,typ) in fields.iter() {
+                accm += &format!("/* {} */ {}, \n", INT.fetch(*nm), compile_typename(&*INT.fetch_type(*typ)));
+            }
+            accm += ")";
+            accm.into()
+        }
     }
 }
 
@@ -336,25 +327,32 @@ fn compile_expr(expr: &hir::TypedExpr<TypeSym>) -> String {
             accm
         }
         E::StructCtor { body, types } => {
-            todo!()
-                /*
-            let mut accm = String::from(&*INT.fetch(*name));
-            accm += " {\n";
-            for (nm, vl) in body {
-                accm += &*INT.fetch(*nm);
-                accm += ": ";
-                accm += &compile_expr(vl);
-                accm += ",\n";
+            if types.len() > 0 {
+                todo!("not implemented")
             }
-            accm += "}\n";
+            let mut accm = String::from("(\n");
+            for (nm, expr) in body {
+                accm += &format!("/* {} */ {}, \n", INT.fetch(*nm), compile_expr(expr));
+            }
+            accm += ")\n";
             accm
-                */
         }
         E::TupleRef { expr, elt } => {
             format!("{}.{}", compile_expr(expr), elt)
         }
         E::StructRef { expr, elt } => {
-            format!("{}.{}", compile_expr(expr), INT.fetch(*elt))
+            // We turn our structs into Rust tuples, so we need to
+            // to turn our field names into indices
+            let tdef = &*INT.fetch_type(expr.t);
+            if let TypeDef::Struct{fields, typefields: _} = tdef {
+                let mut nth = 9999_9999;
+                for (i, (nm, _ty)) in fields.iter().enumerate() {
+                    if nm == elt { nth = i; break; }
+                };
+                format!("{}.{}", compile_expr(expr), nth)
+            } else {
+                panic!("Struct wasn't actually a struct in backend, was {}.  should never happen", compile_typename(tdef))
+            }
         }
         E::Assign { lhs, rhs } => {
             format!("{} = {}", compile_expr(lhs), compile_expr(rhs))

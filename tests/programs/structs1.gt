@@ -4,22 +4,24 @@
 -- Run:
 --   status: success
 
-struct Bar {
+type Bar = struct {
 }
 
-struct Foo {
+type Foo = struct {
     x: I32,
     y: I16,
     z: I8,
 }
 
 fn main(): {} =
-    let f: Foo = Foo {
-        x = 1,
-        y = 2,
-        z = 4,
-    }
-    let g: Bar = Bar {}
-    __println(f.x)
+    -- TODO: Type inference can't yet pass the function/struct boundary
+    -- this creates.
+    let f: Foo = Foo(struct {
+        x = 1_I32,
+        y = 2_I16,
+        z = 4_I8,
+    })
+    let g: Bar = Bar(struct {})
+    __println(Foo_unwrap(f).x)
 
 end

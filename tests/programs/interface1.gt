@@ -7,26 +7,28 @@
 --     12
 --     21
 
-struct IPrint {
+type IPrint = struct {
     print: fn(I32): {},
     println: fn(I32): {},
 }
 
 fn print(vt: IPrint, vl: I32): {} =
-    vt.print(vl)
+    -- TODO: Doing `vt.print(vl)` here causes a panic
+    IPrint_unwrap(vt).print(vl)
+    --vt.print(vl)
 end
 
 fn println(vt: IPrint, vl: I32): {} =
-    vt.print(vl)
+    IPrint_unwrap(vt).print(vl)
 end
 
 fn _print_i32(vl: I32): {} = __println(vl) end
 fn _println_i32(vl: I32): {} = __println(vl) end
 
-const PrintI32: IPrint = IPrint {
+const PrintI32: IPrint = IPrint(struct {
     print = _print_i32,
     println = _println_i32,
-}
+})
 
 fn main(): {} =
     print(PrintI32, 12)
