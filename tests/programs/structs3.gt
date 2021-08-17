@@ -5,17 +5,18 @@
 --     ...Type check error: Tried to reference field q of struct...
 --     ...
 
-struct Foo {
+type Foo = struct {
     x: I32,
     y: I16,
     z: I64,
 }
 
 fn main(): {} =
-    let f: Foo = Foo {
-        x = 1,
-        y = 2,
-        z = 4,
-    }
-    __println(f.q)
+    let f: Foo = Foo(struct {
+        x = 1I32,
+        y = 2I16,
+        z = 4I64,
+    })
+    let f2: struct { x: I32, y: I16, z: I64, } = Foo_unwrap(f)
+    __println(f2.q)
 end

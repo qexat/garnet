@@ -8,23 +8,20 @@
 --      2
 --      4
 
-struct Foo {
-    x: I32,
-    y: I16,
-    z: I64,
-}
+type Foo = struct { x: I32, y: I16, z: I64, }
 
 fn print_foo(f: Foo): {} =
-    __println(f.x)
-    __println_i16(f.y)
-    __println_i64(f.z)
+    let f2: struct { x: I32, y: I16, z: I64, } = Foo_unwrap(f)
+    __println(f2.x)
+    __println_i16(f2.y)
+    __println_i64(f2.z)
 end
 
 fn main(): {} =
-    let f: Foo = Foo {
-        x = 1,
-        y = 2,
-        z = 4,
-    }
+    let f: Foo = Foo(struct {
+        x = 1I32,
+        y = 2I16,
+        z = 4I64,
+    })
     print_foo(f)
 end

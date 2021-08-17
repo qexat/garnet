@@ -2,7 +2,6 @@
 //! Operates on the HIR.
 
 use std::borrow::Cow;
-use std::collections::BTreeSet;
 
 use crate::hir;
 use crate::scope;
@@ -896,10 +895,39 @@ fn typecheck_expr(
             })
         }
         StructCtor { body, types } => {
-            todo!()
-                /*
-            dbg!("Types in struct ctor:", types.len());
             let _guard = symtbl.push_type_scope();
+            // Add all the types declared in the struct to the local type scope
+            /*
+            for (nm, ty) in &types {
+                dbg!("Adding type", nm, ty);
+                symtbl.add_type(*nm, *ty);
+            }
+            */
+            // Typecheck the expressions in the body of the structure.
+            let body_exprs: Vec<(VarSym, hir::TypedExpr<TypeSym>)> = body
+                .iter()
+                .map(|(nm, vl)| {
+                    let expr = typecheck_expr(symtbl, vl.clone(), function_rettype)?;
+                    Ok((*nm, expr))
+                })
+                .collect::<Result<_, _>>()?;
+
+            // Construct a struct type with the types of the body in it.
+            let struct_type = INT.intern_type(&TypeDef::Struct {
+                fields: body_exprs.iter()
+                    .map(|(nm, typed_expr)| (*nm, typed_expr.t))
+                    .collect(),
+                typefields: types.iter().map(|(nm, _ty)| *nm).collect()
+            });
+
+            Ok(hir::TypedExpr {
+                t: struct_type,
+                e: StructCtor {
+                    body: body_exprs,
+                    types,
+                },
+            })
+                /*
             {
                 // Make sure all our struct fields exist in the struct type,
                 // and we aren't missing any or have any excess

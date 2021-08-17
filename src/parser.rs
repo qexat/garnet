@@ -756,9 +756,9 @@ impl<'input> Parser<'input> {
             T::LBrace => self.parse_constructor(),
             T::Struct => {
                 // TODO: Decide on a syntax that doesn't suck ass.
-                // `struct { foo: 1, bar: 2}`
-                // ${ foo: 1, bar: 2 }
-                // { foo: 1, bar: 2 }
+                // `struct { foo = 1, bar = 2}`
+                // ${ foo = 1, bar = 2 }
+                // { foo = 1, bar = 2 }
                 // { :foo 1, :bar 2 }
                 // ???
                 self.parse_struct_literal()
@@ -1051,6 +1051,7 @@ impl<'input> Parser<'input> {
 
     /// struct literal = "struct" "{" ... "}"
     fn parse_struct_literal(&mut self) -> ast::Expr {
+        self.expect(T::Struct);
         self.expect(T::LBrace);
         let (body, types) = self.parse_struct_lit_fields();
         self.expect(T::RBrace);

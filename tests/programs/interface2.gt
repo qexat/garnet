@@ -7,7 +7,7 @@
 --     12
 --     21
 
-struct IPrint {
+type IPrint = struct {
     type T,
     print: fn(T): {},
     println: fn(T): {},

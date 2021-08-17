@@ -479,7 +479,8 @@ mod tests {
 
     /*
     /// Does `return;` turn into `return ();`?
-    /// Not doing that to make parsing simpler
+    /// Not doing that to make parsing simpler, since we don't
+    /// actually have semicolons.
     #[test]
     fn test_return_none() {
         let input = A::Return { retval: None };

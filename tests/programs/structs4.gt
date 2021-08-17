@@ -2,21 +2,21 @@
 --   status: error
 --   stderr:
 --     ...
---     ...Type check error: Invalid field in struct constructor...
+--     ...Type check error: Function wanted type struct {x: I32, y: I16, z: I64} in param but got type struct {x: I32, y: I16, z: Bool, t: I64}...
 --     ...
 
-struct Foo {
+type Foo = struct {
     x: I32,
     y: I16,
     z: I64,
 }
 
 fn main(): {} =
-    let f: Foo = Foo {
-        x = 1,
-        y = 2,
+    let f: Foo = Foo(struct {
+        x = 1I32,
+        y = 2I16,
         z = true,
-        t = 99,
-    }
-    __println(f.x)
+        t = 99I64,
+    })
+    __println(Foo_unwrap(f).x)
 end
