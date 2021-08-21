@@ -68,6 +68,15 @@ list of things that we want to be able to describe:
  * Rust's `Sync`
  * Struct layouts: repr(C), repr(rust) aka repr(arbitrary)
 
+Properties for functions:
+
+ * Does not panic
+ * Does not allocate
+ * Pure/no I/O
+ * Const/comptime
+ * Tail-recursive/fixed stack size
+ * No unsafe
+
 # Numbers
 
 ## Integers
