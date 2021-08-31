@@ -3,8 +3,7 @@
 
 use std::borrow::Cow;
 
-use crate::hir;
-use crate::scope;
+use crate::hir::{self, ISymtbl, VarBinding};
 use crate::{TypeDef, TypeSym, VarSym, INT};
 
 impl std::error::Error for TypeError {}
@@ -190,14 +189,121 @@ impl TypeError {
     }
 }
 
-/// A variable binding
-#[derive(Debug, Clone)]
-pub struct VarBinding {
-    name: VarSym,
-    typename: TypeSym,
-    mutable: bool,
+/// TODO: Having all these methods here instead of with the defintion is jank,
+/// do something about it.  They're here so we have the types in scope and don't
+/// make a circular dependency, which is a REAL GOOD reason to do it this way, but
+/// also a big fat code smell.
+impl ISymtbl {
+    /// Create new symbol table with some built-in functions.
+    ///
+    /// Also see the prelude defined in `backend/rust.rs`
+    pub fn new_with_defaults() -> Self {
+        let mut x = Self::default();
+        // We add a built-in function for printing, currently.
+        {
+            let name = INT.intern("__println");
+            let typesym = INT.intern_type(&TypeDef::Lambda(vec![INT.i32()], INT.unit()));
+            x.add_var(name, typesym, false);
+        }
+        {
+            let name = INT.intern("__println_bool");
+            let typesym = INT.intern_type(&TypeDef::Lambda(vec![INT.bool()], INT.unit()));
+            x.add_var(name, typesym, false);
+        }
+        {
+            let name = INT.intern("__println_i64");
+            let typesym = INT.intern_type(&TypeDef::Lambda(vec![INT.i64()], INT.unit()));
+            x.add_var(name, typesym, false);
+        }
+        {
+            let name = INT.intern("__println_i16");
+            let typesym = INT.intern_type(&TypeDef::Lambda(vec![INT.i16()], INT.unit()));
+            x.add_var(name, typesym, false);
+        }
+        x
+    }
+
+    fn add_type(&mut self, name: VarSym, typedef: TypeSym) {
+        self.types.insert(name, typedef);
+    }
+
+    fn get_typedef(&mut self, name: VarSym) -> Option<TypeSym> {
+        self.types.get(&name).cloned()
+    }
+
+    /// Looks up a typedef and if it is `Named` try to keep looking
+    /// it up until we find the actual concrete type.  Returns None
+    /// if it can't.
+    ///
+    /// TODO: This is weird, currently necessary for structs though.
+    fn follow_typedef(&mut self, name: VarSym) -> Option<TypeSym> {
+        match self.types.get(&name) {
+            Some(tsym) => match &*INT.fetch_type(*tsym) {
+                &TypeDef::Named(vsym) => self.follow_typedef(vsym),
+                _other => Some(*tsym),
+            },
+            None => None,
+        }
+    }
+
+    /// Take a typesym and look it up to a concrete type definition of some kind.
+    /// Recursively follows named types, which might or might not be a good idea...
+    ///
+    /// TODO: This is weird, currently necessary for structs though.
+    fn resolve_typedef(&mut self, t: TypeSym) -> Option<std::sync::Arc<TypeDef>> {
+        let tdef = INT.fetch_type(t);
+        match &*tdef {
+            TypeDef::Named(vsym) => self.follow_typedef(*vsym).map(|sym| INT.fetch_type(sym)),
+            _other => Some(tdef),
+        }
+    }
+
+    /// Returns Ok if the type exists, or a TypeError of the appropriate
+    /// kind if it does not.
+    fn type_exists(&mut self, tsym: TypeSym) -> Result<(), TypeError> {
+        match &*INT.fetch_type(tsym) {
+            TypeDef::Named(name) => {
+                if self.types.get(name).is_some() {
+                    Ok(())
+                } else {
+                    Err(TypeError::UnknownType(*name))
+                }
+            }
+            // Primitive type
+            _ => Ok(()),
+        }
+    }
+
+    /// Add a variable to the top level of the scope.
+    /// Shadows the old var if it already exists in that scope.
+    fn add_var(&mut self, name: VarSym, typedef: TypeSym, mutable: bool) {
+        let binding = VarBinding {
+            name,
+            typename: typedef,
+            mutable,
+        };
+        self.vars.insert(name, binding);
+    }
+
+    /// Get the type of the given variable, or an error
+    fn get_var(&self, name: VarSym) -> Result<TypeSym, TypeError> {
+        Ok(self.get_binding(name)?.typename)
+    }
+
+    /// Get (a clone of) the binding of the given variable, or an error
+    fn get_binding(&self, name: VarSym) -> Result<VarBinding, TypeError> {
+        if let Some(binding) = self.vars.get(&name) {
+            return Ok(binding.clone());
+        }
+        Err(TypeError::UnknownVar(name))
+    }
+
+    fn binding_exists(&self, name: VarSym) -> bool {
+        self.get_binding(name).is_ok()
+    }
 }
 
+/*
 ///
 #[derive(Default)]
 struct Symtbl {
@@ -323,6 +429,7 @@ impl Symtbl {
         self.types.push_scope()
     }
 }
+*/
 
 /// Does t1 equal t2?
 ///
@@ -438,7 +545,7 @@ fn reify_last_types(
 
 /// Try to actually typecheck the given HIR, and return HIR with resolved types.
 pub fn typecheck(ir: hir::Ir<()>) -> Result<hir::Ir<TypeSym>, TypeError> {
-    let symtbl = &mut Symtbl::new();
+    let symtbl = &mut ISymtbl::new_with_defaults();
     ir.decls.iter().for_each(|d| predeclare_decl(symtbl, d));
     let checked_decls = ir
         .decls
@@ -452,7 +559,7 @@ pub fn typecheck(ir: hir::Ir<()>) -> Result<hir::Ir<TypeSym>, TypeError> {
 
 /// Scan through all decl's and add any bindings to the symbol table,
 /// so we don't need to do anything with forward references.
-fn predeclare_decl(symtbl: &mut Symtbl, decl: &hir::Decl<()>) {
+fn predeclare_decl(symtbl: &mut ISymtbl, decl: &hir::Decl<()>) {
     match decl {
         hir::Decl::Function {
             name, signature, ..
@@ -514,7 +621,7 @@ fn predeclare_decl(symtbl: &mut Symtbl, decl: &hir::Decl<()>) {
 
 /// Typechecks a single decl
 fn typecheck_decl(
-    symtbl: &mut Symtbl,
+    symtbl: &mut ISymtbl,
     decl: hir::Decl<()>,
 ) -> Result<hir::Decl<TypeSym>, TypeError> {
     match decl {
@@ -524,7 +631,7 @@ fn typecheck_decl(
             body,
         } => {
             // Push scope, typecheck and add params to symbol table
-            let _g = symtbl.push_scope();
+            let symtbl = &mut symtbl.clone();
             for (pname, ptype) in signature.params.iter() {
                 symtbl.add_var(*pname, *ptype, false);
             }
@@ -563,6 +670,7 @@ fn typecheck_decl(
         } => {
             // Make sure the const's type exists
             symtbl.type_exists(typename)?;
+            let symtbl = &mut symtbl.clone();
             Ok(hir::Decl::Const {
                 name,
                 typename,
@@ -587,7 +695,7 @@ fn typecheck_decl(
 /// Typecheck a vec of expr's and returns them, with type annotations
 /// attached.
 fn typecheck_exprs(
-    symtbl: &mut Symtbl,
+    symtbl: &mut ISymtbl,
     exprs: Vec<hir::TypedExpr<()>>,
     function_rettype: Option<TypeSym>,
 ) -> Result<Vec<hir::TypedExpr<TypeSym>>, TypeError> {
@@ -623,7 +731,7 @@ fn last_type_of(exprs: &[hir::TypedExpr<TypeSym>]) -> TypeSym {
 ///
 /// `function_rettype` is the type that `return` exprs and such must be.
 fn typecheck_expr(
-    symtbl: &mut Symtbl,
+    symtbl: &mut ISymtbl,
     expr: hir::TypedExpr<()>,
     function_rettype: Option<TypeSym>,
 ) -> Result<hir::TypedExpr<TypeSym>, TypeError> {
@@ -634,7 +742,11 @@ fn typecheck_expr(
     match expr.e {
         Lit { val } => {
             let t = typecheck_literal(&val)?;
-            Ok(hir::TypedExpr { e: Lit { val }, t })
+            Ok(hir::TypedExpr {
+                e: Lit { val },
+                t,
+                s: symtbl.clone(),
+            })
         }
 
         Var { name } => {
@@ -642,6 +754,7 @@ fn typecheck_expr(
             Ok(hir::TypedExpr {
                 e: Var { name },
                 t: t,
+                s: symtbl.clone(),
             })
         }
         BinOp { op, lhs, rhs } => {
@@ -674,6 +787,7 @@ fn typecheck_expr(
                         rhs: Box::new(real_rhs),
                     },
                     t: op.output_type(t),
+                    s: symtbl.clone(),
                 })
             } else {
                 Err(TypeError::BopType {
@@ -700,6 +814,7 @@ fn typecheck_expr(
                         rhs: Box::new(new_rhs),
                     },
                     t: op.output_type(t),
+                    s: symtbl.clone(),
                 })
             } else {
                 Err(TypeError::UopType {
@@ -710,11 +825,13 @@ fn typecheck_expr(
             }
         }
         Block { body } => {
-            let b = typecheck_exprs(symtbl, body, function_rettype)?;
+            let mut symtbl = symtbl.clone();
+            let b = typecheck_exprs(&mut symtbl, body, function_rettype)?;
             let t = last_type_of(&b);
             Ok(hir::TypedExpr {
                 e: Block { body: b },
                 t,
+                s: symtbl,
             })
         }
         Let {
@@ -737,6 +854,7 @@ fn typecheck_expr(
                         mutable,
                     },
                     t: unittype,
+                    s: symtbl.clone(),
                 })
             } else {
                 dbg!(&init_expr.t, &typename);
@@ -766,7 +884,8 @@ fn typecheck_expr(
                 }
 
                 // Now we get the type of the body...
-                let body_exprs = typecheck_exprs(symtbl, body, function_rettype)?;
+                let mut symtbl = symtbl.clone();
+                let body_exprs = typecheck_exprs(&mut symtbl, body, function_rettype)?;
                 let body_type = last_type_of(&body_exprs);
                 // Does it have a type that can match with our other types?
                 if let Some(t) = infer_type(body_type, assumed_type) {
@@ -783,24 +902,27 @@ fn typecheck_expr(
             Ok(hir::TypedExpr {
                 e: If { cases: new_cases },
                 t: assumed_type,
+                s: symtbl.clone(),
             })
         }
         Loop { body } => {
-            let b = typecheck_exprs(symtbl, body, function_rettype)?;
+            let mut symtbl = symtbl.clone();
+            let b = typecheck_exprs(&mut symtbl, body, function_rettype)?;
             let t = last_type_of(&b);
             Ok(hir::TypedExpr {
                 e: Loop { body: b },
                 t,
+                s: symtbl,
             })
         }
         // TODO: Inference?
         Lambda { signature, body } => {
-            let _g = symtbl.push_scope();
+            let mut symtbl = symtbl.clone();
             // add params to symbol table
             for (paramname, paramtype) in signature.params.iter() {
                 symtbl.add_var(*paramname, *paramtype, false);
             }
-            let body_expr = typecheck_exprs(symtbl, body, Some(signature.rettype))?;
+            let body_expr = typecheck_exprs(&mut symtbl, body, Some(signature.rettype))?;
             let bodytype = last_type_of(&body_expr);
             if let Some(t) = infer_type(bodytype, signature.rettype) {
                 let new_body = reify_last_types(bodytype, t, body_expr);
@@ -811,6 +933,7 @@ fn typecheck_expr(
                         body: new_body,
                     },
                     t: lambdatype,
+                    s: symtbl,
                 })
             } else {
                 let function_name = INT.intern("lambda");
@@ -848,6 +971,7 @@ fn typecheck_expr(
                             params: inferred_args,
                         },
                         t: *rettype,
+                        s: symtbl.clone(),
                     })
                 }
                 // Something was called but it wasn't a function.  Wild.
@@ -857,6 +981,7 @@ fn typecheck_expr(
         Break => Ok(hir::TypedExpr {
             e: Break,
             t: INT.never(),
+            s: expr.s.clone(),
         }),
         Return { retval } => {
             if let Some(wanted_type) = function_rettype {
@@ -870,6 +995,7 @@ fn typecheck_expr(
                         e: Return {
                             retval: Box::new(new_retval),
                         },
+                        s: symtbl.clone(),
                     })
                 } else {
                     Err(TypeError::TypeMismatch {
@@ -892,10 +1018,11 @@ fn typecheck_expr(
             Ok(hir::TypedExpr {
                 t: INT.intern_type(&body_type),
                 e: TupleCtor { body: body_exprs },
+                s: symtbl.clone(),
             })
         }
         StructCtor { body, types } => {
-            let _guard = symtbl.push_type_scope();
+            let mut symtbl = symtbl.clone();
             // Add all the types declared in the struct to the local type scope
             /*
             for (nm, ty) in &types {
@@ -907,17 +1034,18 @@ fn typecheck_expr(
             let body_exprs: Vec<(VarSym, hir::TypedExpr<TypeSym>)> = body
                 .iter()
                 .map(|(nm, vl)| {
-                    let expr = typecheck_expr(symtbl, vl.clone(), function_rettype)?;
+                    let expr = typecheck_expr(&mut symtbl, vl.clone(), function_rettype)?;
                     Ok((*nm, expr))
                 })
                 .collect::<Result<_, _>>()?;
 
             // Construct a struct type with the types of the body in it.
             let struct_type = INT.intern_type(&TypeDef::Struct {
-                fields: body_exprs.iter()
+                fields: body_exprs
+                    .iter()
                     .map(|(nm, typed_expr)| (*nm, typed_expr.t))
                     .collect(),
-                typefields: types.iter().map(|(nm, _ty)| *nm).collect()
+                typefields: types.iter().map(|(nm, _ty)| *nm).collect(),
             });
 
             Ok(hir::TypedExpr {
@@ -926,8 +1054,9 @@ fn typecheck_expr(
                     body: body_exprs,
                     types,
                 },
+                s: symtbl,
             })
-                /*
+            /*
             {
                 // Make sure all our struct fields exist in the struct type,
                 // and we aren't missing any or have any excess
@@ -995,8 +1124,8 @@ fn typecheck_expr(
         }
         // TODO: Inference???
         // Not sure we need it, any integer type should be fine for tuple lookups...
-        TupleRef { expr, elt } => {
-            let body_expr = typecheck_expr(symtbl, *expr, function_rettype)?;
+        TupleRef { expr: e, elt } => {
+            let body_expr = typecheck_expr(symtbl, *e, function_rettype)?;
             let expr_typedef = INT.fetch_type(body_expr.t);
             if let TypeDef::Tuple(typesyms) = &*expr_typedef {
                 // TODO
@@ -1008,13 +1137,14 @@ fn typecheck_expr(
                         expr: Box::new(body_expr),
                         elt,
                     },
+                    s: symtbl.clone(),
                 })
             } else {
                 Err(TypeError::TupleRef { got: body_expr.t })
             }
         }
-        StructRef { expr, elt } => {
-            let body_expr = typecheck_expr(symtbl, *expr, function_rettype)?;
+        StructRef { expr: e, elt } => {
+            let body_expr = typecheck_expr(symtbl, *e, function_rettype)?;
             //let expr_typedef = INT.fetch_type(body_expr.t);
             let expr_typedef = symtbl
                 .resolve_typedef(body_expr.t)
@@ -1029,6 +1159,7 @@ fn typecheck_expr(
                                 expr: Box::new(body_expr),
                                 elt,
                             },
+                            s: symtbl.clone(),
                         })
                     } else {
                         Err(TypeError::StructRef {
@@ -1069,6 +1200,7 @@ fn typecheck_expr(
                         lhs: Box::new(new_lhs),
                         rhs: Box::new(new_rhs),
                     },
+                    s: symtbl.clone(),
                 })
             } else {
                 Err(TypeError::TypeMismatch {
@@ -1086,7 +1218,7 @@ fn typecheck_expr(
 /// So, what is an lvalue?
 /// Well, it's a variable,
 /// or it's an lvalue in a deref expr or tupleref
-fn is_mutable_lvalue<T>(symtbl: &Symtbl, expr: &hir::Expr<T>) -> Result<bool, TypeError> {
+fn is_mutable_lvalue<T>(symtbl: &ISymtbl, expr: &hir::Expr<T>) -> Result<bool, TypeError> {
     match expr {
         hir::Expr::Var { name } => {
             let v = symtbl.get_binding(*name)?;
@@ -1138,7 +1270,7 @@ mod tests {
         let t_bar = INT.intern("bar");
         let t_i32 = INT.i32();
         let t_bool = INT.bool();
-        let mut t = Symtbl::new();
+        let t = &mut ISymtbl::new_with_defaults();
 
         // Make sure we can get a value
         assert!(t.get_var(t_foo).is_err());
@@ -1149,7 +1281,7 @@ mod tests {
 
         // Push scope, verify behavior is the same.
         {
-            let _g = t.push_scope();
+            let mut t = t.clone();
             assert_eq!(t.get_var(t_foo).unwrap(), t_i32);
             assert!(t.get_var(t_bar).is_err());
             // Add var, make sure we can get it
@@ -1201,7 +1333,7 @@ mod tests {
         let t_i32 = INT.i32();
         let t_i16 = INT.i16();
         let t_iunk = INT.iunknown();
-        let tbl = &mut Symtbl::new();
+        let tbl = &mut ISymtbl::new_with_defaults();
 
         use hir::*;
         // Basic addition
@@ -1269,7 +1401,7 @@ mod tests {
         let t_i16 = INT.i16();
         let t_i32 = INT.i32();
         let t_iunk = INT.iunknown();
-        let tbl = &mut Symtbl::new();
+        let tbl = &mut ISymtbl::new_with_defaults();
 
         use hir::*;
         {
@@ -1327,7 +1459,7 @@ mod tests {
     /// Do let expr's have the right return?
     #[test]
     fn test_let() {
-        let tbl = &mut Symtbl::new();
+        let tbl = &mut ISymtbl::new_with_defaults();
         let t_i32 = INT.i32();
         let t_unit = INT.unit();
         let fooname = INT.intern("foo");
@@ -1366,7 +1498,7 @@ mod tests {
     /// TODO
     #[test]
     fn test_funcall() {
-        let tbl = &mut Symtbl::new();
+        let tbl = &mut ISymtbl::new_with_defaults();
         let t_i32 = INT.intern_type(&TypeDef::SInt(4));
         let fname = INT.intern("foo");
         let aname = INT.intern("a");
@@ -1473,7 +1605,7 @@ end"#;
     #[test]
     fn test_tuples() {
         use hir::*;
-        let tbl = &mut Symtbl::new();
+        let tbl = &mut ISymtbl::new_with_defaults();
         assert_eq!(
             typecheck_expr(tbl, *plz(hir::Expr::unit()), None)
                 .unwrap()
