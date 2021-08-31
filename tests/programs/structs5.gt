@@ -1,0 +1,29 @@
+-- Compile:
+--   status: success
+--
+-- Run:
+--   status: success
+--   stdout:
+--     91
+
+type Foo = struct {
+    x: Bar,
+    y: I16,
+    z: I64,
+}
+
+type Bar = struct {
+    b: I32,
+}
+
+fn main(): {} =
+    let b: Bar = Bar(struct {
+        b = 91I32
+    })
+    let f: Foo = Foo(struct {
+        x = b,
+        y = 2I16,
+        z = 12I64
+    })
+    __println(Bar_unwrap(Foo_unwrap(f).x).b)
+end
