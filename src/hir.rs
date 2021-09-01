@@ -6,10 +6,32 @@
 //! Currently it's not really lowered by much!  If's and maybe loops or something.
 //! It's mostly a layer of indirection for further stuff to happen to, so we can change
 //! the parser without changing the typecheckin and such.
+//!
 
 use crate::ast::{self};
 pub use crate::ast::{BOp, IfCase, Literal, Signature, UOp};
 use crate::*;
+
+/// A variable binding
+#[derive(Debug, Clone, PartialEq)]
+pub struct VarBinding {
+    pub name: VarSym,
+    pub typename: TypeSym,
+    pub mutable: bool,
+}
+
+/// Immutable symbol table.  We just keep one of these attached to every expression,
+/// which describes that expression's scope.  Since it's immutable, cloning and modifying
+/// it only changes the parts that are necessary.
+///
+/// This means that we always can look at any expression and see its entire scope, and
+/// keeping track of scope pushes/pops is basically implicit since there's no mutable state
+/// involved.
+#[derive(Default, Clone, Debug, PartialEq)]
+pub struct ISymtbl {
+    pub vars: im::HashMap<VarSym, VarBinding>,
+    pub types: im::HashMap<VarSym, TypeSym>,
+}
 
 /// An expression with a type annotation.
 /// Currently will be () for something that hasn't been
@@ -21,6 +43,8 @@ pub struct TypedExpr<T> {
     pub t: T,
     /// expression
     pub e: Expr<T>,
+    /// Scope of this expression
+    pub s: ISymtbl,
 }
 
 impl<T> TypedExpr<T> {
@@ -112,6 +136,7 @@ impl<T> TypedExpr<T> {
         TypedExpr {
             e: new_e,
             t: f(&self.t),
+            s: ISymtbl::default(),
         }
     }
 }
@@ -399,7 +424,11 @@ fn lower_expr<T>(f: &mut dyn FnMut(&hir::Expr<T>) -> T, expr: &ast::Expr) -> Typ
         },
     };
     let t = f(&new_exp);
-    TypedExpr { t, e: new_exp }
+    TypedExpr {
+        t,
+        e: new_exp,
+        s: ISymtbl::default(),
+    }
 }
 
 /// handy shortcut to lower Vec<ast::Expr>
@@ -466,8 +495,13 @@ fn lower_decls<T>(f: &mut dyn FnMut(&hir::Expr<T>) -> T, decls: &[ast::Decl]) ->
 /// in a TypedExpr with a unit type.
 ///
 /// TODO: Better name?
+#[cfg(test)]
 pub(crate) fn plz(e: Expr<()>) -> Box<TypedExpr<()>> {
-    Box::new(TypedExpr { t: (), e })
+    Box::new(TypedExpr {
+        t: (),
+        e,
+        s: ISymtbl::default(),
+    })
 }
 
 #[cfg(test)]

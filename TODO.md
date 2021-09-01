@@ -1,3 +1,10 @@
+To do next:
+
+ * Make modules work, now that we have anonymous structs
+ * Make generics and/or first class types happen, somehow.  Might be a
+   HIR lowering step to monomorphize things?
+ * Add source span info to HIR so typechecker can point to sources
+
 
 Things that kinda go together:
 
