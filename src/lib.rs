@@ -12,7 +12,6 @@ pub mod hir;
 pub mod intern;
 pub mod parser;
 pub mod passes;
-mod scope;
 //pub mod typechonk;
 pub mod typeck;
 
@@ -187,10 +186,10 @@ impl TypeDef {
             }
             TypeDef::Named(s) => Cow::Owned((&*INT.fetch(*s)).clone()),
             TypeDef::Struct { fields, .. } => {
-                    let mut res = String::from("struct {");
-                    res += &join_vars_with_commas(fields);
-                    res += "}";
-                    Cow::Owned(res)
+                let mut res = String::from("struct {");
+                res += &join_vars_with_commas(fields);
+                res += "}";
+                Cow::Owned(res)
             }
         }
     }

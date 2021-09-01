@@ -3,8 +3,14 @@
 //! For now each is a function from `IR<T> -> IR<T>`, rather than
 //! having a visitor and mutating stuff or anything like that,
 //! which may be less efficient but is IMO simpler to think about.
+//!
+//! TODO: A pass that might be useful would be "alpha renaming".
+//! Essentially you walk through your entire compilation unit and
+//! rename everything to a globally unique name.  This means that
+//! scope vanishes, for example, and anything potentially
+//! ambiguous becomes unambiguous.
 
-use crate::hir::{plz, Decl as D, Expr as E, Ir, TypedExpr};
+use crate::hir::{Decl as D, Expr as E, Ir, TypedExpr};
 use crate::*;
 
 type Pass<T> = fn(Ir<T>) -> Ir<T>;
@@ -15,7 +21,7 @@ pub fn run_passes(ir: Ir<()>) -> Ir<()> {
 }
 
 /// Lambda lift a single expr.
-fn lambda_lift_expr(expr: TypedExpr<()>, output_funcs: &mut Vec<D<()>>) -> TypedExpr<()> {
+fn lambda_lift_expr<T>(expr: TypedExpr<T>, output_funcs: &mut Vec<D<T>>) -> TypedExpr<T> {
     let result = match expr.e {
         E::BinOp { op, lhs, rhs } => {
             let nlhs = lambda_lift_expr(*lhs, output_funcs);
@@ -88,14 +94,18 @@ fn lambda_lift_expr(expr: TypedExpr<()>, output_funcs: &mut Vec<D<()>>) -> Typed
         }
         x => x,
     };
-    *plz(result)
+    hir::TypedExpr {
+        e: result,
+        t: expr.t,
+        s: expr.s,
+    }
 }
 
 /// Lambda lift a list of expr's
-fn lambda_lift_exprs(
-    exprs: Vec<TypedExpr<()>>,
-    output_funcs: &mut Vec<D<()>>,
-) -> Vec<TypedExpr<()>> {
+fn lambda_lift_exprs<T>(
+    exprs: Vec<TypedExpr<T>>,
+    output_funcs: &mut Vec<D<T>>,
+) -> Vec<TypedExpr<T>> {
     exprs
         .into_iter()
         .map(|e| lambda_lift_expr(e, output_funcs))
@@ -108,9 +118,9 @@ fn lambda_lift_exprs(
 /// TODO: Output is an IR that does not have any lambda expr's in it, which
 /// I would like to make un-representable, but don't see a good way
 /// to do yet.  Add a tag type of some kind to the Ir<T>?
-fn lambda_lifting(ir: Ir<()>) -> Ir<()> {
+fn lambda_lifting<T>(ir: Ir<T>) -> Ir<T> {
     let mut new_functions = vec![];
-    let new_decls: Vec<D<()>> = ir
+    let new_decls: Vec<D<T>> = ir
         .decls
         .into_iter()
         .map(|decl| match decl {

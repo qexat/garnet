@@ -1,4 +1,10 @@
 -- Compile:
+--   status: error
+
+
+
+-- TODO: figure out how associated types work.
+-- Compile:
 --   status: success
 --
 -- Run:

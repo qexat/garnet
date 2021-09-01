@@ -68,6 +68,15 @@ list of things that we want to be able to describe:
  * Rust's `Sync`
  * Struct layouts: repr(C), repr(rust) aka repr(arbitrary)
 
+Properties for functions:
+
+ * Does not panic
+ * Does not allocate
+ * Pure/no I/O
+ * Const/comptime
+ * Tail-recursive/fixed stack size
+ * No unsafe
+
 # Numbers
 
 ## Integers
@@ -725,9 +734,40 @@ that in the first place)
 
 Heck
 
-I kinda want semi-monomorphized generics, where a generic function will
-have monomorphized variants generated for a variety of small sizes, and
-then one polymorphic fallback that just takes a pointer and maybe some
-type metadata such as a vtable.  Swift does something like this for its
-DLL calls, and calls the type metadata a "witness table" which is a
-horrible name.
+I kinda want semi-monomorphized generics, where a
+
+
+Okay.  For step zero, we need to make basic monomorphization work.
+Essentially we lower each type down into a byte array or a pointer.  All
+types can be moved, so this works as long as it passes borrow checking
+and type checking; if we make something like `Pin` then this might not
+work anymore.  This means you can't do anything with a generic type
+*besides* move it, for now.  Eventually, structs will be provided as
+vtables to implement methods.
+
+## Monomorphization
+
+I want to try out *limited* monomorphization and see how well it works
+out.  The goal is to keep *most* of the power of monomorphized generic
+functions a la Rust/C++: zero-runtime cost over hand-written versions of
+the same functions.  The downside of monomorphizing *everything* is you
+generate tons and tons of code, which means your code compiles and links
+slowly, and you end up with large binaries.  Monomorphized functions
+also are difficult to call across library/DLL boundaries, 'cause there
+may or may not be a version of that function created for the type you
+want to pass to it.
+
+So, generic functions will have monomorphized variants generated for a
+variety of small sizes, and plus one polymorphic fallback that just
+takes a pointer and maybe some type metadata such as a vtable.  (Swift
+does something like this for its DLL calls, and calls the type metadata
+a "witness table" which is a horrible name.) Let's call it 4, 8, 16, 32,
+and 64 bytes for now but leave it open for adjustment.  Anything smaller
+than one of these gets bumped up to the next larger size, anything
+larger than them gets turned into a pointer and passed to the "fallback"
+polymorphic variant of the function.
+
+Downside of this, if these monomorphized versions of functions get
+passed vtables to implement modules/traits/whatever, that nukes inlining
+opportunities.  If we do whole-crate analysis or something equivalent,
+that may not matter much?  We will have to experiment and see.
