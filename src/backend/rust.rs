@@ -85,11 +85,21 @@ fn compile_typename(td: &TypeDef) -> Cow<'static, str> {
                 todo!("Figure out type thingies");
             }
             let mut accm = String::from("(");
-            for (nm,typ) in fields.iter() {
-                accm += &format!("/* {} */ {}, \n", INT.fetch(*nm), compile_typename(&*INT.fetch_type(*typ)));
+            for (nm, typ) in fields.iter() {
+                accm += &format!(
+                    "/* {} */ {}, \n",
+                    INT.fetch(*nm),
+                    compile_typename(&*INT.fetch_type(*typ))
+                );
             }
             accm += ")";
             accm.into()
+        }
+        Generic(sym) => {
+            panic!(
+                "ICE: Un-reified generic named {}, should never happen",
+                INT.fetch(*sym)
+            )
         }
     }
 }
@@ -344,14 +354,24 @@ fn compile_expr(expr: &hir::TypedExpr<TypeSym>) -> String {
             // We turn our structs into Rust tuples, so we need to
             // to turn our field names into indices
             let tdef = &*INT.fetch_type(expr.t);
-            if let TypeDef::Struct{fields, typefields: _} = tdef {
+            if let TypeDef::Struct {
+                fields,
+                typefields: _,
+            } = tdef
+            {
                 let mut nth = 9999_9999;
                 for (i, (nm, _ty)) in fields.iter().enumerate() {
-                    if nm == elt { nth = i; break; }
-                };
+                    if nm == elt {
+                        nth = i;
+                        break;
+                    }
+                }
                 format!("{}.{}", compile_expr(expr), nth)
             } else {
-                panic!("Struct wasn't actually a struct in backend, was {}.  should never happen", compile_typename(tdef))
+                panic!(
+                    "Struct wasn't actually a struct in backend, was {}.  should never happen",
+                    compile_typename(tdef)
+                )
             }
         }
         E::Assign { lhs, rhs } => {

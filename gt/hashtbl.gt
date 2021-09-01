@@ -6,6 +6,12 @@
 --! Iterators
 --! todo!() macro equivalent
 --! No default methods possible...?
+--! Self type is actually kinda necessary, fuck.  How the fuck does 1ML
+--! do it?
+--! ...how the fuck do we have something like derives?  idk yet.
+--! ...We can build some of this out of unsafe pointers.
+--!
+--! todo: std lib or modules, implicit `: {}` after functions
 
 fn todo(): {} =
     -- TODO, ironically enough: panic
@@ -60,7 +66,11 @@ type BuildHasher = struct {
     build_hasher: fn(self: Self borrow): Self.hasher,
 }
 
+type Hash = struct {
+    hash: fn[H](self: Self borrow, state: &mut H): {} where H: Hasher,
+}
+
 type Hasher = struct {
     finish: fn(self: Self borrow): U64,
-    write: fn(self: Self uniq), bytes: Slice[u8]),
+    write: fn(self: Self uniq), bytes: Slice[u8]): {},
 }
