@@ -98,6 +98,7 @@ pub enum TypeDef {
         fields: BTreeMap<VarSym, TypeSym>,
         typefields: BTreeSet<VarSym>,
     },
+    Generic(VarSym),
 }
 
 impl TypeDef {
@@ -191,6 +192,7 @@ impl TypeDef {
                 res += "}";
                 Cow::Owned(res)
             }
+            TypeDef::Generic(s) => Cow::Owned((&*INT.fetch(*s)).clone()),
         }
     }
 
