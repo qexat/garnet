@@ -1,0 +1,66 @@
+--! Simple hashtable implementation.
+--! Oy this raises some questions:
+--! Generic constraints on methods
+--! Self values
+--! Borrow/own syntax
+--! Iterators
+--! todo!() macro equivalent
+--! No default methods possible...?
+
+fn todo(): {} =
+    -- TODO, ironically enough: panic
+    todo()
+end
+
+type Hashtbl[K,V] = struct {
+    contents: Vec[{K,V}],
+}
+
+fn new(): Hashtbl[K,V] =
+    Hashtbl {
+        contents: Vec.new(),
+    }
+end
+
+fn insert(self: Hashtbl[K,V] uniq, k: K, v: V): Option[V] =
+    todo()
+end
+
+--- TODO: Ponder get_mut()
+fn get(self: Hashtbl[K,V] borrow, k: K borrow): Option[V borrow] =
+    todo()
+end
+
+--- So we have three types of behavior here...
+--- If you uniqely borrow self, you can take and return mutable or borrowed values
+--- If you shared borrow self, you can take and return only shared values.
+--- If you own self, you can take and return owned, but not mutable or borrowed value.
+--- You theoretically could, but they'd outlive the thing they're
+--- borrowing from.
+fn get(self: Hashtbl[K,V] ???, k: K borrow): Option[V ???] =
+    todo()
+end
+
+fn remove(self: Hashtbl[K,V] uniq, k: K borrow): Option[V] =
+    todo()
+end
+
+fn len(self: Hashtbl[K,V] borrow): Size =
+    todo()
+end
+
+
+
+--- Based on Rust's std::hash::BuildHasher trait.
+--- ...which might be more complex than necessary.
+--- I THINK it has to be this way for its random hashtable seeding...?
+type BuildHasher = struct {
+    -- this must impl trait std::hash::Hasher...  hmmmmm.
+    hasher: Type,
+    build_hasher: fn(self: Self borrow): Self.hasher,
+}
+
+type Hasher = struct {
+    finish: fn(self: Self borrow): U64,
+    write: fn(self: Self uniq), bytes: Slice[u8]),
+}
