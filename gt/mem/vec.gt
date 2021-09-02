@@ -15,9 +15,9 @@ type Slice[T] = struct {
     len: Size,
 }
 
-fn len(self: Slice[T]) -> Size {
+fn len(self: Slice[T]) -> Size =
     self.len
-}
+end
 
 -- TODO: get_mut()
 fn get(self: Slice[T] borrow, i: Size) -> Option[T borrow] =

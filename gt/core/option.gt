@@ -1,0 +1,47 @@
+--! Basic Option type
+--!
+--! TODO:
+--! Match syntax
+--! Sum type details
+--! Panics, strings...
+
+--- Properties: Copy, Clone, Debug, Zero, Pod when T is Pod...
+type Option[T] = sum
+    None,
+    Some{T},
+end
+
+--- Properties: Panics.
+fn unwrap(self: Option[T]): T =
+    self:expect("Unwrap failed")
+end
+
+--- Properties: Panics.
+fn expect(self: Option[T], message: Str): T =
+    match self with
+      | None -> panic(message)
+      | Some{val} -> val
+    end
+end
+
+
+fn unwrap_or(self: Option[T], val: T): T =
+    match self with
+      | None -> val
+      | Some{val} -> val
+    end
+end
+
+fn unwrap_or_else(self: Option[T], f: fn(): T): T =
+    match self with
+      | None -> f()
+      | Some{val} -> val
+    end
+end
+
+fn cloned(self: Option[T borrow]): Option[T] where T: Clone =
+    match self with
+      | None -> None
+      | Some{val} -> val:clone()
+    end
+end
