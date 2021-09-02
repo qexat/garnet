@@ -1,8 +1,8 @@
 --! Basic Option type
 --!
 --! TODO:
---! Match syntax
---! Sum type details
+--! Match syntax --
+--! Sum type details -- patterh match syntax, etc.
 --! Panics, strings...
 
 --- Properties: Copy, Clone, Debug, Zero, Pod when T is Pod...
@@ -39,9 +39,9 @@ fn unwrap_or_else(self: Option[T], f: fn(): T): T =
     end
 end
 
-fn cloned(self: Option[T borrow]): Option[T] where T: Clone =
+fn cloned(self: Option[T &]): Option[T] where T: Clone =
     match self with
       | None -> None
-      | Some{val} -> val:clone()
+      | Some{val} -> T.clone(val)
     end
 end

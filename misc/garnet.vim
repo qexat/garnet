@@ -193,7 +193,7 @@ syn match   garnetCharacter   /'\([^\\]\|\\\(.\|x\x\{2}\|u{\x\{1,6}}\)\)'/ conta
 
 syn match garnetShebang /\%^#![^[].*/
 syn region garnetCommentLine                                                  start="--"                      end="$"   contains=garnetTodo,@Spell
-syn region garnetCommentLineDoc                                               start="--\%(//\@!\|!\)"         end="$"   contains=garnetTodo,@Spell
+syn region garnetCommentLineDoc                                               start="--\%(-\|!\)"         end="$"   contains=garnetTodo,@Spell
 syn region garnetCommentLineDocError                                          start="--\%(//\@!\|!\)"         end="$"   contains=garnetTodo,@Spell contained
 syn region garnetCommentBlock             matchgroup=garnetCommentBlock         start="/\*\%(!\|\*[*/]\@!\)\@!" end="\*/" contains=garnetTodo,garnetCommentBlockNest,@Spell
 syn region garnetCommentBlockDoc          matchgroup=garnetCommentBlockDoc      start="/\*\%(!\|\*[*/]\@!\)"    end="\*/" contains=garnetTodo,garnetCommentBlockDocNest,@Spell
