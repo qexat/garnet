@@ -1,7 +1,7 @@
 --! Basic vector type.
 --!
 --! TODO:
---! ^ is an unsafe pointer a la Rust
+--! *const and *mut are unsafe pointers a la Rust
 --! ...slices?
 --! Conversions of number types
 --! Borrow syntax
@@ -11,7 +11,7 @@
 -- It IS becoming kinda clear that lifetimes need a syntax, and then
 -- the borrow/uniq/own syntax needs to be part of that.
 type Slice[T] = struct {
-    data: T ^mut,
+    data: T *mut,
     len: Size,
 }
 
@@ -20,12 +20,12 @@ fn len(self: Slice[T]) -> Size =
 end
 
 -- TODO: get_mut()
-fn get(self: Slice[T] borrow, i: Size) -> Option[T borrow] =
+fn get(self: Slice[T] &, i: Size) -> Option[T &] =
     if self.len >= i then
         None
     else
         -- TODO: i needs to be an Offset, not a Size.
-        Some(self.data.index(i) borrow)
+        Some(self.data.index(i) &)
     end
 end
 
@@ -34,10 +34,10 @@ type Vec[T] = struct {
     --data: T ^mut,
     --len: Size,
     data: Slice[T],
-    allocator: Allocator ^const,
+    allocator: Allocator *const,
     capacity: Size,
 }
 
-fn new(alloc: Allocator ^const): Vec[T] =
+fn new(alloc: Allocator *const): Vec[T] =
     todo()
 end

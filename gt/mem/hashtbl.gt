@@ -28,12 +28,12 @@ fn new(): Hashtbl[K,V] =
     }
 end
 
-fn insert(self: Hashtbl[K,V] uniq, k: K, v: V): Option[V] =
+fn insert(self: Hashtbl[K,V] &uniq, k: K, v: V): Option[V] =
     todo()
 end
 
 --- TODO: Ponder get_mut()
-fn get(self: Hashtbl[K,V] borrow, k: K borrow): Option[V borrow] =
+fn get(self: Hashtbl[K,V] &, k: K &): Option[V &] =
     todo()
 end
 
@@ -42,16 +42,18 @@ end
 --- If you shared borrow self, you can take and return only shared values.
 --- If you own self, you can take and return owned, but not mutable or borrowed value.
 --- You theoretically could, but they'd outlive the thing they're
---- borrowing from.
-fn get(self: Hashtbl[K,V] ???, k: K borrow): Option[V ???] =
+--- borrowing from.  Though that's not a guarentee so that seems like
+--- it is enforced a step later, not by the generic part but by the borrow
+--- checker.
+fn get(self: Hashtbl[K,V] ???, k: K &): Option[V ???] =
     todo()
 end
 
-fn remove(self: Hashtbl[K,V] uniq, k: K borrow): Option[V] =
+fn remove(self: Hashtbl[K,V] &uniq, k: K &): Option[V] =
     todo()
 end
 
-fn len(self: Hashtbl[K,V] borrow): Size =
+fn len(self: Hashtbl[K,V] &): Size =
     todo()
 end
 
@@ -63,14 +65,14 @@ end
 type BuildHasher = struct {
     -- this must impl trait std::hash::Hasher...  hmmmmm.
     hasher: Type,
-    build_hasher: fn(self: Self borrow): Self.hasher,
+    build_hasher: fn(self: Self &): Self.hasher,
 }
 
 type Hash = struct {
-    hash: fn[H](self: Self borrow, state: &mut H): {} where H: Hasher,
+    hash: fn[H](self: Self &, state: &mut H): {} where H: Hasher,
 }
 
 type Hasher = struct {
-    finish: fn(self: Self borrow): U64,
-    write: fn(self: Self uniq), bytes: Slice[u8]): {},
+    finish: fn(self: Self &): U64,
+    write: fn(self: Self &uniq), bytes: Slice[u8]): {},
 }

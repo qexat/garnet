@@ -79,6 +79,8 @@ lambda = "fn" fn_signature "=" exprs "end"
 return = "return" expr
 
 // Pointer ops should be postfix, leads to much nicer chaining of calls.
+// We will use "^" for our deref operator and "&" for our reference
+// operator.
 
 fn_args = "(" [ident ":" typename {"," ident ":" typename}] ")"
 fn_signature = fn_args [":" typename]
@@ -95,6 +97,13 @@ typename =
   // TODO: Generics?
   // | ID "[" typename {"," typename} [","] "]"
   // slices can just then be slice[...]
+  // Borrows
+  | typename "&"
+  // Mutable borrows
+  | typename "&mut"
+  // Raw pointers
+  | typename "*const"
+  | typename "*mut"
 
 // Things to add, roughly in order
 // Break and return
