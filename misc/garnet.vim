@@ -195,12 +195,12 @@ syn match garnetShebang /\%^#![^[].*/
 syn region garnetCommentLine                                                  start="--"                      end="$"   contains=garnetTodo,@Spell
 syn region garnetCommentLineDoc                                               start="--\%(-\|!\)"         end="$"   contains=garnetTodo,@Spell
 syn region garnetCommentLineDocError                                          start="--\%(//\@!\|!\)"         end="$"   contains=garnetTodo,@Spell contained
-syn region garnetCommentBlock             matchgroup=garnetCommentBlock         start="/\*\%(!\|\*[*/]\@!\)\@!" end="\*/" contains=garnetTodo,garnetCommentBlockNest,@Spell
-syn region garnetCommentBlockDoc          matchgroup=garnetCommentBlockDoc      start="/\*\%(!\|\*[*/]\@!\)"    end="\*/" contains=garnetTodo,garnetCommentBlockDocNest,@Spell
-syn region garnetCommentBlockDocError     matchgroup=garnetCommentBlockDocError start="/\*\%(!\|\*[*/]\@!\)"    end="\*/" contains=garnetTodo,garnetCommentBlockDocNestError,@Spell contained
-syn region garnetCommentBlockNest         matchgroup=garnetCommentBlock         start="/\*"                     end="\*/" contains=garnetTodo,garnetCommentBlockNest,@Spell contained transparent
-syn region garnetCommentBlockDocNest      matchgroup=garnetCommentBlockDoc      start="/\*"                     end="\*/" contains=garnetTodo,garnetCommentBlockDocNest,@Spell contained transparent
-syn region garnetCommentBlockDocNestError matchgroup=garnetCommentBlockDocError start="/\*"                     end="\*/" contains=garnetTodo,garnetCommentBlockDocNestError,@Spell contained transparent
+syn region garnetCommentBlock             matchgroup=garnetCommentBlock         start="/\-\%(!\|\-[*/]\@!\)\@!" end="\-/" contains=garnetTodo,garnetCommentBlockNest,@Spell
+syn region garnetCommentBlockDoc          matchgroup=garnetCommentBlockDoc      start="/\-\%(!\|\-[*/]\@!\)"    end="\-/" contains=garnetTodo,garnetCommentBlockDocNest,@Spell
+syn region garnetCommentBlockDocError     matchgroup=garnetCommentBlockDocError start="/\-\%(!\|\-[*/]\@!\)"    end="\-/" contains=garnetTodo,garnetCommentBlockDocNestError,@Spell contained
+syn region garnetCommentBlockNest         matchgroup=garnetCommentBlock         start="/\-"                     end="\-/" contains=garnetTodo,garnetCommentBlockNest,@Spell contained transparent
+syn region garnetCommentBlockDocNest      matchgroup=garnetCommentBlockDoc      start="/\-"                     end="\-/" contains=garnetTodo,garnetCommentBlockDocNest,@Spell contained transparent
+syn region garnetCommentBlockDocNestError matchgroup=garnetCommentBlockDocError start="/\-"                     end="\-/" contains=garnetTodo,garnetCommentBlockDocNestError,@Spell contained transparent
 " FIXME: this is a really ugly and not fully correct implementation. Most
 " importantly, a case like ``/* */*`` should have the final ``*`` not being in
 " a comment, but in practice at present it leaves comments open two levels

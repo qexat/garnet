@@ -1,0 +1,47 @@
+--! Basic Result type
+--!
+--! TODO:
+--! Match syntax --
+--! Sum type details -- pattern match syntax, etc.
+--! Panics, strings...
+
+--- Properties: Copy, Clone, Debug, Zero, Pod when T is Pod...
+type Result[T,E] = sum
+    Ok{T}
+    Err{E},
+end
+
+--- Properties: Panics.
+fn unwrap(self: Result[T,E]): T =
+    self:expect("Unwrap failed")
+end
+
+--- Properties: Panics.
+fn expect(self: Result[T,E], message: Str): T =
+    match self with
+      | Err{_} -> panic(message)
+      | Ok{val} -> val
+    end
+end
+
+
+fn unwrap_or(self: Result[T,E], val: T): T =
+    match self with
+      | Err{_} -> val
+      | Ok{val} -> val
+    end
+end
+
+fn unwrap_or_else(self: Result[T,E], f: fn(): T): T =
+    match self with
+      | Err{_} -> f()
+      | Ok{val} -> val
+    end
+end
+
+fn cloned(self: Result[T &, E]): Result[T,E] where T: Clone =
+    match self with
+      | Err{e} -> Err({e})
+      | Ok{val} -> Ok({T.clone(val)})
+    end
+end

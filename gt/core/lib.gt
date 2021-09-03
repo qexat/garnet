@@ -1,0 +1,9 @@
+-- Misc essential functions and built-ins
+
+fn panic(s: Str): {} =
+    __panic(s)
+end
+
+fn todo(msg: Str): {} =
+    panic(s)
+end

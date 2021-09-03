@@ -42,6 +42,6 @@ end
 fn cloned(self: Option[T &]): Option[T] where T: Clone =
     match self with
       | None -> None
-      | Some{val} -> T.clone(val)
+      | Some{val} -> Some({T.clone(val)})
     end
 end
