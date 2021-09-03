@@ -1,0 +1,25 @@
+-- Compile:
+--   status: success
+--
+-- Run:
+--   status: success
+
+type Foo = enum {
+    Foo,
+    Bar,
+    Baz,
+}
+
+type Bar = enum {
+    Foo = 12,
+    Bar = 13,
+    Baz = 24
+}
+
+fn main(): {} =
+    -- TODO: Think about this.
+    let f: Foo = Foo.Foo
+    let g: Bar = Bar.Baz
+    __println(f)
+
+end
