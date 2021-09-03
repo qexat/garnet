@@ -1,4 +1,5 @@
 --! Simple hashtable implementation.
+--!
 --! Oy this raises some questions:
 --! Generic constraints on methods
 --! Self values
