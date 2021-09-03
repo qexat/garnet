@@ -1,0 +1,23 @@
+-- Compile:
+--   status: success
+--
+-- Run:
+--   status: success
+--   stdout: 12
+
+/-
+fn foo(): {} =
+    {}
+end
+
+/-
+fn main(): {} =
+    {}
+end
+-/
+-/
+
+fn main(): {} =
+    __println(12)
+end
+

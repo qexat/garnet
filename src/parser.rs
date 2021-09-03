@@ -81,6 +81,36 @@ fn make_i128(lex: &mut Lexer<TokenKind>) -> Option<(i128, u8)> {
     Some((m, 16))
 }
 
+fn eat_block_comment(lex: &mut Lexer<TokenKind>) -> String {
+    let mut nest_depth = 1;
+    loop {
+        if nest_depth == 0 {
+            break;
+        }
+        if lex.remainder().len() < 2 {
+            // TODO: This probably could be better.
+            panic!("Unclosed block comment?");
+        }
+        let next_bit = &lex.remainder()[..2];
+        // Lexer::bump() works in bytes, not chars, so we have to track the
+        // number of bytes we are stepping forward so we don't try to lex
+        // the middle of a UTF-8 char.
+        let bytes_to_advance = match next_bit {
+            "/-" => {
+                nest_depth += 1;
+                2
+            }
+            "-/" => {
+                nest_depth -= 1;
+                2
+            }
+            other => other.chars().next().unwrap().len_utf8(),
+        };
+        lex.bump(bytes_to_advance);
+    }
+    String::from("")
+}
+
 #[allow(missing_docs)]
 #[derive(Logos, Debug, PartialEq, Clone)]
 pub enum TokenKind {
@@ -193,6 +223,7 @@ pub enum TokenKind {
     // We save comment strings so we can use this same
     // parser as a reformatter or such.
     #[regex(r"--.*\n", |lex| lex.slice().to_owned())]
+    #[regex(r"/-.*", eat_block_comment)]
     Comment(String),
 
     #[error]
@@ -718,12 +749,8 @@ impl<'input> Parser<'input> {
         self.expect(T::LBrace);
         let (fields, typefields) = self.parse_struct_fields();
         self.expect(T::RBrace);
-        TypeDef::Struct {
-            fields,
-            typefields,
-        }
+        TypeDef::Struct { fields, typefields }
     }
-
 
     fn parse_exprs(&mut self) -> Vec<ast::Expr> {
         let mut exprs = vec![];
@@ -1081,7 +1108,9 @@ impl<'input> Parser<'input> {
                 let fntype = self.parse_fn_type();
                 crate::INT.intern_type(&fntype)
             }
-            Some(Token { kind: T::Struct, .. }) => {
+            Some(Token {
+                kind: T::Struct, ..
+            }) => {
                 let fntype = self.parse_struct_type();
                 crate::INT.intern_type(&fntype)
             }

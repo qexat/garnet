@@ -1,0 +1,22 @@
+-- Compile:
+--   status: error
+--   stderr:
+--     ...
+--     ...Unclosed block comment...
+--     ...
+
+/-
+fn foo(): {} =
+    {}
+end
+
+/-
+fn main(): {} =
+    {}
+end
+-/
+
+fn main(): {} =
+    __println(12)
+end
+
