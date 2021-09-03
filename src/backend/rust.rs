@@ -95,6 +95,9 @@ fn compile_typename(td: &TypeDef) -> Cow<'static, str> {
             accm += ")";
             accm.into()
         }
+        Enum { variants: _ } => {
+            todo!("Enums probably should be lowered to numbers?")
+        }
         Generic(sym) => {
             panic!(
                 "ICE: Un-reified generic named {}, should never happen",

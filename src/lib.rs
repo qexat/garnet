@@ -98,6 +98,10 @@ pub enum TypeDef {
         fields: BTreeMap<VarSym, TypeSym>,
         typefields: BTreeSet<VarSym>,
     },
+    Enum {
+        /// TODO: For now the only size of an enum is i32.
+        variants: Vec<(VarSym, i32)>,
+    },
     Generic(VarSym),
 }
 
@@ -190,6 +194,16 @@ impl TypeDef {
                 let mut res = String::from("struct {");
                 res += &join_vars_with_commas(fields);
                 res += "}";
+                Cow::Owned(res)
+            }
+            TypeDef::Enum { variants } => {
+                let mut res = String::from("enum {");
+                let s = variants
+                    .iter()
+                    .map(|(nm, vl)| format!("    {} = {},\n", INT.fetch(*nm), vl))
+                    .collect::<String>();
+                res += &s;
+                res += "\n}\n";
                 Cow::Owned(res)
             }
             TypeDef::Generic(s) => Cow::Owned((&*INT.fetch(*s)).clone()),

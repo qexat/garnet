@@ -160,6 +160,8 @@ pub enum TokenKind {
     Type,
     #[token("struct")]
     Struct,
+    #[token("enum")]
+    Enum,
 
     // Punctuation
     #[token("(")]
@@ -734,7 +736,6 @@ impl<'input> Parser<'input> {
         while !self.peek_is(T::RBrace.discr()) {
             let t = self.parse_type();
             body.push(t);
-
             if self.peek_is(T::Comma.discr()) {
                 self.expect(T::Comma);
             } else {
@@ -750,6 +751,10 @@ impl<'input> Parser<'input> {
         let (fields, typefields) = self.parse_struct_fields();
         self.expect(T::RBrace);
         TypeDef::Struct { fields, typefields }
+    }
+
+    fn parse_enum_type(&mut self) -> TypeDef {
+        todo!("Parse enum")
     }
 
     fn parse_exprs(&mut self) -> Vec<ast::Expr> {
@@ -1112,6 +1117,10 @@ impl<'input> Parser<'input> {
                 kind: T::Struct, ..
             }) => {
                 let fntype = self.parse_struct_type();
+                crate::INT.intern_type(&fntype)
+            }
+            Some(Token { kind: T::Enum, .. }) => {
+                let fntype = self.parse_enum_type();
                 crate::INT.intern_type(&fntype)
             }
             other => self.error("type", other),
