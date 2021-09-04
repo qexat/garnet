@@ -731,6 +731,47 @@ impl<'input> Parser<'input> {
         (fields, typefields)
     }
 
+    fn parse_enum_fields(&mut self) -> Vec<(VarSym, i32)> {
+        let mut current_val = 0;
+        let mut variants = vec![];
+
+        // TODO someday: Doc comments on enum fields
+        loop {
+            let id = self.expect_ident();
+            if self.peek_is(T::Equals.discr()) {
+                self.expect(T::Equals);
+                current_val = self.expect_int() as i32;
+            }
+            variants.push((id, current_val));
+            current_val += 1;
+
+            // TODO: Figure out how to not make this comma parsing jank af
+            // maybe
+            // {term ","} [term [","]]
+            // or
+            // [THING { "," THING } [","]]
+            if self.peek_is(T::Comma.discr()) {
+                self.expect(T::Comma);
+            } else {
+                break;
+            }
+        }
+        // Make sure we don't have any duplicates.
+        let mut seen = std::collections::HashMap::new();
+        for (name, vl) in variants.iter() {
+            if let Some(other) = seen.get(vl) {
+                eprintln!(
+                    "Duplicate variant in enum: field {} and {} both have value {}",
+                    INT.fetch(*name),
+                    INT.fetch(*other),
+                    *vl
+                );
+            }
+            seen.insert(*vl, *name);
+        }
+        variants
+    }
+
     fn parse_tuple_type(&mut self) -> TypeDef {
         let mut body = vec![];
         while !self.peek_is(T::RBrace.discr()) {
@@ -754,7 +795,10 @@ impl<'input> Parser<'input> {
     }
 
     fn parse_enum_type(&mut self) -> TypeDef {
-        todo!("Parse enum")
+        self.expect(T::LBrace);
+        let variants = self.parse_enum_fields();
+        self.expect(T::RBrace);
+        TypeDef::Enum { variants }
     }
 
     fn parse_exprs(&mut self) -> Vec<ast::Expr> {
