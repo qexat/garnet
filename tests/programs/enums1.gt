@@ -7,7 +7,7 @@
 type Foo = enum {
     Foo,
     Bar,
-    Baz,
+    Baz
 }
 
 type Bar = enum {
