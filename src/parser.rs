@@ -458,6 +458,19 @@ impl<'input> Parser<'input> {
         }
     }
 
+    /// Returns whether the next token in the stream is what is expected,
+    /// and consume it if so.
+    ///
+    /// I ended up seeing a lot of `if self.peek_is(thing) { self.expect(thing)
+    fn try_expect(&mut self, expected: Discr<TokenKind>) -> bool {
+        if self.peek_is(expected) {
+            self.drop();
+            true
+        } else {
+            false
+        }
+    }
+
     /// Consume an identifier and return its interned symbol.
     /// Note this returns a VarSym, not a TypeSym...
     fn expect_ident(&mut self) -> VarSym {
@@ -599,8 +612,7 @@ impl<'input> Parser<'input> {
     /// signature = fn_args [":" typename]
     fn parse_fn_signature(&mut self) -> ast::Signature {
         let params = self.parse_fn_args();
-        let rettype = if self.peek_is(T::Colon.discr()) {
-            self.expect(T::Colon);
+        let rettype = if self.try_expect(T::Colon.discr()) {
             self.parse_type()
         } else {
             crate::INT.unit()
@@ -620,8 +632,7 @@ impl<'input> Parser<'input> {
             let tname = self.parse_type();
             args.push((name, tname));
 
-            if self.peek_is(T::Comma.discr()) {
-                self.expect(T::Comma);
+            if self.try_expect(T::Comma.discr()) {
             } else {
                 break;
             }
@@ -632,8 +643,7 @@ impl<'input> Parser<'input> {
 
     fn parse_fn_type(&mut self) -> TypeDef {
         let params = self.parse_fn_type_args();
-        let rettype = if self.peek_is(T::Colon.discr()) {
-            self.expect(T::Colon);
+        let rettype = if self.try_expect(T::Colon.discr()) {
             self.parse_type()
         } else {
             crate::INT.unit()
@@ -649,8 +659,7 @@ impl<'input> Parser<'input> {
             let tname = self.parse_type();
             args.push(tname);
 
-            if self.peek_is(T::Comma.discr()) {
-                self.expect(T::Comma);
+            if self.try_expect(T::Comma.discr()) {
             } else {
                 break;
             }
@@ -685,8 +694,7 @@ impl<'input> Parser<'input> {
             // {term ","} [term [","]]
             // or
             // [THING { "," THING } [","]]
-            if self.peek_is(T::Comma.discr()) {
-                self.expect(T::Comma);
+            if self.try_expect(T::Comma.discr()) {
             } else {
                 break;
             }
@@ -722,8 +730,7 @@ impl<'input> Parser<'input> {
             // {term ","} [term [","]]
             // or
             // [THING { "," THING } [","]]
-            if self.peek_is(T::Comma.discr()) {
-                self.expect(T::Comma);
+            if self.try_expect(T::Comma.discr()) {
             } else {
                 break;
             }
@@ -737,21 +744,24 @@ impl<'input> Parser<'input> {
 
         // TODO someday: Doc comments on enum fields
         loop {
-            let id = self.expect_ident();
-            if self.peek_is(T::Equals.discr()) {
-                self.expect(T::Equals);
-                current_val = self.expect_int() as i32;
+            match self.lex.peek() {
+                Some((T::Ident(_i), _span)) => {
+                    let id = self.expect_ident();
+                    if self.try_expect(T::Equals.discr()) {
+                        current_val = self.expect_int() as i32;
+                    }
+                    variants.push((id, current_val));
+                    current_val += 1;
+                }
+                _ => break,
             }
-            variants.push((id, current_val));
-            current_val += 1;
 
             // TODO: Figure out how to not make this comma parsing jank af
             // maybe
             // {term ","} [term [","]]
             // or
             // [THING { "," THING } [","]]
-            if self.peek_is(T::Comma.discr()) {
-                self.expect(T::Comma);
+            if self.try_expect(T::Comma.discr()) {
             } else {
                 break;
             }
@@ -777,8 +787,7 @@ impl<'input> Parser<'input> {
         while !self.peek_is(T::RBrace.discr()) {
             let t = self.parse_type();
             body.push(t);
-            if self.peek_is(T::Comma.discr()) {
-                self.expect(T::Comma);
+            if self.try_expect(T::Comma.discr()) {
             } else {
                 break;
             }
@@ -805,9 +814,7 @@ impl<'input> Parser<'input> {
         let mut exprs = vec![];
         while let Some(e) = self.parse_expr(0) {
             // Hey and if we have a semicolon after an expr we can just eat it
-            if self.peek_is(T::Semicolon.discr()) {
-                self.drop();
-            }
+            self.try_expect(T::Semicolon.discr());
             exprs.push(e);
         }
         exprs
@@ -998,8 +1005,7 @@ impl<'input> Parser<'input> {
     /// let = "let" ident ":" typename "=" expr
     fn parse_let(&mut self) -> ast::Expr {
         self.expect(T::Let);
-        let mutable = if self.peek_is(T::Mut.discr()) {
-            self.expect(T::Mut);
+        let mutable = if self.try_expect(T::Mut.discr()) {
             true
         } else {
             false
@@ -1032,8 +1038,7 @@ impl<'input> Parser<'input> {
 
     /// {"elseif" expr "then" {expr}}
     fn parse_elif(&mut self, accm: &mut Vec<ast::IfCase>) {
-        while self.peek_is(T::Elseif.discr()) {
-            self.expect(T::Elseif);
+        while self.try_expect(T::Elseif.discr()) {
             let condition = self
                 .parse_expr(0)
                 .expect("TODO: be better; could not parse expr after elseif");
@@ -1115,8 +1120,7 @@ impl<'input> Parser<'input> {
         while let Some(expr) = self.parse_expr(0) {
             body.push(expr);
 
-            if self.peek_is(T::Comma.discr()) {
-                self.expect(T::Comma);
+            if self.try_expect(T::Comma.discr()) {
             } else {
                 break;
             }
