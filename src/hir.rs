@@ -479,6 +479,7 @@ fn lower_decl<T>(accm: &mut Vec<Decl<T>>, f: &mut dyn FnMut(&hir::Expr<T>) -> T,
                     rettype: rtype,
                 },
             });
+            todo!("check for and generate enum stuffs");
         }
     }
 }
