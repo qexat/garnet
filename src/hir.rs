@@ -479,7 +479,27 @@ fn lower_decl<T>(accm: &mut Vec<Decl<T>>, f: &mut dyn FnMut(&hir::Expr<T>) -> T,
                     rettype: rtype,
                 },
             });
-            todo!("check for and generate enum stuffs");
+            // If we have an enum, generate a const struct value containing its
+            // values.
+            let def = &*INT.fetch_type(*typedecl);
+            match def {
+                TypeDef::Enum { variants } => {
+                    let mut struct_fields = BTreeMap::new();
+                    let mut constructor_fields = vec![];
+                    for (var, val) in variants {
+                        struct_fields.insert(*var, *typedecl);
+                        constructor_fields.push((
+                            *var,
+                            TypedExpr {
+                                e: todo!("check for and generate enum stuffs"),
+                                t: (),
+                                s: ISymtbl::default(),
+                            },
+                        ));
+                    }
+                }
+                _ => (),
+            }
         }
     }
 }
