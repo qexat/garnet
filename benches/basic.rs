@@ -73,6 +73,20 @@ fn criterion_benchmark(c: &mut Criterion) {
     c.bench_function(&name, |b| {
         b.iter(|| garnet::compile("criterion.gt", black_box(&code)))
     });
+
+    let code = gen_dumb_test_code(103 * 8);
+    let lines = code.lines().count();
+    let name = format!("compile {}ish lines", lines);
+    c.bench_function(&name, |b| {
+        b.iter(|| garnet::compile("criterion.gt", black_box(&code)))
+    });
+
+    let code = gen_dumb_test_code(103 * 16);
+    let lines = code.lines().count();
+    let name = format!("compile {}ish lines", lines);
+    c.bench_function(&name, |b| {
+        b.iter(|| garnet::compile("criterion.gt", black_box(&code)))
+    });
 }
 
 criterion_group!(benches, criterion_benchmark);

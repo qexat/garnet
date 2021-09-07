@@ -27,6 +27,10 @@ pub struct VarBinding {
 /// This means that we always can look at any expression and see its entire scope, and
 /// keeping track of scope pushes/pops is basically implicit since there's no mutable state
 /// involved.
+// TODO someday maybe: This immutable hashmap is very convenient but also more or less
+// halves the speed of the compiler in a stupid-simple benchmark.  Some dumb profiling shows
+// lot of that delta comes down to memory allocation, so attempting to reduce that might be
+// worth doing.  Switching out `im` for `im_rc` seems to increase perf by only 2-5%.
 #[derive(Default, Clone, Debug, PartialEq)]
 pub struct ISymtbl {
     pub vars: im::HashMap<VarSym, VarBinding>,
