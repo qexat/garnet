@@ -14,6 +14,10 @@ name = "endtoend"
 path = "tests/endtoend.rs"
 harness = false
 
+[[bench]]
+name = "basic"
+harness = false
+
 [dependencies]
 argh = "0.1"
 codespan-reporting = "0.11"
@@ -28,3 +32,4 @@ once_cell = "1"
 tempfile = "3"
 libloading = "0.7"
 lang_tester = "0.7"
+criterion = "0.3"
