@@ -14,6 +14,10 @@ name = "endtoend"
 path = "tests/endtoend.rs"
 harness = false
 
+[[test]]
+name = "blns"
+path = "tests/blns.rs"
+
 [[bench]]
 name = "basic"
 harness = false

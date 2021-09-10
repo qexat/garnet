@@ -620,6 +620,9 @@ fn typecheck_expr(
                 s: symtbl.clone(),
             })
         }
+        EnumLit { val, ty } => {
+            todo!()
+        }
 
         Var { name } => {
             let t = symtbl.get_var(name)?;

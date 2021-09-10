@@ -62,6 +62,7 @@ impl<T> TypedExpr<T> {
         let map_vec = |e: &Vec<TypedExpr<T>>| e.iter().map(|te| te.map_type(f)).collect::<Vec<_>>();
         let new_e = match &self.e {
             Lit { val } => Lit { val: val.clone() },
+            EnumLit { val, ty } => EnumLit { val: *val, ty: *ty },
             Var { name } => Var { name: *name },
             UniOp { op, rhs } => UniOp {
                 op: *op,
@@ -151,12 +152,10 @@ pub enum Expr<T> {
     Lit {
         val: Literal,
     },
-    /*
     EnumLit {
         val: VarSym,
         ty: TypeSym,
     },
-    */
     Var {
         name: VarSym,
     },
@@ -496,12 +495,16 @@ fn lower_decl<T>(accm: &mut Vec<Decl<T>>, f: &mut dyn FnMut(&hir::Expr<T>) -> T,
                 TypeDef::Enum { variants } => {
                     let mut struct_fields = BTreeMap::new();
                     let mut constructor_fields = vec![];
-                    for (var, val) in variants {
+                    for (var, _val) in variants {
                         struct_fields.insert(*var, *typedecl);
                         constructor_fields.push((
                             *var,
                             TypedExpr {
-                                e: todo!("check for and generate enum stuffs"),
+                                e: Expr::EnumLit {
+                                    ty: *typedecl,
+                                    val: *var,
+                                },
+                                //todo!("check for and generate enum stuffs"),
                                 t: (),
                                 s: ISymtbl::default(),
                             },
