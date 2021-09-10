@@ -246,6 +246,7 @@ fn compile_expr(expr: &hir::TypedExpr<TypeSym>) -> String {
         E::Lit {
             val: ast::Literal::Integer(i),
         } => format!("{}", i),
+        E::EnumLit { val, ty } => todo!(),
         E::Lit {
             val: ast::Literal::Bool(b),
         } => format!("{}", b),
