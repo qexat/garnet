@@ -83,28 +83,27 @@ fn make_i128(lex: &mut Lexer<TokenKind>) -> Option<(i128, u8)> {
 
 fn eat_block_comment(lex: &mut Lexer<TokenKind>) -> String {
     let mut nest_depth = 1;
-    loop {
-        if nest_depth == 0 {
-            break;
-        }
-        if lex.remainder().len() < 2 {
-            // TODO: This probably could be better.
-            panic!("Unclosed block comment?");
-        }
-        let next_bit = &lex.remainder()[..2];
+    while nest_depth != 0 {
+        const DELIMITER_BYTES: usize = 2;
+        let next_bit = &lex.remainder().get(..DELIMITER_BYTES);
         // Lexer::bump() works in bytes, not chars, so we have to track the
         // number of bytes we are stepping forward so we don't try to lex
         // the middle of a UTF-8 char.
         let bytes_to_advance = match next_bit {
-            "/-" => {
+            Some("/-") => {
                 nest_depth += 1;
-                2
+                DELIMITER_BYTES
             }
-            "-/" => {
+            Some("-/") => {
                 nest_depth -= 1;
-                2
+                DELIMITER_BYTES
             }
-            other => other.chars().next().unwrap().len_utf8(),
+            Some(other) => other
+                .chars()
+                .next()
+                .unwrap_or_else(|| panic!("Invalid UTF-8 in input file?  This should probably never happen otherwise."))
+                .len_utf8(),
+            None => panic!("Unclosed block comment?"),
         };
         lex.bump(bytes_to_advance);
     }
