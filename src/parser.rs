@@ -1433,14 +1433,14 @@ type blar = I8
 
     #[test]
     fn parse_loop() {
-        let valid_args = vec!["loop 10 end", "loop 10 20 30 end", "loop end"];
+        let valid_args = vec!["loop 10 end", "loop 10 20 30 end", "loop {} end"];
         test_parse_with(|p| p.parse_loop(), &valid_args);
         test_parse_with(|p| p.parse_expr(0), &valid_args);
     }
 
     #[test]
     fn parse_block() {
-        let valid_args = vec!["do 10 end", "do 10 20 30 end", "do end"];
+        let valid_args = vec!["do 10 end", "do 10 20 30 end", "do {} end"];
         test_parse_with(|p| p.parse_block(), &valid_args);
         test_parse_with(|p| p.parse_expr(0), &valid_args);
     }
@@ -1452,7 +1452,6 @@ type blar = I8
             "fn(x:I32, i:Bool) = x end",
             "fn(f:fn(I32):I32, x:I32) = f(x) end",
             "fn() = {} end",
-            "fn() = end",
         ];
         test_parse_with(|p| p.parse_lambda(), &valid_args);
         test_parse_with(|p| p.parse_expr(0), &valid_args);
