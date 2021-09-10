@@ -811,10 +811,17 @@ impl<'input> Parser<'input> {
 
     fn parse_exprs(&mut self) -> Vec<ast::Expr> {
         let mut exprs = vec![];
+        let tok = self.peek();
         while let Some(e) = self.parse_expr(0) {
             // Hey and if we have a semicolon after an expr we can just eat it
             self.try_expect(T::Semicolon.discr());
             exprs.push(e);
+        }
+        if exprs.is_empty() {
+            self.error(
+                "non-empty expression block, must have at least one value.",
+                tok,
+            );
         }
         exprs
     }
