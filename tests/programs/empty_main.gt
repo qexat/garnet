@@ -1,0 +1,10 @@
+-- Compile:
+--   status: error
+--   stderr:
+--     ...
+--     ...Expected non-empty expression block...
+--     ...
+
+fn main(): {} =
+    --__println(12)
+end
