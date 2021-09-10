@@ -151,6 +151,12 @@ pub enum Expr<T> {
     Lit {
         val: Literal,
     },
+    /*
+    EnumLit {
+        val: VarSym,
+        ty: TypeSym,
+    },
+    */
     Var {
         name: VarSym,
     },
