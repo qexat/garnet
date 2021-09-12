@@ -497,19 +497,34 @@ fn lower_decl<T>(accm: &mut Vec<Decl<T>>, f: &mut dyn FnMut(&hir::Expr<T>) -> T,
                     let mut constructor_fields = vec![];
                     for (var, _val) in variants {
                         struct_fields.insert(*var, *typedecl);
-                        constructor_fields.push((
-                            *var,
-                            TypedExpr {
-                                e: Expr::EnumLit {
-                                    ty: *typedecl,
-                                    val: *var,
-                                },
-                                //todo!("check for and generate enum stuffs"),
-                                t: (),
-                                s: ISymtbl::default(),
-                            },
-                        ));
+                        let e = Expr::EnumLit {
+                            ty: *typedecl,
+                            val: *var,
+                        };
+                        let t = f(&e);
+                        let te = TypedExpr {
+                            e,
+                            t,
+                            s: ISymtbl::default(),
+                        };
+                        constructor_fields.push((*var, te));
                     }
+                    // Now we create a const struct containing all the fields
+                    let struct_name = "Rawr";
+                    let e = Expr::StructCtor {
+                        body: constructor_fields,
+                        types: struct_fields,
+                    };
+                    let t = f(&e);
+                    accm.push(Decl::Const {
+                        name: INT.intern(struct_name),
+                        typename: INT.intern_type(&TypeDef::Named(*name)),
+                        init: TypedExpr {
+                            e,
+                            t,
+                            s: ISymtbl::default(),
+                        },
+                    });
                 }
                 _ => (),
             }

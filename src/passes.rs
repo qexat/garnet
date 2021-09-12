@@ -20,6 +20,11 @@ pub fn run_passes(ir: Ir<()>) -> Ir<()> {
     passes.iter().fold(ir, |prev_ir, f| f(prev_ir))
 }
 
+pub fn run_typed_passes(ir: Ir<TypeSym>) -> Ir<TypeSym> {
+    let passes: &[Pass<TypeSym>] = &[];
+    passes.iter().fold(ir, |prev_ir, f| f(prev_ir))
+}
+
 /// Lambda lift a single expr.
 fn lambda_lift_expr<T>(expr: TypedExpr<T>, output_funcs: &mut Vec<D<T>>) -> TypedExpr<T> {
     let result = match expr.e {
@@ -130,6 +135,43 @@ fn lambda_lifting<T>(ir: Ir<T>) -> Ir<T> {
                 body,
             } => {
                 let new_body = lambda_lift_exprs(body, &mut new_functions);
+                D::Function {
+                    name,
+                    signature,
+                    body: new_body,
+                }
+            }
+            x => x,
+        })
+        .collect();
+    new_functions.extend(new_decls.into_iter());
+    Ir {
+        decls: new_functions,
+    }
+}
+
+fn enum_to_int_expr(
+    expr: TypedExpr<TypeDef>,
+    output_funcs: &mut Vec<D<TypeDef>>,
+) -> TypedExpr<TypeDef> {
+    todo!()
+}
+
+fn enum_to_int(ir: Ir<TypeDef>) -> Ir<TypeDef> {
+    let mut new_functions = vec![];
+    let new_decls: Vec<D<TypeDef>> = ir
+        .decls
+        .into_iter()
+        .map(|decl| match decl {
+            D::Function {
+                name,
+                signature,
+                body,
+            } => {
+                let new_body = body
+                    .into_iter()
+                    .map(|e| enum_to_int_expr(e, &mut new_functions))
+                    .collect();
                 D::Function {
                     name,
                     signature,
