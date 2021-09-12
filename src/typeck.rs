@@ -83,6 +83,10 @@ pub enum TypeError {
         expected: Vec<VarSym>,
         got: Vec<VarSym>,
     },
+    EnumVariant {
+        expected: Vec<VarSym>,
+        got: VarSym,
+    },
     TypeMismatch {
         expr_name: Cow<'static, str>,
         got: TypeSym,
@@ -172,6 +176,17 @@ impl TypeError {
                 "Invalid field in struct constructor: expected {:?}, but got {:?}",
                 expected, got
             ),
+            TypeError::EnumVariant { expected, got } => {
+                let expected_names: Vec<String> = expected
+                    .into_iter()
+                    .map(|nm| (&*INT.fetch(*nm)).clone())
+                    .collect();
+                format!(
+                    "Unknown enum variant '{}', valid ones are {:?}",
+                    INT.fetch(*got),
+                    expected_names,
+                )
+            }
             TypeError::TypeMismatch {
                 expr_name,
                 expected,
@@ -621,7 +636,47 @@ fn typecheck_expr(
             })
         }
         EnumLit { val, ty } => {
-            todo!()
+            // Verify that the type given is actually an enum
+            let tdef = INT.fetch_type(ty);
+            match &*tdef {
+                // Verify that the variant given exists in the enum
+                TypeDef::Enum { variants } => {
+                    if let Some((enum_sym, enum_val)) = variants
+                        .iter()
+                        .find(|(enum_sym, _enum_val)| *enum_sym == val)
+                    {
+                        /*
+                        // We do some lowering here just 'cause it's easy to?
+                        // As noted elsewhere, our enums are always i32 for now
+                        let integer_val = hir::Literal::SizedInteger {
+                            vl: (*enum_val) as i128,
+                            bytes: 4,
+                        };
+                        Ok(hir::TypedExpr {
+                            e: Lit { val: integer_val },
+                            t: ty,
+                            s: symtbl.clone(),
+                        })
+                        */
+                        Ok(hir::TypedExpr {
+                            e: EnumLit { val, ty },
+                            t: ty,
+                            s: symtbl.clone(),
+                        })
+                    } else {
+                        Err(TypeError::EnumVariant {
+                            expected: variants.into_iter().map(|(a, _)| *a).collect(),
+                            got: val,
+                        })
+                    }
+                }
+                other => Err(TypeError::TypeMismatch {
+                    // TODO: More information
+                    expr_name: "enum literal".into(),
+                    got: INT.intern_type(other),
+                    expected: ty,
+                }),
+            }
         }
 
         Var { name } => {

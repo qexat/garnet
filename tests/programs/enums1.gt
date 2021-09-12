@@ -5,20 +5,22 @@
 --   status: success
 
 type Foo = enum {
-    Foo,
-    Bar,
-    Baz,
+    Foo1,
+    Bar1,
+    Baz1,
 }
 
+/-
 type Bar = enum {
     Foo = 12,
     Bar = 13,
     Baz = 24
 }
+-/
 
 fn main(): {} =
     -- TODO: Think about this.
-    --let f: Foo = Foo.Foo
+    let f: Foo = Rawr.Foo1
     --let g: Bar = Bar.Baz
     __println(11)
 
