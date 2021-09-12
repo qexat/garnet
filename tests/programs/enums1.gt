@@ -18,8 +18,8 @@ type Bar = enum {
 
 fn main(): {} =
     -- TODO: Think about this.
-    let f: Foo = Foo.Foo
-    let g: Bar = Bar.Baz
-    __println(f)
+    --let f: Foo = Foo.Foo
+    --let g: Bar = Bar.Baz
+    __println(11)
 
 end
