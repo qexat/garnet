@@ -1,5 +1,13 @@
 -- Misc essential functions and built-ins
 
+--- Until we get a real string slice type...
+type Str = {}
+
+--- Assume 64-bit pointers
+--- TODO: We don't have unsigned numbers yet.
+alias Size = U64
+alias Offset = I64
+
 fn panic(s: Str): {} =
     __panic(s)
 end

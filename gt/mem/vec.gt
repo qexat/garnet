@@ -6,10 +6,14 @@
 --! Conversions of number types
 --! Borrow syntax
 
--- TODO: This is a ref-like type and thus needs a lifetime of some
--- kind...
--- It IS becoming kinda clear that lifetimes need a syntax, and then
--- the borrow/uniq/own syntax needs to be part of that.
+--- TODO: This is a ref-like type and thus needs a lifetime of some
+--- kind...
+--- It IS becoming kinda clear that lifetimes need a syntax, and then
+--- the borrow/uniq/own syntax needs to be part of that.
+--- T
+--- T['a]
+--- T['a, B]
+--- T['a own, 'b borrow, 'c uniq, 'd any, B]
 type Slice[T] = struct {
     data: T *mut,
     len: Size,
@@ -21,18 +25,28 @@ end
 
 -- TODO: get_mut()
 fn get(self: Slice[T] &, i: Size) -> Option[T &] =
+    -- TODO: i needs to be an Offset, not a Size,
+    -- but then there needs to be a safe conversion
+    -- either here or in the else branch
     if self.len >= i then
         None
     else
-        -- TODO: i needs to be an Offset, not a Size.
         Some(self.data.index(i) &)
     end
 end
 
 
+--- Sooooo the full type of this would be...
+--- Vec[T 'a any]
+--- or something like
+--- Vec[T 'a any, Allocator 'b own]
+--- Well not quite like that, the Allocator isn't owned, its lifetime is
+--- not tracked at all.  So more like
+--- Vec[T 'a any, Allocator none]
+--- That might be similar to Rust's 'static for "lives the length of the
+--- program", or at least "you have to assume it lives the length of the
+--- program 'cause you have no other info.
 type Vec[T] = struct {
-    --data: T ^mut,
-    --len: Size,
     data: Slice[T],
     allocator: Allocator *const,
     capacity: Size,
