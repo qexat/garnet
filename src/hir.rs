@@ -496,9 +496,11 @@ fn lower_decl<T>(accm: &mut Vec<Decl<T>>, f: &mut dyn FnMut(&hir::Expr<T>) -> T,
                     let mut struct_fields = BTreeMap::new();
                     let mut constructor_fields = vec![];
                     for (var, _val) in variants {
-                        struct_fields.insert(*var, *typedecl);
+                        //struct_fields.insert(*var, *typedecl);
+                        let named_type = INT.intern_type(&TypeDef::Named(*name));
+                        struct_fields.insert(*var, named_type);
                         let e = Expr::EnumLit {
-                            ty: *typedecl,
+                            ty: named_type,
                             val: *var,
                         };
                         let t = f(&e);
@@ -513,12 +515,16 @@ fn lower_decl<T>(accm: &mut Vec<Decl<T>>, f: &mut dyn FnMut(&hir::Expr<T>) -> T,
                     let struct_name = "Rawr";
                     let e = Expr::StructCtor {
                         body: constructor_fields,
-                        types: struct_fields,
+                        types: struct_fields.clone(),
+                    };
+                    let struct_type = TypeDef::Struct {
+                        fields: struct_fields,
+                        typefields: BTreeSet::default(),
                     };
                     let t = f(&e);
                     accm.push(Decl::Const {
                         name: INT.intern(struct_name),
-                        typename: INT.intern_type(&TypeDef::Named(*name)),
+                        typename: INT.intern_type(&struct_type),
                         init: TypedExpr {
                             e,
                             t,

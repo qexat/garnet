@@ -279,6 +279,8 @@ MIT
  * <https://people.mpi-sws.org/~rossberg/1ml/> -- 1ML programming language
  * <http://moscova.inria.fr/~maranget/papers/ml05e-maranget.pdf> -- Compiling pattern matching
  * <https://research.swtch.com/gomm> and related posts in introduction -- Memory models
+ * <https://arxiv.org/abs/1306.6032> -- Complete and Easy Bidirectional Typechecking for Higher-Rank Polymorphism
+ * <https://github.com/nikomatsakis/bidir-type-infer> -- Implementation of the above paper
 
 References on IR stuff:
 
