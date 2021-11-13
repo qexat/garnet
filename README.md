@@ -281,6 +281,10 @@ MIT
  * <https://research.swtch.com/gomm> and related posts in introduction -- Memory models
  * <https://arxiv.org/abs/1306.6032> -- Complete and Easy Bidirectional Typechecking for Higher-Rank Polymorphism
  * <https://github.com/nikomatsakis/bidir-type-infer> -- Implementation of the above paper
+ * <https://belkadan.com/blog/2021/08/Swift-Regret-Tuples-and-Argument-Lists/?tag=swift-regrets>
+   -- Swift design retrospective, on tuples and argument lists.  Garnet
+   may have fewer problems with this than Swift does, but Garnet still
+   has some of the problems mentioned here.
 
 References on IR stuff:
 
@@ -292,6 +296,11 @@ References on backend stuff:
 
  * <http://troubles.md/posts/wasm-is-not-a-stack-machine/> and the
    following posts -- Interesting thoughts on webassembly's design
+
+References on borrow checking:
+
+ * <http://smallcultfollowing.com/babysteps/blog/2018/04/27/an-alias-based-formulation-of-the-borrow-checker/>
+ * <https://github.com/rust-lang/polonius>
 
 Technically-irrelelvant but cool papers:
 
