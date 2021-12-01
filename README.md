@@ -199,6 +199,7 @@ Programs-as-separate-files tests:
    changed, demonstrated here:
    https://github.com/devsnek/scratchc/blob/main/tests/out.rs
  * `goldentests` crate
+ * http://insta.rs/
 
 ## Backend thoughts
 
