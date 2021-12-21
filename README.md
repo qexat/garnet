@@ -69,6 +69,11 @@ change with time.
    stuff to call it, easy for it to call arbitrary stuff.
  * Compiles fast
 
+Another way to think about it is "Garnet wants to be the Lua of system
+programming languages".  Small, flexible, made of a few powerful parts
+that fit together well, easy to port and implement and toy around with,
+reasonably fast.
+
 ## Pain points in Rust to think about
 
  * You can't be generic over mutability and ownership, so for example
@@ -282,10 +287,9 @@ MIT
  * <https://research.swtch.com/gomm> and related posts in introduction -- Memory models
  * <https://arxiv.org/abs/1306.6032> -- Complete and Easy Bidirectional Typechecking for Higher-Rank Polymorphism
  * <https://github.com/nikomatsakis/bidir-type-infer> -- Implementation of the above paper
- * <https://belkadan.com/blog/2021/08/Swift-Regret-Tuples-and-Argument-Lists/?tag=swift-regrets>
-   -- Swift design retrospective, on tuples and argument lists.  Garnet
-   may have fewer problems with this than Swift does, but Garnet still
-   has some of the problems mentioned here.
+ * <https://belkadan.com/blog/2021/08/Swift-Regret-Tuples-and-Argument-Lists/?tag=swift-regrets> -- Swift design retrospective, on tuples and argument lists.  Garnet may have fewer problems with this than Swift does, but Garnet still has some of the problems mentioned here.
+ * <https://arxiv.org/abs/1512.01895> -- Modular Implicits, stapling
+   typeclasses onto an ML module system.
 
 References on IR stuff:
 
