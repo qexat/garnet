@@ -28,6 +28,10 @@ pub static INT: Lazy<Cx> = Lazy::new(Cx::new);
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct TypeSym(pub usize);
 
+/// A synthesized type with a number attached to it.
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct TypeId(pub usize);
+
 /// Required for interner interface.
 impl From<usize> for TypeSym {
     fn from(i: usize) -> TypeSym {
@@ -103,6 +107,16 @@ pub enum TypeDef {
         variants: Vec<(VarSym, i32)>,
     },
     Generic(VarSym),
+
+    /// A type var that might be provided by the user???
+    TypeVar(TypeId),
+    /// A possibly-unsolved implicit type var???
+    ExistentialVar(VarSym),
+    /// A generic decl
+    ForAll(TypeId, Box<TypeSym>),
+    /// A function that takes type a and returns type b
+    /// Aka an "arrow" but heck that
+    Function(Vec<TypeSym>, Box<TypeSym>),
 }
 
 impl TypeDef {

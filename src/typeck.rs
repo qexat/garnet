@@ -299,6 +299,10 @@ impl ISymtbl {
         self.get_binding(name).is_ok()
     }
 }
+pub fn typecheck(ir: hir::Ir<()>) -> Result<hir::Ir<TypeSym>, TypeError> {
+    todo!()
+}
+/*
 
 /// Does t1 equal t2?
 ///
@@ -1524,3 +1528,4 @@ end"#;
         fail_typecheck!(src, TypeError::BopType { .. });
     }
 }
+*/
