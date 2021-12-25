@@ -228,6 +228,7 @@ impl ISymtbl {
         self.types.get(&name).cloned()
     }
 
+    /*
     /// Looks up a typedef and if it is `Named` try to keep looking
     /// it up until we find the actual concrete type.  Returns None
     /// if it can't.
@@ -270,6 +271,7 @@ impl ISymtbl {
             _ => Ok(()),
         }
     }
+    */
 
     /// Add a variable to the top level of the scope.
     /// Shadows the old var if it already exists in that scope.

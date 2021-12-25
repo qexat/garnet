@@ -76,7 +76,7 @@ fn compile_typename(td: &TypeDef) -> Cow<'static, str> {
             accm += &compile_typename(&*INT.fetch_type(*ret));
             accm.into()
         }
-        Named(sym) => (&*INT.fetch(*sym)).clone().into(),
+        //Named(sym) => (&*INT.fetch(*sym)).clone().into(),
         Struct { fields, typefields } => {
             // We compile our structs into Rust tuples.
             // Our fields are always ordered via BTreeMap etc,
@@ -98,12 +98,9 @@ fn compile_typename(td: &TypeDef) -> Cow<'static, str> {
         Enum { variants: _ } => {
             todo!("Enums probably should be lowered to numbers?")
         }
-        Generic(sym) => {
-            panic!(
-                "ICE: Un-reified generic named {}, should never happen",
-                INT.fetch(*sym)
-            )
-        }
+        TypeVar(_vsym) => todo!("Output typevar"),
+        ExistentialVar(_tid) => todo!("Output existential var"),
+        ForAll(_tid, _tsym) => todo!("Output forall"),
     }
 }
 

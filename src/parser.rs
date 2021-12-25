@@ -1154,7 +1154,8 @@ impl<'input> Parser<'input> {
                 if let Some(t) = TypeDef::get_primitive_type(s.as_ref()) {
                     crate::INT.intern_type(&t)
                 } else {
-                    crate::INT.named_type(s)
+                    todo!()
+                    //crate::INT.named_type(s)
                 }
             }
             Some(Token {
