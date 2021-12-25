@@ -89,6 +89,7 @@ pub enum TypeDef {
     Never,
     /// The type of a lambda is its signature
     Lambda(Vec<TypeSym>, TypeSym),
+    /*
     /// This is basically a type that has been named but we
     /// don't know what type it actually is until after type checking...
     ///
@@ -97,6 +98,7 @@ pub enum TypeDef {
     /// I think this actually *has* to be `VarSym` or else we lose the actual
     /// name, which is important.
     Named(VarSym),
+    */
     /// A struct.
     Struct {
         fields: BTreeMap<VarSym, TypeSym>,
@@ -106,17 +108,13 @@ pub enum TypeDef {
         /// TODO: For now the only size of an enum is i32.
         variants: Vec<(VarSym, i32)>,
     },
-    Generic(VarSym),
-
+    //Generic(VarSym),
     /// A type var that might be provided by the user???
-    TypeVar(TypeId),
+    TypeVar(VarSym),
     /// A possibly-unsolved implicit type var???
-    ExistentialVar(VarSym),
-    /// A generic decl
-    ForAll(TypeId, Box<TypeSym>),
-    /// A function that takes type a and returns type b
-    /// Aka an "arrow" but heck that
-    Function(Vec<TypeSym>, Box<TypeSym>),
+    ExistentialVar(TypeId),
+    /// A generic decl(?????)
+    ForAll(TypeId, TypeSym),
 }
 
 impl TypeDef {
@@ -203,7 +201,6 @@ impl TypeDef {
                 }
                 Cow::Owned(t)
             }
-            TypeDef::Named(s) => Cow::Owned((&*INT.fetch(*s)).clone()),
             TypeDef::Struct { fields, .. } => {
                 let mut res = String::from("struct {");
                 res += &join_vars_with_commas(fields);
@@ -220,7 +217,13 @@ impl TypeDef {
                 res += "\n}\n";
                 Cow::Owned(res)
             }
-            TypeDef::Generic(s) => Cow::Owned((&*INT.fetch(*s)).clone()),
+            TypeDef::TypeVar(vsym) => Cow::Owned((&*INT.fetch(*vsym)).clone()),
+            TypeDef::ExistentialVar(tid) => Cow::Owned(format!("'{}", tid.0)),
+            TypeDef::ForAll(tid, tsym) => Cow::from(format!(
+                "forall('{} -> {})",
+                tid.0,
+                INT.fetch_type(*tsym).get_name()
+            )),
         }
     }
 
@@ -272,11 +275,13 @@ impl Cx {
         self.types.intern(&s)
     }
 
+    /*
     /// Intern a "Named" typedef of the given name.
     pub fn named_type(&self, s: impl AsRef<str>) -> TypeSym {
         let sym = self.intern(s);
         self.types.intern(&TypeDef::Named(sym))
     }
+    */
 
     /// Get the TypeDef for a type symbol
     pub fn fetch_type(&self, s: TypeSym) -> Arc<TypeDef> {

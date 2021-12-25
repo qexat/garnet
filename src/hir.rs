@@ -475,6 +475,9 @@ fn lower_decl<T>(accm: &mut Vec<Decl<T>>, f: &mut dyn FnMut(&hir::Expr<T>) -> T,
         // this needs to generate the typedef AND the type constructor
         // declaration.  Plus the type deconstructor.
         D::TypeDef { name, typedecl, .. } => {
+            todo!("named types");
+            /*
+
             accm.push(Decl::TypeDef {
                 name: *name,
                 typedecl: *typedecl,
@@ -493,6 +496,7 @@ fn lower_decl<T>(accm: &mut Vec<Decl<T>>, f: &mut dyn FnMut(&hir::Expr<T>) -> T,
             let def = &*INT.fetch_type(*typedecl);
             match def {
                 TypeDef::Enum { variants } => {
+
                     let mut struct_fields = BTreeMap::new();
                     let mut constructor_fields = vec![];
                     for (var, _val) in variants {
@@ -534,6 +538,7 @@ fn lower_decl<T>(accm: &mut Vec<Decl<T>>, f: &mut dyn FnMut(&hir::Expr<T>) -> T,
                 }
                 _ => (),
             }
+            */
         }
     }
 }
