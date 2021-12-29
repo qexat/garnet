@@ -4,15 +4,7 @@
 use std::borrow::Cow;
 
 use crate::hir::{self, ISymtbl, VarBinding};
-use crate::{TypeDef, TypeSym, VarSym, INT};
-
-impl std::error::Error for TypeError {}
-
-impl std::fmt::Display for TypeError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.format())
-    }
-}
+use crate::{TypeDef, TypeId, TypeSym, VarSym, INT};
 
 #[derive(Debug, Clone)]
 pub enum TypeError {
@@ -77,6 +69,14 @@ pub enum TypeError {
     Mutability {
         expr_name: Cow<'static, str>,
     },
+}
+
+impl std::error::Error for TypeError {}
+
+impl std::fmt::Display for TypeError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.format())
+    }
 }
 
 impl TypeError {
@@ -186,6 +186,914 @@ impl TypeError {
     }
 }
 
+impl TypeDef {
+    /// Returns true if the type does not contain a ForAll somewhere in it.
+    fn is_mono(&self) -> bool {
+        todo!()
+        /*
+        match self {
+            TypeDef::Unit => true,
+            TypeDef::TypeVar(_) => true,
+            TypeDef::ExistentialVar(_) => true,
+            TypeDef::ForAll(_, _) => false,
+            TypeDef::Function(a, b) => a.iter().all(|x| x.is_mono()) && b.is_mono(),
+            TypeDef::Bool => true,
+            TypeDef::SInt(_) => true,
+            TypeDef::UnknownInt => true,
+            TypeDef::Never => true,
+            TypeDef::Tuple(ts) => ts.iter().all(|x| x.is_mono()),
+        }
+            */
+    }
+
+    /// Returns any unsolved type vars that exist in the type.
+    fn free_vars(&self) -> Vec<TypeSym> {
+        todo!()
+        /*
+        match self {
+            TypeDef::Unit => vec![],
+            TypeDef::TypeVar(_) => vec![],
+            TypeDef::ExistentialVar(id) => vec![id.clone()],
+            TypeDef::ForAll(_, t) => t.free_vars(),
+            TypeDef::Function(a, b) => {
+                // ahahahaha this is the most terrible way to concatenate
+                // lists ever.  Rust is *not a fan* of the functional definition
+                // of this.
+                let mut ret = a.iter().flat_map(|x| x.free_vars()).collect::<Vec<_>>();
+                ret.extend(b.free_vars());
+                ret
+            }
+            TypeDef::Bool => vec![],
+            TypeDef::SInt(_) => vec![],
+            TypeDef::UnknownInt => vec![],
+            TypeDef::Never => vec![],
+            TypeDef::Tuple(ts) => ts.iter().flat_map(|x| x.free_vars()).collect::<Vec<_>>(),
+        }
+            */
+    }
+
+    /// Instantiate a type, I think.
+    /// Whatever that means.
+    /// Substitute a type variable for a new type apparently,
+    /// though that new type may be another type variable, or
+    /// even the same one.
+    fn instantiate(&self, v: &TypeId, s: &TypeSym) -> TypeSym {
+        // TODO: I THINK this signature is correct, verify
+        todo!()
+        /*
+        match self {
+            TypeDef::Unit => TypeDef::Unit,
+            TypeDef::TypeVar(v2) => {
+                if v == v2 {
+                    s.clone()
+                } else {
+                    self.clone()
+                }
+            }
+            TypeDef::ExistentialVar(_id) => self.clone(),
+            TypeDef::ForAll(v2, t) => TypeDef::ForAll(*v2, Box::new(t.instantiate(v, s))),
+            TypeDef::Function(a, b) => {
+                let params = a.iter().map(|x| x.instantiate(v, s)).collect::<Vec<_>>();
+                TypeDef::Function(params, Box::new(b.instantiate(v, s)))
+            }
+            TypeDef::Bool => TypeDef::Bool,
+            TypeDef::SInt(i) => TypeDef::SInt(*i),
+            TypeDef::UnknownInt => TypeDef::UnknownInt,
+            TypeDef::Never => TypeDef::Never,
+            TypeDef::Tuple(ts) => {
+                TypeDef::Tuple(ts.iter().map(|t| t.instantiate(v, s)).collect::<Vec<_>>())
+            }
+        }
+        */
+    }
+}
+
+/// The kinds of type facts we may know while type checking stuff.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ContextItem {
+    /// Term variable typings x : A
+    TermVar(TypeSym),
+    Assump(VarSym, TypeSym),
+    /// Existential type variables α-hat: Unsolved
+    ExistentialVar(TypeId),
+    /// And solved: α-hat = τ
+    SolvedExistentialVar(TypeId, TypeSym),
+    /// Marker: ◮α-hat
+    Marker(TypeId),
+}
+
+impl ContextItem {
+    /// Returns whether the id is an assumption for this context item?
+    fn is_assump(&self, id: VarSym) -> bool {
+        match self {
+            ContextItem::Assump(x, _) => *x == id,
+            _ => false,
+        }
+    }
+
+    /// Returns whether the id is a solution for this context item?
+    fn is_solution(&self, id: &TypeId) -> bool {
+        match self {
+            ContextItem::SolvedExistentialVar(u, _) => u == id,
+            _ => false,
+        }
+    }
+}
+
+/// Type checking context.  Contains what is known about the types
+/// being inferred/checked within the current decl/expression(?).
+// TODO:
+//
+// Currently the implementation is very inefficient, doing lots of cloning of itself and
+// splitting/merging is inner vec in brute force ways.  It may be better to switch to `im::Vector`,
+// but it also may need a fairly large context before it matters.  It may also be more efficient
+// to replace markers with stack of vec's or such.
+#[derive(Clone, Debug, PartialEq, Eq, Default)]
+pub struct TCContext {
+    items: Vec<ContextItem>,
+}
+
+impl TCContext {
+    /// Add a new item to the context, consuming it.
+    fn add(mut self, t: ContextItem) -> TCContext {
+        self.items.push(t);
+        self
+    }
+
+    fn add_all(mut self, t: impl IntoIterator<Item = ContextItem>) -> TCContext {
+        self.items.extend(t);
+        self
+    }
+
+    fn contains(&self, t: &ContextItem) -> bool {
+        self.items.contains(t)
+    }
+
+    /// Concatenates two contexts, consuming them and returning a new one.
+    fn concat(mut self, c2: TCContext) -> TCContext {
+        self.items.extend(c2.items.into_iter());
+        self
+    }
+
+    /// splits the context in two at the given item, if it exists,
+    /// omitting that item from either side.
+    ///
+    /// Very crude and inefficient, but screw it.  We can make it better with
+    /// an immutable list or something later.
+    fn hole(mut self, member: &ContextItem) -> Option<(TCContext, TCContext)> {
+        let idx = self.items.iter().position(|x| x == member)?;
+        let rest = self.items.split_off(idx);
+        // Data.Sequence.drop n ditches the first n items,
+        // and I THINK what we need to do here is make sure the
+        // item we give it is removed from either side.
+        //
+        // Yes, this is correct, verified it against the reference impl
+        let rest = (&rest[1..]).into_iter().cloned().collect();
+        Some((self, TCContext { items: rest }))
+    }
+
+    /// Splits the context into three, around the given items
+    fn hole2(
+        self,
+        mem1: &ContextItem,
+        mem2: &ContextItem,
+    ) -> Option<(TCContext, TCContext, TCContext)> {
+        let (a, ctx) = self.hole(mem1)?;
+        let (b, c) = ctx.hole(mem2)?;
+        Some((a, b, c))
+    }
+
+    /// ???
+    ///
+    /// Returns whether there is a type assumption for the given var ID?
+    fn assump(&self, id: VarSym) -> Option<TypeSym> {
+        let mut assumptions = self.items.iter().filter(|x| x.is_assump(id));
+        match (assumptions.next(), assumptions.next()) {
+            (Some(ContextItem::Assump(_, t)), None) => Some(t.clone()),
+            (None, None) => None,
+            other => panic!("ctxAssump: multiple types for variable: {:?}", other),
+        }
+    }
+
+    fn solution(&self, id: &TypeId) -> Option<TypeSym> {
+        let mut solutions = self.items.iter().filter(|x| x.is_solution(id));
+        eprintln!(
+            "Solutions for {:?}: {:?}",
+            id,
+            solutions.clone().collect::<Vec<_>>()
+        );
+        match (solutions.next(), solutions.next()) {
+            (Some(ContextItem::SolvedExistentialVar(_, t)), None) => Some(t.clone()),
+            (None, None) => None,
+            other => panic!("ctxAssump: multiple types for variable: {:?}", other),
+        }
+    }
+
+    /// Return all the things in the context up until the given item, exclusive
+    /// (I think)
+    fn until(&self, mem: &ContextItem) -> TCContext {
+        self.clone().hole(mem).unwrap().0
+    }
+
+    /// Returns all the things in the context up until the given item, inclusive.
+    fn until_after(&self, mem: &ContextItem) -> TCContext {
+        let idx = self
+            .items
+            .iter()
+            .position(|x| x == mem)
+            .unwrap_or(self.items.len());
+        let mut new = self.clone();
+        new.items.truncate(idx);
+        new
+    }
+
+    fn type_is_well_formed(&self, t: TypeSym) -> Result<(), String> {
+        todo!()
+        /*
+            match t {
+                Type::Unit => Ok(()),
+                Type::TypeVar(t_id) => {
+                    if self.contains(&ContextItem::TermVar(*t_id)) {
+                        Ok(())
+                    } else {
+                        let msg = format!("Unbound type variable {:?}", t_id);
+                        Err(msg)
+                    }
+                }
+
+                Type::ExistentialVar(te_id) => {
+                    let has_solution = self.solution(te_id).is_some();
+                    if self.contains(&ContextItem::ExistentialVar(*te_id)) || has_solution {
+                        Ok(())
+                    } else {
+                        let msg = format!("Unbound existential variable {:?}", te_id);
+                        Err(msg)
+                    }
+                }
+                Type::ForAll(t_id, ty) => {
+                    let ctx = self.clone().add(ContextItem::TermVar(*t_id));
+                    ctx.type_is_well_formed(ty)
+                }
+                Type::Function(ty_a, ty_b) => {
+                    /*
+                    for t in ty_a {
+                        let _ = self.type_is_well_formed(t)?;
+                    }
+                    */
+                    ty_a.iter()
+                        .map(|t| self.type_is_well_formed(t))
+                        .collect::<Result<_, _>>()?;
+                    self.type_is_well_formed(ty_b)
+                }
+                Type::Bool => Ok(()),
+                Type::SInt(_) => Ok(()),
+                // TODO: ...maybe not, since we don't know exactly what type it is?
+                Type::UnknownInt => Ok(()),
+                Type::Never => Ok(()),
+                Type::Tuple(ts) => ts
+                    .iter()
+                    .map(|t| self.type_is_well_formed(t))
+                    .collect::<Result<_, _>>(),
+            }
+        */
+    }
+
+    /// Apply a substitution, basically attempting to solve for the unknowns of a type(?).
+    /// Fig 8 of the paper.
+    fn subst(&self, ts: TypeSym) -> TypeSym {
+        let t = INT.fetch_type(ts);
+        todo!()
+        /*
+            match t {
+                TypeDef::Unit => TypeDef::Unit,
+                TypeDef::TypeVar(_t_id) => t.clone(),
+                TypeDef::ExistentialVar(te_id) => {
+                    /*
+                    // maybe t (applySubst ctx) (ctxSolution ctx v)
+                    // maybe :: b->(a->b) -> Maybe a -> b
+                    //     Applies the second argument to the third, when it is Just x, otherwise returns the first argument.
+                    if let Some(solution) = self.solution(te_id) {
+                        self.subst(&solution)
+                    } else {
+                        t.clone()
+                    }
+                    */
+                    self.solution(te_id)
+                        .map(|x| self.subst(&x))
+                        .unwrap_or(t.clone())
+                }
+                TypeDef::Function(ty_a, ty_b) => {
+                    let new_params = ty_a.iter().map(|x| self.subst(x)).collect();
+                    TypeDef::Function(new_params, Box::new(self.subst(ty_b)))
+                }
+                TypeDef::ForAll(v, t) => TypeDef::ForAll(v.clone(), Box::new(self.subst(t))),
+                TypeDef::Bool => TypeDef::Bool,
+                TypeDef::SInt(i) => TypeDef::SInt(*i),
+                TypeDef::UnknownInt => TypeDef::UnknownInt,
+                TypeDef::Never => TypeDef::Never,
+                TypeDef::Tuple(ts) => TypeDef::Tuple(ts.iter().map(|x| self.subst(x)).collect()),
+            }
+        */
+    }
+}
+
+#[derive(Clone, Default)]
+struct CheckState {
+    ctx: TCContext,
+    next_existential_var: usize,
+}
+
+impl CheckState {
+    /// Creates an arbitrary synthetic type identifier for labelling
+    /// unsolved type variables
+    fn next_existential_var(&mut self) -> TypeId {
+        self.next_existential_var += 1;
+        TypeId(self.next_existential_var)
+    }
+
+    fn type_sub(&mut self, t1: TypeSym, t2: TypeSym) -> Result<(), String> {
+        //eprintln!("Doing type_sub on {:?}, {:?}", t1, t2);
+        let t1 = INT.fetch_type(t1);
+        let t2 = INT.fetch_type(t2);
+        match (t1, t2) {
+            /*
+             * TODO
+            (TypeDef::Unit, TypeDef::Unit) => Ok(()),
+            (TypeDef::Bool, TypeDef::Bool) => Ok(()),
+            (TypeDef::SInt(i1), TypeDef::SInt(i2)) if i1 == i2 => Ok(()),
+            (TypeDef::TypeVar(a), TypeDef::TypeVar(b)) if a == b => Ok(()),
+            (TypeDef::ExistentialVar(a), TypeDef::ExistentialVar(b)) if a == b => Ok(()),
+            (TypeDef::Lambda(a1, b1), TypeDef::Lambda(a2, b2)) => {
+                for (param1, param2) in a1.iter().zip(a2) {
+                    self.type_sub(param1.clone(), param2)?;
+                }
+                self.type_sub(*b1, *b2)
+            }
+            (TypeDef::ForAll(v, a), b) => {
+                let heckin_a_hat = self.next_existential_var();
+                let heckin_a_prime = a.instantiate(&v, &TypeDef::ExistentialVar(heckin_a_hat));
+                let marker = ContextItem::Marker(heckin_a_hat);
+                self.ctx = self
+                    .ctx
+                    .clone()
+                    .add(marker.clone())
+                    .add(ContextItem::ExistentialVar(heckin_a_hat));
+                self.type_sub(heckin_a_prime, b)?;
+                self.ctx = self.ctx.until(&marker);
+                Ok(())
+            }
+            (a, TypeDef::ForAll(v, b)) => {
+                let var = ContextItem::TermVar(v.clone());
+                self.ctx = self.ctx.clone().add(var.clone());
+                self.type_sub(a, *b)?;
+                self.ctx = self.ctx.until(&var);
+                Ok(())
+            }
+            (TypeDef::ExistentialVar(a_hat), a) if !a.free_vars().contains(&a_hat) => {
+                eprintln!("Doing instL");
+                let x = self.instantiate_l(a_hat, a);
+                eprintln!("Done with instL");
+                x
+            }
+            (a, TypeDef::ExistentialVar(a_hat)) if !a.free_vars().contains(&a_hat) => {
+                self.instantiate_r(a, a_hat)
+            }
+            */
+            (a, b) => Err(format!("type mismatch: Expected {:?}, got {:?}", b, a)),
+        }
+    }
+
+    fn instantiate_l(&mut self, a_hat: TypeId, t: TypeSym) -> Result<(), String> {
+        eprintln!("  Instantiate_l on {:?} and {:?}", a_hat, t);
+        // The lexi-lambda Haskell impl for these functions does some kind of
+        // big screwy pattern-match, so I'm trying to take it apart into pieces here.
+        // go ctx -- InstLSolve
+        //  | True <- isMono t
+        //  , Just (l, r) <- ctxHole (CtxEVar â) ctx
+        //  , Right _ <- l ⊢ t
+        //  = putCtx $ l |> CtxSolved â t <> r
+        todo!()
+        /*
+        if t.is_mono() {
+            eprintln!("  Is mono");
+            if let Some((l, r)) = self.ctx.clone().hole(&ContextItem::ExistentialVar(a_hat)) {
+                // Apparently Either::Right is Ok in Haskell,
+                // and Left is Err?
+                // ("Right" also means "correct", per the docs)
+                if l.type_is_well_formed(&t).is_ok() {
+                    eprintln!("  {:?} is well formed in context {:?}", &t, l);
+                    let ctx = l.add(ContextItem::SolvedExistentialVar(a_hat, t.clone()));
+                    let ctx = ctx.concat(r);
+                    self.ctx = ctx;
+                    return Ok(());
+                } else {
+                    eprintln!(
+                        "  whoops, {:?} is not well formed in context {:?}, let's carry on",
+                        &t, l
+                    );
+                }
+            }
+        }
+
+            match &t {
+                // go ctx -- InstLReach
+                //    | TEVar â' <- t
+                //    , Just (l, m, r) <- ctxHole2 (CtxEVar â) (CtxEVar â') ctx
+                //    = putCtx $ l |> CtxEVar â <> m |> CtxSolved â' (TEVar â) <> r
+                Type::ExistentialVar(a_hat_fuckin_prime) => {
+                    let ev_a = ContextItem::ExistentialVar(a_hat.clone());
+                    let ev_b = ContextItem::ExistentialVar(a_hat_fuckin_prime.clone());
+                    if let Some((l, m, r)) = self.ctx.clone().hole2(&ev_a, &ev_b) {
+                        /*
+                        let ctx = l.add(ev_a.clone());
+                        let ctx = ctx.concat(m);
+                        let ctx = ctx.add(ContextItem::SolvedExistentialVar(
+                            a_hat_fuckin_prime.clone(),
+                            Type::ExistentialVar(a_hat.clone()),
+                        ));
+                        let ctx = ctx.concat(r);
+                        self.ctx = ctx;
+                        */
+
+                        let ctx = l
+                            .add(ev_a)
+                            .concat(m)
+                            .add(ContextItem::SolvedExistentialVar(
+                                *a_hat_fuckin_prime,
+                                Type::ExistentialVar(a_hat),
+                            ))
+                            .concat(r);
+                        eprintln!("  InstLReach gave result {:#?}", ctx);
+                        self.ctx = ctx;
+                        return Ok(());
+                    }
+                }
+                //  go ctx -- InstLArr
+                // | Just (l, r) <- ctxHole (CtxEVar â) ctx
+                // , TArr a b <- t
+                // = do â1 <- freshEVar
+                //   â2 <- freshEVar
+                //   putCtx $ l |> CtxEVar â2 |> CtxEVar â1 |> CtxSolved â (TArr (TEVar â1) (TEVar â2)) <> r
+                //   instR a â1
+                //   ctx' <- getCtx
+                //   instL â2 (applySubst ctx' b)
+                Type::Function(params, b) => {
+                    if let Some((l, r)) = self.ctx.clone().hole(&ContextItem::ExistentialVar(a_hat)) {
+                        let a_hat_1s = params
+                            .iter()
+                            .map(|_| self.next_existential_var())
+                            .collect::<Vec<_>>();
+                        let a_hat_2 = self.next_existential_var();
+                        let solved = Type::Function(
+                            a_hat_1s.iter().map(|a| Type::ExistentialVar(*a)).collect(),
+                            Box::new(Type::ExistentialVar(a_hat_2)),
+                        );
+                        self.ctx = l
+                            .add(ContextItem::ExistentialVar(a_hat_2))
+                            .add_all(a_hat_1s.iter().map(|a| ContextItem::ExistentialVar(*a)))
+                            .add(ContextItem::SolvedExistentialVar(a_hat, solved))
+                            .concat(r);
+                        for (a, param) in a_hat_1s.iter().zip(params) {
+                            self.instantiate_r(param.clone(), *a)?;
+                        }
+                        let new_t = self.ctx.subst(&*b);
+                        return self.instantiate_l(a_hat_2, new_t);
+                    }
+                    /*
+                    eprintln!("  Non-mono function");
+                    if let Some((l, r)) = self.ctx.clone().hole(&ContextItem::ExistentialVar(a_hat)) {
+                        let a_hat_1 = self.next_existential_var();
+                        let a_hat_2 = self.next_existential_var();
+                        let solved = Type::Function(
+                            Box::new(Type::ExistentialVar(a_hat_1)),
+                            Box::new(Type::ExistentialVar(a_hat_2)),
+                        );
+                        self.ctx = l
+                            .add(ContextItem::ExistentialVar(a_hat_2))
+                            .add(ContextItem::ExistentialVar(a_hat_1))
+                            .add(ContextItem::SolvedExistentialVar(a_hat, solved))
+                            .concat(r);
+                        self.instantiate_r((**a).clone(), a_hat_1)?;
+                        let new_t = self.ctx.subst(&*b);
+                        return self.instantiate_l(a_hat_2, new_t);
+                    }
+                    */
+                }
+                // go ctx -- InstLArrR
+                // | TAll b s <- t
+                // = do putCtx $ ctx |> CtxVar b
+                //     instL â s
+                //     Just (ctx', _) <- ctxHole (CtxVar b) <$> getCtx
+                //     putCtx ctx'
+                Type::ForAll(b, s) => {
+                    eprintln!("  Non-mono forall");
+                    let var = ContextItem::TermVar(b.clone());
+                    self.ctx = self.ctx.clone().add(var.clone());
+                    self.instantiate_l(a_hat, (**s).clone())?;
+                    let (ctx_prime, _) = self.ctx.clone().hole(&var).expect("Should never fail?");
+                    self.ctx = ctx_prime;
+                    return Ok(());
+                }
+                _other => (),
+            }
+            eprintln!("  instantiate_l didn't find a solution");
+            Err(format!(
+                "Failed to instantiate {:?} to {:?} in instantiate_l",
+                &a_hat, &t
+            ))
+        */
+    }
+
+    /// This is similar to instantiate_l
+    fn instantiate_r(&mut self, t: TypeSym, a_hat: TypeId) -> Result<(), String> {
+        //  go ctx -- InstRSolve
+        //    | True <- isMono t
+        //    , Just (l, r) <- ctxHole (CtxEVar â) ctx
+        //    , Right _ <- l ⊢ t
+        //    = putCtx $ l |> CtxSolved â t <> r
+        let td = INT.fetch_type(t);
+        if td.is_mono() {
+            if let Some((l, r)) = self.ctx.clone().hole(&ContextItem::ExistentialVar(a_hat)) {
+                // Apparently Either::Right is Ok in Haskell,
+                // and Left is Err?
+                // ("Right" also means "correct", per the docs)
+                if l.type_is_well_formed(t).is_ok() {
+                    let ctx = l
+                        .add(ContextItem::SolvedExistentialVar(a_hat, t.clone()))
+                        .concat(r);
+                    self.ctx = ctx;
+                    return Ok(());
+                }
+            }
+        }
+
+        todo!()
+        /*
+        match &t {
+            //  go ctx -- InstRReach
+            //    | TEVar â' <- t
+            //    , Just (l, m, r) <- ctxHole2 (CtxEVar â) (CtxEVar â') ctx
+            //    = putCtx $ l |> CtxEVar â <> m |> CtxSolved â' (TEVar â) <> r
+            Type::ExistentialVar(a_hat_fuckin_prime) => {
+                let ev_a = ContextItem::ExistentialVar(a_hat);
+                let ev_b = ContextItem::ExistentialVar(*a_hat_fuckin_prime);
+                if let Some((l, m, r)) = self.ctx.clone().hole2(&ev_a, &ev_b) {
+                    let ctx = l
+                        .add(ev_a.clone())
+                        .concat(m)
+                        .add(ContextItem::SolvedExistentialVar(
+                            *a_hat_fuckin_prime,
+                            Type::ExistentialVar(a_hat),
+                        ))
+                        .concat(r);
+                    self.ctx = ctx;
+                    return Ok(());
+                }
+            }
+            // go ctx -- InstRArr
+            // | Just (l, r) <- ctxHole (CtxEVar â) ctx
+            // , TArr a b <- t
+            // = do â1 <- freshEVar
+            //     â2 <- freshEVar
+            //     putCtx $ l |> CtxEVar â2 |> CtxEVar â1 |> CtxSolved â (TArr (TEVar â1) (TEVar â2)) <> r
+            //     instL â1 a
+            //     ctx' <- getCtx
+            //     instR (applySubst ctx' b) â2
+            Type::Function(params, rettype) => {
+                if let Some((l, r)) = self.ctx.clone().hole(&ContextItem::ExistentialVar(a_hat)) {
+                    let a_hat_1s = params
+                        .iter()
+                        .map(|_| self.next_existential_var())
+                        .collect::<Vec<_>>();
+                    let a_hat_2 = self.next_existential_var();
+                    let solved = Type::Function(
+                        a_hat_1s.iter().map(|a| Type::ExistentialVar(*a)).collect(),
+                        Box::new(Type::ExistentialVar(a_hat_2)),
+                    );
+                    self.ctx = l
+                        .add(ContextItem::ExistentialVar(a_hat_2))
+                        .add_all(a_hat_1s.iter().map(|a| ContextItem::ExistentialVar(*a)))
+                        .add(ContextItem::SolvedExistentialVar(a_hat, solved))
+                        .concat(r);
+                    for (a, param) in a_hat_1s.iter().zip(params) {
+                        self.instantiate_l(*a, param.clone())?;
+                    }
+                    let new_t = self.ctx.subst(&*rettype);
+                    return self.instantiate_r(new_t, a_hat_2);
+                }
+            }
+            // go ctx -- InstRArrL
+            //  | TAll b s <- t
+            //  = do â' <- freshEVar
+            //       putCtx $ ctx |> CtxMarker â' |> CtxEVar â'
+            //       instR (inst (b, TEVar â') s) â
+            //       Just (ctx', _) <- ctxHole (CtxMarker â') <$> getCtx
+            //       putCtx ctx'
+            Type::ForAll(b, s) => {
+                let a_hat_fucking_prime = self.next_existential_var();
+                let ahatp_var = ContextItem::ExistentialVar(a_hat_fucking_prime);
+                let ahatp_marker = ContextItem::Marker(a_hat_fucking_prime);
+                let ctx = self
+                    .ctx
+                    .clone()
+                    .add(ahatp_marker.clone())
+                    .add(ahatp_var.clone());
+                self.ctx = ctx;
+                let inst_type = s.instantiate(&b, &Type::ExistentialVar(a_hat_fucking_prime));
+                self.instantiate_r(inst_type, a_hat)?;
+                let (ctx_prime, _) = self
+                    .ctx
+                    .clone()
+                    .hole(&ahatp_marker)
+                    .expect("Should never happen?");
+                self.ctx = ctx_prime;
+                return Ok(());
+            }
+            _other => (),
+        }
+        Err(format!(
+            "Failed to instantiate {:?} to {:?} in instantiate_r",
+            &a_hat, &t
+        ))
+            */
+    }
+
+    /// Returns Ok if the result of the expression matches the given type,
+    /// an error otherwise.
+    ///
+    /// TODO: Should return TypedExpr<TypeSym>
+    fn check(&mut self, expr: &hir::TypedExpr<()>, t: &TypeSym) -> Result<(), String> {
+        todo!()
+        /*
+        match (expr, t) {
+            (Ast::Unit, Type::Unit) => return Ok(()),
+            (Ast::Bool(_), Type::Bool) => return Ok(()),
+            (e, Type::ForAll(v, a)) => {
+                let check_state = &mut CheckState {
+                    ctx: self.ctx.clone().add(ContextItem::TermVar(v.clone())),
+                    ..*self
+                };
+                return check_state.check(e, a);
+            }
+            (Ast::Lambda(params, body), Type::Function(fnparams, fnrettype)) => {
+                let mut new_ctx = self.ctx.clone();
+                for (xx, aa) in params.iter().zip(fnparams) {
+                    new_ctx = new_ctx.add(ContextItem::Assump(xx.clone(), aa.clone()));
+                }
+
+                let check_state = &mut CheckState {
+                    ctx: new_ctx,
+                    ..*self
+                };
+                return check_state.check(body, fnrettype);
+            }
+            (e, b) => {
+                eprintln!("Checking thing: {:?} {:?}", e, b);
+                let a = self.infer(e)?;
+                eprintln!("Type of {:?} is: {:?}", e, a);
+                let x = self.type_sub(self.ctx.subst(&a), self.ctx.subst(b));
+                eprintln!("Type subbed: {:?}, {:?}", x, self.ctx);
+                x
+            }
+        }
+            */
+    }
+
+    /// Infers the type of the expression.
+    ///
+    /// TODO: Should return TypedExpr<TypeSym>
+    fn infer(&mut self, expr: &hir::TypedExpr<()>) -> Result<TypeSym, String> {
+        todo!()
+        /*
+            match expr {
+                Ast::Unit => Ok(Type::Unit),
+                Ast::Bool(_) => Ok(Type::Bool),
+                Ast::Int(_) => Ok(Type::UnknownInt),
+                // TODO: Verify int sizes make sense
+                Ast::SizedInt(_, size) => Ok(Type::SInt(*size)),
+                Ast::BinOp(op, l, r) => {
+                    use BinOp::*;
+                    // Find the type the binop expects
+                    match op {
+                        And | Or | Xor => {
+                            let target_type = Type::Bool;
+                            self.check(l, &target_type)?;
+                            self.check(r, &target_type)?;
+                            // For these the source type and target type are always the same,
+                            // not always true for things such as ==
+                            Ok(target_type)
+                        }
+                        Add | Sub | Mul | Div => {
+                            // If we have a numerical operation, we find the types
+                            // of the arguments and make sure they are matching numeric
+                            // types.
+                            let tl = self.infer(l)?;
+                            let tr = self.infer(r)?;
+                            match (&tl, &tr) {
+                                (Type::UnknownInt, Type::UnknownInt) => Ok(Type::UnknownInt),
+                                (Type::SInt(s1), Type::SInt(s2)) if s1 == s2 => Ok(Type::SInt(*s1)),
+                                // Infer types of unknown ints
+                                // TODO: Unknown vars will have existential types or such, which also
+                                // need to be handled somehow..
+                                (Type::SInt(_), _) => {
+                                    self.check(r, &tl)?;
+                                    Ok(tl)
+                                }
+                                (_, Type::SInt(_)) => {
+                                    self.check(r, &tr)?;
+                                    Ok(tr)
+                                }
+                                (_, _) => Err(format!(
+                                    "Numerical op {:?} has un-matching types: {:?} and {:?}",
+                                    op, tl, tr
+                                )),
+                            }
+                        }
+                    }
+                }
+                Ast::ExistentialVar(x) => {
+                    let ty = self
+                        .ctx
+                        .assump(x)
+                        .ok_or(format!("Unbound variable {:?}", x));
+                    ty
+                    // TODO: Figure out MBones's eager instantiation
+                    // vs the lazy instantiation default.
+                    //let tid = self.next_existential_var();
+                    //Ok(self.instantiate(tid, ty))
+                }
+                Ast::TypeAnnotation(e, a) => {
+                    self.ctx.type_is_well_formed(a)?;
+                    self.check(e, a)?;
+                    return Ok(a.clone());
+                }
+                Ast::Lambda(params, body) => {
+                    eprintln!("Inferring lambda: {:?}", expr);
+                    let rettype = self.next_existential_var();
+                    let mut paramtypes = vec![];
+                    // The order of these matters: We have to do all the params and the rettype,
+                    // then the assumptions about the params.
+                    for _ in params {
+                        let paramtype = self.next_existential_var();
+                        self.ctx = self.ctx.clone().add(ContextItem::ExistentialVar(paramtype));
+                        eprintln!(" ahat: {:?}, ahat': {:?}", paramtype, rettype);
+                        eprintln!(" ctx: {:?}", &self.ctx);
+                        paramtypes.push(paramtype);
+                    }
+                    self.ctx = self.ctx.clone().add(ContextItem::ExistentialVar(rettype));
+                    for (nm, ty) in params.iter().zip(paramtypes.iter()) {
+                        self.ctx = self
+                            .ctx
+                            .clone()
+                            .add(ContextItem::Assump(nm.clone(), Type::ExistentialVar(*ty)));
+                    }
+                    // self.check() modifies our ctx so we have to snip off everything in it
+                    // after the last thing we actually want without altering the things before
+                    // it.  So we add an `until_after()` method, which also works correctly on
+                    // functions with 0 params.
+                    self.check(body, &Type::ExistentialVar(rettype))?;
+                    eprintln!("Check done: {:?}", self.ctx);
+                    self.ctx = self.ctx.until_after(&ContextItem::ExistentialVar(rettype));
+                    eprintln!("until done: {:?}", self.ctx);
+                    let paramtypes = paramtypes
+                        .iter()
+                        .map(|paramtype| Type::ExistentialVar(*paramtype))
+                        .collect();
+                    return Ok(Type::Function(
+                        paramtypes,
+                        Box::new(Type::ExistentialVar(rettype)),
+                    ));
+                    /*
+                    let paramtype = self.next_existential_var();
+                    let rettype = self.next_existential_var();
+                    self.ctx = self
+                        .ctx
+                        .clone()
+                        .add(ContextItem::ExistentialVar(paramtype))
+                        .add(ContextItem::ExistentialVar(rettype))
+                        .add(ContextItem::Assump(
+                            params.clone(),
+                            Type::ExistentialVar(paramtype),
+                        ));
+                    eprintln!(" ahat: {:?}, ahat': {:?}", paramtype, rettype);
+                    eprintln!(" ctx: {:?}", &self.ctx);
+                    self.check(body, &Type::ExistentialVar(rettype))?;
+                    eprintln!("Check done: {:?}", self.ctx);
+                    self.ctx = self.ctx.until(&ContextItem::Assump(
+                        params.clone(),
+                        Type::ExistentialVar(paramtype),
+                    ));
+                    eprintln!("until done: {:?}", self.ctx);
+                    return Ok(Type::Function(
+                        Box::new(Type::ExistentialVar(paramtype)),
+                        Box::new(Type::ExistentialVar(rettype)),
+                    ));
+                    */
+                }
+                Ast::Call(f, params) => {
+                    let ftype = self.infer(f)?;
+                    let t = self.ctx.subst(&ftype);
+                    self.infer_application(&t, &*params)
+                }
+                Ast::TupleLit(vls) => {
+                    // TODO: Not sure this is at all correct.
+                    let ts = vls
+                        .iter()
+                        .map(|v| self.infer(v))
+                        .collect::<Result<Vec<_>, _>>()?;
+                    Ok(Type::Tuple(ts))
+                }
+            }
+        */
+    }
+
+    /// This does type inference to a function call expression, t(expr).
+    /// application as in function application, not as in a program
+    ///
+    /// t is the function's inferred type, exprs are the args
+    fn infer_application(
+        &mut self,
+        t: &TypeSym,
+        exprs: &[hir::TypedExpr<()>],
+    ) -> Result<TypeSym, String> {
+        todo!()
+        /*
+            match t {
+                Type::ForAll(v, a) => {
+                    let a_hat = self.next_existential_var();
+                    self.ctx = self.ctx.clone().add(ContextItem::ExistentialVar(a_hat));
+                    let b = a.instantiate(v, &Type::ExistentialVar(a_hat));
+                    self.infer_application(&b, exprs)
+                }
+                Type::ExistentialVar(a_hat) => {
+                    let rettype = self.next_existential_var();
+                    let rettype_var = ContextItem::ExistentialVar(rettype);
+                    let (l, r) = self
+                        .ctx
+                        .clone()
+                        .hole(&ContextItem::ExistentialVar(*a_hat))
+                        .expect("Should not fail");
+                    let mut paramtypes = vec![];
+                    let mut paramtype_vars = vec![];
+                    let mut paramtype_types = vec![];
+                    for _ in exprs {
+                        let paramtype = self.next_existential_var();
+                        let paramtype_var = ContextItem::ExistentialVar(paramtype);
+                        paramtypes.push(paramtype);
+                        paramtype_vars.push(paramtype_var);
+                        paramtype_types.push(Type::ExistentialVar(paramtype));
+                    }
+                    let t = Type::Function(
+                        paramtype_types.clone(),
+                        Box::new(Type::ExistentialVar(rettype)),
+                    );
+                    self.ctx = l
+                        .add(rettype_var)
+                        .add_all(paramtype_vars)
+                        .add(ContextItem::SolvedExistentialVar(*a_hat, t))
+                        .concat(r);
+                    for (expr, ty) in exprs.iter().zip(paramtype_types) {
+                        self.check(expr, &ty)?;
+                    }
+                    Ok(Type::ExistentialVar(rettype))
+                    /*
+                    let paramtype = self.next_existential_var();
+                    let rettype = self.next_existential_var();
+                    let paramtype_var = ContextItem::ExistentialVar(paramtype);
+                    let rettype_var = ContextItem::ExistentialVar(rettype);
+                    let (l, r) = self
+                        .ctx
+                        .clone()
+                        .hole(&ContextItem::ExistentialVar(*a_hat))
+                        .expect("Should not fail");
+                    let t = Type::Function(
+                        Box::new(Type::ExistentialVar(paramtype)),
+                        Box::new(Type::ExistentialVar(rettype)),
+                    );
+                    self.ctx = l
+                        .add(rettype_var)
+                        .add(paramtype_var)
+                        .add(ContextItem::SolvedExistentialVar(*a_hat, t))
+                        .concat(r);
+                    self.check(exprs, &Type::ExistentialVar(paramtype))?;
+                    Ok(Type::ExistentialVar(rettype))
+                    */
+                }
+                Type::Function(params, rettype) => {
+                    for (p, e) in params.iter().zip(exprs) {
+                        self.check(e, p)?;
+                    }
+                    Ok((**rettype).clone())
+                }
+                other => Err(format!(
+                    "Cannot apply function of type {:?} to args {:?}",
+                    other, exprs
+                )),
+            }
+        */
+    }
+}
+
 /// TODO: Having all these methods here instead of with the defintion is jank,
 /// do something about it.  They're here so we have the types in scope and don't
 /// make a circular dependency, which is a REAL GOOD reason to do it this way, but
@@ -255,11 +1163,14 @@ impl ISymtbl {
             _other => Some(tdef),
         }
     }
+    */
 
     /// Returns Ok if the type exists, or a TypeError of the appropriate
     /// kind if it does not.
     fn type_exists(&mut self, tsym: TypeSym) -> Result<(), TypeError> {
         match &*INT.fetch_type(tsym) {
+            /*
+             * TODO
             TypeDef::Named(name) => {
                 if self.types.get(name).is_some() {
                     Ok(())
@@ -267,11 +1178,11 @@ impl ISymtbl {
                     Err(TypeError::UnknownType(*name))
                 }
             }
+            */
             // Primitive type
             _ => Ok(()),
         }
     }
-    */
 
     /// Add a variable to the top level of the scope.
     /// Shadows the old var if it already exists in that scope.
@@ -301,8 +1212,170 @@ impl ISymtbl {
         self.get_binding(name).is_ok()
     }
 }
+
+fn typecheck_decl(
+    symtbl: &mut ISymtbl,
+    decl: hir::Decl<()>,
+) -> Result<hir::Decl<TypeSym>, TypeError> {
+    let ctx = &mut CheckState::default();
+    match decl {
+        hir::Decl::Function {
+            name,
+            signature,
+            body,
+        } => {
+            todo!()
+            /*
+            let mut last_type = INT.unit();
+            for expr in decl.exprs {
+                let inferred_t = ctx.infer(expr)?;
+                last_type = ctx.ctx.subst(inferred_t);
+            }
+            return Ok(last_type);
+                // Below here is old
+
+
+            // Push scope, typecheck and add params to symbol table
+            let symtbl = &mut symtbl.clone();
+            for (pname, ptype) in signature.params.iter() {
+                symtbl.add_var(*pname, *ptype, false);
+            }
+
+            // This is squirrelly; basically, we want to return unit
+            // if the function has no body, otherwise return the
+            // type of the last expression.
+            //
+            // If there's a return expr, we just return the Never type
+            // for it and it all shakes out to work.
+            let typechecked_exprs = typecheck_exprs(symtbl, body, Some(signature.rettype))?;
+            // Ok, so we *also* need to walk through all the expressions
+            // and look for any "return" exprs (or later `?`/`try` exprs
+            // also) and see make sure the return types match.
+            let last_expr_type = last_type_of(&typechecked_exprs);
+            if let Some(t) = infer_type(last_expr_type, signature.rettype) {
+                let inferred_exprs = reify_last_types(last_expr_type, t, typechecked_exprs);
+                Ok(hir::Decl::Function {
+                    name,
+                    signature,
+                    body: inferred_exprs,
+                })
+            } else {
+                //if !type_matches(signature.rettype, last_expr_type) {
+                Err(TypeError::Return {
+                    fname: name,
+                    got: last_expr_type,
+                    expected: signature.rettype,
+                })
+            }
+                */
+        }
+        hir::Decl::Const {
+            name,
+            typename,
+            init,
+        } => {
+            // Make sure the const's type exists
+            symtbl.type_exists(typename)?;
+            let symtbl = &mut symtbl.clone();
+            let inferred_t = ctx
+                .infer(&init)
+                .map_err(|_| todo!("unheck error strings"))?;
+            let last_type = ctx.ctx.subst(inferred_t);
+            assert!(INT.fetch_type(inferred_t).is_mono());
+            Ok(hir::Decl::Const {
+                name,
+                typename,
+                init: todo!("Consistantify TypedExpr nonsense"),
+            })
+        }
+        // Ok, we are declaring a new type.  We need to make sure that the typedecl
+        // it's using is real.  We've already checked to make sure it's not a duplicate.
+        hir::Decl::TypeDef { name, typedecl } => {
+            // Make sure the body of the typedef is a real type.
+            symtbl.type_exists(typedecl)?;
+            Ok(hir::Decl::TypeDef { name, typedecl })
+        }
+        // Don't need to do anything here since we generate these in the lowering
+        // step and have already verified no names clash.
+        hir::Decl::Constructor { name, signature } => {
+            Ok(hir::Decl::Constructor { name, signature })
+        }
+    }
+}
+
+/// Scan through all decl's and add any bindings to the symbol table,
+/// so we don't need to do anything with forward references.
+fn predeclare_decl(symtbl: &mut ISymtbl, decl: &hir::Decl<()>) {
+    match decl {
+        hir::Decl::Function {
+            name, signature, ..
+        } => {
+            if symtbl.binding_exists(*name) {
+                panic!("Tried to redeclare function {}!", INT.fetch(*name));
+            }
+            // Add function to global scope
+            let type_params = signature.params.iter().map(|(_name, t)| *t).collect();
+            let function_type = INT.intern_type(&TypeDef::Lambda(type_params, signature.rettype));
+            symtbl.add_var(*name, function_type, false);
+        }
+        hir::Decl::Const { name, typename, .. } => {
+            if symtbl.binding_exists(*name) {
+                panic!("Tried to redeclare const {}!", INT.fetch(*name));
+            }
+            symtbl.add_var(*name, *typename, false);
+        }
+        hir::Decl::TypeDef { name, typedecl } => {
+            // Gotta make sure there's no duplicate declarations
+            // This kinda has to happen here rather than in typeck()
+            if symtbl.get_typedef(*name).is_some() {
+                panic!("Tried to redeclare type {}!", INT.fetch(*name));
+            }
+            symtbl.add_type(*name, *typedecl);
+        }
+        hir::Decl::Constructor { name, signature } => {
+            {
+                if symtbl.get_var(*name).is_ok() {
+                    panic!(
+                        "Aieeee, redeclaration of function/type constructor named {}",
+                        INT.fetch(*name)
+                    );
+                }
+                let type_params = signature.params.iter().map(|(_name, t)| *t).collect();
+                let function_type =
+                    INT.intern_type(&TypeDef::Lambda(type_params, signature.rettype));
+                symtbl.add_var(*name, function_type, false);
+            }
+
+            // Also we need to add a deconstructor function.  This is kinda a placeholder, but,
+            // should work for now.
+            {
+                let deconstruct_name = INT.intern(format!("{}_unwrap", INT.fetch(*name)));
+                if symtbl.get_var(deconstruct_name).is_ok() {
+                    panic!(
+                        "Aieeee, redeclaration of function/type destructure named {}",
+                        INT.fetch(deconstruct_name)
+                    );
+                }
+                let type_params = vec![signature.rettype];
+                let rettype = signature.params[0].1;
+                let function_type = INT.intern_type(&TypeDef::Lambda(type_params, rettype));
+                symtbl.add_var(deconstruct_name, function_type, false);
+            }
+        }
+    }
+}
+
 pub fn typecheck(ir: hir::Ir<()>) -> Result<hir::Ir<TypeSym>, TypeError> {
-    todo!()
+    let symtbl = &mut ISymtbl::new_with_defaults();
+    ir.decls.iter().for_each(|d| predeclare_decl(symtbl, d));
+    let checked_decls = ir
+        .decls
+        .into_iter()
+        .map(|decl| typecheck_decl(symtbl, decl))
+        .collect::<Result<Vec<hir::Decl<TypeSym>>, TypeError>>()?;
+    Ok(hir::Ir {
+        decls: checked_decls,
+    })
 }
 /*
 
