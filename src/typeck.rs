@@ -407,7 +407,7 @@ impl TCContext {
         new
     }
 
-    fn type_is_well_formed(&self, t: TypeSym) -> Result<(), String> {
+    fn type_is_well_formed(&self, t: TypeSym) -> Result<(), TypeError> {
         todo!()
         /*
             match t {
@@ -511,11 +511,11 @@ impl CheckState {
         TypeId(self.next_existential_var)
     }
 
-    fn type_sub(&mut self, t1: TypeSym, t2: TypeSym) -> Result<(), String> {
+    fn type_sub(&mut self, t1: TypeSym, t2: TypeSym) -> Result<(), TypeError> {
         //eprintln!("Doing type_sub on {:?}, {:?}", t1, t2);
-        let t1 = INT.fetch_type(t1);
-        let t2 = INT.fetch_type(t2);
-        match (t1, t2) {
+        let td1 = INT.fetch_type(t1);
+        let td2 = INT.fetch_type(t2);
+        match (td1, td2) {
             /*
              * TODO
             (TypeDef::Unit, TypeDef::Unit) => Ok(()),
@@ -559,11 +559,15 @@ impl CheckState {
                 self.instantiate_r(a, a_hat)
             }
             */
-            (a, b) => Err(format!("type mismatch: Expected {:?}, got {:?}", b, a)),
+            (a, b) => Err(TypeError::TypeMismatch {
+                expr_name: "todo".into(),
+                got: t1,
+                expected: t2,
+            }),
         }
     }
 
-    fn instantiate_l(&mut self, a_hat: TypeId, t: TypeSym) -> Result<(), String> {
+    fn instantiate_l(&mut self, a_hat: TypeId, t: TypeSym) -> Result<(), TypeError> {
         eprintln!("  Instantiate_l on {:?} and {:?}", a_hat, t);
         // The lexi-lambda Haskell impl for these functions does some kind of
         // big screwy pattern-match, so I'm trying to take it apart into pieces here.
@@ -705,7 +709,7 @@ impl CheckState {
     }
 
     /// This is similar to instantiate_l
-    fn instantiate_r(&mut self, t: TypeSym, a_hat: TypeId) -> Result<(), String> {
+    fn instantiate_r(&mut self, t: TypeSym, a_hat: TypeId) -> Result<(), TypeError> {
         //  go ctx -- InstRSolve
         //    | True <- isMono t
         //    , Just (l, r) <- ctxHole (CtxEVar â) ctx
@@ -822,7 +826,7 @@ impl CheckState {
     /// an error otherwise.
     ///
     /// TODO: Should return TypedExpr<TypeSym>
-    fn check(&mut self, expr: &hir::TypedExpr<()>, t: &TypeSym) -> Result<(), String> {
+    fn check(&mut self, expr: &hir::TypedExpr<()>, t: &TypeSym) -> Result<(), TypeError> {
         todo!()
         /*
         match (expr, t) {
@@ -862,7 +866,7 @@ impl CheckState {
     /// Infers the type of the expression.
     ///
     /// TODO: Should return TypedExpr<TypeSym>
-    fn infer(&mut self, expr: &hir::TypedExpr<()>) -> Result<TypeSym, String> {
+    fn infer(&mut self, expr: &hir::TypedExpr<()>) -> Result<TypeSym, TypeError> {
         todo!()
         /*
             match expr {
@@ -1015,7 +1019,7 @@ impl CheckState {
         &mut self,
         t: &TypeSym,
         exprs: &[hir::TypedExpr<()>],
-    ) -> Result<TypeSym, String> {
+    ) -> Result<TypeSym, TypeError> {
         todo!()
         /*
             match t {
@@ -1224,16 +1228,20 @@ fn typecheck_decl(
             signature,
             body,
         } => {
-            todo!()
-            /*
+            // Push scope, typecheck and add params to symbol table
+            let symtbl = &mut symtbl.clone();
+            for (pname, ptype) in signature.params.iter() {
+                symtbl.add_var(*pname, *ptype, false);
+            }
             let mut last_type = INT.unit();
-            for expr in decl.exprs {
-                let inferred_t = ctx.infer(expr)?;
+            for expr in body {
+                let inferred_t = ctx.infer(&expr)?;
                 last_type = ctx.ctx.subst(inferred_t);
             }
             return Ok(last_type);
-                // Below here is old
+            // Below here is old
 
+            /*
 
             // Push scope, typecheck and add params to symbol table
             let symtbl = &mut symtbl.clone();
@@ -1277,9 +1285,7 @@ fn typecheck_decl(
             // Make sure the const's type exists
             symtbl.type_exists(typename)?;
             let symtbl = &mut symtbl.clone();
-            let inferred_t = ctx
-                .infer(&init)
-                .map_err(|_| todo!("unheck error strings"))?;
+            let inferred_t = ctx.infer(&init)?;
             let last_type = ctx.ctx.subst(inferred_t);
             assert!(INT.fetch_type(inferred_t).is_mono());
             Ok(hir::Decl::Const {
