@@ -37,6 +37,13 @@ pub struct ISymtbl {
     pub types: im::HashMap<VarSym, TypeSym>,
 }
 
+/// Expression ID.  Used for associating individual expressions to types, and whatever
+/// other metadata we feel like.  That way we can keep that data in tables instead of
+/// having to mutate the HIR tree.
+/// The only guarantees the number offers is it will be unique.
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Eid(usize);
+
 /// An expression with a type annotation.
 /// Currently will be () for something that hasn't been
 /// typechecked, or a `TypeSym` with the appropriate type
@@ -49,6 +56,8 @@ pub struct TypedExpr<T> {
     pub e: Expr<T>,
     /// Scope of this expression
     pub s: ISymtbl,
+    /// Expression ID
+    pub id: Eid,
 }
 
 impl<T> TypedExpr<T> {
@@ -141,7 +150,8 @@ impl<T> TypedExpr<T> {
         TypedExpr {
             e: new_e,
             t: f(&self.t),
-            s: ISymtbl::default(),
+            s: self.s.clone(),
+            id: self.id,
         }
     }
 }
