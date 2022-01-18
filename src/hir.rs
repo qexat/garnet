@@ -6,7 +6,8 @@
 //! Currently it's not really lowered by much!  If's and maybe loops or something.
 //! It's mostly a layer of indirection for further stuff to happen to, so we can change
 //! the parser without changing the typecheckin and such.
-//!
+
+use std::sync::RwLock;
 
 use crate::ast::{self};
 pub use crate::ast::{BOp, IfCase, Literal, Signature, UOp};
@@ -43,6 +44,19 @@ pub struct ISymtbl {
 /// The only guarantees the number offers is it will be unique.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Eid(usize);
+
+/// Ugly horrible global for storing index values for expression ID's
+static NEXT_EID: Lazy<RwLock<Eid>> = Lazy::new(|| RwLock::new(Eid(0)));
+
+impl Eid {
+    fn new() -> Self {
+        let current = NEXT_EID.write().unwrap();
+        let ret = *current;
+        let next_eid = Eid(current.0 + 1);
+        *current = next_eid;
+        ret
+    }
+}
 
 /// An expression with a type annotation.
 /// Currently will be () for something that hasn't been
@@ -447,6 +461,7 @@ fn lower_expr<T>(f: &mut dyn FnMut(&hir::Expr<T>) -> T, expr: &ast::Expr) -> Typ
         t,
         e: new_exp,
         s: ISymtbl::default(),
+        id: Eid::new(),
     }
 }
 
