@@ -103,6 +103,7 @@ fn lambda_lift_expr<T>(expr: TypedExpr<T>, output_funcs: &mut Vec<D<T>>) -> Type
         e: result,
         t: expr.t,
         s: expr.s,
+        id: expr.id,
     }
 }
 
