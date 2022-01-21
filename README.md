@@ -311,6 +311,10 @@ Technically-irrelelvant but cool papers:
 
  * <https://www.mathematik.uni-marburg.de/~rendel/rendel10invertible.pdf> -- Invertable parsers
 
+What not to do:
+
+ * <https://arxiv.org/abs/2201.07845> -- How ISO C became unusable for operating systems development -- I'm a little dubious of the simplicity of its arguments, but it contains lots of references
+
 # Random notes
 
 ## CI
