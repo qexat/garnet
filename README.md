@@ -306,6 +306,7 @@ References on borrow checking:
 
  * <http://smallcultfollowing.com/babysteps/blog/2018/04/27/an-alias-based-formulation-of-the-borrow-checker/>
  * <https://github.com/rust-lang/polonius>
+ * <https://gankra.github.io/blah/deinitialize-me-maybe/> -- Destroy All Values: Designing Deinitialization in Programming Languages
 
 Technically-irrelelvant but cool papers:
 
