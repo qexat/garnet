@@ -2,6 +2,7 @@
 //! Operates on the HIR.
 
 use std::borrow::Cow;
+use std::collections::HashMap;
 
 use crate::hir::{self, ISymtbl, VarBinding};
 use crate::{TypeDef, TypeId, TypeSym, VarSym, INT};
@@ -1217,10 +1218,7 @@ impl ISymtbl {
     }
 }
 
-fn typecheck_decl(
-    symtbl: &mut ISymtbl,
-    decl: hir::Decl<()>,
-) -> Result<hir::Decl<TypeSym>, TypeError> {
+fn typecheck_decl(tck: &mut Tck, decl: hir::Decl<()>) -> Result<hir::Decl<()>, TypeError> {
     let ctx = &mut CheckState::default();
     match decl {
         hir::Decl::Function {
@@ -1229,7 +1227,7 @@ fn typecheck_decl(
             body,
         } => {
             // Push scope, typecheck and add params to symbol table
-            let symtbl = &mut symtbl.clone();
+            let symtbl = &mut tck.symtbl.clone();
             for (pname, ptype) in signature.params.iter() {
                 symtbl.add_var(*pname, *ptype, false);
             }
@@ -1237,8 +1235,9 @@ fn typecheck_decl(
             for expr in body {
                 let inferred_t = ctx.infer(&expr)?;
                 last_type = ctx.ctx.subst(inferred_t);
+                tck.set_type(expr.id, last_type);
             }
-            return Ok(last_type);
+            return Ok(decl);
             // Below here is old
 
             /*
@@ -1283,8 +1282,8 @@ fn typecheck_decl(
             init,
         } => {
             // Make sure the const's type exists
-            symtbl.type_exists(typename)?;
-            let symtbl = &mut symtbl.clone();
+            tck.symtbl.type_exists(typename)?;
+            let symtbl = &mut tck.symtbl.clone();
             let inferred_t = ctx.infer(&init)?;
             let last_type = ctx.ctx.subst(inferred_t);
             assert!(INT.fetch_type(inferred_t).is_mono());
@@ -1298,7 +1297,7 @@ fn typecheck_decl(
         // it's using is real.  We've already checked to make sure it's not a duplicate.
         hir::Decl::TypeDef { name, typedecl } => {
             // Make sure the body of the typedef is a real type.
-            symtbl.type_exists(typedecl)?;
+            tck.symtbl.type_exists(typedecl)?;
             Ok(hir::Decl::TypeDef { name, typedecl })
         }
         // Don't need to do anything here since we generate these in the lowering
@@ -1371,14 +1370,37 @@ fn predeclare_decl(symtbl: &mut ISymtbl, decl: &hir::Decl<()>) {
     }
 }
 
-pub fn typecheck(ir: hir::Ir<()>) -> Result<hir::Ir<TypeSym>, TypeError> {
-    let symtbl = &mut ISymtbl::new_with_defaults();
-    ir.decls.iter().for_each(|d| predeclare_decl(symtbl, d));
+/// Top level type checking context struct.
+/// We have like three of these by now, this one should subsume the functionality of the others.
+#[derive(Default, Clone, Debug)]
+struct Tck {
+    /// A mapping containing the return types of all expressions.
+    /// The return type may not be known at any particular time,
+    /// or may have partial type data known about it, which is fine.
+    /// This table gets updated with real types as we figure them out.
+    exprtypes: HashMap<hir::Eid, TypeSym>,
+    /// The symbol table for the module being compiled.
+    symtbl: hir::ISymtbl,
+}
+
+impl Tck {
+    /// Records that the given expression has the given type.
+    fn set_type(&mut self, eid: hir::Eid, t: TypeSym) {
+        self.exprtypes.insert(eid, t);
+    }
+}
+
+pub fn typecheck(ir: hir::Ir<()>) -> Result<hir::Ir<()>, TypeError> {
+    let mut tck = Tck::default();
+    tck.symtbl = ISymtbl::new_with_defaults();
+    ir.decls
+        .iter()
+        .for_each(|d| predeclare_decl(&mut tck.symtbl, d));
     let checked_decls = ir
         .decls
         .into_iter()
-        .map(|decl| typecheck_decl(symtbl, decl))
-        .collect::<Result<Vec<hir::Decl<TypeSym>>, TypeError>>()?;
+        .map(|decl| typecheck_decl(&mut tck, decl))
+        .collect::<Result<Vec<hir::Decl<()>>, TypeError>>()?;
     Ok(hir::Ir {
         decls: checked_decls,
     })
