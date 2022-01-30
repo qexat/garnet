@@ -16,9 +16,9 @@ pub enum Backend {
 }
 
 /// Produce a binary module output of some kind for the given backend.
-pub fn output(backend: Backend, program: &hir::Ir<TypeSym>) -> Vec<u8> {
+pub fn output(backend: Backend, program: &hir::Ir<()>) -> Vec<u8> {
     match backend {
-        Backend::Rust => rust::output(&program),
+        Backend::Rust => rust::output(program),
         Backend::Null => vec![],
     }
 }

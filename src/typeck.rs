@@ -302,7 +302,9 @@ impl ContextItem {
 }
 
 /// Type checking context.  Contains what is known about the types
-/// being inferred/checked within the current decl/expression(?).
+/// being inferred/checked within the current decl/expression.
+//
+// This is actually useful to keep its own type, for the reasons below.
 // TODO:
 //
 // Currently the implementation is very inefficient, doing lots of cloning of itself and
@@ -1223,8 +1225,8 @@ fn typecheck_decl(tck: &mut Tck, decl: hir::Decl<()>) -> Result<hir::Decl<()>, T
     match decl {
         hir::Decl::Function {
             name,
-            signature,
-            body,
+            ref signature,
+            ref body,
         } => {
             // Push scope, typecheck and add params to symbol table
             let symtbl = &mut tck.symtbl.clone();
