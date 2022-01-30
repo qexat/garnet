@@ -104,13 +104,16 @@ fn compile_typename(td: &TypeDef) -> Cow<'static, str> {
     }
 }
 
-pub(super) fn output(lir: &hir::Ir<TypeSym>) -> Vec<u8> {
+pub(super) fn output(lir: &hir::Ir<()>) -> Vec<u8> {
+    todo!()
+    /*
     let mut output = Vec::new();
     output.extend(prelude().as_bytes());
     for decl in lir.decls.iter() {
         compile_decl(&mut output, decl).expect("IO error writing output code.  Out of memory???");
     }
     output
+    */
 }
 
 /// Mangle/unmangle a name for a function.
