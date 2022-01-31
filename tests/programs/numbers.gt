@@ -1,0 +1,9 @@
+-- Compile:
+--   status: success
+--
+-- Run:
+--   status: success
+
+fn main(): {} =
+    let x: I64 = 9
+end
