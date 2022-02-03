@@ -12,6 +12,7 @@ use std::borrow::Cow;
 use std::io::{self, Write};
 
 use crate::hir;
+use crate::typeck::Tck;
 use crate::*;
 
 /// Whatever prefix stuff we want in the Rust program.
@@ -104,16 +105,14 @@ fn compile_typename(td: &TypeDef) -> Cow<'static, str> {
     }
 }
 
-pub(super) fn output(lir: &hir::Ir<()>) -> Vec<u8> {
-    todo!()
-    /*
+pub(super) fn output(lir: &hir::Ir<()>, tck: &Tck) -> Vec<u8> {
     let mut output = Vec::new();
     output.extend(prelude().as_bytes());
     for decl in lir.decls.iter() {
-        compile_decl(&mut output, decl).expect("IO error writing output code.  Out of memory???");
+        compile_decl(&mut output, decl, tck)
+            .expect("IO error writing output code.  Out of memory???");
     }
     output
-    */
 }
 
 /// Mangle/unmangle a name for a function.
@@ -124,7 +123,7 @@ fn mangle_name(s: &str) -> String {
     s.replace("@", "__")
 }
 
-fn compile_decl(w: &mut impl Write, decl: &hir::Decl<TypeSym>) -> io::Result<()> {
+fn compile_decl(w: &mut impl Write, decl: &hir::Decl<()>, tck: &Tck) -> io::Result<()> {
     match decl {
         hir::Decl::Function {
             name,
@@ -133,7 +132,7 @@ fn compile_decl(w: &mut impl Write, decl: &hir::Decl<TypeSym>) -> io::Result<()>
         } => {
             let nstr = mangle_name(&*INT.fetch(*name));
             let sstr = compile_fn_signature(signature);
-            let bstr = compile_exprs(body, ";\n");
+            let bstr = compile_exprs(body, ";\n", tck);
             writeln!(w, "pub fn {}{} {{\n{}\n}}\n", nstr, sstr, bstr)
         }
         hir::Decl::Const {
@@ -143,7 +142,7 @@ fn compile_decl(w: &mut impl Write, decl: &hir::Decl<TypeSym>) -> io::Result<()>
         } => {
             let nstr = mangle_name(&INT.fetch(*name));
             let tstr = compile_typedef(&*INT.fetch_type(*typename));
-            let istr = compile_expr(init);
+            let istr = compile_expr(init, tck);
             writeln!(w, "const {}: {} = {};", nstr, tstr, istr)
         }
         // Typedefs compile into newtype structs.
@@ -203,8 +202,8 @@ fn compile_fn_signature(sig: &ast::Signature) -> String {
     accm
 }
 
-fn compile_exprs(exprs: &[hir::TypedExpr<TypeSym>], separator: &str) -> String {
-    let ss: Vec<String> = exprs.iter().map(|e| compile_expr(e)).collect();
+fn compile_exprs(exprs: &[hir::TypedExpr<()>], separator: &str, tck: &Tck) -> String {
+    let ss: Vec<String> = exprs.iter().map(|e| compile_expr(e, tck)).collect();
     ss.join(separator)
 }
 
@@ -240,7 +239,7 @@ fn compile_uop(op: hir::UOp) -> &'static str {
     }
 }
 
-fn compile_expr(expr: &hir::TypedExpr<TypeSym>) -> String {
+fn compile_expr(expr: &hir::TypedExpr<()>, tck: &Tck) -> String {
     use hir::Expr as E;
     match &expr.e {
         E::Lit {
@@ -259,14 +258,14 @@ fn compile_expr(expr: &hir::TypedExpr<TypeSym>) -> String {
         E::Var { name } => mangle_name(&*INT.fetch(*name)),
         E::BinOp { op, lhs, rhs } => format!(
             "({} {} {})",
-            compile_expr(lhs),
+            compile_expr(lhs, tck),
             compile_bop(*op),
-            compile_expr(rhs)
+            compile_expr(rhs, tck)
         ),
         E::UniOp { op, rhs } => {
-            format!("({}{})", compile_uop(*op), compile_expr(rhs))
+            format!("({}{})", compile_uop(*op), compile_expr(rhs, tck))
         }
-        E::Block { body } => format!("{{\n{}\n}}", compile_exprs(body, ";\n")),
+        E::Block { body } => format!("{{\n{}\n}}", compile_exprs(body, ";\n", tck)),
         E::Let {
             varname,
             typename,
@@ -275,7 +274,7 @@ fn compile_expr(expr: &hir::TypedExpr<TypeSym>) -> String {
         } => {
             let vstr = mangle_name(&*INT.fetch(*varname));
             let tstr = compile_typename(&*INT.fetch_type(*typename));
-            let istr = compile_expr(init);
+            let istr = compile_expr(init, tck);
             if *mutable {
                 format!("let mut {}: {} = {}", vstr, tstr, istr)
             } else {
@@ -292,25 +291,25 @@ fn compile_expr(expr: &hir::TypedExpr<TypeSym>) -> String {
                 } else {
                     accm += " else if "
                 }
-                accm += &compile_expr(cond);
+                accm += &compile_expr(cond, tck);
                 accm += " {\n";
-                accm += &compile_exprs(&body, ";\n");
+                accm += &compile_exprs(&body, ";\n", tck);
                 accm += "} \n";
             }
             accm += "else {\n";
-            accm += &compile_exprs(&falseblock, ";\n");
+            accm += &compile_exprs(&falseblock, ";\n", tck);
             accm += "}\n";
             accm
         }
         E::Loop { body } => {
-            format!("loop {{\n{}\n}}\n", compile_exprs(body, ";\n"))
+            format!("loop {{\n{}\n}}\n", compile_exprs(body, ";\n", tck))
         }
         // TODO: We don't have closures, lambda are just functions, so...
         E::Lambda { signature, body } => {
             format!(
                 "fn {} {{ {} }}",
                 compile_fn_signature(signature),
-                compile_exprs(body, ";\n")
+                compile_exprs(body, ";\n", tck)
             )
         }
         E::Funcall { func, params } => {
@@ -321,20 +320,20 @@ fn compile_expr(expr: &hir::TypedExpr<TypeSym>) -> String {
             // fn f() -> i32 { if true { f1 } else { f2 }() }
             //
             // Should this happen in an IR lowering step?  idk.
-            let nstr = compile_expr(func);
-            let pstr = compile_exprs(params, ", ");
+            let nstr = compile_expr(func, tck);
+            let pstr = compile_exprs(params, ", ", tck);
             format!("{{ let __dummy = {}; __dummy({}) }}", nstr, pstr)
         }
         E::Break => "break;".to_string(),
         E::Return { retval } => {
-            format!("return {};", compile_expr(retval))
+            format!("return {};", compile_expr(retval, tck))
         }
         E::TupleCtor { body } => {
             // We *don't* want join() here, we want to append comma's so that
             // `(foo,)` works properly.
             let mut accm = String::from("(");
             for expr in body {
-                accm += &compile_expr(expr);
+                accm += &compile_expr(expr, tck);
                 accm += ", ";
             }
             accm += ")";
@@ -346,18 +345,18 @@ fn compile_expr(expr: &hir::TypedExpr<TypeSym>) -> String {
             }
             let mut accm = String::from("(\n");
             for (nm, expr) in body {
-                accm += &format!("/* {} */ {}, \n", INT.fetch(*nm), compile_expr(expr));
+                accm += &format!("/* {} */ {}, \n", INT.fetch(*nm), compile_expr(expr, tck));
             }
             accm += ")\n";
             accm
         }
         E::TupleRef { expr, elt } => {
-            format!("{}.{}", compile_expr(expr), elt)
+            format!("{}.{}", compile_expr(expr, tck), elt)
         }
         E::StructRef { expr, elt } => {
             // We turn our structs into Rust tuples, so we need to
             // to turn our field names into indices
-            let tdef = &*INT.fetch_type(expr.t);
+            let tdef = &*INT.fetch_type(tck.get_type(expr.id));
             if let TypeDef::Struct {
                 fields,
                 typefields: _,
@@ -370,7 +369,7 @@ fn compile_expr(expr: &hir::TypedExpr<TypeSym>) -> String {
                         break;
                     }
                 }
-                format!("{}.{}", compile_expr(expr), nth)
+                format!("{}.{}", compile_expr(expr, tck), nth)
             } else {
                 panic!(
                     "Struct wasn't actually a struct in backend, was {}.  should never happen",
@@ -379,9 +378,9 @@ fn compile_expr(expr: &hir::TypedExpr<TypeSym>) -> String {
             }
         }
         E::Assign { lhs, rhs } => {
-            format!("{} = {}", compile_expr(lhs), compile_expr(rhs))
+            format!("{} = {}", compile_expr(lhs, tck), compile_expr(rhs, tck))
         }
-        E::Deref { expr } => format!("*{}", compile_expr(expr)),
-        E::Ref { expr } => format!("&{}", compile_expr(expr)),
+        E::Deref { expr } => format!("*{}", compile_expr(expr, tck)),
+        E::Ref { expr } => format!("&{}", compile_expr(expr, tck)),
     }
 }

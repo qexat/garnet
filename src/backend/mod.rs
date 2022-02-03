@@ -1,6 +1,7 @@
 //! Backend indirection layer.
 
 use crate::hir;
+use crate::typeck::Tck;
 use crate::TypeSym;
 
 mod rust;
@@ -16,9 +17,9 @@ pub enum Backend {
 }
 
 /// Produce a binary module output of some kind for the given backend.
-pub fn output(backend: Backend, program: &hir::Ir<()>) -> Vec<u8> {
+pub fn output(backend: Backend, program: &hir::Ir<()>, tck: &Tck) -> Vec<u8> {
     match backend {
-        Backend::Rust => rust::output(program),
+        Backend::Rust => rust::output(program, tck),
         Backend::Null => vec![],
     }
 }
