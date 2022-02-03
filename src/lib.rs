@@ -356,8 +356,9 @@ pub fn try_compile(filename: &str, src: &str) -> Result<Vec<u8>, typeck::TypeErr
     };
     let hir = hir::lower(&mut |_| (), &ast);
     let hir = passes::run_passes(hir);
-    let checked = typeck::typecheck(hir)?;
-    Ok(backend::output(backend::Backend::Rust, &checked))
+    // TODO: Get rid of this clone, typechecking no longer returns a new AST.
+    let tck = typeck::typecheck(hir.clone())?;
+    Ok(backend::output(backend::Backend::Rust, &hir, &tck))
 }
 
 /// For when we don't care about catching results

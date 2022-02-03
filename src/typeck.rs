@@ -967,6 +967,22 @@ impl CheckState {
     fn infer(&mut self, tck: &mut Tck, expr: &hir::TypedExpr<()>) -> Result<TypeSym, TypeError> {
         match &expr.e {
             Expr::Lit { val } => Self::infer_literal(val),
+            Expr::Let {
+                varname,
+                typename,
+                init,
+                mutable,
+            } => {
+                let ty = self
+                    .ctx
+                    .assump(*varname)
+                    .ok_or(TypeError::UnknownVar(*varname));
+                ty
+                // TODO: Figure out MBones's eager instantiation
+                // vs the lazy instantiation default.
+                //let tid = self.next_existential_var();
+                //Ok(self.instantiate(tid, ty))
+            }
             s => todo!("To implement: {:?}", expr),
             /*
                     Ast::Bool(_) => Ok(Type::Bool),
@@ -1384,7 +1400,7 @@ fn predeclare_decl(symtbl: &mut ISymtbl, decl: &hir::Decl<()>) {
 /// Top level type checking context struct.
 /// We have like three of these by now, this one should subsume the functionality of the others.
 #[derive(Default, Clone, Debug)]
-struct Tck {
+pub struct Tck {
     /// A mapping containing the return types of all expressions.
     /// The return type may not be known at any particular time,
     /// or may have partial type data known about it, which is fine.
@@ -1399,9 +1415,16 @@ impl Tck {
     fn set_type(&mut self, eid: hir::Eid, t: TypeSym) {
         self.exprtypes.insert(eid, t);
     }
+
+    pub fn get_type(&self, eid: hir::Eid) -> TypeSym {
+        *self
+            .exprtypes
+            .get(&eid)
+            .expect("Tried to get type for Eid that doesn't exist!")
+    }
 }
 
-pub fn typecheck(ir: hir::Ir<()>) -> Result<hir::Ir<()>, TypeError> {
+pub fn typecheck(ir: hir::Ir<()>) -> Result<Tck, TypeError> {
     let mut tck = Tck::default();
     tck.symtbl = ISymtbl::new_with_defaults();
     ir.decls
@@ -1412,9 +1435,7 @@ pub fn typecheck(ir: hir::Ir<()>) -> Result<hir::Ir<()>, TypeError> {
         .into_iter()
         .map(|decl| typecheck_decl(&mut tck, decl))
         .collect::<Result<Vec<hir::Decl<()>>, TypeError>>()?;
-    Ok(hir::Ir {
-        decls: checked_decls,
-    })
+    Ok(tck)
 }
 /*
 
