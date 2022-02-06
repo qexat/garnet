@@ -465,38 +465,39 @@ impl TCContext {
     /// Fig 8 of the paper.
     fn subst(&self, ts: TypeSym) -> TypeSym {
         let t = INT.fetch_type(ts);
-        todo!()
-        /*
-            match t {
-                TypeDef::Unit => TypeDef::Unit,
-                TypeDef::TypeVar(_t_id) => t.clone(),
-                TypeDef::ExistentialVar(te_id) => {
-                    /*
-                    // maybe t (applySubst ctx) (ctxSolution ctx v)
-                    // maybe :: b->(a->b) -> Maybe a -> b
-                    //     Applies the second argument to the third, when it is Just x, otherwise returns the first argument.
-                    if let Some(solution) = self.solution(te_id) {
-                        self.subst(&solution)
-                    } else {
-                        t.clone()
+        match &*t {
+            // Unit
+            TypeDef::Tuple(v) if v.len() == 0 => ts,
+            TypeDef::SInt(i) => ts,
+            other => todo!("subst other: {:#?}", other),
+            /*
+                    TypeDef::TypeVar(_t_id) => t.clone(),
+                    TypeDef::ExistentialVar(te_id) => {
+                        /*
+                        // maybe t (applySubst ctx) (ctxSolution ctx v)
+                        // maybe :: b->(a->b) -> Maybe a -> b
+                        //     Applies the second argument to the third, when it is Just x, otherwise returns the first argument.
+                        if let Some(solution) = self.solution(te_id) {
+                            self.subst(&solution)
+                        } else {
+                            t.clone()
+                        }
+                        */
+                        self.solution(te_id)
+                            .map(|x| self.subst(&x))
+                            .unwrap_or(t.clone())
                     }
-                    */
-                    self.solution(te_id)
-                        .map(|x| self.subst(&x))
-                        .unwrap_or(t.clone())
-                }
-                TypeDef::Function(ty_a, ty_b) => {
-                    let new_params = ty_a.iter().map(|x| self.subst(x)).collect();
-                    TypeDef::Function(new_params, Box::new(self.subst(ty_b)))
-                }
-                TypeDef::ForAll(v, t) => TypeDef::ForAll(v.clone(), Box::new(self.subst(t))),
-                TypeDef::Bool => TypeDef::Bool,
-                TypeDef::SInt(i) => TypeDef::SInt(*i),
-                TypeDef::UnknownInt => TypeDef::UnknownInt,
-                TypeDef::Never => TypeDef::Never,
-                TypeDef::Tuple(ts) => TypeDef::Tuple(ts.iter().map(|x| self.subst(x)).collect()),
-            }
-        */
+                    TypeDef::Function(ty_a, ty_b) => {
+                        let new_params = ty_a.iter().map(|x| self.subst(x)).collect();
+                        TypeDef::Function(new_params, Box::new(self.subst(ty_b)))
+                    }
+                    TypeDef::ForAll(v, t) => TypeDef::ForAll(v.clone(), Box::new(self.subst(t))),
+                    TypeDef::Bool => TypeDef::Bool,
+                    TypeDef::UnknownInt => TypeDef::UnknownInt,
+                    TypeDef::Never => TypeDef::Never,
+                    TypeDef::Tuple(ts) => TypeDef::Tuple(ts.iter().map(|x| self.subst(x)).collect()),
+            */
+        }
     }
 }
 
@@ -827,9 +828,7 @@ impl CheckState {
 
     /// Returns Ok if the result of the expression matches the given type,
     /// an error otherwise.
-    ///
-    /// TODO: Should return TypedExpr<TypeSym>
-    fn check(&mut self, expr: &hir::TypedExpr<()>, t: &TypeSym) -> Result<(), TypeError> {
+    fn check(&mut self, expr: &hir::TypedExpr<()>, t: TypeSym) -> Result<(), TypeError> {
         todo!()
         /*
         match (expr, t) {
@@ -973,6 +972,14 @@ impl CheckState {
                 init,
                 mutable,
             } => {
+                // Create new variable with the given name and type.
+                let new_ctx = self
+                    .ctx
+                    .clone()
+                    .add(ContextItem::Assump(*varname, *typename));
+                // Add it to our symbol table...
+                // ...I guess that is our ctx at the moment...
+                self.ctx = new_ctx;
                 let ty = self
                     .ctx
                     .assump(*varname)
@@ -982,6 +989,53 @@ impl CheckState {
                 // vs the lazy instantiation default.
                 //let tid = self.next_existential_var();
                 //Ok(self.instantiate(tid, ty))
+            }
+            Expr::BinOp { op, lhs, rhs } => {
+                use crate::ast::BOp::*;
+                // Find the type the binop expects
+                match op {
+                    And | Or | Xor => {
+                        let target_type = INT.bool();
+                        self.check(lhs, target_type)?;
+                        self.check(rhs, target_type)?;
+                        // For these the source type and target type are always the same,
+                        // not always true for things such as ==
+                        Ok(target_type)
+                    }
+                    Add | Sub | Mul | Div => {
+                        // If we have a numerical operation, we find the types
+                        // of the arguments and make sure they are matching numeric
+                        // types.
+                        let tsym_l = self.infer(tck, lhs)?;
+                        let tsym_r = self.infer(tck, rhs)?;
+                        let tl = INT.fetch_type(tsym_l);
+                        let tr = INT.fetch_type(tsym_r);
+                        match (&*tl, &*tr) {
+                            (TypeDef::UnknownInt, TypeDef::UnknownInt) => Ok(tsym_l),
+                            (TypeDef::SInt(s1), TypeDef::SInt(s2)) if s1 == s2 => {
+                                Ok(INT.isize(*s1))
+                            }
+                            // Infer types of unknown ints
+                            // TODO: Unknown vars will have existential types or such, which also
+                            // need to be handled somehow..
+                            (TypeDef::SInt(_), _) => {
+                                self.check(rhs, tsym_l)?;
+                                Ok(tsym_l)
+                            }
+                            (_, TypeDef::SInt(_)) => {
+                                // TODO BUGGO: Should this rhs be lhs?
+                                self.check(rhs, tsym_r)?;
+                                Ok(tsym_r)
+                            }
+                            (_, _) => Err(TypeError::BopType {
+                                bop: *op,
+                                got1: tsym_l,
+                                got2: tsym_r,
+                                expected: todo!("uhhhh, idk"),
+                            }),
+                        }
+                    }
+                }
             }
             s => todo!("To implement: {:?}", expr),
             /*
