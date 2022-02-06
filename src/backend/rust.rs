@@ -276,9 +276,9 @@ fn compile_expr(expr: &hir::TypedExpr<()>, tck: &Tck) -> String {
             let tstr = compile_typename(&*INT.fetch_type(*typename));
             let istr = compile_expr(init, tck);
             if *mutable {
-                format!("let mut {}: {} = {}", vstr, tstr, istr)
+                format!("let mut {}: {} = {};", vstr, tstr, istr)
             } else {
-                format!("let {}: {} = {}", vstr, tstr, istr)
+                format!("let {}: {} = {};", vstr, tstr, istr)
             }
         }
         E::If { cases } => {

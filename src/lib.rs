@@ -293,6 +293,11 @@ impl Cx {
         self.intern_type(&TypeDef::UnknownInt)
     }
 
+    /// Shortcut for getting the type symbol for an int of a particular size
+    pub fn isize(&self, size: u8) -> TypeSym {
+        self.intern_type(&TypeDef::SInt(size))
+    }
+
     /// Shortcut for getting the type symbol for I128
     pub fn i128(&self) -> TypeSym {
         self.intern_type(&TypeDef::SInt(16))
