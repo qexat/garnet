@@ -469,6 +469,7 @@ impl TCContext {
             // Unit
             TypeDef::Tuple(v) if v.len() == 0 => ts,
             TypeDef::SInt(i) => ts,
+            TypeDef::Bool => ts,
             other => todo!("subst other: {:#?}", other),
             /*
                     TypeDef::TypeVar(_t_id) => t.clone(),
@@ -492,7 +493,6 @@ impl TCContext {
                         TypeDef::Function(new_params, Box::new(self.subst(ty_b)))
                     }
                     TypeDef::ForAll(v, t) => TypeDef::ForAll(v.clone(), Box::new(self.subst(t))),
-                    TypeDef::Bool => TypeDef::Bool,
                     TypeDef::UnknownInt => TypeDef::UnknownInt,
                     TypeDef::Never => TypeDef::Never,
                     TypeDef::Tuple(ts) => TypeDef::Tuple(ts.iter().map(|x| self.subst(x)).collect()),
@@ -517,13 +517,13 @@ impl CheckState {
 
     fn type_sub(&mut self, t1: TypeSym, t2: TypeSym) -> Result<(), TypeError> {
         //eprintln!("Doing type_sub on {:?}, {:?}", t1, t2);
-        let td1 = INT.fetch_type(t1);
-        let td2 = INT.fetch_type(t2);
+        let td1 = &*INT.fetch_type(t1);
+        let td2 = &*INT.fetch_type(t2);
         match (td1, td2) {
+            (TypeDef::Bool, TypeDef::Bool) => Ok(()),
             /*
              * TODO
             (TypeDef::Unit, TypeDef::Unit) => Ok(()),
-            (TypeDef::Bool, TypeDef::Bool) => Ok(()),
             (TypeDef::SInt(i1), TypeDef::SInt(i2)) if i1 == i2 => Ok(()),
             (TypeDef::TypeVar(a), TypeDef::TypeVar(b)) if a == b => Ok(()),
             (TypeDef::ExistentialVar(a), TypeDef::ExistentialVar(b)) if a == b => Ok(()),
@@ -828,10 +828,28 @@ impl CheckState {
 
     /// Returns Ok if the result of the expression matches the given type,
     /// an error otherwise.
-    fn check(&mut self, expr: &hir::TypedExpr<()>, t: TypeSym) -> Result<(), TypeError> {
-        todo!()
-        /*
-        match (expr, t) {
+    fn check(
+        &mut self,
+        tck: &mut Tck,
+        expr: &hir::TypedExpr<()>,
+        t: TypeSym,
+    ) -> Result<(), TypeError> {
+        let tdef = &*INT.fetch_type(t);
+        match (&expr.e, tdef) {
+            (Expr::Lit { val }, _) => {
+                // TODO: Is this right?  Not sure, sleepy.
+                let lit_type = Self::infer_literal(val)?;
+                if lit_type == t {
+                    Ok(())
+                } else {
+                    todo!("Is this even possible?")
+                }
+            }
+            (Expr::Let { .. }, TypeDef::Tuple(v)) if v.len() == 0 => {
+                tck.set_type(expr.id, t);
+                Ok(())
+            }
+            /*
             (Ast::Unit, Type::Unit) => return Ok(()),
             (Ast::Bool(_), Type::Bool) => return Ok(()),
             (e, Type::ForAll(v, a)) => {
@@ -853,16 +871,16 @@ impl CheckState {
                 };
                 return check_state.check(body, fnrettype);
             }
+            */
             (e, b) => {
                 eprintln!("Checking thing: {:?} {:?}", e, b);
-                let a = self.infer(e)?;
+                let a = self.infer(tck, expr)?;
                 eprintln!("Type of {:?} is: {:?}", e, a);
-                let x = self.type_sub(self.ctx.subst(&a), self.ctx.subst(b));
+                let x = self.type_sub(self.ctx.subst(a), self.ctx.subst(t));
                 eprintln!("Type subbed: {:?}, {:?}", x, self.ctx);
                 x
             }
         }
-            */
     }
 
     /// This does type inference to a function call expression, t(expr).
@@ -996,13 +1014,13 @@ impl CheckState {
                 match op {
                     And | Or | Xor => {
                         let target_type = INT.bool();
-                        self.check(lhs, target_type)?;
-                        self.check(rhs, target_type)?;
+                        self.check(tck, lhs, target_type)?;
+                        self.check(tck, rhs, target_type)?;
                         // For these the source type and target type are always the same,
                         // not always true for things such as ==
                         Ok(target_type)
                     }
-                    Add | Sub | Mul | Div => {
+                    Add | Sub | Mul | Div | Mod => {
                         // If we have a numerical operation, we find the types
                         // of the arguments and make sure they are matching numeric
                         // types.
@@ -1019,12 +1037,12 @@ impl CheckState {
                             // TODO: Unknown vars will have existential types or such, which also
                             // need to be handled somehow..
                             (TypeDef::SInt(_), _) => {
-                                self.check(rhs, tsym_l)?;
+                                self.check(tck, rhs, tsym_l)?;
                                 Ok(tsym_l)
                             }
                             (_, TypeDef::SInt(_)) => {
                                 // TODO BUGGO: Should this rhs be lhs?
-                                self.check(rhs, tsym_r)?;
+                                self.check(tck, rhs, tsym_r)?;
                                 Ok(tsym_r)
                             }
                             (_, _) => Err(TypeError::BopType {
@@ -1035,6 +1053,7 @@ impl CheckState {
                             }),
                         }
                     }
+                    Eq | Neq | Gt | Lt | Gte | Lte => todo!("Comparison operators"),
                 }
             }
             s => todo!("To implement: {:?}", expr),
@@ -1466,10 +1485,13 @@ pub struct Tck {
 
 impl Tck {
     /// Records that the given expression has the given type.
+    /// Panics if the type is already set.
     fn set_type(&mut self, eid: hir::Eid, t: TypeSym) {
-        self.exprtypes.insert(eid, t);
+        let prev = self.exprtypes.insert(eid, t);
+        assert!(prev.is_none());
     }
 
+    /// Panics if type does not exist.
     pub fn get_type(&self, eid: hir::Eid) -> TypeSym {
         *self
             .exprtypes
