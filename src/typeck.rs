@@ -1350,6 +1350,7 @@ fn typecheck_decl(tck: &mut Tck, decl: hir::Decl<()>) -> Result<hir::Decl<()>, T
             let symtbl = &mut tck.symtbl.clone();
             for (pname, ptype) in signature.params.iter() {
                 symtbl.add_var(*pname, *ptype, false);
+                ctx.ctx = ctx.ctx.clone().add(ContextItem::Assump(*pname, *ptype));
             }
             let mut last_type = INT.unit();
             for expr in body {
