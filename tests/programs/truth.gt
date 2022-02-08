@@ -21,6 +21,7 @@
 
 --- Truth tables, huzzah!
 fn main(): {} =
+/-
     true and true
     true and false
     false and true
@@ -35,7 +36,8 @@ fn main(): {} =
     false xor false
     not true
     not false
-/-
+    {}
+-/
     __println_bool(true and true)
     __println_bool(true and false)
     __println_bool(false and true)
@@ -50,5 +52,4 @@ fn main(): {} =
     __println_bool(false xor false)
     __println_bool(not true)
     __println_bool(not false)
-    -/
 end

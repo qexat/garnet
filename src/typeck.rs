@@ -849,6 +849,11 @@ impl CheckState {
                 tck.set_type(expr.id, t);
                 Ok(())
             }
+            // Unit type constructor
+            (Expr::TupleCtor { body }, TypeDef::Tuple(v)) if body.len() == 0 && v.len() == 0 => {
+                tck.set_type(expr.id, t);
+                Ok(())
+            }
             /*
             (Ast::Unit, Type::Unit) => return Ok(()),
             (Ast::Bool(_), Type::Bool) => return Ok(()),
@@ -889,19 +894,24 @@ impl CheckState {
     /// t is the function's inferred type, exprs are the args
     fn infer_application(
         &mut self,
-        t: &TypeSym,
+        tck: &mut Tck,
+        t: TypeSym,
         exprs: &[hir::TypedExpr<()>],
     ) -> Result<TypeSym, TypeError> {
-        todo!()
-        /*
-            match t {
-                Type::ForAll(v, a) => {
-                    let a_hat = self.next_existential_var();
-                    self.ctx = self.ctx.clone().add(ContextItem::ExistentialVar(a_hat));
-                    let b = a.instantiate(v, &Type::ExistentialVar(a_hat));
-                    self.infer_application(&b, exprs)
-                }
-                Type::ExistentialVar(a_hat) => {
+        let td = &*INT.fetch_type(t);
+        match td {
+            TypeDef::ForAll(v, a) => {
+                todo!("infer_application forall")
+                /*
+                let a_hat = self.next_existential_var();
+                self.ctx = self.ctx.clone().add(ContextItem::ExistentialVar(a_hat));
+                let b = a.instantiate(v, &Type::ExistentialVar(a_hat));
+                self.infer_application(&b, exprs)
+                    */
+            }
+            TypeDef::ExistentialVar(a_hat) => {
+                todo!("infer_application existential var")
+                /*
                     let rettype = self.next_existential_var();
                     let rettype_var = ContextItem::ExistentialVar(rettype);
                     let (l, r) = self
@@ -954,19 +964,16 @@ impl CheckState {
                     self.check(exprs, &Type::ExistentialVar(paramtype))?;
                     Ok(Type::ExistentialVar(rettype))
                     */
-                }
-                Type::Function(params, rettype) => {
-                    for (p, e) in params.iter().zip(exprs) {
-                        self.check(e, p)?;
-                    }
-                    Ok((**rettype).clone())
-                }
-                other => Err(format!(
-                    "Cannot apply function of type {:?} to args {:?}",
-                    other, exprs
-                )),
+                */
             }
-        */
+            TypeDef::Lambda(params, rettype) => {
+                for (p, e) in params.iter().zip(exprs) {
+                    self.check(tck, e, *p)?;
+                }
+                Ok((rettype).clone())
+            }
+            other => Err(TypeError::Call { got: t }),
+        }
     }
 
     // TODO: Might have to create an existential var or something instead of iunknown()
@@ -1013,12 +1020,12 @@ impl CheckState {
                 // Find the type the binop expects
                 match op {
                     And | Or | Xor => {
-                        let target_type = INT.bool();
-                        self.check(tck, lhs, target_type)?;
-                        self.check(tck, rhs, target_type)?;
+                        let input_type = INT.bool();
+                        self.check(tck, lhs, input_type)?;
+                        self.check(tck, rhs, input_type)?;
                         // For these the source type and target type are always the same,
                         // not always true for things such as ==
-                        Ok(target_type)
+                        Ok(input_type)
                     }
                     Add | Sub | Mul | Div | Mod => {
                         // If we have a numerical operation, we find the types
@@ -1055,6 +1062,19 @@ impl CheckState {
                     }
                     Eq | Neq | Gt | Lt | Gte | Lte => todo!("Comparison operators"),
                 }
+            }
+            Expr::UniOp { op, rhs } => {
+                let input_type = op.input_type();
+                self.check(tck, rhs, input_type)?;
+                let output_type = op.output_type(input_type);
+                Ok(output_type)
+            }
+            // Unit constructor
+            Expr::TupleCtor { body } if body.len() == 0 => Ok(INT.unit()),
+            Expr::Funcall { func, params } => {
+                let ftype = self.infer(tck, func)?;
+                let t = self.ctx.subst(ftype);
+                self.infer_application(tck, t, &*params)
             }
             s => todo!("To implement: {:?}", expr),
             /*
