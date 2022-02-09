@@ -235,6 +235,15 @@ impl TypeDef {
             _ => false,
         }
     }
+
+    /// Returns true if this is a tuple of length zero.
+    /// Handy sometimes since we don't have a separate unit type.
+    pub fn is_unit(&self) -> bool {
+        match self {
+            TypeDef::Tuple(v) => v.len() == 0,
+            _ => false,
+        }
+    }
 }
 
 /// Interner context.

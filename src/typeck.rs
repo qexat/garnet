@@ -469,11 +469,14 @@ impl TCContext {
             // Unit
             TypeDef::Tuple(v) if v.len() == 0 => ts,
             TypeDef::SInt(i) => ts,
+            // TODO: ...is it meaningful to subst an UnknownInt into something?
+            TypeDef::UnknownInt => ts,
             TypeDef::Bool => ts,
             TypeDef::Lambda(params, ret) => {
                 let new_params = params.iter().map(|x| self.subst(*x)).collect();
                 INT.intern_type(&TypeDef::Lambda(new_params, self.subst(*ret)))
             }
+            TypeDef::Never => ts,
             other => todo!("subst other: {:#?}", other),
             /*
                     TypeDef::TypeVar(_t_id) => t.clone(),
@@ -558,17 +561,20 @@ impl CheckState {
         match (td1, td2) {
             (TypeDef::Bool, TypeDef::Bool) => Ok(()),
             (TypeDef::SInt(i1), TypeDef::SInt(i2)) if i1 == i2 => Ok(()),
+            // TODO: Verify this UnknownInt behavior is correct...
+            (TypeDef::UnknownInt, TypeDef::SInt(i2)) => Ok(()),
+            (TypeDef::SInt(i1), TypeDef::UnknownInt) => Ok(()),
             (TypeDef::TypeVar(a), TypeDef::TypeVar(b)) if a == b => Ok(()),
+            (TypeDef::Lambda(params1, rettype1), TypeDef::Lambda(params2, rettype2)) => {
+                for (param1, param2) in params1.iter().zip(params2) {
+                    self.type_sub(*param1, *param2)?;
+                }
+                self.type_sub(*rettype1, *rettype2)
+            }
             /*
              * TODO
             (TypeDef::Unit, TypeDef::Unit) => Ok(()),
             (TypeDef::ExistentialVar(a), TypeDef::ExistentialVar(b)) if a == b => Ok(()),
-            (TypeDef::Lambda(a1, b1), TypeDef::Lambda(a2, b2)) => {
-                for (param1, param2) in a1.iter().zip(a2) {
-                    self.type_sub(param1.clone(), param2)?;
-                }
-                self.type_sub(*b1, *b2)
-            }
             (TypeDef::ForAll(v, a), b) => {
                 let heckin_a_hat = self.next_existential_var();
                 let heckin_a_prime = a.instantiate(&v, &TypeDef::ExistentialVar(heckin_a_hat));
@@ -915,12 +921,12 @@ impl CheckState {
                     todo!("Is this even possible?")
                 }
             }
-            (Expr::Let { .. }, TypeDef::Tuple(v)) if v.len() == 0 => {
+            (Expr::Let { .. }, TypeDef::Tuple(_)) if tdef.is_unit() => {
                 tck.set_type(expr.id, t);
                 Ok(())
             }
             // Unit type constructor
-            (Expr::TupleCtor { body }, TypeDef::Tuple(v)) if body.len() == 0 && v.len() == 0 => {
+            (Expr::TupleCtor { body }, TypeDef::Tuple(_)) if body.len() == 0 && tdef.is_unit() => {
                 tck.set_type(expr.id, t);
                 Ok(())
             }
@@ -1153,6 +1159,12 @@ impl CheckState {
                 // vs the lazy instantiation default.
                 //let tid = self.next_existential_var();
                 //Ok(self.instantiate(tid, ty))
+            }
+            Expr::Return { retval } => {
+                // TODO: The type of the Return expression is Never,
+                // but we need to make sure its rettype is actually
+                // compatible with the function's rettype.
+                Ok(INT.never())
             }
             s => todo!("To implement: {:?}", s),
             /*
@@ -1510,6 +1522,7 @@ fn typecheck_decl(tck: &mut Tck, decl: hir::Decl<()>) -> Result<hir::Decl<()>, T
 /// Scan through all decl's and add any bindings to the symbol table,
 /// so we don't need to do anything with forward references.
 fn predeclare_decl(symtbl: &mut ISymtbl, decl: &hir::Decl<()>) {
+    let ctx = &mut CheckState::new_with_defaults();
     match decl {
         hir::Decl::Function {
             name, signature, ..
@@ -1521,12 +1534,17 @@ fn predeclare_decl(symtbl: &mut ISymtbl, decl: &hir::Decl<()>) {
             let type_params = signature.params.iter().map(|(_name, t)| *t).collect();
             let function_type = INT.intern_type(&TypeDef::Lambda(type_params, signature.rettype));
             symtbl.add_var(*name, function_type, false);
+            ctx.ctx = ctx
+                .ctx
+                .clone()
+                .add(ContextItem::Assump(*name, function_type));
         }
         hir::Decl::Const { name, typename, .. } => {
             if symtbl.binding_exists(*name) {
                 panic!("Tried to redeclare const {}!", INT.fetch(*name));
             }
             symtbl.add_var(*name, *typename, false);
+            ctx.ctx = ctx.ctx.clone().add(ContextItem::Assump(*name, *typename));
         }
         hir::Decl::TypeDef { name, typedecl } => {
             // Gotta make sure there's no duplicate declarations
@@ -1535,6 +1553,7 @@ fn predeclare_decl(symtbl: &mut ISymtbl, decl: &hir::Decl<()>) {
                 panic!("Tried to redeclare type {}!", INT.fetch(*name));
             }
             symtbl.add_type(*name, *typedecl);
+            todo!("Predeclare typedef");
         }
         hir::Decl::Constructor { name, signature } => {
             {
@@ -1565,6 +1584,7 @@ fn predeclare_decl(symtbl: &mut ISymtbl, decl: &hir::Decl<()>) {
                 let function_type = INT.intern_type(&TypeDef::Lambda(type_params, rettype));
                 symtbl.add_var(deconstruct_name, function_type, false);
             }
+            todo!("Predeclare constructor");
         }
     }
 }
