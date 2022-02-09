@@ -557,11 +557,11 @@ impl CheckState {
         let td2 = &*INT.fetch_type(t2);
         match (td1, td2) {
             (TypeDef::Bool, TypeDef::Bool) => Ok(()),
+            (TypeDef::SInt(i1), TypeDef::SInt(i2)) if i1 == i2 => Ok(()),
+            (TypeDef::TypeVar(a), TypeDef::TypeVar(b)) if a == b => Ok(()),
             /*
              * TODO
             (TypeDef::Unit, TypeDef::Unit) => Ok(()),
-            (TypeDef::SInt(i1), TypeDef::SInt(i2)) if i1 == i2 => Ok(()),
-            (TypeDef::TypeVar(a), TypeDef::TypeVar(b)) if a == b => Ok(()),
             (TypeDef::ExistentialVar(a), TypeDef::ExistentialVar(b)) if a == b => Ok(()),
             (TypeDef::Lambda(a1, b1), TypeDef::Lambda(a2, b2)) => {
                 for (param1, param2) in a1.iter().zip(a2) {
@@ -872,6 +872,40 @@ impl CheckState {
     ) -> Result<(), TypeError> {
         let tdef = &*INT.fetch_type(t);
         match (&expr.e, tdef) {
+            // Is the literal an UnknownInt?
+            (Expr::Lit { val }, TypeDef::UnknownInt) => {
+                let lit_type = Self::infer_literal(val)?;
+                match &*INT.fetch_type(lit_type) {
+                    TypeDef::UnknownInt => Ok(()),
+                    TypeDef::SInt(_) => {
+                        // Ok, the type of this expr is now that int type
+                        tck.set_type(expr.id, t);
+                        Ok(())
+                    }
+                    _ => Err(TypeError::TypeMismatch {
+                        expr_name: format!("{:?}", &expr.e).into(),
+                        got: lit_type,
+                        expected: INT.iunknown(),
+                    }),
+                }
+            }
+            // Is the expression an int of known size?
+            (Expr::Lit { val }, TypeDef::SInt(size)) => {
+                let lit_type = Self::infer_literal(val)?;
+                match &*INT.fetch_type(lit_type) {
+                    TypeDef::UnknownInt => {
+                        // Ok, the type of this expr is now that int type
+                        tck.set_type(expr.id, t);
+                        Ok(())
+                    }
+                    TypeDef::SInt(size2) if *size == *size2 => Ok(()),
+                    _ => Err(TypeError::TypeMismatch {
+                        expr_name: format!("{:?}", &expr.e).into(),
+                        got: lit_type,
+                        expected: INT.iunknown(),
+                    }),
+                }
+            }
             (Expr::Lit { val }, _) => {
                 // TODO: Is this right?  Not sure, sleepy.
                 let lit_type = Self::infer_literal(val)?;
