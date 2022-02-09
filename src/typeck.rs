@@ -470,6 +470,10 @@ impl TCContext {
             TypeDef::Tuple(v) if v.len() == 0 => ts,
             TypeDef::SInt(i) => ts,
             TypeDef::Bool => ts,
+            TypeDef::Lambda(params, ret) => {
+                let new_params = params.iter().map(|x| self.subst(*x)).collect();
+                INT.intern_type(&TypeDef::Lambda(new_params, self.subst(*ret)))
+            }
             other => todo!("subst other: {:#?}", other),
             /*
                     TypeDef::TypeVar(_t_id) => t.clone(),
@@ -508,6 +512,38 @@ struct CheckState {
 }
 
 impl CheckState {
+    /// Create new symbol table with some built-in functions.
+    ///
+    /// Also see the prelude defined in `backend/rust.rs`
+    pub fn new_with_defaults() -> Self {
+        let mut x = TCContext::default();
+        // We add a built-in function for printing, currently.
+        {
+            let name = INT.intern("__println");
+            let typesym = INT.intern_type(&TypeDef::Lambda(vec![INT.i32()], INT.unit()));
+            x = x.add(ContextItem::Assump(name, typesym));
+        }
+        {
+            let name = INT.intern("__println_bool");
+            let typesym = INT.intern_type(&TypeDef::Lambda(vec![INT.bool()], INT.unit()));
+            x = x.add(ContextItem::Assump(name, typesym));
+        }
+        {
+            let name = INT.intern("__println_i64");
+            let typesym = INT.intern_type(&TypeDef::Lambda(vec![INT.i64()], INT.unit()));
+            x = x.add(ContextItem::Assump(name, typesym));
+        }
+        {
+            let name = INT.intern("__println_i16");
+            let typesym = INT.intern_type(&TypeDef::Lambda(vec![INT.i16()], INT.unit()));
+            x = x.add(ContextItem::Assump(name, typesym));
+        }
+        Self {
+            ctx: x,
+            ..Self::default()
+        }
+    }
+
     /// Creates an arbitrary synthetic type identifier for labelling
     /// unsolved type variables
     fn next_existential_var(&mut self) -> TypeId {
@@ -1074,9 +1110,17 @@ impl CheckState {
             Expr::Funcall { func, params } => {
                 let ftype = self.infer(tck, func)?;
                 let t = self.ctx.subst(ftype);
-                self.infer_application(tck, t, &*params)
+                self.infer_application(tck, t, params)
             }
-            s => todo!("To implement: {:?}", expr),
+            Expr::Var { name } => {
+                let ty = self.ctx.assump(*name).ok_or(TypeError::UnknownVar(*name));
+                ty
+                // TODO: Figure out MBones's eager instantiation
+                // vs the lazy instantiation default.
+                //let tid = self.next_existential_var();
+                //Ok(self.instantiate(tid, ty))
+            }
+            s => todo!("To implement: {:?}", s),
             /*
                     Ast::Bool(_) => Ok(Type::Bool),
                     Ast::Int(_) => Ok(Type::UnknownInt),
@@ -1339,7 +1383,7 @@ impl ISymtbl {
 }
 
 fn typecheck_decl(tck: &mut Tck, decl: hir::Decl<()>) -> Result<hir::Decl<()>, TypeError> {
-    let ctx = &mut CheckState::default();
+    let ctx = &mut CheckState::new_with_defaults();
     match decl {
         hir::Decl::Function {
             name,
