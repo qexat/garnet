@@ -508,13 +508,7 @@ impl TCContext {
     }
 }
 
-#[derive(Clone, Default)]
-struct CheckState {
-    ctx: TCContext,
-    next_existential_var: usize,
-}
-
-impl CheckState {
+impl Tck {
     /// Create new symbol table with some built-in functions.
     ///
     /// Also see the prelude defined in `backend/rust.rs`
@@ -545,13 +539,6 @@ impl CheckState {
             ctx: x,
             ..Self::default()
         }
-    }
-
-    /// Creates an arbitrary synthetic type identifier for labelling
-    /// unsolved type variables
-    fn next_existential_var(&mut self) -> TypeId {
-        self.next_existential_var += 1;
-        TypeId(self.next_existential_var)
     }
 
     fn type_sub(&mut self, t1: TypeSym, t2: TypeSym) -> Result<(), TypeError> {
@@ -870,12 +857,7 @@ impl CheckState {
 
     /// Returns Ok if the result of the expression matches the given type,
     /// an error otherwise.
-    fn check(
-        &mut self,
-        tck: &mut Tck,
-        expr: &hir::TypedExpr<()>,
-        t: TypeSym,
-    ) -> Result<(), TypeError> {
+    fn check(&mut self, expr: &hir::TypedExpr<()>, t: TypeSym) -> Result<(), TypeError> {
         let tdef = &*INT.fetch_type(t);
         match (&expr.e, tdef) {
             // Is the literal an UnknownInt?
@@ -885,7 +867,7 @@ impl CheckState {
                     TypeDef::UnknownInt => Ok(()),
                     TypeDef::SInt(_) => {
                         // Ok, the type of this expr is now that int type
-                        tck.set_type(expr.id, t);
+                        self.set_type(expr.id, t);
                         Ok(())
                     }
                     _ => Err(TypeError::TypeMismatch {
@@ -901,7 +883,7 @@ impl CheckState {
                 match &*INT.fetch_type(lit_type) {
                     TypeDef::UnknownInt => {
                         // Ok, the type of this expr is now that int type
-                        tck.set_type(expr.id, t);
+                        self.set_type(expr.id, t);
                         Ok(())
                     }
                     TypeDef::SInt(size2) if *size == *size2 => Ok(()),
@@ -922,12 +904,12 @@ impl CheckState {
                 }
             }
             (Expr::Let { .. }, TypeDef::Tuple(_)) if tdef.is_unit() => {
-                tck.set_type(expr.id, t);
+                self.set_type(expr.id, t);
                 Ok(())
             }
             // Unit type constructor
             (Expr::TupleCtor { body }, TypeDef::Tuple(_)) if body.len() == 0 && tdef.is_unit() => {
-                tck.set_type(expr.id, t);
+                self.set_type(expr.id, t);
                 Ok(())
             }
             /*
@@ -955,7 +937,7 @@ impl CheckState {
             */
             (e, b) => {
                 eprintln!("Checking thing: {:?} {:?}", e, b);
-                let a = self.infer(tck, expr)?;
+                let a = self.infer(expr)?;
                 eprintln!("Type of {:?} is: {:?}", e, a);
                 let x = self.type_sub(self.ctx.subst(a), self.ctx.subst(t));
                 eprintln!("Type subbed: {:?}, {:?}", x, self.ctx);
@@ -970,7 +952,6 @@ impl CheckState {
     /// t is the function's inferred type, exprs are the args
     fn infer_application(
         &mut self,
-        tck: &mut Tck,
         t: TypeSym,
         exprs: &[hir::TypedExpr<()>],
     ) -> Result<TypeSym, TypeError> {
@@ -1044,7 +1025,7 @@ impl CheckState {
             }
             TypeDef::Lambda(params, rettype) => {
                 for (p, e) in params.iter().zip(exprs) {
-                    self.check(tck, e, *p)?;
+                    self.check(e, *p)?;
                 }
                 Ok((rettype).clone())
             }
@@ -1064,7 +1045,7 @@ impl CheckState {
     }
 
     /// Infers the type of the expression.
-    fn infer(&mut self, tck: &mut Tck, expr: &hir::TypedExpr<()>) -> Result<TypeSym, TypeError> {
+    fn infer(&mut self, expr: &hir::TypedExpr<()>) -> Result<TypeSym, TypeError> {
         match &expr.e {
             Expr::Lit { val } => Self::infer_literal(val),
             Expr::Let {
@@ -1097,8 +1078,8 @@ impl CheckState {
                 match op {
                     And | Or | Xor => {
                         let input_type = INT.bool();
-                        self.check(tck, lhs, input_type)?;
-                        self.check(tck, rhs, input_type)?;
+                        self.check(lhs, input_type)?;
+                        self.check(rhs, input_type)?;
                         // For these the source type and target type are always the same,
                         // not always true for things such as ==
                         Ok(input_type)
@@ -1107,8 +1088,8 @@ impl CheckState {
                         // If we have a numerical operation, we find the types
                         // of the arguments and make sure they are matching numeric
                         // types.
-                        let tsym_l = self.infer(tck, lhs)?;
-                        let tsym_r = self.infer(tck, rhs)?;
+                        let tsym_l = self.infer(lhs)?;
+                        let tsym_r = self.infer(rhs)?;
                         let tl = INT.fetch_type(tsym_l);
                         let tr = INT.fetch_type(tsym_r);
                         match (&*tl, &*tr) {
@@ -1120,12 +1101,12 @@ impl CheckState {
                             // TODO: Unknown vars will have existential types or such, which also
                             // need to be handled somehow..
                             (TypeDef::SInt(_), _) => {
-                                self.check(tck, rhs, tsym_l)?;
+                                self.check(rhs, tsym_l)?;
                                 Ok(tsym_l)
                             }
                             (_, TypeDef::SInt(_)) => {
                                 // TODO BUGGO: Should this rhs be lhs?
-                                self.check(tck, rhs, tsym_r)?;
+                                self.check(rhs, tsym_r)?;
                                 Ok(tsym_r)
                             }
                             (_, _) => Err(TypeError::BopType {
@@ -1141,16 +1122,16 @@ impl CheckState {
             }
             Expr::UniOp { op, rhs } => {
                 let input_type = op.input_type();
-                self.check(tck, rhs, input_type)?;
+                self.check(rhs, input_type)?;
                 let output_type = op.output_type(input_type);
                 Ok(output_type)
             }
             // Unit constructor
             Expr::TupleCtor { body } if body.len() == 0 => Ok(INT.unit()),
             Expr::Funcall { func, params } => {
-                let ftype = self.infer(tck, func)?;
+                let ftype = self.infer(func)?;
                 let t = self.ctx.subst(ftype);
-                self.infer_application(tck, t, params)
+                self.infer_application(t, params)
             }
             Expr::Var { name } => {
                 let ty = self.ctx.assump(*name).ok_or(TypeError::UnknownVar(*name));
@@ -1429,7 +1410,8 @@ impl ISymtbl {
 }
 
 fn typecheck_decl(tck: &mut Tck, decl: hir::Decl<()>) -> Result<hir::Decl<()>, TypeError> {
-    let ctx = &mut CheckState::new_with_defaults();
+    // We clone up the typecheck context 'cause each decl has its own scope
+    let mut ctx = tck.ctx.clone();
     match decl {
         hir::Decl::Function {
             name,
@@ -1440,12 +1422,12 @@ fn typecheck_decl(tck: &mut Tck, decl: hir::Decl<()>) -> Result<hir::Decl<()>, T
             let symtbl = &mut tck.symtbl.clone();
             for (pname, ptype) in signature.params.iter() {
                 symtbl.add_var(*pname, *ptype, false);
-                ctx.ctx = ctx.ctx.clone().add(ContextItem::Assump(*pname, *ptype));
+                ctx = ctx.clone().add(ContextItem::Assump(*pname, *ptype));
             }
             let mut last_type = INT.unit();
             for expr in body {
-                let inferred_t = ctx.infer(tck, &expr)?;
-                last_type = ctx.ctx.subst(inferred_t);
+                let inferred_t = tck.infer(&expr)?;
+                last_type = ctx.subst(inferred_t);
                 tck.set_type(expr.id, last_type);
             }
             return Ok(decl);
@@ -1495,8 +1477,8 @@ fn typecheck_decl(tck: &mut Tck, decl: hir::Decl<()>) -> Result<hir::Decl<()>, T
             // Make sure the const's type exists
             tck.symtbl.type_exists(typename)?;
             let symtbl = &mut tck.symtbl.clone();
-            let inferred_t = ctx.infer(tck, &init)?;
-            let last_type = ctx.ctx.subst(inferred_t);
+            let inferred_t = tck.infer(&init)?;
+            let last_type = tck.ctx.subst(inferred_t);
             assert!(INT.fetch_type(inferred_t).is_mono());
             Ok(hir::Decl::Const {
                 name,
@@ -1521,43 +1503,42 @@ fn typecheck_decl(tck: &mut Tck, decl: hir::Decl<()>) -> Result<hir::Decl<()>, T
 
 /// Scan through all decl's and add any bindings to the symbol table,
 /// so we don't need to do anything with forward references.
-fn predeclare_decl(symtbl: &mut ISymtbl, decl: &hir::Decl<()>) {
-    let ctx = &mut CheckState::new_with_defaults();
+fn predeclare_decl(tck: &mut Tck, decl: &hir::Decl<()>) {
     match decl {
         hir::Decl::Function {
             name, signature, ..
         } => {
-            if symtbl.binding_exists(*name) {
+            if tck.symtbl.binding_exists(*name) {
                 panic!("Tried to redeclare function {}!", INT.fetch(*name));
             }
             // Add function to global scope
             let type_params = signature.params.iter().map(|(_name, t)| *t).collect();
             let function_type = INT.intern_type(&TypeDef::Lambda(type_params, signature.rettype));
-            symtbl.add_var(*name, function_type, false);
-            ctx.ctx = ctx
+            tck.symtbl.add_var(*name, function_type, false);
+            tck.ctx = tck
                 .ctx
                 .clone()
                 .add(ContextItem::Assump(*name, function_type));
         }
         hir::Decl::Const { name, typename, .. } => {
-            if symtbl.binding_exists(*name) {
+            if tck.symtbl.binding_exists(*name) {
                 panic!("Tried to redeclare const {}!", INT.fetch(*name));
             }
-            symtbl.add_var(*name, *typename, false);
-            ctx.ctx = ctx.ctx.clone().add(ContextItem::Assump(*name, *typename));
+            tck.symtbl.add_var(*name, *typename, false);
+            tck.ctx = tck.ctx.clone().add(ContextItem::Assump(*name, *typename));
         }
         hir::Decl::TypeDef { name, typedecl } => {
             // Gotta make sure there's no duplicate declarations
             // This kinda has to happen here rather than in typeck()
-            if symtbl.get_typedef(*name).is_some() {
+            if tck.symtbl.get_typedef(*name).is_some() {
                 panic!("Tried to redeclare type {}!", INT.fetch(*name));
             }
-            symtbl.add_type(*name, *typedecl);
+            tck.symtbl.add_type(*name, *typedecl);
             todo!("Predeclare typedef");
         }
         hir::Decl::Constructor { name, signature } => {
             {
-                if symtbl.get_var(*name).is_ok() {
+                if tck.symtbl.get_var(*name).is_ok() {
                     panic!(
                         "Aieeee, redeclaration of function/type constructor named {}",
                         INT.fetch(*name)
@@ -1566,14 +1547,14 @@ fn predeclare_decl(symtbl: &mut ISymtbl, decl: &hir::Decl<()>) {
                 let type_params = signature.params.iter().map(|(_name, t)| *t).collect();
                 let function_type =
                     INT.intern_type(&TypeDef::Lambda(type_params, signature.rettype));
-                symtbl.add_var(*name, function_type, false);
+                tck.symtbl.add_var(*name, function_type, false);
             }
 
             // Also we need to add a deconstructor function.  This is kinda a placeholder, but,
             // should work for now.
             {
                 let deconstruct_name = INT.intern(format!("{}_unwrap", INT.fetch(*name)));
-                if symtbl.get_var(deconstruct_name).is_ok() {
+                if tck.symtbl.get_var(deconstruct_name).is_ok() {
                     panic!(
                         "Aieeee, redeclaration of function/type destructure named {}",
                         INT.fetch(deconstruct_name)
@@ -1582,7 +1563,7 @@ fn predeclare_decl(symtbl: &mut ISymtbl, decl: &hir::Decl<()>) {
                 let type_params = vec![signature.rettype];
                 let rettype = signature.params[0].1;
                 let function_type = INT.intern_type(&TypeDef::Lambda(type_params, rettype));
-                symtbl.add_var(deconstruct_name, function_type, false);
+                tck.symtbl.add_var(deconstruct_name, function_type, false);
             }
             todo!("Predeclare constructor");
         }
@@ -1600,6 +1581,8 @@ pub struct Tck {
     exprtypes: HashMap<hir::Eid, TypeSym>,
     /// The symbol table for the module being compiled.
     symtbl: hir::ISymtbl,
+    ctx: TCContext,
+    next_existential_var: usize,
 }
 
 impl Tck {
@@ -1617,14 +1600,19 @@ impl Tck {
             .get(&eid)
             .expect("Tried to get type for Eid that doesn't exist!")
     }
+
+    /// Creates an arbitrary synthetic type identifier for labelling
+    /// unsolved type variables
+    fn next_existential_var(&mut self) -> TypeId {
+        self.next_existential_var += 1;
+        TypeId(self.next_existential_var)
+    }
 }
 
 pub fn typecheck(ir: hir::Ir<()>) -> Result<Tck, TypeError> {
     let mut tck = Tck::default();
     tck.symtbl = ISymtbl::new_with_defaults();
-    ir.decls
-        .iter()
-        .for_each(|d| predeclare_decl(&mut tck.symtbl, d));
+    ir.decls.iter().for_each(|d| predeclare_decl(&mut tck, d));
     let checked_decls = ir
         .decls
         .into_iter()
