@@ -509,38 +509,6 @@ impl TCContext {
 }
 
 impl Tck {
-    /// Create new symbol table with some built-in functions.
-    ///
-    /// Also see the prelude defined in `backend/rust.rs`
-    pub fn new_with_defaults() -> Self {
-        let mut x = TCContext::default();
-        // We add a built-in function for printing, currently.
-        {
-            let name = INT.intern("__println");
-            let typesym = INT.intern_type(&TypeDef::Lambda(vec![INT.i32()], INT.unit()));
-            x = x.add(ContextItem::Assump(name, typesym));
-        }
-        {
-            let name = INT.intern("__println_bool");
-            let typesym = INT.intern_type(&TypeDef::Lambda(vec![INT.bool()], INT.unit()));
-            x = x.add(ContextItem::Assump(name, typesym));
-        }
-        {
-            let name = INT.intern("__println_i64");
-            let typesym = INT.intern_type(&TypeDef::Lambda(vec![INT.i64()], INT.unit()));
-            x = x.add(ContextItem::Assump(name, typesym));
-        }
-        {
-            let name = INT.intern("__println_i16");
-            let typesym = INT.intern_type(&TypeDef::Lambda(vec![INT.i16()], INT.unit()));
-            x = x.add(ContextItem::Assump(name, typesym));
-        }
-        Self {
-            ctx: x,
-            ..Self::default()
-        }
-    }
-
     fn type_sub(&mut self, t1: TypeSym, t2: TypeSym) -> Result<(), TypeError> {
         //eprintln!("Doing type_sub on {:?}, {:?}", t1, t2);
         let td1 = &*INT.fetch_type(t1);
@@ -1066,6 +1034,7 @@ impl Tck {
                     .ctx
                     .assump(*varname)
                     .ok_or(TypeError::UnknownVar(*varname));
+                dbg!(&ty);
                 ty
                 // TODO: Figure out MBones's eager instantiation
                 // vs the lazy instantiation default.
@@ -1411,7 +1380,7 @@ impl ISymtbl {
 
 fn typecheck_decl(tck: &mut Tck, decl: hir::Decl<()>) -> Result<hir::Decl<()>, TypeError> {
     // We clone up the typecheck context 'cause each decl has its own scope
-    let mut ctx = tck.ctx.clone();
+    let old_ctx = tck.ctx.clone();
     match decl {
         hir::Decl::Function {
             name,
@@ -1422,14 +1391,15 @@ fn typecheck_decl(tck: &mut Tck, decl: hir::Decl<()>) -> Result<hir::Decl<()>, T
             let symtbl = &mut tck.symtbl.clone();
             for (pname, ptype) in signature.params.iter() {
                 symtbl.add_var(*pname, *ptype, false);
-                ctx = ctx.clone().add(ContextItem::Assump(*pname, *ptype));
+                tck.ctx = tck.ctx.clone().add(ContextItem::Assump(*pname, *ptype));
             }
             let mut last_type = INT.unit();
             for expr in body {
                 let inferred_t = tck.infer(&expr)?;
-                last_type = ctx.subst(inferred_t);
+                last_type = tck.ctx.subst(inferred_t);
                 tck.set_type(expr.id, last_type);
             }
+            tck.ctx = old_ctx;
             return Ok(decl);
             // Below here is old
 
@@ -1480,6 +1450,7 @@ fn typecheck_decl(tck: &mut Tck, decl: hir::Decl<()>) -> Result<hir::Decl<()>, T
             let inferred_t = tck.infer(&init)?;
             let last_type = tck.ctx.subst(inferred_t);
             assert!(INT.fetch_type(inferred_t).is_mono());
+            tck.ctx = old_ctx;
             Ok(hir::Decl::Const {
                 name,
                 typename,
@@ -1572,7 +1543,7 @@ fn predeclare_decl(tck: &mut Tck, decl: &hir::Decl<()>) {
 
 /// Top level type checking context struct.
 /// We have like three of these by now, this one should subsume the functionality of the others.
-#[derive(Default, Clone, Debug)]
+#[derive(Clone, Debug)]
 pub struct Tck {
     /// A mapping containing the return types of all expressions.
     /// The return type may not be known at any particular time,
@@ -1586,6 +1557,41 @@ pub struct Tck {
 }
 
 impl Tck {
+    /// Create new symbol table with some built-in functions.
+    ///
+    /// Also see the prelude defined in `backend/rust.rs`
+    fn new_with_defaults() -> Self {
+        let mut x = TCContext::default();
+        // We add a built-in function for printing, currently.
+        {
+            let name = INT.intern("__println");
+            let typesym = INT.intern_type(&TypeDef::Lambda(vec![INT.i32()], INT.unit()));
+            x = x.add(ContextItem::Assump(name, typesym));
+        }
+        {
+            let name = INT.intern("__println_bool");
+            let typesym = INT.intern_type(&TypeDef::Lambda(vec![INT.bool()], INT.unit()));
+            x = x.add(ContextItem::Assump(name, typesym));
+        }
+        {
+            let name = INT.intern("__println_i64");
+            let typesym = INT.intern_type(&TypeDef::Lambda(vec![INT.i64()], INT.unit()));
+            x = x.add(ContextItem::Assump(name, typesym));
+        }
+        {
+            let name = INT.intern("__println_i16");
+            let typesym = INT.intern_type(&TypeDef::Lambda(vec![INT.i16()], INT.unit()));
+            x = x.add(ContextItem::Assump(name, typesym));
+        }
+
+        Self {
+            exprtypes: HashMap::new(),
+            symtbl: hir::ISymtbl::new_with_defaults(),
+            ctx: x,
+            next_existential_var: 0,
+        }
+    }
+
     /// Records that the given expression has the given type.
     /// Panics if the type is already set.
     fn set_type(&mut self, eid: hir::Eid, t: TypeSym) {
@@ -1610,8 +1616,7 @@ impl Tck {
 }
 
 pub fn typecheck(ir: hir::Ir<()>) -> Result<Tck, TypeError> {
-    let mut tck = Tck::default();
-    tck.symtbl = ISymtbl::new_with_defaults();
+    let mut tck = Tck::new_with_defaults();
     ir.decls.iter().for_each(|d| predeclare_decl(&mut tck, d));
     let checked_decls = ir
         .decls
