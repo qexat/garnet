@@ -1485,6 +1485,15 @@ fn typecheck_decl(tck: &mut Tck, decl: hir::Decl) -> Result<hir::Decl, TypeError
                 tck.set_type(expr.id, last_type);
             }
             tck.ctx = old_ctx;
+            // TODO: Make this work properly.  Right now I'm not sure we
+            // check the return type of functions properly.
+            if last_type != signature.rettype {
+                return Err(TypeError::Return {
+                    fname: name,
+                    got: last_type,
+                    expected: signature.rettype,
+                });
+            }
             return Ok(decl);
             // Below here is old
 
