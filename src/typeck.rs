@@ -825,7 +825,7 @@ impl Tck {
 
     /// Returns Ok if the result of the expression matches the given type,
     /// an error otherwise.
-    fn check(&mut self, expr: &hir::TypedExpr<()>, t: TypeSym) -> Result<(), TypeError> {
+    fn check(&mut self, expr: &hir::TypedExpr, t: TypeSym) -> Result<(), TypeError> {
         let tdef = &*INT.fetch_type(t);
         match (&expr.e, tdef) {
             // Is the literal an UnknownInt?
@@ -920,7 +920,7 @@ impl Tck {
     /// The others may be any type.... I suppose?  Or must be unit?  Hmm.
     ///
     /// Sequences of zero expr's are not allowed.  Or should be implicitly unit?  Hmm.
-    fn check_exprs(&mut self, exprs: &[hir::TypedExpr<()>], t: TypeSym) -> Result<(), TypeError> {
+    fn check_exprs(&mut self, exprs: &[hir::TypedExpr], t: TypeSym) -> Result<(), TypeError> {
         assert!(
             exprs.len() != 0,
             "No exprs given to check_exprs(), should never happen!"
@@ -939,7 +939,7 @@ impl Tck {
     fn infer_application(
         &mut self,
         t: TypeSym,
-        exprs: &[hir::TypedExpr<()>],
+        exprs: &[hir::TypedExpr],
     ) -> Result<TypeSym, TypeError> {
         let td = &*INT.fetch_type(t);
         match td {
@@ -1031,7 +1031,7 @@ impl Tck {
     }
 
     /// Infers the type of the expression.
-    fn infer(&mut self, expr: &hir::TypedExpr<()>) -> Result<TypeSym, TypeError> {
+    fn infer(&mut self, expr: &hir::TypedExpr) -> Result<TypeSym, TypeError> {
         match &expr.e {
             Expr::Lit { val } => Self::infer_literal(val),
             Expr::Let {
@@ -1331,7 +1331,7 @@ impl Tck {
 
     /// Infer a list of expressions, returning the type of the last one.
     /// Must contain at least one expr.
-    fn infer_exprs(&mut self, exprs: &[hir::TypedExpr<()>]) -> Result<TypeSym, TypeError> {
+    fn infer_exprs(&mut self, exprs: &[hir::TypedExpr]) -> Result<TypeSym, TypeError> {
         assert!(
             exprs.len() != 0,
             "No exprs given to infer_exprs(), should never happen!"
@@ -1463,7 +1463,7 @@ impl ISymtbl {
     }
 }
 
-fn typecheck_decl(tck: &mut Tck, decl: hir::Decl<()>) -> Result<hir::Decl<()>, TypeError> {
+fn typecheck_decl(tck: &mut Tck, decl: hir::Decl) -> Result<hir::Decl, TypeError> {
     // We clone up the typecheck context 'cause each decl has its own scope
     let old_ctx = tck.ctx.clone();
     match decl {
@@ -1559,7 +1559,7 @@ fn typecheck_decl(tck: &mut Tck, decl: hir::Decl<()>) -> Result<hir::Decl<()>, T
 
 /// Scan through all decl's and add any bindings to the symbol table,
 /// so we don't need to do anything with forward references.
-fn predeclare_decl(tck: &mut Tck, decl: &hir::Decl<()>) {
+fn predeclare_decl(tck: &mut Tck, decl: &hir::Decl) {
     match decl {
         hir::Decl::Function {
             name, signature, ..
@@ -1700,14 +1700,14 @@ impl Tck {
     }
 }
 
-pub fn typecheck(ir: hir::Ir<()>) -> Result<Tck, TypeError> {
+pub fn typecheck(ir: hir::Ir) -> Result<Tck, TypeError> {
     let mut tck = Tck::new_with_defaults();
     ir.decls.iter().for_each(|d| predeclare_decl(&mut tck, d));
     let checked_decls = ir
         .decls
         .into_iter()
         .map(|decl| typecheck_decl(&mut tck, decl))
-        .collect::<Result<Vec<hir::Decl<()>>, TypeError>>()?;
+        .collect::<Result<Vec<hir::Decl>, TypeError>>()?;
     Ok(tck)
 }
 /*
@@ -2482,7 +2482,7 @@ fn typecheck_expr(
 /// So, what is an lvalue?
 /// Well, it's a variable,
 /// or it's an lvalue in a deref expr or tupleref
-fn is_mutable_lvalue<T>(symtbl: &ISymtbl, expr: &hir::Expr<T>) -> Result<bool, TypeError> {
+fn is_mutable_lvalue(symtbl: &ISymtbl, expr: &hir::Expr) -> Result<bool, TypeError> {
     match expr {
         hir::Expr::Var { name } => {
             let v = symtbl.get_binding(*name)?;
@@ -2510,7 +2510,7 @@ mod tests {
     fn typecheck_src(src: &str) -> Result<hir::Ir<TypeSym>, TypeError> {
         use crate::parser::Parser;
         let ast = Parser::new("unittest", src).parse();
-        let ir = hir::lower(&mut rly, &ast);
+        let ir = hir::lower(&mut |_| (), &ast);
         typecheck(ir).map_err(|e| {
             eprintln!("typecheck_src got error: {}", e);
             e

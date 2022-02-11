@@ -63,116 +63,20 @@ impl Eid {
 /// typechecked, or a `TypeSym` with the appropriate type
 /// after type checking has been done.
 #[derive(Debug, Clone, PartialEq)]
-pub struct TypedExpr<T> {
-    /// type
-    pub t: T,
+pub struct TypedExpr {
     /// expression
-    pub e: Expr<T>,
+    pub e: Expr,
     /// Scope of this expression
     pub s: ISymtbl,
     /// Expression ID
     pub id: Eid,
 }
 
-impl<T> TypedExpr<T> {
-    /// Takes a function that transforms a typedexpr and applies it to every single node
-    /// in the expr tree.
-    ///
-    /// Only `typeck::reify_types()` actually uses the full functionality of this... do we really
-    /// need it, in the end?  idk.
-    pub(crate) fn map_type<T2>(&self, f: &impl Fn(&T) -> T2) -> TypedExpr<T2> {
-        use Expr::*;
-        let map_vec = |e: &Vec<TypedExpr<T>>| e.iter().map(|te| te.map_type(f)).collect::<Vec<_>>();
-        let new_e = match &self.e {
-            Lit { val } => Lit { val: val.clone() },
-            EnumLit { val, ty } => EnumLit { val: *val, ty: *ty },
-            Var { name } => Var { name: *name },
-            UniOp { op, rhs } => UniOp {
-                op: *op,
-                rhs: Box::new(rhs.map_type(f)),
-            },
-            BinOp { op, lhs, rhs } => BinOp {
-                op: *op,
-                lhs: Box::new(lhs.map_type(f)),
-                rhs: Box::new(rhs.map_type(f)),
-            },
-            Block { body } => Block {
-                body: map_vec(body),
-            },
-            Let {
-                varname,
-                typename,
-                init,
-                mutable,
-            } => Let {
-                varname: *varname,
-                typename: *typename,
-                init: Box::new(init.map_type(f)),
-                mutable: *mutable,
-            },
-            If { cases } => {
-                let new_cases = cases
-                    .iter()
-                    .map(|(c, bod)| (c.map_type(f), map_vec(bod)))
-                    .collect();
-                If { cases: new_cases }
-            }
-            Loop { body } => Loop {
-                body: map_vec(body),
-            },
-            Lambda { signature, body } => Lambda {
-                signature: signature.clone(),
-                body: map_vec(body),
-            },
-            Funcall { func, params } => Funcall {
-                func: Box::new(func.map_type(f)),
-                params: map_vec(params),
-            },
-            Break => Break,
-            Return { retval } => Return {
-                retval: Box::new(retval.map_type(f)),
-            },
-            TupleCtor { body } => TupleCtor {
-                body: map_vec(body),
-            },
-            StructCtor { body, types } => {
-                let body = body.iter().map(|(nm, vl)| (*nm, vl.map_type(f))).collect();
-                StructCtor {
-                    body,
-                    types: types.clone(),
-                }
-            }
-            TupleRef { expr, elt } => TupleRef {
-                expr: Box::new(expr.map_type(f)),
-                elt: *elt,
-            },
-            StructRef { expr, elt } => StructRef {
-                expr: Box::new(expr.map_type(f)),
-                elt: *elt,
-            },
-            Assign { lhs, rhs } => Assign {
-                lhs: Box::new(lhs.map_type(f)),
-                rhs: Box::new(rhs.map_type(f)),
-            },
-            Deref { expr } => Deref {
-                expr: Box::new(expr.map_type(f)),
-            },
-            Ref { expr } => Ref {
-                expr: Box::new(expr.map_type(f)),
-            },
-        };
-        TypedExpr {
-            e: new_e,
-            t: f(&self.t),
-            s: self.s.clone(),
-            id: self.id,
-        }
-    }
-}
+impl TypedExpr {}
 
 /// An expression.
 #[derive(Debug, Clone, PartialEq)]
-pub enum Expr<T> {
+pub enum Expr {
     Lit {
         val: Literal,
     },
@@ -185,68 +89,68 @@ pub enum Expr<T> {
     },
     BinOp {
         op: BOp,
-        lhs: Box<TypedExpr<T>>,
-        rhs: Box<TypedExpr<T>>,
+        lhs: Box<TypedExpr>,
+        rhs: Box<TypedExpr>,
     },
     UniOp {
         op: UOp,
-        rhs: Box<TypedExpr<T>>,
+        rhs: Box<TypedExpr>,
     },
     Block {
-        body: Vec<TypedExpr<T>>,
+        body: Vec<TypedExpr>,
     },
     Let {
         varname: VarSym,
         typename: TypeSym,
-        init: Box<TypedExpr<T>>,
+        init: Box<TypedExpr>,
         mutable: bool,
     },
     If {
-        cases: Vec<(TypedExpr<T>, Vec<TypedExpr<T>>)>,
+        cases: Vec<(TypedExpr, Vec<TypedExpr>)>,
     },
     Loop {
-        body: Vec<TypedExpr<T>>,
+        body: Vec<TypedExpr>,
     },
     Lambda {
         signature: Signature,
-        body: Vec<TypedExpr<T>>,
+        body: Vec<TypedExpr>,
     },
     Funcall {
-        func: Box<TypedExpr<T>>,
-        params: Vec<TypedExpr<T>>,
+        func: Box<TypedExpr>,
+        params: Vec<TypedExpr>,
     },
     Break,
     Return {
-        retval: Box<TypedExpr<T>>,
+        retval: Box<TypedExpr>,
     },
     TupleCtor {
-        body: Vec<TypedExpr<T>>,
+        body: Vec<TypedExpr>,
     },
     StructCtor {
-        body: Vec<(VarSym, TypedExpr<T>)>,
+        body: Vec<(VarSym, TypedExpr)>,
         types: BTreeMap<VarSym, TypeSym>,
     },
     TupleRef {
-        expr: Box<TypedExpr<T>>,
+        expr: Box<TypedExpr>,
         elt: usize,
     },
     StructRef {
-        expr: Box<TypedExpr<T>>,
+        expr: Box<TypedExpr>,
         elt: VarSym,
     },
     Assign {
-        lhs: Box<TypedExpr<T>>,
-        rhs: Box<TypedExpr<T>>,
+        lhs: Box<TypedExpr>,
+        rhs: Box<TypedExpr>,
     },
     Deref {
-        expr: Box<TypedExpr<T>>,
+        expr: Box<TypedExpr>,
     },
     Ref {
-        expr: Box<TypedExpr<T>>,
+        expr: Box<TypedExpr>,
     },
 }
 
-impl<T> Expr<T> {
+impl Expr {
     /// Shortcut function for making literal bools
     pub const fn bool(b: bool) -> Self {
         Self::Lit {
@@ -270,16 +174,16 @@ impl<T> Expr<T> {
 /// A top-level declaration in the source file.
 /// Like TypedExpr, contains a type annotation.
 #[derive(Debug, Clone, PartialEq)]
-pub enum Decl<T> {
+pub enum Decl {
     Function {
         name: VarSym,
         signature: Signature,
-        body: Vec<TypedExpr<T>>,
+        body: Vec<TypedExpr>,
     },
     Const {
         name: VarSym,
         typename: TypeSym,
-        init: TypedExpr<T>,
+        init: TypedExpr,
     },
     TypeDef {
         name: VarSym,
@@ -304,8 +208,8 @@ pub enum Decl<T> {
 ///
 /// The T is a type annotation of some kind, but we really don't care what.
 #[derive(Debug, Clone, Default)]
-pub struct Ir<T> {
-    pub decls: Vec<Decl<T>>,
+pub struct Ir {
+    pub decls: Vec<Decl>,
 }
 
 /// Transforms AST into IR
@@ -313,7 +217,7 @@ pub struct Ir<T> {
 /// The function `f` is a function that should generate whatever value we need
 /// for our type info attached to the HIR node.  To start with it's a unit, 'cause
 /// we have no type information.
-pub fn lower<T>(f: &mut dyn FnMut(&hir::Expr<T>) -> T, ast: &ast::Ast) -> Ir<T> {
+pub fn lower(f: &mut dyn FnMut(&hir::Expr) -> (), ast: &ast::Ast) -> Ir {
     lower_decls(f, &ast.decls)
 }
 
@@ -334,7 +238,7 @@ fn lower_signature(sig: &ast::Signature) -> Signature {
 }
 
 /// This is the biggie currently
-fn lower_expr<T>(f: &mut dyn FnMut(&hir::Expr<T>) -> T, expr: &ast::Expr) -> TypedExpr<T> {
+fn lower_expr(f: &mut dyn FnMut(&hir::Expr) -> (), expr: &ast::Expr) -> TypedExpr {
     use ast::Expr as E;
     use Expr::*;
     let new_exp = match expr {
@@ -456,9 +360,7 @@ fn lower_expr<T>(f: &mut dyn FnMut(&hir::Expr<T>) -> T, expr: &ast::Expr) -> Typ
             rhs: Box::new(lower_expr(f, rhs)),
         },
     };
-    let t = f(&new_exp);
     TypedExpr {
-        t,
         e: new_exp,
         s: ISymtbl::default(),
         id: Eid::new(),
@@ -466,7 +368,7 @@ fn lower_expr<T>(f: &mut dyn FnMut(&hir::Expr<T>) -> T, expr: &ast::Expr) -> Typ
 }
 
 /// handy shortcut to lower Vec<ast::Expr>
-fn lower_exprs<T>(f: &mut dyn FnMut(&hir::Expr<T>) -> T, exprs: &[ast::Expr]) -> Vec<TypedExpr<T>> {
+fn lower_exprs(f: &mut dyn FnMut(&hir::Expr) -> (), exprs: &[ast::Expr]) -> Vec<TypedExpr> {
     exprs.iter().map(|e| lower_expr(f, e)).collect()
 }
 
@@ -474,7 +376,7 @@ fn lower_exprs<T>(f: &mut dyn FnMut(&hir::Expr<T>) -> T, exprs: &[ast::Expr]) ->
 ///
 /// Is there a more elegant way of doing this than passing an accumulator?
 /// Returning a vec is lame.  Return an iterator?  Sounds like work.
-fn lower_decl<T>(accm: &mut Vec<Decl<T>>, f: &mut dyn FnMut(&hir::Expr<T>) -> T, decl: &ast::Decl) {
+fn lower_decl(accm: &mut Vec<Decl>, f: &mut dyn FnMut(&hir::Expr) -> (), decl: &ast::Decl) {
     use ast::Decl as D;
     match decl {
         D::Function {
@@ -568,7 +470,7 @@ fn lower_decl<T>(accm: &mut Vec<Decl<T>>, f: &mut dyn FnMut(&hir::Expr<T>) -> T,
     }
 }
 
-fn lower_decls<T>(f: &mut dyn FnMut(&hir::Expr<T>) -> T, decls: &[ast::Decl]) -> Ir<T> {
+fn lower_decls(f: &mut dyn FnMut(&hir::Expr), decls: &[ast::Decl]) -> Ir {
     let mut accm = Vec::with_capacity(decls.len() * 2);
     for d in decls.iter() {
         lower_decl(&mut accm, f, d)
@@ -581,9 +483,8 @@ fn lower_decls<T>(f: &mut dyn FnMut(&hir::Expr<T>) -> T, decls: &[ast::Decl]) ->
 ///
 /// TODO: Better name?
 #[cfg(test)]
-pub(crate) fn plz(e: Expr<()>) -> Box<TypedExpr<()>> {
+pub(crate) fn plz(e: Expr) -> Box<TypedExpr> {
     Box::new(TypedExpr {
-        t: (),
         e,
         s: ISymtbl::default(),
         id: Eid::new(),
@@ -598,7 +499,7 @@ mod tests {
     use crate::testutil::*;
 
     /// HACK to get around the Eid's not matching :|
-    fn test_eq(e1: &TypedExpr<()>, e2: &TypedExpr<()>) {
+    fn test_eq(e1: &TypedExpr, e2: &TypedExpr) {
         let mut e1 = e1.clone();
         e1.id = e1.id;
         assert_eq!(&e1, e2);
@@ -678,6 +579,6 @@ mod tests {
             cases: vec![],
             falseblock: vec![],
         };
-        let _ = lower_expr(&mut rly, &input);
+        let _ = lower_expr(&mut |_| (), &input);
     }
 }
