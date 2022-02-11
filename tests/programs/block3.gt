@@ -1,0 +1,14 @@
+-- Compile:
+--   status: error
+--   stderr:
+--     ...
+--     ...Parse error on token End...
+--     ...
+
+-- Do blocks with no expressions fail to compile?
+
+fn main(): {} =
+    let x: I32 = do
+    end
+    __println(x)
+end

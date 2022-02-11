@@ -57,6 +57,7 @@ impl BOp {
         use BOp::*;
         match self {
             And | Or | Xor => INT.bool(),
+            // TODO: This is wrong for Eq and Neq 'cause they can accept anything...
             _ => INT.iunknown(),
         }
     }

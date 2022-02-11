@@ -914,6 +914,24 @@ impl Tck {
         }
     }
 
+    /// Check many expressions and makes sure the last one matches the type given.
+    ///
+    /// TODO:
+    /// The others may be any type.... I suppose?  Or must be unit?  Hmm.
+    ///
+    /// Sequences of zero expr's are not allowed.  Or should be implicitly unit?  Hmm.
+    fn check_exprs(&mut self, exprs: &[hir::TypedExpr<()>], t: TypeSym) -> Result<(), TypeError> {
+        assert!(
+            exprs.len() != 0,
+            "No exprs given to check_exprs(), should never happen!"
+        );
+        let last_idx = exprs.len() - 1;
+        for e in &exprs[..last_idx] {
+            self.check(e, INT.unit())?;
+        }
+        self.check(&exprs[last_idx], t)
+    }
+
     /// This does type inference to a function call expression, t(expr).
     /// application as in function application, not as in a program
     ///
@@ -1086,7 +1104,15 @@ impl Tck {
                             }),
                         }
                     }
-                    Eq | Neq | Gt | Lt | Gte | Lte => todo!("Comparison operators"),
+                    other => {
+                        let input_type = other.input_type();
+                        let output_type = other.output_type(input_type);
+                        self.check(lhs, input_type)?;
+                        self.check(rhs, input_type)?;
+                        // For these the source type and target type are always the same,
+                        // not always true for things such as ==
+                        Ok(output_type)
+                    }
                 }
             }
             Expr::UniOp { op, rhs } => {
@@ -1117,15 +1143,23 @@ impl Tck {
                 Ok(INT.never())
             }
             Expr::If { cases } => {
-                todo!("If statement")
+                let (first_test, first_case) = cases
+                    .get(0)
+                    .expect("If statement with no cases, should never happen!");
+                self.check(first_test, INT.bool())?;
+                let first_type = self.infer_exprs(first_case)?;
+                for (test, case) in &cases[1..] {
+                    self.check(test, INT.bool())?;
+                    self.check_exprs(case, first_type)?;
+                }
+                Ok(first_type)
             }
-            Expr::Block { body } => {
-                todo!("Block")
-            }
+            Expr::Block { body } => self.infer_exprs(body),
             Expr::Loop { body } => {
                 todo!("Loop")
             }
             Expr::Break => {
+                // TODO someday: make break and loops return a type
                 todo!("Break")
             }
             Expr::Assign { lhs, rhs } => {
@@ -1293,6 +1327,20 @@ impl Tck {
                       }
               */
         }
+    }
+
+    /// Infer a list of expressions, returning the type of the last one.
+    /// Must contain at least one expr.
+    fn infer_exprs(&mut self, exprs: &[hir::TypedExpr<()>]) -> Result<TypeSym, TypeError> {
+        assert!(
+            exprs.len() != 0,
+            "No exprs given to infer_exprs(), should never happen!"
+        );
+        let last_idx = exprs.len() - 1;
+        for e in &exprs[..last_idx] {
+            self.infer(e)?;
+        }
+        self.infer(&exprs[last_idx])
     }
 }
 

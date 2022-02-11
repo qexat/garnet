@@ -1,0 +1,15 @@
+-- Compile:
+--   status: success
+--
+-- Run:
+--   status: success
+--   stdout: 42
+
+-- Do blocks with one expression work?
+
+fn main(): {} =
+    let x: I32 = do
+        42
+    end
+    __println(x)
+end
