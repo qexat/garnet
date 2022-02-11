@@ -1082,7 +1082,7 @@ impl Tck {
                                 bop: *op,
                                 got1: tsym_l,
                                 got2: tsym_r,
-                                expected: todo!("uhhhh, idk"),
+                                expected: INT.iunknown(),
                             }),
                         }
                     }
@@ -1116,145 +1116,182 @@ impl Tck {
                 // compatible with the function's rettype.
                 Ok(INT.never())
             }
-            s => todo!("To implement: {:?}", s),
-            /*
-                    Ast::Bool(_) => Ok(Type::Bool),
-                    Ast::Int(_) => Ok(Type::UnknownInt),
-                    // TODO: Verify int sizes make sense
-                    Ast::SizedInt(_, size) => Ok(Type::SInt(*size)),
-                    Ast::BinOp(op, l, r) => {
-                        use BinOp::*;
-                        // Find the type the binop expects
-                        match op {
-                            And | Or | Xor => {
-                                let target_type = Type::Bool;
-                                self.check(l, &target_type)?;
-                                self.check(r, &target_type)?;
-                                // For these the source type and target type are always the same,
-                                // not always true for things such as ==
-                                Ok(target_type)
-                            }
-                            Add | Sub | Mul | Div => {
-                                // If we have a numerical operation, we find the types
-                                // of the arguments and make sure they are matching numeric
-                                // types.
-                                let tl = self.infer(tck, l)?;
-                                let tr = self.infer(tck, r)?;
-                                match (&tl, &tr) {
-                                    (Type::UnknownInt, Type::UnknownInt) => Ok(Type::UnknownInt),
-                                    (Type::SInt(s1), Type::SInt(s2)) if s1 == s2 => Ok(Type::SInt(*s1)),
-                                    // Infer types of unknown ints
-                                    // TODO: Unknown vars will have existential types or such, which also
-                                    // need to be handled somehow..
-                                    (Type::SInt(_), _) => {
-                                        self.check(r, &tl)?;
-                                        Ok(tl)
-                                    }
-                                    (_, Type::SInt(_)) => {
-                                        self.check(r, &tr)?;
-                                        Ok(tr)
-                                    }
-                                    (_, _) => Err(format!(
-                                        "Numerical op {:?} has un-matching types: {:?} and {:?}",
-                                        op, tl, tr
-                                    )),
-                                }
-                            }
-                        }
-                    }
-                    Ast::ExistentialVar(x) => {
-                        let ty = self
-                            .ctx
-                            .assump(x)
-                            .ok_or(format!("Unbound variable {:?}", x));
-                        ty
-                        // TODO: Figure out MBones's eager instantiation
-                        // vs the lazy instantiation default.
-                        //let tid = self.next_existential_var();
-                        //Ok(self.instantiate(tid, ty))
-                    }
-                    Ast::TypeAnnotation(e, a) => {
-                        self.ctx.type_is_well_formed(a)?;
-                        self.check(e, a)?;
-                        return Ok(a.clone());
-                    }
-                    Ast::Lambda(params, body) => {
-                        eprintln!("Inferring lambda: {:?}", expr);
-                        let rettype = self.next_existential_var();
-                        let mut paramtypes = vec![];
-                        // The order of these matters: We have to do all the params and the rettype,
-                        // then the assumptions about the params.
-                        for _ in params {
-                            let paramtype = self.next_existential_var();
-                            self.ctx = self.ctx.clone().add(ContextItem::ExistentialVar(paramtype));
-                            eprintln!(" ahat: {:?}, ahat': {:?}", paramtype, rettype);
-                            eprintln!(" ctx: {:?}", &self.ctx);
-                            paramtypes.push(paramtype);
-                        }
-                        self.ctx = self.ctx.clone().add(ContextItem::ExistentialVar(rettype));
-                        for (nm, ty) in params.iter().zip(paramtypes.iter()) {
-                            self.ctx = self
-                                .ctx
-                                .clone()
-                                .add(ContextItem::Assump(nm.clone(), Type::ExistentialVar(*ty)));
-                        }
-                        // self.check() modifies our ctx so we have to snip off everything in it
-                        // after the last thing we actually want without altering the things before
-                        // it.  So we add an `until_after()` method, which also works correctly on
-                        // functions with 0 params.
-                        self.check(body, &Type::ExistentialVar(rettype))?;
-                        eprintln!("Check done: {:?}", self.ctx);
-                        self.ctx = self.ctx.until_after(&ContextItem::ExistentialVar(rettype));
-                        eprintln!("until done: {:?}", self.ctx);
-                        let paramtypes = paramtypes
-                            .iter()
-                            .map(|paramtype| Type::ExistentialVar(*paramtype))
-                            .collect();
-                        return Ok(Type::Function(
-                            paramtypes,
-                            Box::new(Type::ExistentialVar(rettype)),
-                        ));
-                        /*
-                        let paramtype = self.next_existential_var();
-                        let rettype = self.next_existential_var();
-                        self.ctx = self
-                            .ctx
-                            .clone()
-                            .add(ContextItem::ExistentialVar(paramtype))
-                            .add(ContextItem::ExistentialVar(rettype))
-                            .add(ContextItem::Assump(
-                                params.clone(),
-                                Type::ExistentialVar(paramtype),
-                            ));
-                        eprintln!(" ahat: {:?}, ahat': {:?}", paramtype, rettype);
-                        eprintln!(" ctx: {:?}", &self.ctx);
-                        self.check(body, &Type::ExistentialVar(rettype))?;
-                        eprintln!("Check done: {:?}", self.ctx);
-                        self.ctx = self.ctx.until(&ContextItem::Assump(
-                            params.clone(),
-                            Type::ExistentialVar(paramtype),
-                        ));
-                        eprintln!("until done: {:?}", self.ctx);
-                        return Ok(Type::Function(
-                            Box::new(Type::ExistentialVar(paramtype)),
-                            Box::new(Type::ExistentialVar(rettype)),
-                        ));
-                        */
-                    }
-                    Ast::Call(f, params) => {
-                        let ftype = self.infer(tck, f)?;
-                        let t = self.ctx.subst(&ftype);
-                        self.infer_application(&t, &*params)
-                    }
-                    Ast::TupleLit(vls) => {
-                        // TODO: Not sure this is at all correct.
-                        let ts = vls
-                            .iter()
-                            .map(|v| self.infer(tck, v))
-                            .collect::<Result<Vec<_>, _>>()?;
-                        Ok(Type::Tuple(ts))
-                    }
-            */
+            Expr::If { cases } => {
+                todo!("If statement")
+            }
+            Expr::Block { body } => {
+                todo!("Block")
+            }
+            Expr::Loop { body } => {
+                todo!("Loop")
+            }
+            Expr::Break => {
+                todo!("Break")
+            }
+            Expr::Assign { lhs, rhs } => {
+                todo!("Assign")
+            }
+            Expr::Lambda { signature, body } => {
+                todo!("Lambda")
+            }
+            Expr::TupleCtor { .. } => {
+                todo!("TupleCtor")
+            }
+            Expr::StructCtor { .. } => {
+                todo!("StructCtor")
+            }
+            Expr::TupleRef { .. } => {
+                todo!("TupleRef")
+            }
+            Expr::StructRef { .. } => {
+                todo!("TupleRef")
+            }
+            Expr::Ref { .. } => {
+                todo!("Ref")
+            }
+            Expr::Deref { .. } => {
+                todo!("Deref")
+            }
+            Expr::EnumLit { .. } => {
+                todo!("EnumLit")
+            } /*
+                      Ast::Bool(_) => Ok(Type::Bool),
+                      Ast::Int(_) => Ok(Type::UnknownInt),
+                      // TODO: Verify int sizes make sense
+                      Ast::SizedInt(_, size) => Ok(Type::SInt(*size)),
+                      Ast::BinOp(op, l, r) => {
+                          use BinOp::*;
+                          // Find the type the binop expects
+                          match op {
+                              And | Or | Xor => {
+                                  let target_type = Type::Bool;
+                                  self.check(l, &target_type)?;
+                                  self.check(r, &target_type)?;
+                                  // For these the source type and target type are always the same,
+                                  // not always true for things such as ==
+                                  Ok(target_type)
+                              }
+                              Add | Sub | Mul | Div => {
+                                  // If we have a numerical operation, we find the types
+                                  // of the arguments and make sure they are matching numeric
+                                  // types.
+                                  let tl = self.infer(tck, l)?;
+                                  let tr = self.infer(tck, r)?;
+                                  match (&tl, &tr) {
+                                      (Type::UnknownInt, Type::UnknownInt) => Ok(Type::UnknownInt),
+                                      (Type::SInt(s1), Type::SInt(s2)) if s1 == s2 => Ok(Type::SInt(*s1)),
+                                      // Infer types of unknown ints
+                                      // TODO: Unknown vars will have existential types or such, which also
+                                      // need to be handled somehow..
+                                      (Type::SInt(_), _) => {
+                                          self.check(r, &tl)?;
+                                          Ok(tl)
+                                      }
+                                      (_, Type::SInt(_)) => {
+                                          self.check(r, &tr)?;
+                                          Ok(tr)
+                                      }
+                                      (_, _) => Err(format!(
+                                          "Numerical op {:?} has un-matching types: {:?} and {:?}",
+                                          op, tl, tr
+                                      )),
+                                  }
+                              }
+                          }
+                      }
+                      Ast::ExistentialVar(x) => {
+                          let ty = self
+                              .ctx
+                              .assump(x)
+                              .ok_or(format!("Unbound variable {:?}", x));
+                          ty
+                          // TODO: Figure out MBones's eager instantiation
+                          // vs the lazy instantiation default.
+                          //let tid = self.next_existential_var();
+                          //Ok(self.instantiate(tid, ty))
+                      }
+                      Ast::TypeAnnotation(e, a) => {
+                          self.ctx.type_is_well_formed(a)?;
+                          self.check(e, a)?;
+                          return Ok(a.clone());
+                      }
+                      Ast::Lambda(params, body) => {
+                          eprintln!("Inferring lambda: {:?}", expr);
+                          let rettype = self.next_existential_var();
+                          let mut paramtypes = vec![];
+                          // The order of these matters: We have to do all the params and the rettype,
+                          // then the assumptions about the params.
+                          for _ in params {
+                              let paramtype = self.next_existential_var();
+                              self.ctx = self.ctx.clone().add(ContextItem::ExistentialVar(paramtype));
+                              eprintln!(" ahat: {:?}, ahat': {:?}", paramtype, rettype);
+                              eprintln!(" ctx: {:?}", &self.ctx);
+                              paramtypes.push(paramtype);
+                          }
+                          self.ctx = self.ctx.clone().add(ContextItem::ExistentialVar(rettype));
+                          for (nm, ty) in params.iter().zip(paramtypes.iter()) {
+                              self.ctx = self
+                                  .ctx
+                                  .clone()
+                                  .add(ContextItem::Assump(nm.clone(), Type::ExistentialVar(*ty)));
+                          }
+                          // self.check() modifies our ctx so we have to snip off everything in it
+                          // after the last thing we actually want without altering the things before
+                          // it.  So we add an `until_after()` method, which also works correctly on
+                          // functions with 0 params.
+                          self.check(body, &Type::ExistentialVar(rettype))?;
+                          eprintln!("Check done: {:?}", self.ctx);
+                          self.ctx = self.ctx.until_after(&ContextItem::ExistentialVar(rettype));
+                          eprintln!("until done: {:?}", self.ctx);
+                          let paramtypes = paramtypes
+                              .iter()
+                              .map(|paramtype| Type::ExistentialVar(*paramtype))
+                              .collect();
+                          return Ok(Type::Function(
+                              paramtypes,
+                              Box::new(Type::ExistentialVar(rettype)),
+                          ));
+                          /*
+                          let paramtype = self.next_existential_var();
+                          let rettype = self.next_existential_var();
+                          self.ctx = self
+                              .ctx
+                              .clone()
+                              .add(ContextItem::ExistentialVar(paramtype))
+                              .add(ContextItem::ExistentialVar(rettype))
+                              .add(ContextItem::Assump(
+                                  params.clone(),
+                                  Type::ExistentialVar(paramtype),
+                              ));
+                          eprintln!(" ahat: {:?}, ahat': {:?}", paramtype, rettype);
+                          eprintln!(" ctx: {:?}", &self.ctx);
+                          self.check(body, &Type::ExistentialVar(rettype))?;
+                          eprintln!("Check done: {:?}", self.ctx);
+                          self.ctx = self.ctx.until(&ContextItem::Assump(
+                              params.clone(),
+                              Type::ExistentialVar(paramtype),
+                          ));
+                          eprintln!("until done: {:?}", self.ctx);
+                          return Ok(Type::Function(
+                              Box::new(Type::ExistentialVar(paramtype)),
+                              Box::new(Type::ExistentialVar(rettype)),
+                          ));
+                          */
+                      }
+                      Ast::Call(f, params) => {
+                          let ftype = self.infer(tck, f)?;
+                          let t = self.ctx.subst(&ftype);
+                          self.infer_application(&t, &*params)
+                      }
+                      Ast::TupleLit(vls) => {
+                          // TODO: Not sure this is at all correct.
+                          let ts = vls
+                              .iter()
+                              .map(|v| self.infer(tck, v))
+                              .collect::<Result<Vec<_>, _>>()?;
+                          Ok(Type::Tuple(ts))
+                      }
+              */
         }
     }
 }
@@ -1454,7 +1491,7 @@ fn typecheck_decl(tck: &mut Tck, decl: hir::Decl<()>) -> Result<hir::Decl<()>, T
             Ok(hir::Decl::Const {
                 name,
                 typename,
-                init: todo!("Consistantify TypedExpr nonsense"),
+                init,
             })
         }
         // Ok, we are declaring a new type.  We need to make sure that the typedecl
