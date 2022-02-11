@@ -1,6 +1,6 @@
 //! Transformation/optimization passes that function on the IR.
 //! May function on typed or untyped IR, either way.
-//! For now each is a function from `IR<T> -> IR<T>`, rather than
+//! For now each is a function from `IR -> IR`, rather than
 //! having a visitor and mutating stuff or anything like that,
 //! which may be less efficient but is IMO simpler to think about.
 //!
@@ -13,20 +13,15 @@
 use crate::hir::{Decl as D, Expr as E, Ir, TypedExpr};
 use crate::*;
 
-type Pass<T> = fn(Ir<T>) -> Ir<T>;
+type Pass = fn(Ir) -> Ir;
 
-pub fn run_passes(ir: Ir<()>) -> Ir<()> {
-    let passes: &[Pass<()>] = &[lambda_lifting];
-    passes.iter().fold(ir, |prev_ir, f| f(prev_ir))
-}
-
-pub fn run_typed_passes(ir: Ir<TypeSym>) -> Ir<TypeSym> {
-    let passes: &[Pass<TypeSym>] = &[];
+pub fn run_passes(ir: Ir) -> Ir {
+    let passes: &[Pass] = &[lambda_lifting];
     passes.iter().fold(ir, |prev_ir, f| f(prev_ir))
 }
 
 /// Lambda lift a single expr.
-fn lambda_lift_expr<T>(expr: TypedExpr<T>, output_funcs: &mut Vec<D<T>>) -> TypedExpr<T> {
+fn lambda_lift_expr(expr: TypedExpr, output_funcs: &mut Vec<D>) -> TypedExpr {
     let result = match expr.e {
         E::BinOp { op, lhs, rhs } => {
             let nlhs = lambda_lift_expr(*lhs, output_funcs);
@@ -101,17 +96,13 @@ fn lambda_lift_expr<T>(expr: TypedExpr<T>, output_funcs: &mut Vec<D<T>>) -> Type
     };
     hir::TypedExpr {
         e: result,
-        t: expr.t,
         s: expr.s,
         id: expr.id,
     }
 }
 
 /// Lambda lift a list of expr's
-fn lambda_lift_exprs<T>(
-    exprs: Vec<TypedExpr<T>>,
-    output_funcs: &mut Vec<D<T>>,
-) -> Vec<TypedExpr<T>> {
+fn lambda_lift_exprs(exprs: Vec<TypedExpr>, output_funcs: &mut Vec<D>) -> Vec<TypedExpr> {
     exprs
         .into_iter()
         .map(|e| lambda_lift_expr(e, output_funcs))
@@ -123,10 +114,10 @@ fn lambda_lift_exprs<T>(
 ///
 /// TODO: Output is an IR that does not have any lambda expr's in it, which
 /// I would like to make un-representable, but don't see a good way
-/// to do yet.  Add a tag type of some kind to the Ir<T>?
-fn lambda_lifting<T>(ir: Ir<T>) -> Ir<T> {
+/// to do yet.  Add a tag type of some kind to the Ir?
+fn lambda_lifting(ir: Ir) -> Ir {
     let mut new_functions = vec![];
-    let new_decls: Vec<D<T>> = ir
+    let new_decls: Vec<D> = ir
         .decls
         .into_iter()
         .map(|decl| match decl {
@@ -151,16 +142,13 @@ fn lambda_lifting<T>(ir: Ir<T>) -> Ir<T> {
     }
 }
 
-fn enum_to_int_expr(
-    expr: TypedExpr<TypeDef>,
-    output_funcs: &mut Vec<D<TypeDef>>,
-) -> TypedExpr<TypeDef> {
+fn enum_to_int_expr(_expr: TypedExpr, _output_funcs: &mut Vec<D>) -> TypedExpr {
     todo!()
 }
 
-fn enum_to_int(ir: Ir<TypeDef>) -> Ir<TypeDef> {
+fn enum_to_int(ir: Ir) -> Ir {
     let mut new_functions = vec![];
-    let new_decls: Vec<D<TypeDef>> = ir
+    let new_decls: Vec<D> = ir
         .decls
         .into_iter()
         .map(|decl| match decl {
@@ -196,6 +184,6 @@ fn enum_to_int(ir: Ir<TypeDef>) -> Ir<TypeDef> {
 ///
 /// We might be able to get rid of TupleRef's by turning
 /// them into pointer arithmatic, too.
-fn _pointerification(_ir: Ir<TypeSym>) -> Ir<TypeSym> {
+fn _pointerification(_ir: Ir) -> Ir {
     todo!()
 }

@@ -105,7 +105,7 @@ fn compile_typename(td: &TypeDef) -> Cow<'static, str> {
     }
 }
 
-pub(super) fn output(lir: &hir::Ir<()>, tck: &Tck) -> Vec<u8> {
+pub(super) fn output(lir: &hir::Ir, tck: &Tck) -> Vec<u8> {
     let mut output = Vec::new();
     output.extend(prelude().as_bytes());
     for decl in lir.decls.iter() {
@@ -123,7 +123,7 @@ fn mangle_name(s: &str) -> String {
     s.replace("@", "__")
 }
 
-fn compile_decl(w: &mut impl Write, decl: &hir::Decl<()>, tck: &Tck) -> io::Result<()> {
+fn compile_decl(w: &mut impl Write, decl: &hir::Decl, tck: &Tck) -> io::Result<()> {
     match decl {
         hir::Decl::Function {
             name,
@@ -202,7 +202,7 @@ fn compile_fn_signature(sig: &ast::Signature) -> String {
     accm
 }
 
-fn compile_exprs(exprs: &[hir::TypedExpr<()>], separator: &str, tck: &Tck) -> String {
+fn compile_exprs(exprs: &[hir::TypedExpr], separator: &str, tck: &Tck) -> String {
     let ss: Vec<String> = exprs.iter().map(|e| compile_expr(e, tck)).collect();
     ss.join(separator)
 }
@@ -239,7 +239,7 @@ fn compile_uop(op: hir::UOp) -> &'static str {
     }
 }
 
-fn compile_expr(expr: &hir::TypedExpr<()>, tck: &Tck) -> String {
+fn compile_expr(expr: &hir::TypedExpr, tck: &Tck) -> String {
     use hir::Expr as E;
     match &expr.e {
         E::Lit {
