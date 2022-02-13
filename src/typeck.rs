@@ -1048,12 +1048,14 @@ impl Tck {
                 // Add it to our symbol table...
                 // ...I guess that is our ctx at the moment...
                 self.ctx = new_ctx;
+                self.check(init, *typename)?;
+                /*
                 let ty = self
                     .ctx
                     .assump(*varname)
                     .ok_or(TypeError::UnknownVar(*varname));
-                dbg!(&ty);
-                ty
+                    */
+                Ok(INT.unit())
                 // TODO: Figure out MBones's eager instantiation
                 // vs the lazy instantiation default.
                 //let tid = self.next_existential_var();
