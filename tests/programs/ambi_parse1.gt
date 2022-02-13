@@ -26,7 +26,7 @@ end
 
 fn baz(): I32 =
     let y: I32 = 3
-    return -y
+    return y
 end
 
 fn main(): {} =
@@ -41,5 +41,4 @@ fn main(): {} =
     __println(foo())
     __println(bar())
     __println(baz())
-    {}
 end

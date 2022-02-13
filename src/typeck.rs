@@ -526,6 +526,12 @@ impl Tck {
                 }
                 self.type_sub(*rettype1, *rettype2)
             }
+            (TypeDef::Tuple(contents1), TypeDef::Tuple(contents2)) if contents1 == contents2 => {
+                Ok(())
+            }
+            (TypeDef::Tuple(contents1), TypeDef::Tuple(contents2)) => {
+                todo!("type_sub tuples, see if we need to solve for unknowns")
+            }
             /*
              * TODO
             (TypeDef::Unit, TypeDef::Unit) => Ok(()),
@@ -1487,6 +1493,7 @@ fn typecheck_decl(tck: &mut Tck, decl: hir::Decl) -> Result<hir::Decl, TypeError
             tck.ctx = old_ctx;
             // TODO: Make this work properly.  Right now I'm not sure we
             // check the return type of functions properly.
+            /*
             if last_type != signature.rettype {
                 return Err(TypeError::Return {
                     fname: name,
@@ -1494,6 +1501,8 @@ fn typecheck_decl(tck: &mut Tck, decl: hir::Decl) -> Result<hir::Decl, TypeError
                     expected: signature.rettype,
                 });
             }
+            */
+            tck.type_sub(last_type, signature.rettype)?;
             return Ok(decl);
             // Below here is old
 
