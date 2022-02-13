@@ -532,6 +532,10 @@ impl Tck {
             (TypeDef::Tuple(contents1), TypeDef::Tuple(contents2)) => {
                 todo!("type_sub tuples, see if we need to solve for unknowns")
             }
+            // TODO: Is this okay?  Is it really?  ...Really?
+            // ...I THINK so.
+            // I'm not sure I'm ready for this much responsibility.
+            (TypeDef::Never, _) => Ok(()),
             /*
              * TODO
             (TypeDef::Unit, TypeDef::Unit) => Ok(()),
@@ -1145,9 +1149,11 @@ impl Tck {
                 //Ok(self.instantiate(tid, ty))
             }
             Expr::Return { retval } => {
-                // TODO: The type of the Return expression is Never,
+                // The type of the Return expression is Never,
                 // but we need to make sure its rettype is actually
                 // compatible with the function's rettype.
+                let rettype = self.fninfo.last().ok_or(TypeError::InvalidReturn)?.rettype;
+                self.check(retval, rettype)?;
                 Ok(INT.never())
             }
             Expr::If { cases } => {
@@ -1487,12 +1493,16 @@ fn typecheck_decl(tck: &mut Tck, decl: hir::Decl) -> Result<hir::Decl, TypeError
                 tck.ctx = tck.ctx.clone().add(ContextItem::Assump(*pname, *ptype));
             }
             let mut last_type = INT.unit();
+            // Record function return type.
+            tck.fninfo.push(FunctionInfo {
+                rettype: signature.rettype,
+            });
+            // Actually type-check body
             for expr in body {
                 let inferred_t = tck.infer(&expr)?;
                 last_type = tck.ctx.subst(inferred_t);
                 tck.set_type(expr.id, last_type);
             }
-            tck.ctx = old_ctx;
             // TODO: Make this work properly.  Right now I'm not sure we
             // check the return type of functions properly.
             /*
@@ -1505,6 +1515,9 @@ fn typecheck_decl(tck: &mut Tck, decl: hir::Decl) -> Result<hir::Decl, TypeError
             }
             */
             tck.type_sub(last_type, signature.rettype)?;
+            // Clean up the state we got from type-checking the function.
+            tck.ctx = old_ctx;
+            tck.fninfo.pop();
             return Ok(decl);
             // Below here is old
 
@@ -1646,6 +1659,14 @@ fn predeclare_decl(tck: &mut Tck, decl: &hir::Decl) {
     }
 }
 
+/// This is contained inside the Tck and contains function-local information that
+/// needs keeping track of, like return type and potentially info on recursion and
+/// whatever.
+#[derive(Clone, Debug)]
+pub struct FunctionInfo {
+    rettype: TypeSym,
+}
+
 /// Top level type checking context struct.
 /// We have like three of these by now, this one should subsume the functionality of the others.
 #[derive(Clone, Debug)]
@@ -1657,8 +1678,14 @@ pub struct Tck {
     exprtypes: HashMap<hir::Eid, TypeSym>,
     /// The symbol table for the module being compiled.
     symtbl: hir::ISymtbl,
+    /// Type checking context, the Context from the "complete and easy" type checking paper
     ctx: TCContext,
+    /// Index for the next existential var/unification var
     next_existential_var: usize,
+    /// Per-function info.  Contains whatever additional state such as return type
+    /// we might need to know about the function we're currently in.
+    /// This is a stack, 'cause we can nest functions.
+    fninfo: Vec<FunctionInfo>,
 }
 
 impl Tck {
@@ -1694,6 +1721,7 @@ impl Tck {
             symtbl: hir::ISymtbl::new_with_defaults(),
             ctx: x,
             next_existential_var: 0,
+            fninfo: vec![],
         }
     }
 

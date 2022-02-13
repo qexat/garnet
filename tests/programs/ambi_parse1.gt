@@ -25,7 +25,7 @@ fn bar(): I32 =
 end
 
 fn baz(): I32 =
-    let y: I32 = 3
+    let y: I32 = -3
     return y
 end
 
