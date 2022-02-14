@@ -239,8 +239,8 @@ pub struct Ir {
 /// The function `f` is a function that should generate whatever value we need
 /// for our type info attached to the HIR node.  To start with it's a unit, 'cause
 /// we have no type information.
-pub fn lower(f: &mut dyn FnMut(&hir::Expr) -> (), ast: &ast::Ast) -> Ir {
-    lower_decls(f, &ast.decls)
+pub fn lower(ast: &ast::Ast) -> Ir {
+    lower_decls(&ast.decls)
 }
 
 fn lower_lit(lit: &ast::Literal) -> Literal {
@@ -260,7 +260,7 @@ fn lower_signature(sig: &ast::Signature) -> Signature {
 }
 
 /// This is the biggie currently
-fn lower_expr(f: &mut dyn FnMut(&hir::Expr) -> (), expr: &ast::Expr) -> TypedExpr {
+fn lower_expr( expr: &ast::Expr) -> TypedExpr {
     use ast::Expr as E;
     use Expr::*;
     let new_exp = match expr {
@@ -270,8 +270,8 @@ fn lower_expr(f: &mut dyn FnMut(&hir::Expr) -> (), expr: &ast::Expr) -> TypedExp
         E::Var { name } => Var { name: *name, vid: Vid::new() },
         E::BinOp { op, lhs, rhs } => {
             let nop = lower_bop(op);
-            let nlhs = lower_expr(f, lhs);
-            let nrhs = lower_expr(f, rhs);
+            let nlhs = lower_expr(lhs);
+            let nrhs = lower_expr(rhs);
             BinOp {
                 op: nop,
                 lhs: Box::new(nlhs),
@@ -280,14 +280,14 @@ fn lower_expr(f: &mut dyn FnMut(&hir::Expr) -> (), expr: &ast::Expr) -> TypedExp
         }
         E::UniOp { op, rhs } => {
             let nop = lower_uop(op);
-            let nrhs = lower_expr(f, rhs);
+            let nrhs = lower_expr(rhs);
             UniOp {
                 op: nop,
                 rhs: Box::new(nrhs),
             }
         }
         E::Block { body } => {
-            let nbody = body.iter().map(|e| lower_expr(f, e)).collect();
+            let nbody = body.iter().map(|e| lower_expr(e)).collect();
             Block { body: nbody }
         }
         E::Let {
@@ -296,7 +296,7 @@ fn lower_expr(f: &mut dyn FnMut(&hir::Expr) -> (), expr: &ast::Expr) -> TypedExp
             init,
             mutable,
         } => {
-            let ninit = Box::new(lower_expr(f, init));
+            let ninit = Box::new(lower_expr(init));
             Let {
                 varname: *varname,
                 typename: *typename,
@@ -308,7 +308,7 @@ fn lower_expr(f: &mut dyn FnMut(&hir::Expr) -> (), expr: &ast::Expr) -> TypedExp
             assert!(!cases.is_empty(), "Should never happen");
             let mut cases: Vec<_> = cases
                 .iter()
-                .map(|case| (lower_expr(f, &*case.condition), lower_exprs(f, &case.body)))
+                .map(|case| (lower_expr(&*case.condition), lower_exprs(&case.body)))
                 .collect();
             // Add the "else" case, which we can just make `if true then...`
             // No idea if this is a good idea, but it makes life easier right
@@ -316,31 +316,31 @@ fn lower_expr(f: &mut dyn FnMut(&hir::Expr) -> (), expr: &ast::Expr) -> TypedExp
             let else_case = E::Lit {
                 val: ast::Literal::Bool(true),
             };
-            let nelse_case = lower_expr(f, &else_case);
+            let nelse_case = lower_expr(&else_case);
             // Empty false block becomes a false block that returns unit
             let false_exprs = if falseblock.len() == 0 {
-                lower_exprs(f, &vec![ast::Expr::TupleCtor { body: vec![] }])
+                lower_exprs(&vec![ast::Expr::TupleCtor { body: vec![] }])
             } else {
-                lower_exprs(f, falseblock)
+                lower_exprs(falseblock)
             };
             cases.push((nelse_case, false_exprs));
             If { cases }
         }
         E::Loop { body } => {
-            let nbody = lower_exprs(f, body);
+            let nbody = lower_exprs(body);
             Loop { body: nbody }
         }
         E::Lambda { signature, body } => {
             let nsig = lower_signature(signature);
-            let nbody = lower_exprs(f, body);
+            let nbody = lower_exprs(body);
             Lambda {
                 signature: nsig,
                 body: nbody,
             }
         }
         E::Funcall { func, params } => {
-            let nfunc = Box::new(lower_expr(f, func));
-            let nparams = lower_exprs(f, params);
+            let nfunc = Box::new(lower_expr(func));
+            let nparams = lower_exprs(params);
             Funcall {
                 func: nfunc,
                 params: nparams,
@@ -348,15 +348,15 @@ fn lower_expr(f: &mut dyn FnMut(&hir::Expr) -> (), expr: &ast::Expr) -> TypedExp
         }
         E::Break => Break,
         E::Return { retval: e } => Return {
-            retval: Box::new(lower_expr(f, e)),
+            retval: Box::new(lower_expr(e)),
         },
         E::TupleCtor { body } => Expr::TupleCtor {
-            body: lower_exprs(f, body),
+            body: lower_exprs(body),
         },
         E::StructCtor { body, types } => {
             let lowered_body = body
                 .iter()
-                .map(|(nm, expr)| (*nm, lower_expr(f, expr)))
+                .map(|(nm, expr)| (*nm, lower_expr(expr)))
                 .collect();
             Expr::StructCtor {
                 body: lowered_body,
@@ -364,22 +364,22 @@ fn lower_expr(f: &mut dyn FnMut(&hir::Expr) -> (), expr: &ast::Expr) -> TypedExp
             }
         }
         E::TupleRef { expr, elt } => Expr::TupleRef {
-            expr: Box::new(lower_expr(f, expr)),
+            expr: Box::new(lower_expr(expr)),
             elt: *elt,
         },
         E::StructRef { expr, elt } => Expr::StructRef {
-            expr: Box::new(lower_expr(f, expr)),
+            expr: Box::new(lower_expr(expr)),
             elt: *elt,
         },
         E::Deref { expr } => Expr::Deref {
-            expr: Box::new(lower_expr(f, expr)),
+            expr: Box::new(lower_expr(expr)),
         },
         E::Ref { expr } => Expr::Ref {
-            expr: Box::new(lower_expr(f, expr)),
+            expr: Box::new(lower_expr(expr)),
         },
         E::Assign { lhs, rhs } => Expr::Assign {
-            lhs: Box::new(lower_expr(f, lhs)),
-            rhs: Box::new(lower_expr(f, rhs)),
+            lhs: Box::new(lower_expr(lhs)),
+            rhs: Box::new(lower_expr(rhs)),
         },
     };
     TypedExpr {
@@ -390,15 +390,15 @@ fn lower_expr(f: &mut dyn FnMut(&hir::Expr) -> (), expr: &ast::Expr) -> TypedExp
 }
 
 /// handy shortcut to lower Vec<ast::Expr>
-fn lower_exprs(f: &mut dyn FnMut(&hir::Expr) -> (), exprs: &[ast::Expr]) -> Vec<TypedExpr> {
-    exprs.iter().map(|e| lower_expr(f, e)).collect()
+fn lower_exprs(exprs: &[ast::Expr]) -> Vec<TypedExpr> {
+    exprs.iter().map(|e| lower_expr(e)).collect()
 }
 
 /// Lower an AST decl to IR.
 ///
 /// Is there a more elegant way of doing this than passing an accumulator?
 /// Returning a vec is lame.  Return an iterator?  Sounds like work.
-fn lower_decl(accm: &mut Vec<Decl>, f: &mut dyn FnMut(&hir::Expr) -> (), decl: &ast::Decl) {
+fn lower_decl(accm: &mut Vec<Decl>, decl: &ast::Decl) {
     use ast::Decl as D;
     match decl {
         D::Function {
@@ -409,7 +409,7 @@ fn lower_decl(accm: &mut Vec<Decl>, f: &mut dyn FnMut(&hir::Expr) -> (), decl: &
         } => accm.push(Decl::Function {
             name: *name,
             signature: lower_signature(signature),
-            body: lower_exprs(f, body),
+            body: lower_exprs(body),
         }),
         D::Const {
             name,
@@ -419,7 +419,7 @@ fn lower_decl(accm: &mut Vec<Decl>, f: &mut dyn FnMut(&hir::Expr) -> (), decl: &
         } => accm.push(Decl::Const {
             name: *name,
             typename: *typename,
-            init: lower_expr(f, init),
+            init: lower_expr(init),
         }),
         // this needs to generate the typedef AND the type constructor
         // declaration.  Plus the type deconstructor.
@@ -492,10 +492,10 @@ fn lower_decl(accm: &mut Vec<Decl>, f: &mut dyn FnMut(&hir::Expr) -> (), decl: &
     }
 }
 
-fn lower_decls(f: &mut dyn FnMut(&hir::Expr), decls: &[ast::Decl]) -> Ir {
+fn lower_decls(decls: &[ast::Decl]) -> Ir {
     let mut accm = Vec::with_capacity(decls.len() * 2);
     for d in decls.iter() {
-        lower_decl(&mut accm, f, d)
+        lower_decl(&mut accm, d)
     }
     Ir { decls: accm }
 }
@@ -601,6 +601,6 @@ mod tests {
             cases: vec![],
             falseblock: vec![],
         };
-        let _ = lower_expr(&mut |_| (), &input);
+        let _ = lower_expr(&input);
     }
 }
