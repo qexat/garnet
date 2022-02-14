@@ -46,6 +46,7 @@ pub struct ISymtbl {
 pub struct Eid(usize);
 
 /// Ugly horrible global for storing index values for expression ID's
+/// TODO: Someday make this an atomic or something other than a rwlock
 static NEXT_EID: Lazy<RwLock<Eid>> = Lazy::new(|| RwLock::new(Eid(0)));
 
 impl Eid {
@@ -53,6 +54,26 @@ impl Eid {
         let mut current = NEXT_EID.write().unwrap();
         let ret = *current;
         let next_eid = Eid(current.0 + 1);
+        *current = next_eid;
+        ret
+    }
+}
+
+/// Variable ID.  Ibid, for variables.  Are these scoped per function,
+/// or not?  I guess not, each function just keeps track of the Vid's
+/// it knows about but Vid's are never reused.
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Vid(usize);
+
+/// Ugly horrible global for storing index values for expression ID's
+/// TODO: Someday make this an atomic or something other than a rwlock
+static NEXT_VID: Lazy<RwLock<Vid>> = Lazy::new(|| RwLock::new(Vid(0)));
+
+impl Vid {
+    pub fn new() -> Self {
+        let mut current = NEXT_VID.write().unwrap();
+        let ret = *current;
+        let next_eid = Vid(current.0 + 1);
         *current = next_eid;
         ret
     }
@@ -86,6 +107,7 @@ pub enum Expr {
     },
     Var {
         name: VarSym,
+        vid: Vid,
     },
     BinOp {
         op: BOp,
@@ -245,7 +267,7 @@ fn lower_expr(f: &mut dyn FnMut(&hir::Expr) -> (), expr: &ast::Expr) -> TypedExp
         E::Lit { val } => Lit {
             val: lower_lit(val),
         },
-        E::Var { name } => Var { name: *name },
+        E::Var { name } => Var { name: *name, vid: Vid::new() },
         E::BinOp { op, lhs, rhs } => {
             let nop = lower_bop(op);
             let nlhs = lower_expr(f, lhs);

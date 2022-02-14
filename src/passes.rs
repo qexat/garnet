@@ -90,7 +90,7 @@ fn lambda_lift_expr(expr: TypedExpr, output_funcs: &mut Vec<D>) -> TypedExpr {
                 body: lambda_lift_exprs(body, output_funcs),
             };
             output_funcs.push(function_decl);
-            E::Var { name: lambda_name }
+            E::Var { name: lambda_name, vid: hir::Vid::new() }
         }
         x => x,
     };

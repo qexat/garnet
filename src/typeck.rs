@@ -274,7 +274,8 @@ impl TypeDef {
 pub enum ContextItem {
     /// Term variable typings x : A
     TermVar(TypeSym),
-    Assump(VarSym, TypeSym),
+    /// Var name, type name, is-mutable
+    Assump(VarSym, TypeSym, bool),
     /// Existential type variables α-hat: Unsolved
     ExistentialVar(TypeId),
     /// And solved: α-hat = τ
@@ -287,7 +288,7 @@ impl ContextItem {
     /// Returns whether the id is an assumption for this context item?
     fn is_assump(&self, id: VarSym) -> bool {
         match self {
-            ContextItem::Assump(x, _) => *x == id,
+            ContextItem::Assump(x, _, _) => *x == id,
             _ => false,
         }
     }
@@ -372,7 +373,7 @@ impl TCContext {
     fn assump(&self, id: VarSym) -> Option<TypeSym> {
         let mut assumptions = self.items.iter().filter(|x| x.is_assump(id));
         match (assumptions.next(), assumptions.next()) {
-            (Some(ContextItem::Assump(_, t)), None) => Some(t.clone()),
+            (Some(ContextItem::Assump(_, t, _)), None) => Some(t.clone()),
             (None, None) => None,
             other => panic!("ctxAssump: multiple types for variable: {:?}", other),
         }
@@ -1054,17 +1055,11 @@ impl Tck {
                 let new_ctx = self
                     .ctx
                     .clone()
-                    .add(ContextItem::Assump(*varname, *typename));
+                    .add(ContextItem::Assump(*varname, *typename, *mutable));
                 // Add it to our symbol table...
                 // ...I guess that is our ctx at the moment...
                 self.ctx = new_ctx;
                 self.check(init, *typename)?;
-                /*
-                let ty = self
-                    .ctx
-                    .assump(*varname)
-                    .ok_or(TypeError::UnknownVar(*varname));
-                    */
                 Ok(INT.unit())
                 // TODO: Figure out MBones's eager instantiation
                 // vs the lazy instantiation default.
@@ -1140,7 +1135,7 @@ impl Tck {
                 let t = self.ctx.subst(ftype);
                 self.infer_application(t, params)
             }
-            Expr::Var { name } => {
+            Expr::Var { name , .. } => {
                 let ty = self.ctx.assump(*name).ok_or(TypeError::UnknownVar(*name));
                 ty
                 // TODO: Figure out MBones's eager instantiation
@@ -1169,12 +1164,15 @@ impl Tck {
                 Ok(first_type)
             }
             Expr::Block { body } => self.infer_exprs(body),
+            // TODO: FOR NOW, loops just return the Unit type, and
+            // don't care what their contents returns.
             Expr::Loop { body } => {
-                todo!("Loop")
+                self.check_exprs(body, INT.never())?;
+                Ok(INT.unit())
             }
             Expr::Break => {
                 // TODO someday: make break and loops return a type
-                todo!("Break")
+                Ok(INT.unit())
             }
             Expr::Assign { lhs, rhs } => {
                 todo!("Assign")
@@ -1490,7 +1488,7 @@ fn typecheck_decl(tck: &mut Tck, decl: hir::Decl) -> Result<hir::Decl, TypeError
             let symtbl = &mut tck.symtbl.clone();
             for (pname, ptype) in signature.params.iter() {
                 symtbl.add_var(*pname, *ptype, false);
-                tck.ctx = tck.ctx.clone().add(ContextItem::Assump(*pname, *ptype));
+                tck.ctx = tck.ctx.clone().add(ContextItem::Assump(*pname, *ptype, false));
             }
             let mut last_type = INT.unit();
             // Record function return type.
@@ -1607,14 +1605,14 @@ fn predeclare_decl(tck: &mut Tck, decl: &hir::Decl) {
             tck.ctx = tck
                 .ctx
                 .clone()
-                .add(ContextItem::Assump(*name, function_type));
+                .add(ContextItem::Assump(*name, function_type, false));
         }
         hir::Decl::Const { name, typename, .. } => {
             if tck.symtbl.binding_exists(*name) {
                 panic!("Tried to redeclare const {}!", INT.fetch(*name));
             }
             tck.symtbl.add_var(*name, *typename, false);
-            tck.ctx = tck.ctx.clone().add(ContextItem::Assump(*name, *typename));
+            tck.ctx = tck.ctx.clone().add(ContextItem::Assump(*name, *typename, false));
         }
         hir::Decl::TypeDef { name, typedecl } => {
             // Gotta make sure there's no duplicate declarations
@@ -1698,22 +1696,22 @@ impl Tck {
         {
             let name = INT.intern("__println");
             let typesym = INT.intern_type(&TypeDef::Lambda(vec![INT.i32()], INT.unit()));
-            x = x.add(ContextItem::Assump(name, typesym));
+            x = x.add(ContextItem::Assump(name, typesym, false));
         }
         {
             let name = INT.intern("__println_bool");
             let typesym = INT.intern_type(&TypeDef::Lambda(vec![INT.bool()], INT.unit()));
-            x = x.add(ContextItem::Assump(name, typesym));
+            x = x.add(ContextItem::Assump(name, typesym, false));
         }
         {
             let name = INT.intern("__println_i64");
             let typesym = INT.intern_type(&TypeDef::Lambda(vec![INT.i64()], INT.unit()));
-            x = x.add(ContextItem::Assump(name, typesym));
+            x = x.add(ContextItem::Assump(name, typesym, false));
         }
         {
             let name = INT.intern("__println_i16");
             let typesym = INT.intern_type(&TypeDef::Lambda(vec![INT.i16()], INT.unit()));
-            x = x.add(ContextItem::Assump(name, typesym));
+            x = x.add(ContextItem::Assump(name, typesym, false));
         }
 
         Self {
