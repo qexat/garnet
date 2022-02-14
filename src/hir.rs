@@ -14,7 +14,7 @@ pub use crate::ast::{BOp, IfCase, Literal, Signature, UOp};
 use crate::*;
 
 /// A variable binding
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VarBinding {
     pub name: VarSym,
     pub typename: TypeSym,
@@ -58,10 +58,13 @@ impl Eid {
         ret
     }
 }
+/*
 
 /// Variable ID.  Ibid, for variables.  Are these scoped per function,
 /// or not?  I guess not, each function just keeps track of the Vid's
 /// it knows about but Vid's are never reused.
+///
+/// Also see notes on "alpha renaming" in passes.rs
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Vid(usize);
 
@@ -78,6 +81,7 @@ impl Vid {
         ret
     }
 }
+*/
 
 /// An expression with a type annotation.
 /// Currently will be () for something that hasn't been
@@ -93,8 +97,6 @@ pub struct TypedExpr {
     pub id: Eid,
 }
 
-impl TypedExpr {}
-
 /// An expression.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Expr {
@@ -107,7 +109,6 @@ pub enum Expr {
     },
     Var {
         name: VarSym,
-        vid: Vid,
     },
     BinOp {
         op: BOp,
@@ -267,7 +268,7 @@ fn lower_expr( expr: &ast::Expr) -> TypedExpr {
         E::Lit { val } => Lit {
             val: lower_lit(val),
         },
-        E::Var { name } => Var { name: *name, vid: Vid::new() },
+        E::Var { name } => Var { name: *name},
         E::BinOp { op, lhs, rhs } => {
             let nop = lower_bop(op);
             let nlhs = lower_expr(lhs);
