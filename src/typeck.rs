@@ -560,8 +560,8 @@ impl Tck {
             (TypeDef::Bool, TypeDef::Bool) => Ok(()),
             (TypeDef::SInt(i1), TypeDef::SInt(i2)) if i1 == i2 => Ok(()),
             // TODO: Verify this UnknownInt behavior is correct...
-            (TypeDef::UnknownInt, TypeDef::SInt(i2)) => Ok(()),
-            (TypeDef::SInt(i1), TypeDef::UnknownInt) => Ok(()),
+            (TypeDef::UnknownInt, TypeDef::SInt(_i2)) => Ok(()),
+            (TypeDef::SInt(_i1), TypeDef::UnknownInt) => Ok(()),
             (TypeDef::TypeVar(a), TypeDef::TypeVar(b)) if a == b => Ok(()),
             (TypeDef::Lambda(params1, rettype1), TypeDef::Lambda(params2, rettype2)) => {
                 for (param1, param2) in params1.iter().zip(params2) {
@@ -572,13 +572,13 @@ impl Tck {
             (TypeDef::Tuple(contents1), TypeDef::Tuple(contents2)) if contents1 == contents2 => {
                 Ok(())
             }
-            (TypeDef::Tuple(contents1), TypeDef::Tuple(contents2)) => {
+            (TypeDef::Tuple(_contents1), TypeDef::Tuple(_contents2)) => {
                 todo!("type_sub tuples, see if we need to solve for unknowns")
             }
             // TODO: Is this okay?  Is it really?  ...Really?
             // ...I THINK so.
             // I'm not sure I'm ready for this much responsibility.
-            (TypeDef::Never, _) => Ok(()),
+            (_, TypeDef::Never) => Ok(()),
             /*
              * TODO
             (TypeDef::Unit, TypeDef::Unit) => Ok(()),
@@ -614,7 +614,7 @@ impl Tck {
             }
             */
             (a, b) => Err(TypeError::TypeMismatch {
-                expr_name: "todo".into(),
+                expr_name: format!("type_sub {:?}, {:?}", a, b).into(),
                 got: t1,
                 expected: t2,
             }),
