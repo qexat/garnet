@@ -255,7 +255,7 @@ fn compile_expr(expr: &hir::TypedExpr, tck: &Tck) -> String {
             let bits = bytes * 8;
             format!("{}i{}", vl, bits)
         }
-        E::Var { name } => mangle_name(&*INT.fetch(*name)),
+        E::Var { name, .. } => mangle_name(&*INT.fetch(*name)),
         E::BinOp { op, lhs, rhs } => format!(
             "({} {} {})",
             compile_expr(lhs, tck),
