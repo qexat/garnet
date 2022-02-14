@@ -90,7 +90,7 @@ fn lambda_lift_expr(expr: TypedExpr, output_funcs: &mut Vec<D>) -> TypedExpr {
                 body: lambda_lift_exprs(body, output_funcs),
             };
             output_funcs.push(function_decl);
-            E::Var { name: lambda_name, vid: hir::Vid::new() }
+            E::Var { name: lambda_name, }
         }
         x => x,
     };
@@ -101,7 +101,7 @@ fn lambda_lift_expr(expr: TypedExpr, output_funcs: &mut Vec<D>) -> TypedExpr {
     }
 }
 
-/// Lambda lift a list of expr's
+/// Lambda lift a list of expr's.
 fn lambda_lift_exprs(exprs: Vec<TypedExpr>, output_funcs: &mut Vec<D>) -> Vec<TypedExpr> {
     exprs
         .into_iter()
@@ -142,11 +142,11 @@ fn lambda_lifting(ir: Ir) -> Ir {
     }
 }
 
-fn enum_to_int_expr(_expr: TypedExpr, _output_funcs: &mut Vec<D>) -> TypedExpr {
+fn _enum_to_int_expr(_expr: TypedExpr, _output_funcs: &mut Vec<D>) -> TypedExpr {
     todo!()
 }
 
-fn enum_to_int(ir: Ir) -> Ir {
+fn _enum_to_int(ir: Ir) -> Ir {
     let mut new_functions = vec![];
     let new_decls: Vec<D> = ir
         .decls
@@ -159,7 +159,7 @@ fn enum_to_int(ir: Ir) -> Ir {
             } => {
                 let new_body = body
                     .into_iter()
-                    .map(|e| enum_to_int_expr(e, &mut new_functions))
+                    .map(|e| _enum_to_int_expr(e, &mut new_functions))
                     .collect();
                 D::Function {
                     name,

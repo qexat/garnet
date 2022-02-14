@@ -270,12 +270,16 @@ impl TypeDef {
 }
 
 /// The kinds of type facts we may know while type checking stuff.
+///
+/// This is sort of becoming our symbol table and I've been told that's not a great idea but idk
+/// how to stop it right now.  Keeping two structures in sync with each other seems like a worse
+/// idea...
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ContextItem {
     /// Term variable typings x : A
     TermVar(TypeSym),
-    /// Var name, type name, is-mutable
-    Assump(VarSym, TypeSym, bool),
+    /// Var name, var binding including type...
+    Assump(VarSym, VarBinding),
     /// Existential type variables α-hat: Unsolved
     ExistentialVar(TypeId),
     /// And solved: α-hat = τ
@@ -288,7 +292,7 @@ impl ContextItem {
     /// Returns whether the id is an assumption for this context item?
     fn is_assump(&self, id: VarSym) -> bool {
         match self {
-            ContextItem::Assump(x, _, _) => *x == id,
+            ContextItem::Assump(x, _) => *x == id,
             _ => false,
         }
     }
@@ -301,6 +305,8 @@ impl ContextItem {
         }
     }
 }
+
+
 
 /// Type checking context.  Contains what is known about the types
 /// being inferred/checked within the current decl/expression.
@@ -373,9 +379,45 @@ impl TCContext {
     fn assump(&self, id: VarSym) -> Option<TypeSym> {
         let mut assumptions = self.items.iter().filter(|x| x.is_assump(id));
         match (assumptions.next(), assumptions.next()) {
-            (Some(ContextItem::Assump(_, t, _)), None) => Some(t.clone()),
+            (Some(ContextItem::Assump(_, b)), None) => Some(b.typename.clone()),
             (None, None) => None,
             other => panic!("ctxAssump: multiple types for variable: {:?}", other),
+        }
+    }
+
+    /// Add a variable assumption to our stack...
+    fn add_var(&self, id: VarSym, ty: TypeSym, mutable: bool) -> Self {
+        self.clone().add(
+            ContextItem::Assump(id,
+                VarBinding {
+                    name: id,
+                    typename: ty,
+                    mutable: mutable
+                }))
+    }
+
+    fn get_var(&self, id: VarSym) -> Option<&VarBinding> {
+        for i in self.items.iter() {
+            match i {
+                ContextItem::Assump(name, binding) if *name == id => return Some(binding),
+                _ => ()
+            }
+        }
+        return None;
+    }
+
+    /// So, what is an lvalue?
+    /// Well, it's a variable,
+    /// or it's an lvalue in a deref expr or tupleref
+    fn is_mutable_lvalue(&self, expr: &hir::Expr) -> Result<bool, TypeError> {
+        match expr {
+            hir::Expr::Var { name } => {
+                let v = self.get_var(*name)
+                    .ok_or(TypeError::UnknownVar(*name))?;
+                Ok(v.mutable)
+            }
+            hir::Expr::TupleRef { expr, .. } => self.is_mutable_lvalue(&expr.e),
+            _ => Ok(false),
         }
     }
 
@@ -1055,7 +1097,7 @@ impl Tck {
                 let new_ctx = self
                     .ctx
                     .clone()
-                    .add(ContextItem::Assump(*varname, *typename, *mutable));
+                    .add_var(*varname, *typename, *mutable);
                 // Add it to our symbol table...
                 // ...I guess that is our ctx at the moment...
                 self.ctx = new_ctx;
@@ -1175,7 +1217,15 @@ impl Tck {
                 Ok(INT.unit())
             }
             Expr::Assign { lhs, rhs } => {
-                todo!("Assign")
+                if !self.ctx.is_mutable_lvalue(&lhs.e)? {
+                    Err(TypeError::Mutability {
+                        expr_name: "assignment".into(),
+                    })
+                } else {
+                    let target_type = self.infer(lhs)?;
+                    self.check(rhs, target_type)?;
+                    Ok(INT.unit())
+                }
             }
             Expr::Lambda { signature, body } => {
                 todo!("Lambda")
@@ -1488,7 +1538,7 @@ fn typecheck_decl(tck: &mut Tck, decl: hir::Decl) -> Result<hir::Decl, TypeError
             let symtbl = &mut tck.symtbl.clone();
             for (pname, ptype) in signature.params.iter() {
                 symtbl.add_var(*pname, *ptype, false);
-                tck.ctx = tck.ctx.clone().add(ContextItem::Assump(*pname, *ptype, false));
+                tck.ctx = tck.ctx.add_var(*pname, *ptype, false);
             }
             let mut last_type = INT.unit();
             // Record function return type.
@@ -1605,14 +1655,14 @@ fn predeclare_decl(tck: &mut Tck, decl: &hir::Decl) {
             tck.ctx = tck
                 .ctx
                 .clone()
-                .add(ContextItem::Assump(*name, function_type, false));
+                .add_var(*name, function_type, false);
         }
         hir::Decl::Const { name, typename, .. } => {
             if tck.symtbl.binding_exists(*name) {
                 panic!("Tried to redeclare const {}!", INT.fetch(*name));
             }
             tck.symtbl.add_var(*name, *typename, false);
-            tck.ctx = tck.ctx.clone().add(ContextItem::Assump(*name, *typename, false));
+            tck.ctx = tck.ctx.clone().add_var(*name, *typename, false);
         }
         hir::Decl::TypeDef { name, typedecl } => {
             // Gotta make sure there's no duplicate declarations
@@ -1696,22 +1746,22 @@ impl Tck {
         {
             let name = INT.intern("__println");
             let typesym = INT.intern_type(&TypeDef::Lambda(vec![INT.i32()], INT.unit()));
-            x = x.add(ContextItem::Assump(name, typesym, false));
+            x = x.add_var(name, typesym, false);
         }
         {
             let name = INT.intern("__println_bool");
             let typesym = INT.intern_type(&TypeDef::Lambda(vec![INT.bool()], INT.unit()));
-            x = x.add(ContextItem::Assump(name, typesym, false));
+            x = x.add_var(name, typesym, false);
         }
         {
             let name = INT.intern("__println_i64");
             let typesym = INT.intern_type(&TypeDef::Lambda(vec![INT.i64()], INT.unit()));
-            x = x.add(ContextItem::Assump(name, typesym, false));
+            x = x.add_var(name, typesym, false);
         }
         {
             let name = INT.intern("__println_i16");
             let typesym = INT.intern_type(&TypeDef::Lambda(vec![INT.i16()], INT.unit()));
-            x = x.add(ContextItem::Assump(name, typesym, false));
+            x = x.add_var(name, typesym, false);
         }
 
         Self {
