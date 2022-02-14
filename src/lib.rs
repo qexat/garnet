@@ -368,7 +368,7 @@ pub fn try_compile(filename: &str, src: &str) -> Result<Vec<u8>, typeck::TypeErr
         let mut parser = parser::Parser::new(filename, src);
         parser.parse()
     };
-    let hir = hir::lower(&mut |_| (), &ast);
+    let hir = hir::lower(&ast);
     let hir = passes::run_passes(hir);
     // TODO: Get rid of this clone, typechecking no longer returns a new AST.
     let tck = typeck::typecheck(hir.clone())?;
