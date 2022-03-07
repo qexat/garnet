@@ -669,7 +669,7 @@ impl<'input> Parser<'input> {
 
     fn parse_struct_fields(&mut self) -> (BTreeMap<VarSym, TypeSym>, BTreeSet<VarSym>) {
         let mut fields = BTreeMap::new();
-        let mut typefields = BTreeSet::new();
+        let typefields = BTreeSet::new();
 
         // TODO someday: Doc comments on struct fields
         loop {
@@ -680,11 +680,13 @@ impl<'input> Parser<'input> {
                     let tname = self.parse_type();
                     fields.insert(name, tname);
                 }
+                /*
                 Some((T::Type, _span)) => {
                     self.expect(T::Type);
                     let name = self.expect_ident();
                     typefields.insert(name);
                 }
+                */
                 _ => break,
             }
 
@@ -714,6 +716,7 @@ impl<'input> Parser<'input> {
                     let tname = self.parse_expr(0).unwrap();
                     fields.push((name, tname));
                 }
+                /*
                 Some((T::Type, _span)) => {
                     self.expect(T::Type);
                     let name = self.expect_ident();
@@ -721,6 +724,7 @@ impl<'input> Parser<'input> {
                     let ty = self.parse_type();
                     typefields.insert(name, ty);
                 }
+                */
                 _ => break,
             }
 
@@ -797,9 +801,9 @@ impl<'input> Parser<'input> {
 
     fn parse_struct_type(&mut self) -> TypeDef {
         self.expect(T::LBrace);
-        let (fields, typefields) = self.parse_struct_fields();
+        let (fields, _typefields) = self.parse_struct_fields();
         self.expect(T::RBrace);
-        TypeDef::Struct { fields, typefields }
+        TypeDef::Struct { fields }
     }
 
     fn parse_enum_type(&mut self) -> TypeDef {

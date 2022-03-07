@@ -146,16 +146,9 @@ pub enum Expr {
     Return {
         retval: Box<TypedExpr>,
     },
-    TupleCtor {
-        body: Vec<TypedExpr>,
-    },
     StructCtor {
         body: Vec<(VarSym, TypedExpr)>,
-        types: BTreeMap<VarSym, TypeSym>,
-    },
-    TupleRef {
-        expr: Box<TypedExpr>,
-        elt: usize,
+        //types: BTreeMap<VarSym, TypeSym>,
     },
     StructRef {
         expr: Box<TypedExpr>,
@@ -190,7 +183,7 @@ impl Expr {
 
     /// Shortcut function for making literal unit
     pub const fn unit() -> Self {
-        Self::TupleCtor { body: vec![] }
+        Self::StructCtor { body: vec![] }
     }
 }
 
@@ -261,14 +254,14 @@ fn lower_signature(sig: &ast::Signature) -> Signature {
 }
 
 /// This is the biggie currently
-fn lower_expr( expr: &ast::Expr) -> TypedExpr {
+fn lower_expr(expr: &ast::Expr) -> TypedExpr {
     use ast::Expr as E;
     use Expr::*;
     let new_exp = match expr {
         E::Lit { val } => Lit {
             val: lower_lit(val),
         },
-        E::Var { name } => Var { name: *name},
+        E::Var { name } => Var { name: *name },
         E::BinOp { op, lhs, rhs } => {
             let nop = lower_bop(op);
             let nlhs = lower_expr(lhs);
@@ -351,9 +344,15 @@ fn lower_expr( expr: &ast::Expr) -> TypedExpr {
         E::Return { retval: e } => Return {
             retval: Box::new(lower_expr(e)),
         },
-        E::TupleCtor { body } => Expr::TupleCtor {
-            body: lower_exprs(body),
-        },
+        // Turn {foo, bar} into {_0: foo, _1: bar}
+        E::TupleCtor { body } => {
+            let body_pairs = body
+                .into_iter()
+                .enumerate()
+                .map(|(i, vl)| (INT.intern(format!("_{}", i)), lower_expr(vl)))
+                .collect();
+            Expr::StructCtor { body: body_pairs }
+        }
         E::StructCtor { body, types } => {
             let lowered_body = body
                 .iter()
@@ -361,12 +360,13 @@ fn lower_expr( expr: &ast::Expr) -> TypedExpr {
                 .collect();
             Expr::StructCtor {
                 body: lowered_body,
-                types: types.clone(),
+                //types: types.clone(),
             }
         }
-        E::TupleRef { expr, elt } => Expr::TupleRef {
+        // Turn tuple.0 into struct._0
+        E::TupleRef { expr, elt } => Expr::StructRef {
             expr: Box::new(lower_expr(expr)),
-            elt: *elt,
+            elt: INT.intern(format!("_{}", elt)),
         },
         E::StructRef { expr, elt } => Expr::StructRef {
             expr: Box::new(lower_expr(expr)),
