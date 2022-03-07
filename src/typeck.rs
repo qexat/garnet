@@ -306,8 +306,6 @@ impl ContextItem {
     }
 }
 
-
-
 /// Type checking context.  Contains what is known about the types
 /// being inferred/checked within the current decl/expression.
 //
@@ -387,20 +385,21 @@ impl TCContext {
 
     /// Add a variable assumption to our stack...
     fn add_var(&self, id: VarSym, ty: TypeSym, mutable: bool) -> Self {
-        self.clone().add(
-            ContextItem::Assump(id,
-                VarBinding {
-                    name: id,
-                    typename: ty,
-                    mutable: mutable
-                }))
+        self.clone().add(ContextItem::Assump(
+            id,
+            VarBinding {
+                name: id,
+                typename: ty,
+                mutable: mutable,
+            },
+        ))
     }
 
     fn get_var(&self, id: VarSym) -> Option<&VarBinding> {
         for i in self.items.iter() {
             match i {
                 ContextItem::Assump(name, binding) if *name == id => return Some(binding),
-                _ => ()
+                _ => (),
             }
         }
         return None;
@@ -412,8 +411,7 @@ impl TCContext {
     fn is_mutable_lvalue(&self, expr: &hir::Expr) -> Result<bool, TypeError> {
         match expr {
             hir::Expr::Var { name } => {
-                let v = self.get_var(*name)
-                    .ok_or(TypeError::UnknownVar(*name))?;
+                let v = self.get_var(*name).ok_or(TypeError::UnknownVar(*name))?;
                 Ok(v.mutable)
             }
             hir::Expr::TupleRef { expr, .. } => self.is_mutable_lvalue(&expr.e),
@@ -562,6 +560,8 @@ impl Tck {
             // TODO: Verify this UnknownInt behavior is correct...
             (TypeDef::UnknownInt, TypeDef::SInt(_i2)) => Ok(()),
             (TypeDef::SInt(_i1), TypeDef::UnknownInt) => Ok(()),
+            (TypeDef::UnknownInt, TypeDef::UnknownInt) => Ok(()),
+
             (TypeDef::TypeVar(a), TypeDef::TypeVar(b)) if a == b => Ok(()),
             (TypeDef::Lambda(params1, rettype1), TypeDef::Lambda(params2, rettype2)) => {
                 for (param1, param2) in params1.iter().zip(params2) {
@@ -578,7 +578,7 @@ impl Tck {
             // TODO: Is this okay?  Is it really?  ...Really?
             // ...I THINK so.
             // I'm not sure I'm ready for this much responsibility.
-            (_, TypeDef::Never) => Ok(()),
+            (TypeDef::Never, _) => Ok(()),
             /*
              * TODO
             (TypeDef::Unit, TypeDef::Unit) => Ok(()),
@@ -1094,10 +1094,7 @@ impl Tck {
                 mutable,
             } => {
                 // Create new variable with the given name and type.
-                let new_ctx = self
-                    .ctx
-                    .clone()
-                    .add_var(*varname, *typename, *mutable);
+                let new_ctx = self.ctx.clone().add_var(*varname, *typename, *mutable);
                 // Add it to our symbol table...
                 // ...I guess that is our ctx at the moment...
                 self.ctx = new_ctx;
@@ -1177,7 +1174,7 @@ impl Tck {
                 let t = self.ctx.subst(ftype);
                 self.infer_application(t, params)
             }
-            Expr::Var { name , .. } => {
+            Expr::Var { name, .. } => {
                 let ty = self.ctx.assump(*name).ok_or(TypeError::UnknownVar(*name));
                 ty
                 // TODO: Figure out MBones's eager instantiation
@@ -1206,10 +1203,11 @@ impl Tck {
                 Ok(first_type)
             }
             Expr::Block { body } => self.infer_exprs(body),
-            // TODO: FOR NOW, loops just return the Unit type, and
-            // don't care what their contents returns.
             Expr::Loop { body } => {
-                self.check_exprs(body, INT.never())?;
+                // TODO: FOR NOW, loops just return the Unit type, and
+                // don't care what the type of their body is.
+                //self.check_exprs(body, INT.never())?;
+                let _ = self.infer_exprs(body)?;
                 Ok(INT.unit())
             }
             Expr::Break => {
@@ -1652,10 +1650,7 @@ fn predeclare_decl(tck: &mut Tck, decl: &hir::Decl) {
             let type_params = signature.params.iter().map(|(_name, t)| *t).collect();
             let function_type = INT.intern_type(&TypeDef::Lambda(type_params, signature.rettype));
             tck.symtbl.add_var(*name, function_type, false);
-            tck.ctx = tck
-                .ctx
-                .clone()
-                .add_var(*name, function_type, false);
+            tck.ctx = tck.ctx.clone().add_var(*name, function_type, false);
         }
         hir::Decl::Const { name, typename, .. } => {
             if tck.symtbl.binding_exists(*name) {
