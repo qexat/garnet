@@ -1,0 +1,11 @@
+-- Compile:
+--   status: success
+--
+-- Run:
+--   status: success
+--   stdout: 3
+
+fn main(): {} =
+    let t: {I32, I32, Bool} = {3, 5, false}
+    __println(t.0)
+end

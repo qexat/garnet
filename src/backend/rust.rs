@@ -78,13 +78,15 @@ fn compile_typename(td: &TypeDef) -> Cow<'static, str> {
             accm.into()
         }
         //Named(sym) => (&*INT.fetch(*sym)).clone().into(),
-        Struct { fields, typefields } => {
+        Struct { fields } => {
             // We compile our structs into Rust tuples.
             // Our fields are always ordered via BTreeMap etc,
             // so it's okay
+            /*
             if typefields.len() > 0 {
                 todo!("Figure out type thingies");
             }
+            */
             let mut accm = String::from("(");
             for (nm, typ) in fields.iter() {
                 accm += &format!(
@@ -328,6 +330,7 @@ fn compile_expr(expr: &hir::TypedExpr, tck: &Tck) -> String {
         E::Return { retval } => {
             format!("return {};", compile_expr(retval, tck))
         }
+        /*
         E::TupleCtor { body } => {
             // We *don't* want join() here, we want to append comma's so that
             // `(foo,)` works properly.
@@ -339,10 +342,15 @@ fn compile_expr(expr: &hir::TypedExpr, tck: &Tck) -> String {
             accm += ")";
             accm
         }
-        E::StructCtor { body, types } => {
+        */
+        // Unit type
+        E::StructCtor { body } if body.len() == 0 => String::from(" ()\n"),
+        E::StructCtor { body } => {
+            /*
             if types.len() > 0 {
                 todo!("not implemented")
             }
+            */
             let mut accm = String::from("(\n");
             for (nm, expr) in body {
                 accm += &format!("/* {} */ {}, \n", INT.fetch(*nm), compile_expr(expr, tck));
@@ -350,18 +358,11 @@ fn compile_expr(expr: &hir::TypedExpr, tck: &Tck) -> String {
             accm += ")\n";
             accm
         }
-        E::TupleRef { expr, elt } => {
-            format!("{}.{}", compile_expr(expr, tck), elt)
-        }
         E::StructRef { expr, elt } => {
             // We turn our structs into Rust tuples, so we need to
             // to turn our field names into indices
             let tdef = &*INT.fetch_type(tck.get_type(expr.id));
-            if let TypeDef::Struct {
-                fields,
-                typefields: _,
-            } = tdef
-            {
+            if let TypeDef::Struct { fields } = tdef {
                 let mut nth = 9999_9999;
                 for (i, (nm, _ty)) in fields.iter().enumerate() {
                     if nm == elt {

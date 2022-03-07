@@ -414,7 +414,7 @@ impl TCContext {
                 let v = self.get_var(*name).ok_or(TypeError::UnknownVar(*name))?;
                 Ok(v.mutable)
             }
-            hir::Expr::TupleRef { expr, .. } => self.is_mutable_lvalue(&expr.e),
+            hir::Expr::StructRef { expr, .. } => self.is_mutable_lvalue(&expr.e),
             _ => Ok(false),
         }
     }
@@ -518,6 +518,13 @@ impl TCContext {
                 INT.intern_type(&TypeDef::Lambda(new_params, self.subst(*ret)))
             }
             TypeDef::Never => ts,
+            TypeDef::Struct { fields } => {
+                let new_fields = fields
+                    .iter()
+                    .map(|(nm, ty)| (*nm, self.subst(*ty)))
+                    .collect();
+                INT.intern_type(&TypeDef::Struct { fields: new_fields })
+            }
             other => todo!("subst other: {:#?}", other),
             /*
                     TypeDef::TypeVar(_t_id) => t.clone(),
@@ -929,7 +936,7 @@ impl Tck {
                 Ok(())
             }
             // Unit type constructor
-            (Expr::TupleCtor { body }, TypeDef::Tuple(_)) if body.len() == 0 && tdef.is_unit() => {
+            (Expr::StructCtor { body }, TypeDef::Tuple(_)) if body.len() == 0 && tdef.is_unit() => {
                 self.set_type(expr.id, t);
                 Ok(())
             }
@@ -1168,7 +1175,7 @@ impl Tck {
                 Ok(output_type)
             }
             // Unit constructor
-            Expr::TupleCtor { body } if body.len() == 0 => Ok(INT.unit()),
+            Expr::StructCtor { body } if body.len() == 0 => Ok(INT.unit()),
             Expr::Funcall { func, params } => {
                 let ftype = self.infer(func)?;
                 let t = self.ctx.subst(ftype);
@@ -1228,17 +1235,23 @@ impl Tck {
             Expr::Lambda { signature, body } => {
                 todo!("Lambda")
             }
-            Expr::TupleCtor { .. } => {
-                todo!("TupleCtor")
+            Expr::StructCtor { body } => {
+                use std::collections::BTreeMap;
+                let mut accm = BTreeMap::new();
+                for (name, expr) in body {
+                    let ty = self.infer(expr)?;
+                    accm.insert(*name, ty);
+                }
+                Ok(INT.intern_type(&TypeDef::Struct { fields: accm }))
             }
-            Expr::StructCtor { .. } => {
-                todo!("StructCtor")
-            }
-            Expr::TupleRef { .. } => {
-                todo!("TupleRef")
-            }
-            Expr::StructRef { .. } => {
-                todo!("TupleRef")
+            Expr::StructRef { expr, elt } => {
+                let t = self.infer(expr)?;
+                INT.fetch_type(t)
+                    .struct_field(*elt)
+                    .ok_or(TypeError::StructRef {
+                        fieldname: *elt,
+                        got: t,
+                    })
             }
             Expr::Ref { .. } => {
                 todo!("Ref")
@@ -2477,6 +2490,7 @@ fn typecheck_expr(
                 s: symtbl,
             })
         }
+        /*
         // TODO: Inference???
         // Not sure we need it, any integer type should be fine for tuple lookups...
         TupleRef { expr: e, elt } => {
@@ -2498,6 +2512,7 @@ fn typecheck_expr(
                 Err(TypeError::TupleRef { got: body_expr.t })
             }
         }
+        */
         StructRef { expr: e, elt } => {
             let body_expr = typecheck_expr(symtbl, *e, function_rettype)?;
             //let expr_typedef = INT.fetch_type(body_expr.t);
@@ -2579,7 +2594,7 @@ fn is_mutable_lvalue(symtbl: &ISymtbl, expr: &hir::Expr) -> Result<bool, TypeErr
             let v = symtbl.get_binding(*name)?;
             Ok(v.mutable)
         }
-        hir::Expr::TupleRef { expr, .. } => is_mutable_lvalue(symtbl, &expr.e),
+        hir::Expr::StructRef { expr, .. } => is_mutable_lvalue(symtbl, &expr.e),
         _ => Ok(false),
     }
 }

@@ -102,7 +102,7 @@ pub enum TypeDef {
     /// A struct.
     Struct {
         fields: BTreeMap<VarSym, TypeSym>,
-        typefields: BTreeSet<VarSym>,
+        //typefields: BTreeSet<VarSym>,
     },
     Enum {
         /// TODO: For now the only size of an enum is i32.
@@ -242,6 +242,15 @@ impl TypeDef {
         match self {
             TypeDef::Tuple(v) => v.len() == 0,
             _ => false,
+        }
+    }
+
+    /// Returns the field type if this is a struct, None
+    /// if this type is not a struct or does not have that field.
+    pub fn struct_field(&self, field: VarSym) -> Option<TypeSym> {
+        match self {
+            TypeDef::Struct { fields } => fields.get(&field).copied(),
+            _ => None,
         }
     }
 }
