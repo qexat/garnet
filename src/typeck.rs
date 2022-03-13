@@ -238,6 +238,8 @@ impl TypeDef {
     /// Substitute a type variable for a new type apparently,
     /// though that new type may be another type variable, or
     /// even the same one.
+    ///
+    /// TODO: ...is this how we handle UnknownInt types?
     fn instantiate(&self, v: &TypeId, s: &TypeSym) -> TypeSym {
         // TODO: I THINK this signature is correct, verify
         todo!()
@@ -525,6 +527,13 @@ impl TCContext {
                     .collect();
                 INT.intern_type(&TypeDef::Struct { fields: new_fields })
             }
+            TypeDef::Tuple(_) => {
+                // Just turn it into the matching struct and try again.
+                // This feels a little jank, since we may have to do this
+                // transformation many times, but it should work fine.
+                let new_t = t.struct_from_tuple().expect("Can't happen");
+                self.subst(new_t)
+            }
             other => todo!("subst other: {:#?}", other),
             /*
                     TypeDef::TypeVar(_t_id) => t.clone(),
@@ -578,6 +587,9 @@ impl Tck {
             }
             (TypeDef::Tuple(contents1), TypeDef::Tuple(contents2)) if contents1 == contents2 => {
                 Ok(())
+            }
+            (TypeDef::Struct { fields: fields1 }, TypeDef::Struct { fields: fields2 }) => {
+                todo!("type_sub structs, see if we need to solve for unknowns")
             }
             (TypeDef::Tuple(_contents1), TypeDef::Tuple(_contents2)) => {
                 todo!("type_sub tuples, see if we need to solve for unknowns")
