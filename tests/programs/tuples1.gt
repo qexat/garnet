@@ -6,6 +6,7 @@
 --   stdout: 3
 
 fn main(): {} =
-    let t: {I32, I32, Bool} = {3, 5, false}
+    -- TODO: Make the UnknownInt thing work inside tuples.
+    let t: {I32, I32, Bool} = {3I32, 5I32, false}
     __println(t.0)
 end

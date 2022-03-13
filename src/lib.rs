@@ -253,6 +253,22 @@ impl TypeDef {
             _ => None,
         }
     }
+
+    /// Returns a struct containing numbered fields for the tuple if this is
+    /// a tuple, or None otherwise
+    pub fn struct_from_tuple(&self) -> Option<TypeSym> {
+        match self {
+            TypeDef::Tuple(fields) => {
+                let body_pairs = fields
+                    .iter()
+                    .enumerate()
+                    .map(|(i, ty)| (INT.intern(format!("_{}", i)), *ty))
+                    .collect();
+                Some(INT.intern_type(&TypeDef::Struct { fields: body_pairs }))
+            }
+            _ => None,
+        }
+    }
 }
 
 /// Interner context.
