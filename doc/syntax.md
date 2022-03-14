@@ -1,14 +1,14 @@
 Broad syntax thoughts, yanked from parser
 
  * Everything is an expression
- * Go for Lua-style preference of keywords rather than punctuation
- * But don't go ham sacrificing familiarity for How It Should Be
+ * Lua-style preference of keywords rather than punctuation
+ * Don't go ham sacrificing familiarity for How It Should Be
 
 So essentially Rust-like syntax, but:
 
  * Keyword-delimited blocks instead of curly braces
  * and/or/not keywords for logical operators instead of ||, && etc
- * Keep | and & and ~ for binary operations
+ * Keep | and & and ~ for bit operations for now
  * Make sure trailing commas are always allowed
  * [] or maybe () instead of <> for generics
  * {} instead of () for tuples, that should keep things unambiguous
@@ -29,7 +29,7 @@ Deliberate choices so that we don't go ham:
  * Tempting as it is, use `fn foo() ...` for functions, not `let foo = fn() ...`
    or other OCaml-y variations on it.
  * Don't bother letting type decl's or `fn foo()` functions be nested
-   inside functions
+   inside functions yet.
 
 The result looks quite pleasing, IMO!  And we can mostly use Rust syntax
 highlighting.
@@ -175,3 +175,127 @@ operator, so it parses `expr COLON IDENT funargs`.  It's an ident
 instead of an arbitrary expression because that gets the job done,
 prevents `x : y (z)` becoming some kind of ternary operator thing, and
 it means we can't do horrible things like `foo:fn(x) = println(x) end()`
+
+## Functions
+
+```
+fn foo(x: I32, y: F32): Rettype =
+    ...body...
+end
+```
+
+Ok, what about generic functions?
+
+```
+fn foo[T](x: T, y: F32): T =
+    ...body...
+end
+```
+
+Call them like this:
+
+```
+foo(x,y)
+
+-- or UFCS
+x:foo(y)
+
+-- Or, perhaps, to disambiguate a generic type a la a turbofish?
+foo[T](x, y)
+x:foo[T](y)
+```
+
+Not sure if that is too ambiguous with some kind of general type
+constructor syntax, or whether it is absolutely perfect.  We will see!
+Not worrying about the turbofish right now.  (Since it's [] instead of
+<>, maybe call it the mechafish?)
+
+# Data
+
+## Structs
+
+Ok, so declaring a struct type goes like this:
+
+```
+alias Foo = struct {
+    x: Bar,
+    y: I16,
+    z: I64,
+}
+```
+
+This declares a newtype around an anonymous struct type.  This will be
+structurally typed a la OCaml, not nominally typed.
+
+To actually create an instance of this struct, you can do:
+
+```
+let x: Foo = struct {
+    x = some_bar,
+    y = 12,
+    z = 91,
+}
+```
+
+Then for a nominally typed struct, you just use `type` instead of
+`alias` to declare a newtype.
+
+Right, now for struct types with generics:
+
+```
+alias Foo[T] = struct[T] {
+    a: T,
+    b: I32,
+}
+```
+
+I dislike the double-declaration of `[T]` there, it's one of the irksome
+things about Rust.  Can we just do this?
+
+```
+alias Foo = struct[T] {
+    a: T,
+    b: I32,
+}
+```
+
+Mmmmmaybe.  Let's aim for it and see what happens.
+
+Creating said struct then:
+
+```
+let x: Foo[I32] = struct {
+    x = 12I32
+    y = 12,
+    z = 91,
+}
+```
+
+## Arrays
+
+```
+I32[4]
+I32[]
+I32 []
+```
+
+## References & lifetimes
+
+```
+-- Shared references
+I32 ^
+-- lifetime names... no fukkin clue
+I32^(foo)
+I32 ^ 'foo
+I32 ^'foo
+
+-- Unique references
+I32 ^uniq
+```
+
+## Pointers
+
+```
+I32 *const
+I32 *mut
+```
