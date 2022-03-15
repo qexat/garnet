@@ -109,7 +109,9 @@ pub enum TypeDef {
         variants: Vec<(VarSym, i32)>,
     },
     //Generic(VarSym),
-    /// A type var that might be provided by the user???
+    /// A type var that might be provided by the user.
+    ///
+    /// TODO: Should it be its own symbol type, or just VarSym?
     TypeVar(VarSym),
     /// A possibly-unsolved implicit type var???
     ExistentialVar(TypeId),

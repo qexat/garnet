@@ -273,6 +273,7 @@ impl Expr {
 pub enum Decl {
     Function {
         name: VarSym,
+        type_vars: Vec<VarSym>,
         signature: Signature,
         body: Vec<Expr>,
         doc_comment: Vec<String>,
