@@ -309,13 +309,11 @@ impl Cx {
         self.types.intern(&s)
     }
 
-    /*
-    /// Intern a "Named" typedef of the given name.
-    pub fn named_type(&self, s: impl AsRef<str>) -> TypeSym {
+    /// Intern a new type var matching the given string
+    pub fn type_var(&self, s: impl AsRef<str>) -> TypeSym {
         let sym = self.intern(s);
-        self.types.intern(&TypeDef::Named(sym))
+        self.types.intern(&TypeDef::TypeVar(sym))
     }
-    */
 
     /// Get the TypeDef for a type symbol
     pub fn fetch_type(&self, s: TypeSym) -> Arc<TypeDef> {

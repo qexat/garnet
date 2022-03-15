@@ -171,6 +171,10 @@ pub enum TokenKind {
     LBrace,
     #[token("}")]
     RBrace,
+    #[token("[")]
+    LBracket,
+    #[token("]")]
+    RBracket,
     #[token(",")]
     Comma,
     #[token(".")]
@@ -568,6 +572,11 @@ impl<'input> Parser<'input> {
 
     fn parse_fn(&mut self, doc_comment: Vec<String>) -> ast::Decl {
         let name = self.expect_ident();
+        let generics = if self.try_expect(T::LBracket.discr()) {
+            self.parse_generic_signature()
+        } else {
+            vec![]
+        };
         let signature = self.parse_fn_signature();
         self.expect(T::Equals);
         let body = self.parse_exprs();
@@ -617,6 +626,56 @@ impl<'input> Parser<'input> {
             crate::INT.unit()
         };
         ast::Signature { params, rettype }
+    }
+
+    /// generic_signature = "[" [ident {"," ident} [","]] "]"
+    ///
+    /// Expects the first bracket to already be consumed
+    ///
+    /// Returns a vec of type var names
+    fn parse_generic_signature(&mut self) -> Vec<VarSym> {
+        let mut body = vec![];
+        while !self.peek_is(T::RBracket.discr()) {
+            let t = self.expect_ident();
+            body.push(t);
+            if self.try_expect(T::Comma.discr()) {
+            } else {
+                break;
+            }
+        }
+        self.expect(T::RBracket);
+        body
+    }
+
+    /// Helper to parse a delimited list of separated items, such as this pattern:
+    /// Assumes the starting token has already been consumed, it reads things until
+    /// the ending token and allows trailing separators.
+    /// "(" [sig {"," sig} [","]] ")"
+    fn parse_delimited_helper(&mut self, ending_token: (), separator_token: (), body: ()) {
+        todo!("Implement me")
+        /*
+        while let Some(expr) = self.parse_expr(0) {
+            params.push(expr);
+            if !self.peek_is(T::Comma.discr()) {
+                break;
+            }
+            self.expect(T::Comma);
+        }
+            */
+
+        /*
+        while let Some((T::Ident(_i), _span)) = self.lex.peek() {
+            let name = self.expect_ident();
+            self.expect(T::Colon);
+            let tname = self.parse_type();
+            args.push((name, tname));
+
+            if self.try_expect(T::Comma.discr()) {
+            } else {
+                break;
+            }
+        }
+             */
     }
 
     /// sig = ident ":" typename
@@ -1158,8 +1217,7 @@ impl<'input> Parser<'input> {
                 if let Some(t) = TypeDef::get_primitive_type(s.as_ref()) {
                     crate::INT.intern_type(&t)
                 } else {
-                    todo!()
-                    //crate::INT.named_type(s)
+                    crate::INT.type_var(s)
                 }
             }
             Some(Token {
@@ -1479,6 +1537,17 @@ type blar = I8
             "x()",
         ];
         test_parse_with(|p| p.parse_expr(0), &valid_args);
+    }
+
+    #[test]
+    fn parse_fn_decls() {
+        let valid_args = vec![
+            "fn foo1(f: I32): I32 = f end",
+            "fn foo2(f: T): T = f end",
+            "fn foo3[T](f: T): T = f end",
+            "fn foo3[Q,R,S](f: T): T = f end",
+        ];
+        test_parse_with(|p| p.parse_decl().unwrap(), &valid_args);
     }
 
     #[test]
