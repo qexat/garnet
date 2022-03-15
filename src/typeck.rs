@@ -1554,6 +1554,7 @@ fn typecheck_decl(tck: &mut Tck, decl: hir::Decl) -> Result<hir::Decl, TypeError
     match decl {
         hir::Decl::Function {
             name,
+            ref type_vars,
             ref signature,
             ref body,
         } => {

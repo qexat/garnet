@@ -572,7 +572,7 @@ impl<'input> Parser<'input> {
 
     fn parse_fn(&mut self, doc_comment: Vec<String>) -> ast::Decl {
         let name = self.expect_ident();
-        let generics = if self.try_expect(T::LBracket.discr()) {
+        let type_vars = if self.try_expect(T::LBracket.discr()) {
             self.parse_generic_signature()
         } else {
             vec![]
@@ -583,6 +583,7 @@ impl<'input> Parser<'input> {
         self.expect(T::End);
         ast::Decl::Function {
             name,
+            type_vars,
             signature,
             body,
             doc_comment,
@@ -1358,6 +1359,7 @@ mod tests {
             let i32_t = INT.intern_type(&TypeDef::SInt(4));
             ast::Decl::Function {
                 name: INT.intern("foo"),
+                type_vars: vec![],
                 signature: ast::Signature {
                     params: vec![(INT.intern("x"), i32_t)],
                     rettype: i32_t,

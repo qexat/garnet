@@ -86,6 +86,7 @@ fn lambda_lift_expr(expr: TypedExpr, output_funcs: &mut Vec<D>) -> TypedExpr {
             let lambda_name = INT.gensym("lambda");
             let function_decl = D::Function {
                 name: lambda_name,
+                type_vars: vec![],
                 signature,
                 body: lambda_lift_exprs(body, output_funcs),
             };
@@ -123,12 +124,14 @@ fn lambda_lifting(ir: Ir) -> Ir {
         .map(|decl| match decl {
             D::Function {
                 name,
+                type_vars,
                 signature,
                 body,
             } => {
                 let new_body = lambda_lift_exprs(body, &mut new_functions);
                 D::Function {
                     name,
+                    type_vars,
                     signature,
                     body: new_body,
                 }
@@ -154,6 +157,7 @@ fn _enum_to_int(ir: Ir) -> Ir {
         .map(|decl| match decl {
             D::Function {
                 name,
+                type_vars,
                 signature,
                 body,
             } => {
@@ -163,6 +167,7 @@ fn _enum_to_int(ir: Ir) -> Ir {
                     .collect();
                 D::Function {
                     name,
+                    type_vars,
                     signature,
                     body: new_body,
                 }

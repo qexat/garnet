@@ -12,6 +12,7 @@ fn unparse_decl(d: &Decl, out: &mut dyn io::Write) -> io::Result<()> {
     match d {
         Decl::Function {
             name,
+            type_vars,
             signature,
             body,
             doc_comment,
@@ -22,6 +23,7 @@ fn unparse_decl(d: &Decl, out: &mut dyn io::Write) -> io::Result<()> {
             }
             let name = INT.fetch(*name);
             write!(out, "fn {}", name)?;
+            unparse_generics(type_vars, out)?;
             unparse_sig(signature, out)?;
             writeln!(out, " =")?;
             for expr in body {
@@ -47,6 +49,19 @@ fn unparse_decl(d: &Decl, out: &mut dyn io::Write) -> io::Result<()> {
         }
         Decl::TypeDef { .. } => todo!(),
     }
+}
+
+
+fn unparse_generics(type_vars: &[crate::VarSym], out: &mut dyn io::Write) -> io::Result<()> {
+    if type_vars.len() > 0 {
+        write!(out, "[")?;
+        for name in type_vars {
+            let name = INT.fetch(*name);
+            write!(out, "{}, ", name)?;
+        }
+        write!(out, "]")?;
+    }
+    Ok(())
 }
 
 fn unparse_sig(sig: &Signature, out: &mut dyn io::Write) -> io::Result<()> {

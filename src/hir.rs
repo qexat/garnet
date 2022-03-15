@@ -193,6 +193,7 @@ impl Expr {
 pub enum Decl {
     Function {
         name: VarSym,
+        type_vars: Vec<VarSym>,
         signature: Signature,
         body: Vec<TypedExpr>,
     },
@@ -404,11 +405,13 @@ fn lower_decl(accm: &mut Vec<Decl>, decl: &ast::Decl) {
     match decl {
         D::Function {
             name,
+            type_vars,
             signature,
             body,
             ..
         } => accm.push(Decl::Function {
             name: *name,
+            type_vars: type_vars.clone(),
             signature: lower_signature(signature),
             body: lower_exprs(body),
         }),
