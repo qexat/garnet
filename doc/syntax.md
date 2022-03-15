@@ -41,7 +41,7 @@ decl =
   | const_decl
 
 const_decl = DOC_COMMENT "const" ident ":" typename "=" expr
-function_decl = DOC_COMMENT "fn" ident fn_signature "=" exprs "end"
+function_decl = DOC_COMMENT "fn" ident [generic_signature] fn_signature "=" exprs "end"
 
 value =
   | NUMBER
@@ -82,6 +82,7 @@ return = "return" expr
 // We will use "^" for our deref operator and "&" for our reference
 // operator.
 
+generic_signature = "[" [ident {"," ident} [","]] "]"
 fn_args = "(" [ident ":" typename {"," ident ":" typename}] ")"
 fn_signature = fn_args [":" typename]
 
