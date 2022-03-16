@@ -1,0 +1,15 @@
+-- Compile:
+--   status: success
+--
+-- Run:
+--   status: success
+--   stdout: 42
+
+fn foo[T](i: T): T =
+    i
+end
+
+fn main(): {} =
+    let x: I32 = foo(42I32);
+    __println(x)
+end

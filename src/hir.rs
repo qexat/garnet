@@ -36,6 +36,9 @@ pub struct VarBinding {
 pub struct ISymtbl {
     pub vars: im::HashMap<VarSym, VarBinding>,
     pub types: im::HashMap<VarSym, TypeSym>,
+    // TODO someday: Make TypeID's just be gensym strings or something so we
+    // don't need this extra level of indirection
+    pub type_vars: im::HashMap<VarSym, TypeId>,
 }
 
 /// Expression ID.  Used for associating individual expressions to types, and whatever

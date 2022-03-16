@@ -1471,6 +1471,14 @@ impl ISymtbl {
         self.types.get(&name).cloned()
     }
 
+    fn add_type_var(&mut self, name: VarSym, id: TypeId) {
+        self.type_vars.insert(name, id);
+    }
+
+    fn get_type_var(&mut self, name: VarSym) -> Option<TypeId> {
+        self.type_vars.get(&name).cloned()
+    }
+
     /*
     /// Looks up a typedef and if it is `Named` try to keep looking
     /// it up until we find the actual concrete type.  Returns None
@@ -1560,6 +1568,16 @@ fn typecheck_decl(tck: &mut Tck, decl: hir::Decl) -> Result<hir::Decl, TypeError
         } => {
             // Push scope, typecheck and add params to symbol table
             let symtbl = &mut tck.symtbl.clone();
+            let new_ctx = tck.ctx.clone().add_all(
+                type_vars.iter()
+                    .map(|type_var| {
+                        let tid = tck.next_existential_var();
+                        let type_var = INT.intern_type(&TypeDef::TypeVar(*type_var));
+                        ContextItem::SolvedExistentialVar(tid, type_var)
+                    }
+                )
+            );
+            tck.ctx = new_ctx;
             for (pname, ptype) in signature.params.iter() {
                 symtbl.add_var(*pname, *ptype, false);
                 tck.ctx = tck.ctx.add_var(*pname, *ptype, false);
