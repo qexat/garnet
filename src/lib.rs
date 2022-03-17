@@ -74,6 +74,11 @@ pub struct Path {
     pub path: Vec<VarSym>,
 }
 
+/// Generic type decls and constraints.
+/// Right now it's just a the generic name, but eventually
+/// it may be more complex.
+pub type TypeConstraint = VarSym;
+
 /// A complete-ish description of a type.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum TypeDef {
@@ -88,7 +93,11 @@ pub enum TypeDef {
     /// Never is a real type, I guess!
     Never,
     /// The type of a lambda is its signature.
-    Lambda(Vec<TypeSym>, TypeSym),
+    Lambda {
+        generics: Vec<TypeConstraint>,
+        params: Vec<TypeSym>,
+        rettype: TypeSym,
+    },
     /*
     /// This is basically a type that has been named but we
     /// don't know what type it actually is until after type checking...
@@ -173,6 +182,17 @@ impl TypeDef {
                 .collect::<Vec<_>>();
             p_strs.join(", ")
         };
+        let join_generics_with_commas = |lst: &[TypeConstraint]| {
+            // slice.join() alone won't work here 'cause we gotta map the thing
+            // first, which makes an iterator, not a slice.
+            // Apparently we want std::iter::IntersperseWith, but, that's
+            // not stable yet.  Odd!
+            let strs = lst
+                .iter()
+                .map(|name| *INT.fetch(*name).to_owned())
+                .collect::<Vec<_>>();
+            strs.join(", ")
+        };
         match self {
             TypeDef::SInt(16) => Cow::Borrowed("I128"),
             TypeDef::SInt(8) => Cow::Borrowed("I64"),
@@ -193,8 +213,18 @@ impl TypeDef {
                     Cow::Owned(res)
                 }
             }
-            TypeDef::Lambda(params, rettype) => {
-                let mut t = String::from("fn(");
+            TypeDef::Lambda {
+                generics,
+                params,
+                rettype,
+            } => {
+                let mut t = String::from("fn");
+                if generics.len() > 0 {
+                    t += "[";
+                    t += &join_generics_with_commas(generics);
+                    t += "]";
+                }
+                t += "(";
                 t += &join_types_with_commas(params);
 
                 t += ")";
@@ -420,7 +450,11 @@ mod tests {
     #[test]
     fn check_name_format() {
         let args = vec![INT.i32(), INT.bool()];
-        let def = TypeDef::Lambda(args, INT.i32());
+        let def = TypeDef::Lambda {
+            generics: vec![],
+            params: args,
+            rettype: INT.i32(),
+        };
         let gotten_name = def.get_name();
         let desired_name = "fn(I32, Bool): I32";
         assert_eq!(&gotten_name, desired_name);
