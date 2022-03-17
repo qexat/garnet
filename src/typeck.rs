@@ -534,6 +534,7 @@ impl TCContext {
                 let new_t = t.struct_from_tuple().expect("Can't happen");
                 self.subst(new_t)
             }
+            TypeDef::TypeVar(_t_id) => ts,
             other => todo!("subst other: {:#?}", other),
             /*
                     TypeDef::TypeVar(_t_id) => t.clone(),
@@ -593,6 +594,16 @@ impl Tck {
             }
             (TypeDef::Tuple(_contents1), TypeDef::Tuple(_contents2)) => {
                 todo!("type_sub tuples, see if we need to solve for unknowns")
+            }
+            // Type variables are things that are explicitly declared by the user,
+            // Existential vars are placeholders that occur "currently", temporary
+            // artifacts that the type checker solves for.
+            // So `let x = 91` creates an existential variable and the type inference
+            // says "this existential variable has the type of the expression `91`",
+            // and `fn foo[T](x: T): T = x end` creates a type variable named T
+            // and has to make sure its use is consistent.
+            (TypeDef::TypeVar(name), _) => {
+                todo!("hm")
             }
             // TODO: Is this okay?  Is it really?  ...Really?
             // ...I THINK so.
@@ -934,14 +945,9 @@ impl Tck {
                     }),
                 }
             }
-            (Expr::Lit { val }, _) => {
+            (Expr::Lit { val }, _) if t == Self::infer_literal(val)? => {
                 // TODO: Is this right?  Not sure, sleepy.
-                let lit_type = Self::infer_literal(val)?;
-                if lit_type == t {
-                    Ok(())
-                } else {
-                    todo!("Is this even possible?")
-                }
+                Ok(())
             }
             (Expr::Let { .. }, TypeDef::Tuple(_)) if tdef.is_unit() => {
                 self.set_type(expr.id, t);
@@ -1568,15 +1574,11 @@ fn typecheck_decl(tck: &mut Tck, decl: hir::Decl) -> Result<hir::Decl, TypeError
         } => {
             // Push scope, typecheck and add params to symbol table
             let symtbl = &mut tck.symtbl.clone();
-            let new_ctx = tck.ctx.clone().add_all(
-                type_vars.iter()
-                    .map(|type_var| {
-                        let tid = tck.next_existential_var();
-                        let type_var = INT.intern_type(&TypeDef::TypeVar(*type_var));
-                        ContextItem::SolvedExistentialVar(tid, type_var)
-                    }
-                )
-            );
+            let new_ctx = tck.ctx.clone().add_all(type_vars.iter().map(|type_var| {
+                let tid = tck.next_existential_var();
+                let type_var = INT.intern_type(&TypeDef::TypeVar(*type_var));
+                ContextItem::SolvedExistentialVar(tid, type_var)
+            }));
             tck.ctx = new_ctx;
             for (pname, ptype) in signature.params.iter() {
                 symtbl.add_var(*pname, *ptype, false);
