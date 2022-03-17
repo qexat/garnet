@@ -151,7 +151,7 @@ impl Signature {
     pub(crate) fn to_type(&self) -> TypeSym {
         let params = self.params.iter().map(|(_v, t)| *t).collect();
         let t = TypeDef::Lambda {
-            generics: self.generics.cloned(),
+            generics: self.generics.clone(),
             params,
             rettype: self.rettype,
         };
@@ -278,7 +278,6 @@ impl Expr {
 pub enum Decl {
     Function {
         name: VarSym,
-        type_vars: Vec<VarSym>,
         signature: Signature,
         body: Vec<Expr>,
         doc_comment: Vec<String>,
