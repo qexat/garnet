@@ -577,13 +577,15 @@ impl<'input> Parser<'input> {
         } else {
             vec![]
         };
-        let signature = self.parse_fn_signature();
+        let signature = hir::Signature {
+            generics: type_vars,
+            ..self.parse_fn_signature()
+        };
         self.expect(T::Equals);
         let body = self.parse_exprs();
         self.expect(T::End);
         ast::Decl::Function {
             name,
-            type_vars,
             signature,
             body,
             doc_comment,
@@ -620,13 +622,19 @@ impl<'input> Parser<'input> {
 
     /// signature = fn_args [":" typename]
     fn parse_fn_signature(&mut self) -> ast::Signature {
+        // TODO: parse generics
+        let generics = vec![];
         let params = self.parse_fn_args();
         let rettype = if self.try_expect(T::Colon.discr()) {
             self.parse_type()
         } else {
             crate::INT.unit()
         };
-        ast::Signature { params, rettype }
+        ast::Signature {
+            generics,
+            params,
+            rettype,
+        }
     }
 
     /// generic_signature = "[" [ident {"," ident} [","]] "]"
@@ -1365,7 +1373,6 @@ mod tests {
             let i32_t = INT.intern_type(&TypeDef::SInt(4));
             ast::Decl::Function {
                 name: INT.intern("foo"),
-                type_vars: vec![],
                 signature: ast::Signature {
                     generics: vec![],
                     params: vec![(INT.intern("x"), i32_t)],

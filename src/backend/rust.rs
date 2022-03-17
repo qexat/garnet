@@ -143,16 +143,12 @@ fn compile_decl(w: &mut impl Write, decl: &hir::Decl, tck: &Tck) -> io::Result<(
     match decl {
         hir::Decl::Function {
             name,
-            type_vars,
             signature,
             body,
         } => {
             let nstr = mangle_name(&*INT.fetch(*name));
             let sstr = compile_fn_signature(signature);
             let bstr = compile_exprs(body, ";\n", tck);
-            if type_vars.len() != 0 {
-                unimplemented!("Function type vars in backend");
-            }
             writeln!(w, "pub fn {}{} {{\n{}\n}}\n", nstr, sstr, bstr)
         }
         hir::Decl::Const {
@@ -200,6 +196,7 @@ fn compile_decl(w: &mut impl Write, decl: &hir::Decl, tck: &Tck) -> io::Result<(
             let nstr = mangle_name(typename);
             // We do need to make the destructure function I guess.
             let destructure_signature = hir::Signature {
+                generics: vec![],
                 params: vec![(INT.intern("input"), signature.rettype)],
                 rettype: signature.params[0].1,
             };
@@ -210,6 +207,9 @@ fn compile_decl(w: &mut impl Write, decl: &hir::Decl, tck: &Tck) -> io::Result<(
 }
 
 fn compile_fn_signature(sig: &ast::Signature) -> String {
+    if sig.generics.len() > 0 {
+        todo!("Output generics to rust, or lower them");
+    }
     let mut accm = String::from("(");
     for (varsym, typesym) in sig.params.iter() {
         accm += &*INT.fetch(*varsym);

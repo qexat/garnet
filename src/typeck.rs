@@ -590,7 +590,24 @@ impl Tck {
                 (TypeDef::UnknownInt, TypeDef::UnknownInt) => Ok(()),
 
                 (TypeDef::TypeVar(a), TypeDef::TypeVar(b)) if a == b => Ok(()),
-                (TypeDef::Lambda(params1, rettype1), TypeDef::Lambda(params2, rettype2)) => {
+                (
+                    TypeDef::Lambda {
+                        generics: generics1,
+                        params: params1,
+                        rettype: rettype1,
+                    },
+                    TypeDef::Lambda {
+                        generics: generics2,
+                        params: params2,
+                        rettype: rettype2,
+                    },
+                ) => {
+                    // TODO: Is this handling of generic type vars at all sane?
+                    for (generic1, generic2) in generics1.iter().zip(generics2) {
+                        let g1 = INT.intern_type(&TypeDef::TypeVar(*generic1));
+                        let g2 = INT.intern_type(&TypeDef::TypeVar(*generic2));
+                        s.type_sub(g1, g2)?;
+                    }
                     for (param1, param2) in params1.iter().zip(params2) {
                         s.type_sub(*param1, *param2)?;
                     }
@@ -1117,7 +1134,14 @@ impl Tck {
                     */
                 */
             }
-            TypeDef::Lambda(params, rettype) => {
+            TypeDef::Lambda {
+                generics,
+                params,
+                rettype,
+            } => {
+                if generics.len() > 0 {
+                    todo!("Infer generics in application?");
+                }
                 for (p, e) in params.iter().zip(exprs) {
                     self.check(e, *p)?;
                 }
@@ -1478,22 +1502,38 @@ impl ISymtbl {
         // We add a built-in function for printing, currently.
         {
             let name = INT.intern("__println");
-            let typesym = INT.intern_type(&TypeDef::Lambda(vec![INT.i32()], INT.unit()));
+            let typesym = INT.intern_type(&TypeDef::Lambda {
+                generics: vec![],
+                params: vec![INT.i32()],
+                rettype: INT.unit(),
+            });
             x.add_var(name, typesym, false);
         }
         {
             let name = INT.intern("__println_bool");
-            let typesym = INT.intern_type(&TypeDef::Lambda(vec![INT.bool()], INT.unit()));
+            let typesym = INT.intern_type(&TypeDef::Lambda {
+                generics: vec![],
+                params: vec![INT.bool()],
+                rettype: INT.unit(),
+            });
             x.add_var(name, typesym, false);
         }
         {
             let name = INT.intern("__println_i64");
-            let typesym = INT.intern_type(&TypeDef::Lambda(vec![INT.i64()], INT.unit()));
+            let typesym = INT.intern_type(&TypeDef::Lambda {
+                generics: vec![],
+                params: vec![INT.i64()],
+                rettype: INT.unit(),
+            });
             x.add_var(name, typesym, false);
         }
         {
             let name = INT.intern("__println_i16");
-            let typesym = INT.intern_type(&TypeDef::Lambda(vec![INT.i16()], INT.unit()));
+            let typesym = INT.intern_type(&TypeDef::Lambda {
+                generics: vec![],
+                params: vec![INT.i16()],
+                rettype: INT.unit(),
+            });
             x.add_var(name, typesym, false);
         }
         x
@@ -1598,7 +1638,6 @@ fn typecheck_decl(tck: &mut Tck, decl: hir::Decl) -> Result<hir::Decl, TypeError
     match decl {
         hir::Decl::Function {
             name,
-            ref type_vars,
             ref signature,
             ref body,
         } => {
@@ -1607,7 +1646,7 @@ fn typecheck_decl(tck: &mut Tck, decl: hir::Decl) -> Result<hir::Decl, TypeError
             let new_ctx = tck
                 .ctx
                 .clone()
-                .add_all(type_vars.iter().map(|type_var_name| {
+                .add_all(signature.generics.iter().map(|type_var_name| {
                     // Bind the type vars for the function to existential vars
                     let tid = tck.next_existential_var();
                     let type_var = INT.intern_type(&TypeDef::TypeVar(*type_var_name));
@@ -1730,7 +1769,11 @@ fn predeclare_decl(tck: &mut Tck, decl: &hir::Decl) {
             }
             // Add function to global scope
             let type_params = signature.params.iter().map(|(_name, t)| *t).collect();
-            let function_type = INT.intern_type(&TypeDef::Lambda(type_params, signature.rettype));
+            let function_type = INT.intern_type(&TypeDef::Lambda {
+                generics: signature.generics.clone(),
+                params: type_params,
+                rettype: signature.rettype,
+            });
             tck.symtbl.add_var(*name, function_type, false);
             tck.ctx = tck.ctx.clone().add_var(*name, function_type, false);
         }
@@ -1759,8 +1802,11 @@ fn predeclare_decl(tck: &mut Tck, decl: &hir::Decl) {
                     );
                 }
                 let type_params = signature.params.iter().map(|(_name, t)| *t).collect();
-                let function_type =
-                    INT.intern_type(&TypeDef::Lambda(type_params, signature.rettype));
+                let function_type = INT.intern_type(&TypeDef::Lambda {
+                    generics: vec![],
+                    params: type_params,
+                    rettype: signature.rettype,
+                });
                 tck.symtbl.add_var(*name, function_type, false);
             }
 
@@ -1776,7 +1822,11 @@ fn predeclare_decl(tck: &mut Tck, decl: &hir::Decl) {
                 }
                 let type_params = vec![signature.rettype];
                 let rettype = signature.params[0].1;
-                let function_type = INT.intern_type(&TypeDef::Lambda(type_params, rettype));
+                let function_type = INT.intern_type(&TypeDef::Lambda {
+                    generics: vec![],
+                    params: type_params,
+                    rettype,
+                });
                 tck.symtbl.add_var(deconstruct_name, function_type, false);
             }
             todo!("Predeclare constructor");
@@ -1822,22 +1872,38 @@ impl Tck {
         // We add a built-in function for printing, currently.
         {
             let name = INT.intern("__println");
-            let typesym = INT.intern_type(&TypeDef::Lambda(vec![INT.i32()], INT.unit()));
+            let typesym = INT.intern_type(&TypeDef::Lambda {
+                generics: vec![],
+                params: vec![INT.i32()],
+                rettype: INT.unit(),
+            });
             x = x.add_var(name, typesym, false);
         }
         {
             let name = INT.intern("__println_bool");
-            let typesym = INT.intern_type(&TypeDef::Lambda(vec![INT.bool()], INT.unit()));
+            let typesym = INT.intern_type(&TypeDef::Lambda {
+                generics: vec![],
+                params: vec![INT.bool()],
+                rettype: INT.unit(),
+            });
             x = x.add_var(name, typesym, false);
         }
         {
             let name = INT.intern("__println_i64");
-            let typesym = INT.intern_type(&TypeDef::Lambda(vec![INT.i64()], INT.unit()));
+            let typesym = INT.intern_type(&TypeDef::Lambda {
+                generics: vec![],
+                params: vec![INT.i64()],
+                rettype: INT.unit(),
+            });
             x = x.add_var(name, typesym, false);
         }
         {
             let name = INT.intern("__println_i16");
-            let typesym = INT.intern_type(&TypeDef::Lambda(vec![INT.i16()], INT.unit()));
+            let typesym = INT.intern_type(&TypeDef::Lambda {
+                generics: vec![],
+                params: vec![INT.i16()],
+                rettype: INT.unit(),
+            });
             x = x.add_var(name, typesym, false);
         }
 

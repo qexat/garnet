@@ -189,7 +189,7 @@ impl TypeDef {
             // not stable yet.  Odd!
             let strs = lst
                 .iter()
-                .map(|name| *INT.fetch(*name).to_owned())
+                .map(|name| (&*INT.fetch(*name)).to_owned())
                 .collect::<Vec<_>>();
             strs.join(", ")
         };
