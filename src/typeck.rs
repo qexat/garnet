@@ -568,87 +568,107 @@ impl TCContext {
 
 impl Tck {
     fn type_sub(&mut self, t1: TypeSym, t2: TypeSym) -> Result<(), TypeError> {
-        //eprintln!("Doing type_sub on {:?}, {:?}", t1, t2);
-        let td1 = &*INT.fetch_type(t1);
-        let td2 = &*INT.fetch_type(t2);
-        match (td1, td2) {
-            (TypeDef::Bool, TypeDef::Bool) => Ok(()),
-            (TypeDef::SInt(i1), TypeDef::SInt(i2)) if i1 == i2 => Ok(()),
-            // TODO: Verify this UnknownInt behavior is correct...
-            (TypeDef::UnknownInt, TypeDef::SInt(_i2)) => Ok(()),
-            (TypeDef::SInt(_i1), TypeDef::UnknownInt) => Ok(()),
-            (TypeDef::UnknownInt, TypeDef::UnknownInt) => Ok(()),
+        /// Helper function dealing with &TypeDef rather than TypeSym, which is handy for
+        /// recursion
+        fn type_sub_(s: &mut Tck, td1: &TypeDef, td2: &TypeDef) -> Result<(), TypeError> {
+            match (td1, td2) {
+                (TypeDef::Bool, TypeDef::Bool) => Ok(()),
+                (TypeDef::SInt(i1), TypeDef::SInt(i2)) if i1 == i2 => Ok(()),
+                // TODO: Verify this UnknownInt behavior is correct...
+                (TypeDef::UnknownInt, TypeDef::SInt(_i2)) => Ok(()),
+                (TypeDef::SInt(_i1), TypeDef::UnknownInt) => Ok(()),
+                (TypeDef::UnknownInt, TypeDef::UnknownInt) => Ok(()),
 
-            (TypeDef::TypeVar(a), TypeDef::TypeVar(b)) if a == b => Ok(()),
-            (TypeDef::Lambda(params1, rettype1), TypeDef::Lambda(params2, rettype2)) => {
-                for (param1, param2) in params1.iter().zip(params2) {
-                    self.type_sub(*param1, *param2)?;
+                (TypeDef::TypeVar(a), TypeDef::TypeVar(b)) if a == b => Ok(()),
+                (TypeDef::Lambda(params1, rettype1), TypeDef::Lambda(params2, rettype2)) => {
+                    for (param1, param2) in params1.iter().zip(params2) {
+                        s.type_sub(*param1, *param2)?;
+                    }
+                    s.type_sub(*rettype1, *rettype2)
                 }
-                self.type_sub(*rettype1, *rettype2)
-            }
-            (TypeDef::Tuple(contents1), TypeDef::Tuple(contents2)) if contents1 == contents2 => {
-                Ok(())
-            }
-            (TypeDef::Struct { fields: fields1 }, TypeDef::Struct { fields: fields2 }) => {
-                todo!("type_sub structs, see if we need to solve for unknowns")
-            }
-            (TypeDef::Tuple(_contents1), TypeDef::Tuple(_contents2)) => {
-                todo!("type_sub tuples, see if we need to solve for unknowns")
-            }
-            // Type variables are things that are explicitly declared by the user,
-            // Existential vars are placeholders that occur "currently", temporary
-            // artifacts that the type checker solves for.
-            // So `let x = 91` creates an existential variable and the type inference
-            // says "this existential variable has the type of the expression `91`",
-            // and `fn foo[T](x: T): T = x end` creates a type variable named T
-            // and has to make sure its use is consistent.
-            (TypeDef::TypeVar(name), _) => {
-                todo!("hm")
-            }
-            // TODO: Is this okay?  Is it really?  ...Really?
-            // ...I THINK so.
-            // I'm not sure I'm ready for this much responsibility.
-            (TypeDef::Never, _) => Ok(()),
-            /*
-             * TODO
-            (TypeDef::Unit, TypeDef::Unit) => Ok(()),
-            (TypeDef::ExistentialVar(a), TypeDef::ExistentialVar(b)) if a == b => Ok(()),
-            (TypeDef::ForAll(v, a), b) => {
+                (TypeDef::Tuple(contents1), TypeDef::Tuple(contents2))
+                    if contents1 == contents2 =>
+                {
+                    Ok(())
+                }
+                (TypeDef::Struct { fields: fields1 }, TypeDef::Struct { fields: fields2 }) => {
+                    todo!("type_sub structs, see if we need to solve for unknowns")
+                }
+                (TypeDef::Tuple(_contents1), TypeDef::Tuple(_contents2)) => {
+                    todo!("type_sub tuples, see if we need to solve for unknowns")
+                }
+                (TypeDef::TypeVar(name), b) => {
+                    todo!("hm")
+                }
+                (a, TypeDef::TypeVar(name)) => {
+                    // Ok, so once we get here, we know the type var exists, and is bound to an existential type.
+                    // So we... should just be able to get the existential var associated with it and
+                    // instantiate it?
+
+                    // Get the existential var matching this type var, then we just recurse.
+                    let evar = TypeDef::ExistentialVar(
+                        s.symtbl.get_type_var(*name)
+                            .unwrap_or_else(|| panic!("Could not get existential var for type var {:?}, should never happen", INT.fetch(*name)))
+                    );
+                    type_sub_(s, a, &evar)
+                }
+                (TypeDef::TypeVar(name), b) => {
+                    // Get the existential var matching this type var, then we just recurse.
+                    let evar = TypeDef::ExistentialVar(
+                        s.symtbl.get_type_var(*name)
+                            .unwrap_or_else(|| panic!("Could not get existential var for type var {:?}, should never happen", INT.fetch(*name)))
+                    );
+                    type_sub_(s, &evar, b)
+                }
+                // TODO: Is this okay?  Is it really?  ...Really?
+                // ...I THINK so.
+                // I'm not sure I'm ready for this much responsibility.
+                (TypeDef::Never, _) => Ok(()),
+                /*
+                * TODO
+                (TypeDef::Unit, TypeDef::Unit) => Ok(()),
+                (TypeDef::ExistentialVar(a), TypeDef::ExistentialVar(b)) if a == b => Ok(()),
+                (TypeDef::ForAll(v, a), b) => {
                 let heckin_a_hat = self.next_existential_var();
                 let heckin_a_prime = a.instantiate(&v, &TypeDef::ExistentialVar(heckin_a_hat));
                 let marker = ContextItem::Marker(heckin_a_hat);
                 self.ctx = self
-                    .ctx
-                    .clone()
-                    .add(marker.clone())
-                    .add(ContextItem::ExistentialVar(heckin_a_hat));
+                .ctx
+                .clone()
+                .add(marker.clone())
+                .add(ContextItem::ExistentialVar(heckin_a_hat));
                 self.type_sub(heckin_a_prime, b)?;
                 self.ctx = self.ctx.until(&marker);
                 Ok(())
-            }
-            (a, TypeDef::ForAll(v, b)) => {
+                }
+                (a, TypeDef::ForAll(v, b)) => {
                 let var = ContextItem::TermVar(v.clone());
                 self.ctx = self.ctx.clone().add(var.clone());
                 self.type_sub(a, *b)?;
                 self.ctx = self.ctx.until(&var);
                 Ok(())
-            }
-            (TypeDef::ExistentialVar(a_hat), a) if !a.free_vars().contains(&a_hat) => {
+                }
+                (TypeDef::ExistentialVar(a_hat), a) if !a.free_vars().contains(&a_hat) => {
                 eprintln!("Doing instL");
                 let x = self.instantiate_l(a_hat, a);
                 eprintln!("Done with instL");
                 x
-            }
-            (a, TypeDef::ExistentialVar(a_hat)) if !a.free_vars().contains(&a_hat) => {
+                }
+                (a, TypeDef::ExistentialVar(a_hat)) if !a.free_vars().contains(&a_hat) => {
                 self.instantiate_r(a, a_hat)
+                }
+                */
+                (a, b) => Err(TypeError::TypeMismatch {
+                    expr_name: format!("type_sub {:?}, {:?}", a, b).into(),
+                    got: INT.intern_type(td1),
+                    expected: INT.intern_type(td2),
+                }),
             }
-            */
-            (a, b) => Err(TypeError::TypeMismatch {
-                expr_name: format!("type_sub {:?}, {:?}", a, b).into(),
-                got: t1,
-                expected: t2,
-            }),
         }
+        //eprintln!("Doing type_sub on {:?}, {:?}", t1, t2);
+        let td1 = &*INT.fetch_type(t1);
+        let td2 = &*INT.fetch_type(t2);
+        type_sub_(self, td1, td2)
     }
 
     fn instantiate_l(&mut self, a_hat: TypeId, t: TypeSym) -> Result<(), TypeError> {
@@ -1572,13 +1592,19 @@ fn typecheck_decl(tck: &mut Tck, decl: hir::Decl) -> Result<hir::Decl, TypeError
             ref signature,
             ref body,
         } => {
-            // Push scope, typecheck and add params to symbol table
+            // Push scope, typecheck and add params, and type vars to symbol table
             let symtbl = &mut tck.symtbl.clone();
-            let new_ctx = tck.ctx.clone().add_all(type_vars.iter().map(|type_var| {
-                let tid = tck.next_existential_var();
-                let type_var = INT.intern_type(&TypeDef::TypeVar(*type_var));
-                ContextItem::SolvedExistentialVar(tid, type_var)
-            }));
+            let new_ctx = tck
+                .ctx
+                .clone()
+                .add_all(type_vars.iter().map(|type_var_name| {
+                    // Bind the type vars for the function to existential vars
+                    let tid = tck.next_existential_var();
+                    let type_var = INT.intern_type(&TypeDef::TypeVar(*type_var_name));
+                    symtbl.add_type_var(*type_var_name, tid);
+                    ContextItem::SolvedExistentialVar(tid, type_var)
+                }));
+            println!("{:#?}", symtbl);
             tck.ctx = new_ctx;
             for (pname, ptype) in signature.params.iter() {
                 symtbl.add_var(*pname, *ptype, false);
