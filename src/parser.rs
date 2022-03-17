@@ -701,13 +701,19 @@ impl<'input> Parser<'input> {
     }
 
     fn parse_fn_type(&mut self) -> TypeDef {
+        // TODO: Parse generic stuffs?
+        let generics = vec![];
         let params = self.parse_fn_type_args();
         let rettype = if self.try_expect(T::Colon.discr()) {
             self.parse_type()
         } else {
             crate::INT.unit()
         };
-        TypeDef::Lambda(params, rettype)
+        TypeDef::Lambda {
+            generics,
+            params,
+            rettype,
+        }
     }
 
     fn parse_fn_type_args(&mut self) -> Vec<TypeSym> {
@@ -1361,6 +1367,7 @@ mod tests {
                 name: INT.intern("foo"),
                 type_vars: vec![],
                 signature: ast::Signature {
+                    generics: vec![],
                     params: vec![(INT.intern("x"), i32_t)],
                     rettype: i32_t,
                 },

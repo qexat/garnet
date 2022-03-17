@@ -9,7 +9,17 @@ fn foo[T](i: T): T =
     i
 end
 
+fn first[T1, T2](a: T1, b: T2): T1 =
+    a
+end
+
+fn second[T1, T2](a: T1, b: T2): T2 =
+    b
+end
+
+/-
 fn main(): {} =
     let x: I32 = foo(42I32);
     __println(x)
 end
+-/

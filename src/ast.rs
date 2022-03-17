@@ -139,6 +139,7 @@ pub struct IfCase {
 /// A function type signature
 #[derive(Debug, Clone, PartialEq)]
 pub struct Signature {
+    pub generics: Vec<TypeConstraint>,
     /// Parameters
     pub params: Vec<(VarSym, TypeSym)>,
     /// Return type
@@ -148,8 +149,12 @@ pub struct Signature {
 impl Signature {
     /// Returns a lambda typedef representing the signature
     pub(crate) fn to_type(&self) -> TypeSym {
-        let args = self.params.iter().map(|(_v, t)| *t).collect();
-        let t = TypeDef::Lambda(args, self.rettype);
+        let params = self.params.iter().map(|(_v, t)| *t).collect();
+        let t = TypeDef::Lambda {
+            generics: self.generics.cloned(),
+            params,
+            rettype: self.rettype,
+        };
         INT.intern_type(&t)
     }
 }

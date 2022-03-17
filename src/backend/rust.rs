@@ -67,14 +67,28 @@ fn compile_typename(td: &TypeDef) -> Cow<'static, str> {
             accm += ")";
             accm.into()
         }
-        Lambda(params, ret) => {
-            let mut accm = String::from("fn (");
+        Lambda {
+            generics,
+            params,
+            rettype,
+        } => {
+            let mut accm = String::from("fn ");
+            // TODO: ...make sure this actually works.
+            if generics.len() > 0 {
+                accm += "<";
+                for g in generics {
+                    accm += &*INT.fetch(*g);
+                    accm += ", ";
+                }
+                accm += ">";
+            }
+            accm += "(";
             for p in params {
                 accm += &compile_typename(&*INT.fetch_type(*p));
                 accm += ", ";
             }
             accm += ") -> ";
-            accm += &compile_typename(&*INT.fetch_type(*ret));
+            accm += &compile_typename(&*INT.fetch_type(*rettype));
             accm.into()
         }
         //Named(sym) => (&*INT.fetch(*sym)).clone().into(),

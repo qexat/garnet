@@ -515,9 +515,19 @@ impl TCContext {
             // TODO: ...is it meaningful to subst an UnknownInt into something?
             TypeDef::UnknownInt => ts,
             TypeDef::Bool => ts,
-            TypeDef::Lambda(params, ret) => {
+            TypeDef::Lambda {
+                generics,
+                params,
+                rettype,
+            } => {
                 let new_params = params.iter().map(|x| self.subst(*x)).collect();
-                INT.intern_type(&TypeDef::Lambda(new_params, self.subst(*ret)))
+                // TODO: Do we have to subst generics?  I don't think we can do
+                // anything about them...
+                INT.intern_type(&TypeDef::Lambda {
+                    generics: generics.clone(),
+                    params: new_params,
+                    rettype: self.subst(*rettype),
+                })
             }
             TypeDef::Never => ts,
             TypeDef::Struct { fields } => {
