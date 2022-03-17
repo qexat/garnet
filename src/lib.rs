@@ -87,7 +87,7 @@ pub enum TypeDef {
     Tuple(Vec<TypeSym>),
     /// Never is a real type, I guess!
     Never,
-    /// The type of a lambda is its signature
+    /// The type of a lambda is its signature.
     Lambda(Vec<TypeSym>, TypeSym),
     /*
     /// This is basically a type that has been named but we
@@ -112,8 +112,16 @@ pub enum TypeDef {
     /// A type var that might be provided by the user.
     ///
     /// TODO: Should it be its own symbol type, or just VarSym?
+    ///
+    /// Type variables are things that are explicitly declared by the user,
+    /// Existential vars are placeholders that occur "currently", temporary
+    /// artifacts that the type checker solves for.
+    /// So `let x = 91` creates an existential variable and the type inference
+    /// says "this existential variable has the type of the expression `91`",
+    /// and `fn foo[T](x: T): T = x end` creates a type variable named T
+    /// and has to make sure its use is consistent.
     TypeVar(VarSym),
-    /// A possibly-unsolved implicit type var???
+    /// A possibly-unsolved implicit type var
     ExistentialVar(TypeId),
     /// A generic decl(?????)
     ForAll(TypeId, TypeSym),
