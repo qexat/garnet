@@ -190,47 +190,61 @@ impl TypeError {
 impl TypeDef {
     /// Returns true if the type does not contain a ForAll somewhere in it.
     fn is_mono(&self) -> bool {
-        todo!()
-        /*
         match self {
-            TypeDef::Unit => true,
-            TypeDef::TypeVar(_) => true,
+            TypeDef::Tuple(t) if t.len() == 0 => true,
+            TypeDef::TypeVar(_) => todo!(),
             TypeDef::ExistentialVar(_) => true,
             TypeDef::ForAll(_, _) => false,
-            TypeDef::Function(a, b) => a.iter().all(|x| x.is_mono()) && b.is_mono(),
+            // TODO: Generics?
+            TypeDef::Lambda {
+                generics,
+                params,
+                rettype,
+            } => {
+                // TODO: What to do about generics?
+                params.iter().all(|x| INT.fetch_type(*x).is_mono())
+                    && INT.fetch_type(*rettype).is_mono()
+            }
             TypeDef::Bool => true,
             TypeDef::SInt(_) => true,
             TypeDef::UnknownInt => true,
             TypeDef::Never => true,
-            TypeDef::Tuple(ts) => ts.iter().all(|x| x.is_mono()),
+            TypeDef::Tuple(ts) => ts.iter().all(|x| INT.fetch_type(*x).is_mono()),
+            _ => todo!(),
         }
-            */
     }
 
     /// Returns any unsolved type vars that exist in the type.
-    fn free_vars(&self) -> Vec<TypeSym> {
-        todo!()
-        /*
+    fn free_vars(&self) -> Vec<TypeId> {
         match self {
-            TypeDef::Unit => vec![],
-            TypeDef::TypeVar(_) => vec![],
-            TypeDef::ExistentialVar(id) => vec![id.clone()],
-            TypeDef::ForAll(_, t) => t.free_vars(),
-            TypeDef::Function(a, b) => {
-                // ahahahaha this is the most terrible way to concatenate
-                // lists ever.  Rust is *not a fan* of the functional definition
-                // of this.
-                let mut ret = a.iter().flat_map(|x| x.free_vars()).collect::<Vec<_>>();
-                ret.extend(b.free_vars());
-                ret
-            }
+            TypeDef::ExistentialVar(id) => todo!(), //vec![id.clone()],
             TypeDef::Bool => vec![],
             TypeDef::SInt(_) => vec![],
             TypeDef::UnknownInt => vec![],
             TypeDef::Never => vec![],
-            TypeDef::Tuple(ts) => ts.iter().flat_map(|x| x.free_vars()).collect::<Vec<_>>(),
+            TypeDef::Tuple(ts) => ts
+                .iter()
+                .flat_map(|x| INT.fetch_type(*x).free_vars())
+                .collect::<Vec<_>>(),
+            TypeDef::ForAll(_, t) => INT.fetch_type(*t).free_vars(),
+            TypeDef::Lambda {
+                generics,
+                params,
+                rettype,
+            } => {
+                // ahahahaha this is the most terrible way to concatenate
+                // lists ever.  Rust is *not a fan* of the functional definition
+                // of this.
+                let mut ret = params
+                    .iter()
+                    .flat_map(|x| INT.fetch_type(*x).free_vars())
+                    .collect::<Vec<_>>();
+                ret.extend(INT.fetch_type(*rettype).free_vars());
+                ret
+            }
+            TypeDef::TypeVar(_) => todo!(),
+            _ => todo!(),
         }
-            */
     }
 
     /// Instantiate a type, I think.
@@ -453,7 +467,7 @@ impl TCContext {
         new
     }
 
-    fn type_is_well_formed(&self, t: TypeSym) -> Result<(), TypeError> {
+    fn type_is_well_formed(&self, t: &TypeDef) -> Result<(), TypeError> {
         todo!()
         /*
             match t {
@@ -647,6 +661,15 @@ impl Tck {
                     );
                     type_sub_(s, &evar, b)
                 }
+                (TypeDef::ExistentialVar(a_hat), a) if !a.free_vars().contains(&a_hat) => {
+                    //eprintln!("Doing instL");
+                    let x = s.instantiate_l(*a_hat, a);
+                    //eprintln!("Done with instL");
+                    x
+                }
+                (a, TypeDef::ExistentialVar(a_hat)) if !a.free_vars().contains(&a_hat) => {
+                    s.instantiate_r(a, *a_hat)
+                }
                 // TODO: Is this okay?  Is it really?  ...Really?
                 // ...I THINK so.
                 // I'm not sure I'm ready for this much responsibility.
@@ -675,15 +698,6 @@ impl Tck {
                 self.ctx = self.ctx.until(&var);
                 Ok(())
                 }
-                (TypeDef::ExistentialVar(a_hat), a) if !a.free_vars().contains(&a_hat) => {
-                eprintln!("Doing instL");
-                let x = self.instantiate_l(a_hat, a);
-                eprintln!("Done with instL");
-                x
-                }
-                (a, TypeDef::ExistentialVar(a_hat)) if !a.free_vars().contains(&a_hat) => {
-                self.instantiate_r(a, a_hat)
-                }
                 */
                 (a, b) => Err(TypeError::TypeMismatch {
                     expr_name: format!("type_sub {:?}, {:?}", a, b).into(),
@@ -698,7 +712,7 @@ impl Tck {
         type_sub_(self, td1, td2)
     }
 
-    fn instantiate_l(&mut self, a_hat: TypeId, t: TypeSym) -> Result<(), TypeError> {
+    fn instantiate_l(&mut self, a_hat: TypeId, t: &TypeDef) -> Result<(), TypeError> {
         eprintln!("  Instantiate_l on {:?} and {:?}", a_hat, t);
         // The lexi-lambda Haskell impl for these functions does some kind of
         // big screwy pattern-match, so I'm trying to take it apart into pieces here.
@@ -840,36 +854,39 @@ impl Tck {
     }
 
     /// This is similar to instantiate_l
-    fn instantiate_r(&mut self, t: TypeSym, a_hat: TypeId) -> Result<(), TypeError> {
+    fn instantiate_r(&mut self, t: &TypeDef, a_hat: TypeId) -> Result<(), TypeError> {
         //  go ctx -- InstRSolve
         //    | True <- isMono t
         //    , Just (l, r) <- ctxHole (CtxEVar â) ctx
         //    , Right _ <- l ⊢ t
         //    = putCtx $ l |> CtxSolved â t <> r
-        let td = INT.fetch_type(t);
-        if td.is_mono() {
+        if t.is_mono() {
             if let Some((l, r)) = self.ctx.clone().hole(&ContextItem::ExistentialVar(a_hat)) {
                 // Apparently Either::Right is Ok in Haskell,
                 // and Left is Err?
                 // ("Right" also means "correct", per the docs)
                 if l.type_is_well_formed(t).is_ok() {
+                    let tsym = INT.intern_type(t);
                     let ctx = l
-                        .add(ContextItem::SolvedExistentialVar(a_hat, t.clone()))
+                        .add(ContextItem::SolvedExistentialVar(a_hat, tsym))
                         .concat(r);
                     self.ctx = ctx;
                     return Ok(());
+                } else {
+                    println!("Type {:?} is not well formed under {:?}", t, l);
                 }
+            } else {
+                println!("Could not make hole?");
             }
         }
+        println!("Type {:?} is not mono", t);
 
-        todo!()
-        /*
-        match &t {
+        match t {
             //  go ctx -- InstRReach
             //    | TEVar â' <- t
             //    , Just (l, m, r) <- ctxHole2 (CtxEVar â) (CtxEVar â') ctx
             //    = putCtx $ l |> CtxEVar â <> m |> CtxSolved â' (TEVar â) <> r
-            Type::ExistentialVar(a_hat_fuckin_prime) => {
+            TypeDef::ExistentialVar(a_hat_fuckin_prime) => {
                 let ev_a = ContextItem::ExistentialVar(a_hat);
                 let ev_b = ContextItem::ExistentialVar(*a_hat_fuckin_prime);
                 if let Some((l, m, r)) = self.ctx.clone().hole2(&ev_a, &ev_b) {
@@ -878,7 +895,7 @@ impl Tck {
                         .concat(m)
                         .add(ContextItem::SolvedExistentialVar(
                             *a_hat_fuckin_prime,
-                            Type::ExistentialVar(a_hat),
+                            INT.intern_type(&TypeDef::ExistentialVar(a_hat)),
                         ))
                         .concat(r);
                     self.ctx = ctx;
@@ -894,27 +911,40 @@ impl Tck {
             //     instL â1 a
             //     ctx' <- getCtx
             //     instR (applySubst ctx' b) â2
-            Type::Function(params, rettype) => {
+            //
+            // TODO: Generics...
+            TypeDef::Lambda {
+                generics,
+                params,
+                rettype,
+            } => {
                 if let Some((l, r)) = self.ctx.clone().hole(&ContextItem::ExistentialVar(a_hat)) {
                     let a_hat_1s = params
                         .iter()
                         .map(|_| self.next_existential_var())
                         .collect::<Vec<_>>();
                     let a_hat_2 = self.next_existential_var();
-                    let solved = Type::Function(
-                        a_hat_1s.iter().map(|a| Type::ExistentialVar(*a)).collect(),
-                        Box::new(Type::ExistentialVar(a_hat_2)),
-                    );
+                    let solved = TypeDef::Lambda {
+                        generics: vec![],
+                        params: a_hat_1s
+                            .iter()
+                            .map(|a| INT.intern_type(&TypeDef::ExistentialVar(*a)))
+                            .collect(),
+                        rettype: INT.intern_type(&TypeDef::ExistentialVar(a_hat_2)),
+                    };
                     self.ctx = l
                         .add(ContextItem::ExistentialVar(a_hat_2))
                         .add_all(a_hat_1s.iter().map(|a| ContextItem::ExistentialVar(*a)))
-                        .add(ContextItem::SolvedExistentialVar(a_hat, solved))
+                        .add(ContextItem::SolvedExistentialVar(
+                            a_hat,
+                            INT.intern_type(&solved),
+                        ))
                         .concat(r);
                     for (a, param) in a_hat_1s.iter().zip(params) {
-                        self.instantiate_l(*a, param.clone())?;
+                        self.instantiate_l(*a, &*INT.fetch_type(*param))?;
                     }
-                    let new_t = self.ctx.subst(&*rettype);
-                    return self.instantiate_r(new_t, a_hat_2);
+                    let new_t = self.ctx.subst(*rettype);
+                    return self.instantiate_r(&*INT.fetch_type(new_t), a_hat_2);
                 }
             }
             // go ctx -- InstRArrL
@@ -924,7 +954,7 @@ impl Tck {
             //       instR (inst (b, TEVar â') s) â
             //       Just (ctx', _) <- ctxHole (CtxMarker â') <$> getCtx
             //       putCtx ctx'
-            Type::ForAll(b, s) => {
+            TypeDef::ForAll(b, s) => {
                 let a_hat_fucking_prime = self.next_existential_var();
                 let ahatp_var = ContextItem::ExistentialVar(a_hat_fucking_prime);
                 let ahatp_marker = ContextItem::Marker(a_hat_fucking_prime);
@@ -934,8 +964,12 @@ impl Tck {
                     .add(ahatp_marker.clone())
                     .add(ahatp_var.clone());
                 self.ctx = ctx;
-                let inst_type = s.instantiate(&b, &Type::ExistentialVar(a_hat_fucking_prime));
-                self.instantiate_r(inst_type, a_hat)?;
+                let sdef = &*INT.fetch_type(*s);
+                let inst_type = sdef.instantiate(
+                    &b,
+                    &INT.intern_type(&TypeDef::ExistentialVar(a_hat_fucking_prime)),
+                );
+                self.instantiate_r(&*INT.fetch_type(inst_type), a_hat)?;
                 let (ctx_prime, _) = self
                     .ctx
                     .clone()
@@ -946,11 +980,10 @@ impl Tck {
             }
             _other => (),
         }
-        Err(format!(
+        panic!(
             "Failed to instantiate {:?} to {:?} in instantiate_r",
             &a_hat, &t
-        ))
-            */
+        )
     }
 
     /// Returns Ok if the result of the expression matches the given type,
@@ -1139,9 +1172,24 @@ impl Tck {
                 params,
                 rettype,
             } => {
-                if generics.len() > 0 {
-                    todo!("Infer generics in application?");
-                }
+                // Ok, so now we have to apply a function that may have generic type
+                // variables in its signature.
+                //
+                // So we need to create existential vars that match its type variables,
+                // then when we check its params or rettype we need to be able to
+                // solve for those existential vars.
+
+                let new_ctx = self
+                    .ctx
+                    .clone()
+                    .add_all(generics.iter().map(|type_var_name| {
+                        // Bind the type vars for the function to existential vars
+                        let tid = self.next_existential_var();
+                        let type_var = INT.intern_type(&TypeDef::TypeVar(*type_var_name));
+                        self.symtbl.add_type_var(*type_var_name, tid);
+                        ContextItem::SolvedExistentialVar(tid, type_var)
+                    }));
+                self.ctx = new_ctx;
                 for (p, e) in params.iter().zip(exprs) {
                     self.check(e, *p)?;
                 }
@@ -1653,7 +1701,7 @@ fn typecheck_decl(tck: &mut Tck, decl: hir::Decl) -> Result<hir::Decl, TypeError
                     symtbl.add_type_var(*type_var_name, tid);
                     ContextItem::SolvedExistentialVar(tid, type_var)
                 }));
-            println!("{:#?}", symtbl);
+            //println!("{:#?}", symtbl);
             tck.ctx = new_ctx;
             for (pname, ptype) in signature.params.iter() {
                 symtbl.add_var(*pname, *ptype, false);
