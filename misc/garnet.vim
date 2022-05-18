@@ -29,7 +29,7 @@ syn keyword   garnetTypedef type nextgroup=garnetIdentifier skipwhite skipempty
 syn keyword   garnetStructure struct enum nextgroup=garnetIdentifier skipwhite skipempty
 syn keyword   garnetUnion union nextgroup=garnetIdentifier skipwhite skipempty contained
 syn match garnetUnionContextual /\<union\_s\+\%([^[:cntrl:][:space:][:punct:][:digit:]]\|_\)\%([^[:cntrl:][:punct:][:space:]]\|_\)*/ transparent contains=garnetUnion
-syn keyword   garnetOperator    as
+syn keyword   garnetBinop    as and or not xor band bor bnot bxor
 
 syn match     garnetAssert      "\<assert\(\w\)*!" contained
 syn match     garnetPanic       "\<panic\(\w\)*!" contained
@@ -47,7 +47,7 @@ syn keyword   garnetKeyword     unsafe where
 syn keyword   garnetKeyword     use nextgroup=garnetModPath skipwhite skipempty
 " FIXME: Scoped impl's name is also fallen in this category
 syn keyword   garnetKeyword     mod trait nextgroup=garnetIdentifier skipwhite skipempty
-syn keyword   garnetStorage     move mut ref static const
+syn keyword   garnetStorage     move uniq ref static const
 syn match garnetDefault /\<default\ze\_s\+\(impl\|fn\|type\|const\)\>/
 
 syn keyword   garnetInvalidBareKeyword crate
@@ -77,7 +77,7 @@ syn match garnetMacroRepeatCount ".\?[*+]" contained
 syn match garnetMacroVariable "$\w\+"
 
 " Reserved (but not yet used) keywords {{{2
-syn keyword   garnetReservedKeyword alignof become do offsetof priv pure sizeof typeof unsized yield abstract virtual final override macro
+syn keyword   garnetReservedKeyword alignof become offsetof priv pure sizeof typeof unsized yield abstract virtual final override macro
 
 " Built-in types {{{2
 syn keyword   garnetType        isize usize Char Bool U8 U16 U32 U64 U128 F32
@@ -137,7 +137,6 @@ syn match     garnetSigil        display /&\s\+[&~@*][^)= \t\r\n]/he=e-1,me=e-1
 syn match     garnetSigil        display /[&~@*][^)= \t\r\n]/he=e-1,me=e-1
 " This isn't actually correct; a closure with no arguments can be `|| { }`.
 " Last, because the & in && isn't a sigil
-syn match     garnetOperator     display "&&\|||"
 " This is garnetArrowCharacter rather than garnetArrow for the sake of matchparen,
 " so it skips the ->; see http://stackoverflow.com/a/30309949 for details.
 syn match     garnetArrowCharacter display "->"
@@ -251,6 +250,7 @@ hi def link garnetFloat         Float
 hi def link garnetArrowCharacter garnetOperator
 hi def link garnetOperator      Operator
 hi def link garnetKeyword       Keyword
+hi def link garnetBinop         Function
 hi def link garnetTypedef       Keyword " More precise is Typedef, but it doesn't feel right for garnet
 hi def link garnetStructure     Keyword " More precise is Structure
 hi def link garnetUnion         garnetStructure
