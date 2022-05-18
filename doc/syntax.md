@@ -1,7 +1,7 @@
 Broad syntax thoughts, yanked from parser
 
  * Everything is an expression
- * Lua-style preference of keywords rather than punctuation
+ * Lua-style preference for keywords rather than punctuation
  * Don't go ham sacrificing familiarity for How It Should Be
 
 So essentially Rust-like syntax, but:
@@ -114,11 +114,13 @@ typename =
 // structs (anonymous and otherwise?)
 // assignments
 // generics
-// references
+// borrows
 
 ```
 
 
+
+## To fix
 
 Ok I gotta ramble about types and syntax now.  Let's take a full look at
 how Rust does it:
@@ -144,17 +146,18 @@ struct Foo(i32);
 Maybe something like:
 
 ```
-// Alias names
+-- Alias names
 alias Foo = {i32, f32}
 alias Bar = struct
     x: i32
 end
 
+-- Just a tuple
 let foo: Foo = {3, 4.5}
-// We need an anonymous struct constructor now, so I guess this is it!
-let bar: Bar = ${ x = 12 }
+-- We need an anonymous struct constructor now, so I guess this is it!
+let bar: Bar = struct { x = 12 }
 
-// Non-interchangable names
+-- Non-interchangable names
 type Bop = {i32, f32}
 type Beep = struct
     x: i32
@@ -168,6 +171,30 @@ If we have named arguments in functions, then, that could work.
 ```
 
 
+## Operators
+
+`+ - * / %` as usual
+
+`and or not xor` for boolean operators.
+
+`band bor bnot bxor` for bitwise operators.  I'm not 100% married to
+this idea, but we'll run with it for now.
+
+
+
+## Functions
+
+```
+fn foo(x: I32, y: F32): Rettype =
+    ...body...
+end
+```
+
+For now we cannot omit `: Rettype` as a shortcut for `: {}`, but maybe
+we can someday.
+
+The `=` might be syntactically unnecessary, but for now it stays.
+
 Universal function call syntax is `foo:bar(baz)` which simply parses into
 the same thing as `bar(foo, baz)`.  This means it is not ambiguous wiht
 a struct `foo` with a field `bar` that happnens to be callable; that
@@ -177,13 +204,6 @@ instead of an arbitrary expression because that gets the job done,
 prevents `x : y (z)` becoming some kind of ternary operator thing, and
 it means we can't do horrible things like `foo:fn(x) = println(x) end()`
 
-## Functions
-
-```
-fn foo(x: I32, y: F32): Rettype =
-    ...body...
-end
-```
 
 Ok, what about generic functions?
 
@@ -200,10 +220,19 @@ foo(x,y)
 
 -- or UFCS
 x:foo(y)
+```
 
--- Or, perhaps, to disambiguate a generic type a la a turbofish?
+If we ever need to explicitly specify a type in a function call, similar
+to Rust's turbofish:
+
+```
 foo[T](x, y)
 x:foo[T](y)
+
+-- hmmm, that's kinda ambiguous with indexing an array: `foo[T] (x, y)`
+-- Maybe another delimiter a la a turbofish?
+foo::[T](x, y)
+x:foo::[T](y)
 ```
 
 Not sure if that is too ambiguous with some kind of general type
@@ -213,7 +242,13 @@ Not worrying about the turbofish right now.  (Since it's [] instead of
 
 # Data
 
+## Tuples
+
+`{ ... , ... , ... }`
+
 ## Structs
+
+TODO: Talk about anonymous structs vs named ones!
 
 Ok, so declaring a struct type goes like this:
 
@@ -225,7 +260,7 @@ alias Foo = struct {
 }
 ```
 
-This declares a newtype around an anonymous struct type.  This will be
+This declares a new type alias for an anonymous struct type.  This will be
 structurally typed a la OCaml, not nominally typed.
 
 To actually create an instance of this struct, you can do:
@@ -240,6 +275,36 @@ let x: Foo = struct {
 
 Then for a nominally typed struct, you just use `type` instead of
 `alias` to declare a newtype.
+
+
+```
+type Baz = struct {
+    x: Bar,
+    y: I16,
+    z: I64,
+}
+```
+
+```
+let mut x: Foo = ...
+let mut y: Baz = struct {
+    x = some_bar,
+    y = 12,
+    z = 91,
+}
+
+-- OR MAYBE:
+let mut y: Baz = Baz {
+    x = some_bar,
+    y = 12,
+    z = 91,
+}
+
+-- This does not work
+x = y
+-- This also does not work
+y = x
+```
 
 Right, now for struct types with generics:
 
@@ -272,29 +337,47 @@ let x: Foo[I32] = struct {
 }
 ```
 
+## Enum types
+
+C-like enums
+
+## Sum types
+
+Rust/ML/whatever-like enums (aka real enums)
+
 ## Arrays
 
-```
-I32[4]
-I32[]
-I32 []
-```
+**crap** this is ambiguous with the generic type syntax `Foo[T]`!  Ummmmm.  Hmmm.
 
-## References & lifetimes
+Fixed length array: `I32[4]`
+
+Variable-length slice: `I32[]`
+
+...I guess that's an owned slice, since a slice is a pointer+length.
+
+TODO: Indexing arrays
+
+Ranges, slicing arrays, .. etc
+
+## Borrows & lifetimes
 
 ```
--- Shared references
+-- Shared borrows
 I32 ^
--- lifetime names... no fukkin clue
-I32^(foo)
-I32 ^ 'foo
+-- lifetime names, I guess this works for now
 I32 ^'foo
 
--- Unique references
+-- Unique borrows
 I32 ^uniq
+I32 ^uniq'foo
 ```
 
-## Pointers
+Different sigil for unique borrows?  Which one?  ! @, $ for shared...
+
+So a borrowed slice is `I32[]^'foo` while an owned slice can just be
+`I32[]`
+
+## Raw pointers
 
 ```
 I32 *const

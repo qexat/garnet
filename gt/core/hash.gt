@@ -14,7 +14,7 @@ fn rotl(x: U64, b: U64): U64 =
     (x << b) bor (x >> (64 - b))
 end
 
-fn u64_from_bytes_le(bytes: U8 slice): U64 =
+fn u64_from_bytes_le(bytes: U8[] ^): U64 =
     todo("this")
 end
 
@@ -40,7 +40,8 @@ fn sipround(v0: U64, v1: U64, v2: U64, v3: U64): {U64, U64, U64, U64} =
     {v0, v1, v2, v3}
 end
 
-fn siphash(input: U8 slice, k: U128, out: U8 slice mut): {} =
+
+fn siphash(input: U8 []^, k: U128, out: U8 []^uniq): {} =
     assert(out.len() == 8 or out.len() == 16)
     let mut v0: U64 = 0x736f6d6570736575
     let mut v1: U64 = 0x646f72616e646f6d
@@ -112,7 +113,7 @@ fn siphash(input: U8 slice, k: U128, out: U8 slice mut): {} =
 
     -- Oh this is a little weird, out can be either 8 or 16 bytes
     -- and we handle both in this code.  Weird flex but ok?
-    let b = v0 xor v1 xor v2 xor v3
+    let b = v0 bxor v1 bxor v2 bxor v3
     out[..8] = u64_to_bytes_le(b)
     if out == 8 then
         return
@@ -122,7 +123,7 @@ fn siphash(input: U8 slice, k: U128, out: U8 slice mut): {} =
         for _ in range(0, D_ROUNDS) do
             {v0, v1, v2, v3} = sipround(v0, v1, v2, v3)
         end
-        let b = v0 xor v1 xor v2 xor v3
+        let b = v0 bxor v1 bxor v2 bxor v3
         out[8..16] = u64_to_bytes_le(8)
     end
 end
