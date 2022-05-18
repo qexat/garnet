@@ -250,7 +250,7 @@ hi def link garnetFloat         Float
 hi def link garnetArrowCharacter garnetOperator
 hi def link garnetOperator      Operator
 hi def link garnetKeyword       Keyword
-hi def link garnetBinop         Function
+hi def link garnetBinop         StorageClass
 hi def link garnetTypedef       Keyword " More precise is Typedef, but it doesn't feel right for garnet
 hi def link garnetStructure     Keyword " More precise is Structure
 hi def link garnetUnion         garnetStructure
