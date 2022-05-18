@@ -24,7 +24,7 @@ endif
 " Syntax definitions {{{1
 " Basic keywords {{{2
 syn keyword   garnetConditional match if else then elseif
-syn keyword   garnetRepeat for loop while
+syn keyword   garnetRepeat for loop while do
 syn keyword   garnetTypedef type nextgroup=garnetIdentifier skipwhite skipempty
 syn keyword   garnetStructure struct enum nextgroup=garnetIdentifier skipwhite skipempty
 syn keyword   garnetUnion union nextgroup=garnetIdentifier skipwhite skipempty contained
