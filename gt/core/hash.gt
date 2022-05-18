@@ -1,0 +1,128 @@
+--! Basic hashing function.
+--!
+--! For now this is SipHash 2-4, shamelessly stolen from
+--! Rust's `std::hash::SipHasher`.  Implemented from the
+--! reference impl at https://github.com/veorq/SipHash
+--!
+--! We might want a stable hash function sometime too,
+--! probably FNV.
+
+const C_ROUNDS: U32 = 2
+const D_ROUNDS: U32 = 4
+
+fn rotl(x: U64, b: U64): U64 =
+    (x << b) bor (x >> (64 - b))
+end
+
+fn u64_from_bytes_le(bytes: U8 slice): U64 =
+    todo("this")
+end
+
+fn u64_to_bytes_le(bytes: U64): U8[8] =
+    todo("this too")
+end
+
+fn sipround(v0: U64, v1: U64, v2: U64, v3: U64): {U64, U64, U64, U64} =
+    let v0 = v0 + v1
+    let v1 = rotl(v1, 13)
+    let v1 = v1 bxor v0
+    let v0 = rotl(v0, 32)
+    let v2 = v2 + v3;
+    let v3 = rotl(v3, 16)
+    let v3 = v3 bxor v2
+    let v0 = v0 + v3
+    let v3 = rotl(v3, 21)
+    let v3 = v3 bxor v0
+    let v2 = v2 + v1
+    let v1 = rotl(v1, 17)
+    let v1 = v1 bxor v2
+    let v2 = rotl(v2, 32)
+    {v0, v1, v2, v3}
+end
+
+fn siphash(input: U8 slice, k: U128, out: U8 slice mut): {} =
+    assert(out.len() == 8 or out.len() == 16)
+    let mut v0: U64 = 0x736f6d6570736575
+    let mut v1: U64 = 0x646f72616e646f6d
+    let mut v2: U64 = 0x6c7967656e657261
+    let mut v3: U64 = 0x7465646279746573
+    -- TODO: Figure out how casts work
+    -- Erlang-like bit patterns?
+    -- let <<k0:64, k1:64>> = k
+    -- Or maybe the bit pattern is an operator that extracts bits
+    -- and returns a tuple, and then we define what types those
+    -- turn into?
+    -- https://www.erlang.org/docs/25/programming_examples/bit_syntax.html#segments
+    -- has some info on it, basically we need to say both how many bits
+    -- we extract and what type those bits get turned into.
+    -- let {k0, k1}: {U64, U64} = <<k0:64, k1:64>> k
+    -- let {k0, k1} = <<k0:64/U64, k1:64/U64>> k
+    let k0: U64 = (k band 0xFFFF_FFFF) as U32
+    let k1: U64 = ((k >> 32) band 0xFFFF_FFFF) as U32
+    let left: Size = input.len() band 7
+    let mut b: U64 = input.len() << 56
+    v3 = v3 bxor k1
+    v2 = v2 bxor k0
+    v1 = v1 bxor k1
+    v0 = v0 bxor k0
+
+    if out.len() == 16 then
+        v1 = v1 bxor 0xEE
+    end
+
+    -- TODO: This hypothetical `range()` function is `start, end, step` like Python's
+    for i in range(0, input.len(), 8) do
+        -- TODO: We assume Rust's slice syntax for now?
+        let bytes = input[i..(i+8)]
+        let m = u64_from_bytes_le(bytes)
+        v3 = v3 bxor m
+        for _ in range(0,C_ROUNDS) do
+            {v0, v1, v2, v3} = sipround(v0, v1, v2, v3)
+        end
+        v0 = v0 bxor m
+    end
+
+    -- Handle the tail 1-7 bytes of the input array.
+    -- This is the switch statement in the original code,
+    -- I'm just gonna assume we have a compiler that can unroll a loop
+    -- for us.
+    for i in range(1,8) do
+        -- Round input.len() down to the closest multiple of 8
+        let input_tail_idx = (input.len() / 8) * 8;
+        b = b bor (input[input_tail_idx + i] << i * 8)
+    end
+
+    v3 = v3 bxor b
+
+    for _ in range(0, C_ROUNDS) do
+        {v0, v1, v2, v3} = sipround(v0, v1, v2, v3)
+    end
+
+    v0 = v0 bxor b
+    if out.len() == 16 then
+        v2 = v2 bxor 0xEE
+    else
+        v2 = v2 bxor 0xFF
+    end
+
+    for _ in range(0, D_ROUNDS) do
+        {v0, v1, v2, v3} = sipround(v0, v1, v2, v3)
+    end
+
+
+    -- Oh this is a little weird, out can be either 8 or 16 bytes
+    -- and we handle both in this code.  Weird flex but ok?
+    let b = v0 xor v1 xor v2 xor v3
+    out[..8] = u64_to_bytes_le(b)
+    if out == 8 then
+        return
+    else
+        -- Do it again for the high 8 bytes
+        v1 = v1 bxor 0xDD
+        for _ in range(0, D_ROUNDS) do
+            {v0, v1, v2, v3} = sipround(v0, v1, v2, v3)
+        end
+        let b = v0 xor v1 xor v2 xor v3
+        out[8..16] = u64_to_bytes_le(8)
+    end
+end
