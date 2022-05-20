@@ -80,7 +80,7 @@ syn match garnetMacroVariable "$\w\+"
 syn keyword   garnetReservedKeyword alignof become offsetof priv pure sizeof typeof unsized yield abstract virtual final override macro
 
 " Built-in types {{{2
-syn keyword   garnetType        isize usize Char Bool U8 U16 U32 U64 U128 F32
+syn keyword   garnetType        Size Offset Char Bool U8 U16 U32 U64 U128 F32
 syn keyword   garnetType        F64 I8 I16 I32 I64 I128 str Self
 
 " Things from the libstd v1 prelude (src/libstd/prelude/v1.rs) {{{2
