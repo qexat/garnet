@@ -139,6 +139,16 @@ type Hash = struct {
 }
 
 --- Equivalent of Rust's `Hasher` trait
+---
+--- I'll say this explicitly: If we have a `type` type
+--- then we can treat it like a normal value, but any
+--- actual instances of it must be in `const` only code,
+--- which must be able to be evaluated entirely during
+--- compilation.
+--- This is basically similar to Zig's `comptime`.
+---
+--- Random thought: wow, I sure wonder what happens if we have a
+--- `type[T]` type.
 type Hasher = struct {
     Self: type
     write: fn(self: Self ^uniq, bytes: U8 []^)
