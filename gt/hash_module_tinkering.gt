@@ -203,7 +203,7 @@ end
 --- Ok, that is clunky but perfectly clear, fine.
 --- What if we want to hash a thing and a hasher?
 --- We have to specify that
-fn hash_thing2(t: Thing, hasher: Hasher, hash_state: hasher.Self ^uniq): U64 =
+fn hash_thing2(hasher: Hasher, t: Thing, hash_state: hasher.Self ^uniq): U64 =
     let thing_bytes: U8[] ^ = magic_as_bytes(thing)
     hasher.write(hash_state, thing_bytes)
     hasher.finish(hash_state)
@@ -212,7 +212,7 @@ end
 --- Or maybe it looks more rusty with an explicit generic type, like this?
 --- This expresses associated types, and kinda does it more
 --- comprehensibly than Rust maybe.
-fn hash_thing3[HS](t: Thing, hasher: Hasher, hash_state: HS ^uniq): U64
+fn hash_thing3[HS](hasher: Hasher, t: Thing, hash_state: HS ^uniq): U64
   where HS: hasher.Self =
     let thing_bytes: U8[] ^ = magic_as_bytes(thing)
     hasher.write(hash_state, thing_bytes)
@@ -222,10 +222,40 @@ end
 --- Great, how do we call that?
 fn call_hash_thing2(t: Thing): U64 =
     let hash_state = SipHasher {} ^uniq
-    hash_thing2(t, SIPHASH_IMPL, hash_state)
-    hash_thing3(t, SIPHASH_IMPL, hash_state)
+    hash_thing2(SIPHASH_IMPL, t, hash_state)
+    -- Oooooor
+    SIPHASH_IMPL:hash_thing3(t, hash_state)
 end
 
---- Huh, that does allow for two different implementations of the same
---- module/trait, entertainingly.  You just have to always be explicit
---- about which one you use.  Maybe not super convenient for like, Add.
+/-
+COHERENCE:
+Huh, that does allow for two different implementations of the same
+module/trait, entertainingly.  You just have to always be explicit
+about which one you use.  Maybe not super convenient for like, Add.
+
+The Coherence Problem is bigger than that though.  Basically: imagine
+making a hashtable that uses one module for the Hash implementation,
+then passing it to a function that uses a different module for its Hash
+implementation.  They'll use differnt hash algorithms for the same hash
+table and break horribly.  This is discussed here:
+https://terbium.io/2021/02/traits-typeclasses/
+
+No, I take it back, coherence isn't a problem for ML modules, because it
+does make sure the types have to match up.
+
+Oh, suggestion for turbofish syntax that I actually don't hate: foo.bar.[T]()
+this disambiguates with array indexing: foo.bar[some_index]()
+Or we could use a real turbofish for the lulz: foo.bar::<T>()
+Or the robofish: foo.bar::[T]()
+
+
+
+Things to read:
+Scala / DOT, Scala implicits,
+Original typeclass paper: https://web.engr.oregonstate.edu/~walkiner/teaching/cs583-sp21/files/Wadler-TypeClasses.pdf
+Typeclass vs. the world: https://youtu.be/hIZxTQP1ifo
+Comparing traits and typeclasses: https://terbium.io/2021/02/traits-typeclasses/
+
+To do next:
+Write hashtable impl
+-/
