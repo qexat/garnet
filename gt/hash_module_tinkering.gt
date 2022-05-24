@@ -150,9 +150,9 @@ type Hash = struct {
 --- Random thought: wow, I sure wonder what happens if we have a
 --- `type[T]` type.
 type Hasher = struct {
-    Self: type
-    write: fn(self: Self ^uniq, bytes: U8 []^)
-    finish: fn(self: Self ^): U64
+    Self: type,
+    write: fn(self: Self ^uniq, bytes: U8 []^),
+    finish: fn(self: Self ^): U64,
 
     -- For now we are not going to worry about the problem of default
     -- functions.
@@ -180,11 +180,11 @@ type SipHasher = struct { }
 --- Rust's `self` is MOSTLY syntactic sugar I believe, up until you get
 --- into trait objects.
 const SIPHASH_IMPL: Hasher = struct {
-    Self: SipHasher
+    Self: SipHasher,
     --- Feed data into hash function
     write: fn(self: Self ^uniq, bytes: U8 []^) =
         ...
-    end
+    end,
 
     --- Do the last step of the hash function and return the result
     finish: fn(self: Self ^): U64 =
@@ -223,8 +223,14 @@ end
 fn call_hash_thing2(t: Thing): U64 =
     let hash_state = SipHasher {} ^uniq
     hash_thing2(SIPHASH_IMPL, t, hash_state)
-    -- Oooooor
+    -- Oooooor, theoretically someday we build our API so we can do something like:
     SIPHASH_IMPL:hash_thing3(t, hash_state)
+    -- But so far we can NOT do something like this without modifying
+    -- SipHasher.
+    hash_state:hash_thing(t)
+    -- OTOH, ML can include modules in each other's definitions, so it
+    -- might be easy to just add your hash_thing function to an extended
+    -- Hasher impl...
 end
 
 /-
@@ -255,7 +261,145 @@ Scala / DOT, Scala implicits,
 Original typeclass paper: https://web.engr.oregonstate.edu/~walkiner/teaching/cs583-sp21/files/Wadler-TypeClasses.pdf
 Typeclass vs. the world: https://youtu.be/hIZxTQP1ifo
 Comparing traits and typeclasses: https://terbium.io/2021/02/traits-typeclasses/
+Typeclasses: An exploration of design space: https://www.microsoft.com/en-us/research/wp-content/uploads/1997/01/multi.pdf
+MixML: https://people.mpi-sws.org/~rossberg/papers/Rossberg,%20Dreyer%20-%20Mixin'%20Up%20the%20ML%20Module%20System.pdf
+F-ing modules: https://people.mpi-sws.org/~rossberg/papers/Rossberg,%20Russo,%20Dreyer%20-%20F-ing%20Modules%20[JFP].pdf
+1ML: https://people.mpi-sws.org/~rossberg/papers/Rossberg%20-%201ML%20--%20Core%20and%20modules%20united%20[JFP].pdf
 
-To do next:
-Write hashtable impl
+Ok, so reasons I want to do modules instead of typeclasses/traits:
+
+ * Unification of everything-is-a-struct
+ * Typeclass/trait metaprogramming gets hairy af
+ * Still able to compile to static dispatch
+
+Key points from typeclass vs. the world:
+
+ * Typeclasses can be done with static dispatch (though the original
+   paper kinda implied dynamic dispatch)
+ * Rust's Self is just syntactic sugar
+ * The annoying `impl<T> MyTrait for T {}` syntax may be avoidable by
+   decorating type variables so you know they're type variables;
+   `impl MyTrait for @T {}`
+ * Best description I've seen of generics vs associated types in traits:
+   Generics are types set by the caller, associated types are types set
+   by the impl.  You can kinda do without them but it gets damn
+   squirrelly.  Haskell doesn't have em, but there's a couple different
+   extensions that do something similar.
+ * Having generics in associated types gets you into higher-kinded types
+
+
 -/
+
+-- FINE let's just implement a simple lookup table thing and see what happens.
+
+--- Trait Eq
+--- We don't bother with PartialEq atm
+type EQ = struct {
+    -- Rust's PartialEq trait lets Lhs and Rhs to be different,
+    -- but by default they are the same so we're gonna do that
+    -- because it makes the Map module simpler
+    --Lhs: type,
+    --Rhs: type,
+    Self: type,
+    eq: fn(lhs: Self ^, rhs: Self ^): Bool,
+    ne: fn(lhs: Self ^, rhs: Self ^): Bool = not eq(rhs, lhs) end,
+}
+
+--- From 1ML paper page 11
+--- "trait definition" for associative array
+type MAP = struct {
+    Key: type,
+    Map[Val]: type,
+    empty[Val]: fn(): Map[Val],
+    lookup[Val]: fn(Map[Val] ^, Key): Option[Val],
+    add[Val]: fn(Map[Val] ^uniq, Key, Val),
+}
+
+--- Implementation...
+--- Their signature is `Map (Key : EQ) :> MAP where (type .key = Key.t)`
+--- and the .key = Key.t seems redundant with what we're already
+--- writing?
+---
+--- They apparently define a "map" that is just a cell of one value,
+--- which doesn't seem very useful to me, so I'm gonna write it to be
+--- an assoc list in a theoretical Vec type, and make it more Rusty with
+--- mutable references and such.
+/-
+Similarly, MAP defines a signature with abstract key and map types. The Map function is
+a functor: it takes a value of type EQ, i.e., a module. From that it constructs a naive imple-
+mentation of maps. “X:>T ” is the usual sealing operator that opaquely ascribes a type (i.e.,
+signature) to a value (here, a module). The type refinement syntax “T where (type .X=T )”
+should be familiar from ML, but here it actually is derived from a more general construct:
+“T where (.X:U)” refines T ’s subcomponent at path .X to type U, which can be any
+subtype of what’s declared by T . That form subsumes module sharing as well as other
+forms of refinement, with some appropriate sugar defined in Figure 2.
+-/
+const Map[Key]: MAP where Key: EQ = struct {
+    Key: type = Key.Self,
+    Map[Val]: type = Vec[{Key,Val}],
+
+    empty[Val]: fn(): Map[Val] = Vec.empty() end,
+
+    lookup[Val]: fn(map: Map[Val]^, ky: Key): Option[Val] =
+        for {k,v} in map do
+            if Key.eq(k, ky) then return Some(v) end
+        end
+        None
+    end,
+
+    add[Val]: fn(map: Map[Val]^uniq, ky: Key, vl: Val) =
+        -- Don't bother with duplicates
+        Vec.insert(map, {ky, vl})
+    end,
+}
+
+--- Ok but as it says that is actually a functor, so we
+--- need to make it a function and not a fixed thing.
+--- The type variable in the const decl is a clue, I guess.
+--- For now we'll just call it a const function
+--- and assume that's enough.
+---
+--- This breaks my brain a little 'cause it doesn't mention
+--- freakin' ANYTHING about definining what type the value is,
+--- it's just there.
+---const Map[Key]: MAP where Key: EQ = struct {
+const fn Map[Val](Key: EQ): MAP[Val] =
+    struct {
+        Key: type = Key.Self,
+        Map[Val]: type = Vec[{Key,Val}],
+
+        empty[Val] = fn(): Map[Val] = Vec.empty() end,
+
+        lookup[Val] = fn(map: Map[Val]^, ky: Key): Option[Val] =
+            for {k,v} in map do
+                if Key.eq(k, ky) then return Some(v) end
+            end
+            None
+        end,
+
+        add[Val] = fn(map: Map[Val]^uniq, ky: Key, vl: Val) =
+            -- Don't bother with duplicates
+            Vec.insert(map, {ky, vl})
+        end,
+    }
+end
+
+fn actually_use_it_i_guess(): {} =
+    -- Instantiate the module
+    -- Hmm, we need an implementation of Eq for I32, that's an
+    -- iiiiinteresting problem to represent...
+    -- Do we have an I32.Eq impl?
+    -- Do we have an Eq.I32 impl?
+    -- Part of my annoyance with Rust is that the f32 modules and
+    -- types are not the same thing, and here I am running into
+    -- the same problem...
+    -- I suppose part of my goal with this whole jazz is to make
+    -- modules and types the same thing, so...
+    const M: Map[String] = Map(I32.EQ)
+    -- Actually do stuff with it
+    let my_map: Map[String]^uniq = m.empty() ^uniq
+    M.add(my_map, 1, "foo")
+    M.add(my_map, 2, "bar")
+    assert_eq(M.lookup(my_map, 1), "foo")
+end
+
