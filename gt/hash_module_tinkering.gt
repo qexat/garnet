@@ -1,127 +1,5 @@
---! core/hash.gt except with thoughts about
---! modules down towards the bottom.
-
-const C_ROUNDS: U32 = 2
-const D_ROUNDS: U32 = 4
-
-fn rotl(x: U64, b: U64): U64 =
-    (x << b) bor (x >> (64 - b))
-end
-
-fn u64_from_bytes_le(bytes: U8[] ^): U64 =
-    todo("this")
-end
-
-fn u64_to_bytes_le(bytes: U64): U8[8] =
-    todo("this too")
-end
-
-fn sipround(v0: U64, v1: U64, v2: U64, v3: U64): {U64, U64, U64, U64} =
-    let v0 = v0 + v1
-    let v1 = rotl(v1, 13)
-    let v1 = v1 bxor v0
-    let v0 = rotl(v0, 32)
-    let v2 = v2 + v3;
-    let v3 = rotl(v3, 16)
-    let v3 = v3 bxor v2
-    let v0 = v0 + v3
-    let v3 = rotl(v3, 21)
-    let v3 = v3 bxor v0
-    let v2 = v2 + v1
-    let v1 = rotl(v1, 17)
-    let v1 = v1 bxor v2
-    let v2 = rotl(v2, 32)
-    {v0, v1, v2, v3}
-end
-
-
-fn siphash(input: U8 []^, k: U128, out: U8 []^uniq): {} =
-    assert(out.len() == 8 or out.len() == 16)
-    let mut v0: U64 = 0x736f6d6570736575
-    let mut v1: U64 = 0x646f72616e646f6d
-    let mut v2: U64 = 0x6c7967656e657261
-    let mut v3: U64 = 0x7465646279746573
-    -- TODO: Figure out how casts work
-    -- Erlang-like bit patterns?
-    -- let <<k0:64, k1:64>> = k
-    -- Or maybe the bit pattern is an operator that extracts bits
-    -- and returns a tuple, and then we define what types those
-    -- turn into?
-    -- https://www.erlang.org/docs/25/programming_examples/bit_syntax.html#segments
-    -- has some info on it, basically we need to say both how many bits
-    -- we extract and what type those bits get turned into.
-    -- let {k0, k1}: {U64, U64} = <<k0:64, k1:64>> k
-    -- let {k0, k1} = <<k0:64/U64, k1:64/U64>> k
-    let k0: U64 = (k band 0xFFFF_FFFF) as U32
-    let k1: U64 = ((k >> 32) band 0xFFFF_FFFF) as U32
-    let left: Size = input.len() band 7
-    let mut b: U64 = input.len() << 56
-    v3 = v3 bxor k1
-    v2 = v2 bxor k0
-    v1 = v1 bxor k1
-    v0 = v0 bxor k0
-
-    if out.len() == 16 then
-        v1 = v1 bxor 0xEE
-    end
-
-    -- TODO: This hypothetical `range()` function is `start, end, step` like Python's
-    for i in range(0, input.len(), 8) do
-        -- TODO: We assume Rust's slice syntax for now?
-        let bytes = input[i..(i+8)]
-        let m = u64_from_bytes_le(bytes)
-        v3 = v3 bxor m
-        for _ in range(0,C_ROUNDS) do
-            {v0, v1, v2, v3} = sipround(v0, v1, v2, v3)
-        end
-        v0 = v0 bxor m
-    end
-
-    -- Handle the tail 1-7 bytes of the input array.
-    -- This is the switch statement in the original code,
-    -- I'm just gonna assume we have a compiler that can unroll a loop
-    -- for us.
-    for i in range(1,8) do
-        -- Round input.len() down to the closest multiple of 8
-        let input_tail_idx = (input.len() / 8) * 8;
-        b = b bor (input[input_tail_idx + i] << i * 8)
-    end
-
-    v3 = v3 bxor b
-
-    for _ in range(0, C_ROUNDS) do
-        {v0, v1, v2, v3} = sipround(v0, v1, v2, v3)
-    end
-
-    v0 = v0 bxor b
-    if out.len() == 16 then
-        v2 = v2 bxor 0xEE
-    else
-        v2 = v2 bxor 0xFF
-    end
-
-    for _ in range(0, D_ROUNDS) do
-        {v0, v1, v2, v3} = sipround(v0, v1, v2, v3)
-    end
-
-
-    -- Oh this is a little weird, out can be either 8 or 16 bytes
-    -- and we handle both in this code.  Weird flex but ok?
-    let b = v0 bxor v1 bxor v2 bxor v3
-    out[..8] = u64_to_bytes_le(b)
-    if out == 8 then
-        return
-    else
-        -- Do it again for the high 8 bytes
-        v1 = v1 bxor 0xDD
-        for _ in range(0, D_ROUNDS) do
-            {v0, v1, v2, v3} = sipround(v0, v1, v2, v3)
-        end
-        let b = v0 bxor v1 bxor v2 bxor v3
-        out[8..16] = u64_to_bytes_le(8)
-    end
-end
-
+--! Thoughts about modules with Rust's hash-related traits
+--! as a case study.
 
 --- Should a module def'n look like this?
 mod SipHash =
@@ -133,7 +11,7 @@ mod Hash =
     fn hash(input: U8 []^, k: U128, out: U8 []^uniq): {}
 end
 
---- This module's signature.
+--- The SipHash module's signature.
 type Hash = struct {
     hash: fn(input: U8 []^, k: U128, out: U8 []^uniq): {}
 }
@@ -149,6 +27,9 @@ type Hash = struct {
 ---
 --- Random thought: wow, I sure wonder what happens if we have a
 --- `type[T]` type.
+---
+--- (Apparently the answer is "you start getting into
+--- higher-kinded-types territory")
 type Hasher = struct {
     Self: type,
     write: fn(self: Self ^uniq, bytes: U8 []^),
@@ -175,7 +56,7 @@ type SipHasher = struct { }
 --- impl Hasher for SipHasher...
 ---
 --- For now I won't try to construct any syntactic sugar at all, just
---- write literally what is going on in the most literal way possible.
+--- write exactly what is going on in the most literal way possible.
 ---
 --- Rust's `self` is MOSTLY syntactic sugar I believe, up until you get
 --- into trait objects.
@@ -201,7 +82,7 @@ fn hash_thing(t: Thing): U64 =
 end
 
 --- Ok, that is clunky but perfectly clear, fine.
---- What if we want to hash a thing and a hasher?
+--- What if we want to hash a thing with a particular Hasher?
 --- We have to specify that
 fn hash_thing2(hasher: Hasher, t: Thing, hash_state: hasher.Self ^uniq): U64 =
     let thing_bytes: U8[] ^ = magic_as_bytes(thing)
@@ -213,7 +94,7 @@ end
 --- This expresses associated types, and kinda does it more
 --- comprehensibly than Rust maybe.
 fn hash_thing3[HS](hasher: Hasher, t: Thing, hash_state: HS ^uniq): U64
-  where HS: hasher.Self =
+where HS: hasher.Self =
     let thing_bytes: U8[] ^ = magic_as_bytes(thing)
     hasher.write(hash_state, thing_bytes)
     hasher.finish(hash_state)
@@ -232,6 +113,7 @@ fn call_hash_thing2(t: Thing): U64 =
     -- might be easy to just add your hash_thing function to an extended
     -- Hasher impl...
 end
+
 
 /-
 COHERENCE:
@@ -271,23 +153,22 @@ Ok, so reasons I want to do modules instead of typeclasses/traits:
  * Unification of everything-is-a-struct
  * Typeclass/trait metaprogramming gets hairy af
  * Still able to compile to static dispatch
+ * **This lang has to be simpler than Rust**
 
 Key points from typeclass vs. the world:
 
  * Typeclasses can be done with static dispatch (though the original
-   paper kinda implied dynamic dispatch)
+   paper kinda implies dynamic dispatch)
  * Rust's Self is just syntactic sugar
  * The annoying `impl<T> MyTrait for T {}` syntax may be avoidable by
-   decorating type variables so you know they're type variables;
-   `impl MyTrait for @T {}`
+   decorating type variables so you know they're type variables instead
+   of just typos: `impl MyTrait for @T {}`
  * Best description I've seen of generics vs associated types in traits:
    Generics are types set by the caller, associated types are types set
    by the impl.  You can kinda do without them but it gets damn
    squirrelly.  Haskell doesn't have em, but there's a couple different
    extensions that do something similar.
  * Having generics in associated types gets you into higher-kinded types
-
-
 -/
 
 -- FINE let's just implement a simple lookup table thing and see what happens.
@@ -305,10 +186,11 @@ type EQ = struct {
     ne: fn(lhs: Self ^, rhs: Self ^): Bool = not eq(rhs, lhs) end,
 }
 
---- From 1ML paper page 11
---- "trait definition" for associative array
+--- Loosely from 1ML paper page 11
+--- "trait definition" for associative array.
 type MAP = struct {
     Key: type,
+    --- Do we need a way to specify Val everywhere here?
     Map[Val]: type,
     empty[Val]: fn(): Map[Val],
     lookup[Val]: fn(Map[Val] ^, Key): Option[Val],
@@ -333,6 +215,24 @@ should be familiar from ML, but here it actually is derived from a more general 
 “T where (.X:U)” refines T ’s subcomponent at path .X to type U, which can be any
 subtype of what’s declared by T . That form subsumes module sharing as well as other
 forms of refinement, with some appropriate sugar defined in Figure 2.
+
+From PL discord:
+
+icefox — Today at 12:32 PM
+it already contains type key = Key.t in the module itself so I have no idea why repeating it in the signature is necessary
+
+leaf — Today at 12:35 PM
+it's so that that definition is available at type-checking time
+if the functor were defined as Map (Key : EQ) :> MAP and you instantiated it with some K : EQ to get Map(K), the typechecker would just see Map(K).key as some abstract type with no relation to K.t
+so for example if you wanted to make a map with strings as keys and wrote M = Map(String); M.insert "blah" ... the typechecker would yell at you
+because it can't deduce that "blah" has type Map(String).key
+
+icefox — Today at 12:38 PM
+Why not just look at the definition to see what Map(K).key is set to?
+Oh it lets you define which types in the module are opaque and which aren't? (edited)
+
+leaf — Today at 12:38 PM
+right, looking into the definition is not allowed because we sealed the module away under MAP interface
 -/
 const Map[Key]: MAP where Key: EQ = struct {
     Key: type = Key.Self,
@@ -354,7 +254,7 @@ const Map[Key]: MAP where Key: EQ = struct {
 }
 
 --- Ok but as it says that is actually a functor, so we
---- need to make it a function and not a fixed thing.
+--- need to make it a function and not a const value.
 --- The type variable in the const decl is a clue, I guess.
 --- For now we'll just call it a const function
 --- and assume that's enough.
@@ -362,7 +262,6 @@ const Map[Key]: MAP where Key: EQ = struct {
 --- This breaks my brain a little 'cause it doesn't mention
 --- freakin' ANYTHING about definining what type the value is,
 --- it's just there.
----const Map[Key]: MAP where Key: EQ = struct {
 const fn Map[Val](Key: EQ): MAP[Val] =
     struct {
         Key: type = Key.Self,
@@ -403,3 +302,144 @@ fn actually_use_it_i_guess(): {} =
     assert_eq(M.lookup(my_map, 1), "foo")
 end
 
+--- Ok it's a fresh new day, let's try again with a perennial favorite:
+--- The From/Into traits.
+--- These should be the same thing with just the LHS and RHS swapped,
+--- so...
+type CONVERT = struct {
+    From: type,
+    To: type,
+    convert: fn(from: From^): To,
+}
+
+const I32ToF32: Convert = struct {
+    From: I32,
+    To: F32,
+    convert: fn(from: From^): To = magic_goes_here(from) end,
+}
+
+const F32ToI32: Convert = struct {
+    From: F32,
+    To: I32,
+    convert: fn(from: From^): To = magic_goes_here(from) end,
+}
+
+fn do_stuff(): F32 =
+    I32ToF32.convert(42_I32)
+end
+
+type DEBUG = struct {
+    Self: type,
+    fmt: fn(Self&, Formatter ^uniq): Result[{}, Error],
+}
+
+type DEFAULT = struct {
+    Self: type,
+    default: fn(): Self,
+}
+
+--- pub trait PartialOrd<Rhs = Self>: PartialEq<Rhs>  hmmm
+--- Like EQ we'll simplify Rhs and Lhs to just Self
+--- Does this need to be a functor that takes an EQ as a param?
+--- This is probably a good workout case.
+---
+--- Ok part of it is the trait definition above is an inheritance,
+--- which we quite specifically don't have a way to specify, so
+--- we specify it via inclusion for the moment.
+--- No idea whether or not this actually works.
+type ORD = struct {
+    Eq: EQ,
+    Self: Eq.Self,
+    cmp: fn(Self^, Self^): Option[Ordering],
+    lt: fn(Self^, Self^): Bool = ... end,
+    le: fn(Self^, Self^): Bool = ... end,
+    gt: fn(Self^, Self^): Bool = ... end,
+    ge: fn(Self^, Self^): Bool = ... end,
+}
+
+type TO_STRING = struct {
+    type Self,
+    to_string: fn(Self^): String,
+}
+
+type TRY_CONVERT = struct {
+    From: type,
+    To: type,
+    convert: fn(from: From^): Option[To],
+}
+
+--- Ok now we want the actual Rust Hash trait, which takes a Hasher
+--- So I guess it'll look something like this...
+type HASH = struct {
+    Self: type,
+    hash: fn(Self^, Hasher^, HashState^uniq),
+}
+
+--- Really, a module constructor is a function that implements a trait
+--- for you.  Hmmmm.
+const fn MakeHash(t: type, hasher_impl: Hasher^): HASH =
+    struct {
+        Self: t,
+        hash: fn(self: Self^, hash_state: hasher_impl.Self^uniq) = ... end
+    }
+end
+
+--- Module full of methods for I32 type...
+--- Convert, Debug, Default, Eq, Hash, Ord, ToString,
+--- ToOwned, TryInto
+const I32: ... = struct {
+    Eq: EQ = struct {
+        Self: I32,
+        eq: fn(lhs: Self ^, rhs: Self ^): Bool = ... end
+    },
+
+    Ord: ORD = struct {
+        Eq: I32.Eq,
+        Self: I32.Eq.Self,
+
+        cmp: fn(Self^, Self^): Option[Ordering] = ... end
+    },
+
+    ToString: TO_STRING = struct {
+        Self: I32
+        to_string: fn(self: Self^): String = ... end
+    },
+
+    Debug: DEBUG = struct {
+        Self: I32,
+        fmt: fn(Self&, Formatter ^uniq): Result[{}, Error] = ... end
+    },
+
+    Default: DEFAULT = struct {
+        Self: I32,
+        default: fn(): I32 = 0 end
+    },
+
+
+    ToF32: CONVERT = struct {
+        From: I32,
+        To: F32,
+        convert: fn(from: From^): To = magic_goes_here(from) end,
+    },
+
+    --- We can do this as well and it's just fine, though
+    --- really we should probably choose one and stick to it.
+    FromF32: CONVERT = struct {
+        From: F32,
+        To: I32,
+        convert: fn(from: From^): To = magic_goes_here(from) end,
+    },
+
+    TryToF32: CONVERT = struct {
+        From: I32,
+        To: F32,
+        try_convert: fn(from: From^): Option[To] = magic_goes_here(from) end,
+    },
+
+    Hash: HASH = MakeHash(I32, SIPHASH_IMPL),
+}
+
+fn do_stuff(): F32 =
+    I32.ToF32.convert(42_I32)
+    Option.unwrap(I32.TryToF32.convert(43_I32))
+end
