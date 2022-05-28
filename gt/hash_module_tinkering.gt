@@ -178,7 +178,7 @@ Key points from typeclass vs. the world:
 type EQ = struct {
     -- Rust's PartialEq trait lets Lhs and Rhs to be different,
     -- but by default they are the same so we're gonna do that
-    -- because it makes the Map module simpler
+    -- for now because it makes the Map module simpler
     --Lhs: type,
     --Rhs: type,
     Self: type,
@@ -292,6 +292,7 @@ fn actually_use_it_i_guess(): {} =
     -- Part of my annoyance with Rust is that the f32 modules and
     -- types are not the same thing, and here I am running into
     -- the same problem...
+    -- (Though it looks like they are working on getting rid of that)
     -- I suppose part of my goal with this whole jazz is to make
     -- modules and types the same thing, so...
     const M: Map[String] = Map(I32.EQ)
@@ -330,7 +331,7 @@ end
 
 type DEBUG = struct {
     Self: type,
-    fmt: fn(Self&, Formatter ^uniq): Result[{}, Error],
+    fmt: fn(Self^, Formatter ^uniq): Result[{}, Error],
 }
 
 type DEFAULT = struct {
@@ -358,7 +359,7 @@ type ORD = struct {
 }
 
 type TO_STRING = struct {
-    type Self,
+    Self: type,
     to_string: fn(Self^): String,
 }
 
@@ -442,4 +443,92 @@ const I32: ... = struct {
 fn do_stuff(): F32 =
     I32.ToF32.convert(42_I32)
     Option.unwrap(I32.TryToF32.convert(43_I32))
+end
+
+
+-- I am firmly resisting the urge to do any syntactic sugar here.
+-- BUT, some thoughts.
+-- Maybe just add a __call__ function to a module so that if it has
+-- only one function in it you can just call it.
+-- So: `I32.ToF32.convert(42_I32)`
+-- becomes `I32.ToF32(42_I32)`
+--
+-- That's probably a good idea.
+--
+-- A maybe-not-so-good idea is to be able to dispatch modules on
+-- types if they match up:
+-- `I32.ToF32(42)` becomes `42:ToF32()`
+--
+-- We'll have to work a bit more to see whether or not that is a good
+-- idea.
+--
+-- The *thing* there is that it privileges the standard library.  The
+-- user can't add more modules to the I32 type and have them work
+-- the same way.
+
+--- Ok let's try something more complicated: Iterator and IntoIterator
+--- Note to self: everything under here is coffee-deprived BS, needs
+--- rewriting.
+type ITERATOR = struct {
+    Self: type,
+    Item: type,
+    next: fn(self: Self^uniq): Option[Item],
+}
+
+--- ...For now I guess we pretend lifetimes don't exist.
+type SliceIterator[T] = struct {
+    slice: T[]^,
+    idx: Size,
+}
+-- whoops we need a T for the array element, so
+-- we need a functor...?
+const fn ArrayIterator[T](): ITERATOR =
+    struct {
+        Self: SliceIterator[T],
+        Item: T,
+        next: fn(self: Self^uniq): Option[item] =
+            if self.idx == self.slice.len then
+                None
+            else
+                let itm = self.slice[self.idx]
+                self.idx += 1
+                itm
+            end
+        end
+    }
+end
+
+/-
+pub trait IntoIterator {
+    type Item;
+    type IntoIter: Iterator
+    where
+        <Self::IntoIter as Iterator>::Item == Self::Item;
+    fn into_iter(self) -> Self::IntoIter;
+}
+
+:|
+-/
+type INTOITERATOR = struct {
+    Self: type,
+    Item: type,
+    IntoIter: type,
+    into_iter: fn(Self): IntoIter,
+}
+
+const fn IntoIterator(into_iter: ITERATOR): INTOITERATOR
+where into_iter.Item == self.Item =
+    struct {
+        Self: ?,
+        IntoIter: into_iter,
+        Item: into_iter.Item,
+    }
+end
+
+fn iterate_over_thing[T](thing: T[]^): {} =
+    let ITER = ArrayIterator()
+    let mut actual_iterator = ITER.into_iter(thing)
+    for x in actual_iterator do
+        print(x)
+    end
 end
