@@ -191,8 +191,18 @@ type EQ = struct {
 type MAP = struct {
     Key: type,
     --- Do we need a way to specify Val everywhere here?
-    Map[Val]: type,
-    empty[Val]: fn(): Map[Val],
+    --Map[Val]: type,
+    -- Looking at the 1ML paper again, this desugars into...
+    Map: fn(Val: type): type,
+
+    --empty[Val]: fn(): Map[Val],
+    -- desugars into...
+    empty: fn(Val: type): Map(Val)
+    -- So.... the return type of the empty() function is the
+    -- type that is the result of the Map type constructor.
+    -- AKA Map<Val>.
+    -- This makes perfect sense, but hurts my head.
+
     lookup[Val]: fn(Map[Val] ^, Key): Option[Val],
     add[Val]: fn(Map[Val] ^uniq, Key, Val),
 }
