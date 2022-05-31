@@ -377,7 +377,7 @@ fn compile_expr(expr: &hir::TypedExpr, tck: &Tck) -> String {
         E::StructRef { expr, elt } => {
             // We turn our structs into Rust tuples, so we need to
             // to turn our field names into indices
-            let tdef = &*INT.fetch_type(tck.get_type(expr.id));
+            let tdef = &*INT.fetch_type(tck.get_solved_type(expr.id));
             if let TypeDef::Struct { fields } = tdef {
                 let mut nth = 9999_9999;
                 for (i, (nm, _ty)) in fields.iter().enumerate() {
