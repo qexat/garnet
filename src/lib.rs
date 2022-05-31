@@ -28,9 +28,11 @@ pub static INT: Lazy<Cx> = Lazy::new(Cx::new);
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct TypeSym(pub usize);
 
+/*
 /// A synthesized type with a number attached to it.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct TypeId(pub usize);
+*/
 
 /// Required for interner interface.
 impl From<usize> for TypeSym {
@@ -98,42 +100,14 @@ pub enum TypeDef {
         params: Vec<TypeSym>,
         rettype: TypeSym,
     },
-    /*
-    /// This is basically a type that has been named but we
-    /// don't know what type it actually is until after type checking...
-    ///
-    /// ...This is going to get real sticky once we have modules, I think.
-    /// Using `VarSym` for this feels wrong, but, we will leave it for now.
-    /// I think this actually *has* to be `VarSym` or else we lose the actual
-    /// name, which is important.
-    Named(VarSym),
-    */
     /// A struct.
-    Struct {
-        fields: BTreeMap<VarSym, TypeSym>,
-        //typefields: BTreeSet<VarSym>,
-    },
+    Struct { fields: BTreeMap<VarSym, TypeSym> },
     Enum {
         /// TODO: For now the only size of an enum is i32.
         variants: Vec<(VarSym, i32)>,
     },
-    //Generic(VarSym),
-    /// A type var that might be provided by the user.
-    ///
-    /// TODO: Should it be its own symbol type, or just VarSym?
-    ///
-    /// Type variables are things that are explicitly declared by the user,
-    /// Existential vars are placeholders that occur "currently", temporary
-    /// artifacts that the type checker solves for.
-    /// So `let x = 91` creates an existential variable and the type inference
-    /// says "this existential variable has the type of the expression `91`",
-    /// and `fn foo[T](x: T): T = x end` creates a type variable named T
-    /// and has to make sure its use is consistent.
-    TypeVar(VarSym),
-    /// A possibly-unsolved implicit type var
-    ExistentialVar(TypeId),
-    /// A generic decl(?????)
-    ForAll(TypeId, TypeSym),
+    /// These are type variables that are explicitly declared by the user.
+    NamedType(VarSym),
 }
 
 impl TypeDef {
@@ -257,13 +231,7 @@ impl TypeDef {
                 res += "\n}\n";
                 Cow::Owned(res)
             }
-            TypeDef::TypeVar(vsym) => Cow::Owned((&*INT.fetch(*vsym)).clone()),
-            TypeDef::ExistentialVar(tid) => Cow::Owned(format!("'{}", tid.0)),
-            TypeDef::ForAll(tid, tsym) => Cow::from(format!(
-                "forall('{} -> {})",
-                tid.0,
-                INT.fetch_type(*tsym).get_name()
-            )),
+            TypeDef::NamedType(vsym) => Cow::Owned((&*INT.fetch(*vsym)).clone()),
         }
     }
 
@@ -349,10 +317,10 @@ impl Cx {
         self.types.intern(&s)
     }
 
-    /// Intern a new type var matching the given string
-    pub fn type_var(&self, s: impl AsRef<str>) -> TypeSym {
+    /// Intern a new named type var matching the given string
+    pub fn named_type(&self, s: impl AsRef<str>) -> TypeSym {
         let sym = self.intern(s);
-        self.types.intern(&TypeDef::TypeVar(sym))
+        self.types.intern(&TypeDef::NamedType(sym))
     }
 
     /// Get the TypeDef for a type symbol

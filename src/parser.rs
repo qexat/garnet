@@ -656,11 +656,14 @@ impl<'input> Parser<'input> {
         body
     }
 
+    /*
     /// Helper to parse a delimited list of separated items, such as this pattern:
     /// Assumes the starting token has already been consumed, it reads things until
     /// the ending token and allows trailing separators.
     /// "(" [sig {"," sig} [","]] ")"
-    fn parse_delimited_helper(&mut self, ending_token: (), separator_token: (), body: ()) {
+    ///
+    /// TODO: Implement
+    fn _parse_delimited_helper(&mut self, ending_token: (), separator_token: (), body: ()) {
         todo!("Implement me")
         /*
         while let Some(expr) = self.parse_expr(0) {
@@ -686,6 +689,7 @@ impl<'input> Parser<'input> {
         }
              */
     }
+    */
 
     /// sig = ident ":" typename
     /// fn_args = "(" [sig {"," sig} [","]] ")"
@@ -778,7 +782,7 @@ impl<'input> Parser<'input> {
     }
 
     fn parse_struct_lit_fields(&mut self) -> (Vec<(VarSym, ast::Expr)>, BTreeMap<VarSym, TypeSym>) {
-        let mut typefields = BTreeMap::new();
+        let typefields = BTreeMap::new();
         let mut fields = vec![];
 
         // TODO someday: Doc comments on struct fields
@@ -1232,7 +1236,7 @@ impl<'input> Parser<'input> {
                 if let Some(t) = TypeDef::get_primitive_type(s.as_ref()) {
                     crate::INT.intern_type(&t)
                 } else {
-                    crate::INT.type_var(s)
+                    crate::INT.named_type(s)
                 }
             }
             Some(Token {

@@ -115,9 +115,7 @@ fn compile_typename(td: &TypeDef) -> Cow<'static, str> {
         Enum { variants: _ } => {
             todo!("Enums probably should be lowered to numbers?")
         }
-        TypeVar(_vsym) => todo!("Output typevar"),
-        ExistentialVar(_tid) => todo!("Output existential var"),
-        ForAll(_tid, _tsym) => todo!("Output forall"),
+        NamedType(_vsym) => todo!("Output typevar"),
     }
 }
 
@@ -265,7 +263,7 @@ fn compile_expr(expr: &hir::TypedExpr, tck: &Tck) -> String {
         E::Lit {
             val: ast::Literal::Integer(i),
         } => format!("{}", i),
-        E::EnumLit { val, ty } => todo!(),
+        E::EnumLit { val: _val, ty: _ty } => todo!(),
         E::Lit {
             val: ast::Literal::Bool(b),
         } => format!("{}", b),

@@ -148,7 +148,7 @@ pub struct Signature {
 
 impl Signature {
     /// Returns a lambda typedef representing the signature
-    pub(crate) fn to_type(&self) -> TypeSym {
+    pub fn to_type(&self) -> TypeSym {
         let params = self.params.iter().map(|(_v, t)| *t).collect();
         let t = TypeDef::Lambda {
             generics: self.generics.clone(),

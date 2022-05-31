@@ -13,34 +13,6 @@ use crate::ast::{self};
 pub use crate::ast::{BOp, IfCase, Literal, Signature, UOp};
 use crate::*;
 
-/// A variable binding
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct VarBinding {
-    pub name: VarSym,
-    pub typename: TypeSym,
-    pub mutable: bool,
-}
-
-/// Immutable symbol table.  We just keep one of these attached to every expression,
-/// which describes that expression's scope.  Since it's immutable, cloning and modifying
-/// it only changes the parts that are necessary.
-///
-/// This means that we always can look at any expression and see its entire scope, and
-/// keeping track of scope pushes/pops is basically implicit since there's no mutable state
-/// involved.
-// TODO someday maybe: This immutable hashmap is very convenient but also more or less
-// halves the speed of the compiler in a stupid-simple benchmark.  Some dumb profiling shows
-// lot of that delta comes down to memory allocation, so attempting to reduce that might be
-// worth doing.  Switching out `im` for `im_rc` seems to increase perf by only 2-5%.
-#[derive(Default, Clone, Debug, PartialEq)]
-pub struct ISymtbl {
-    pub vars: im::HashMap<VarSym, VarBinding>,
-    pub types: im::HashMap<VarSym, TypeSym>,
-    // TODO someday: Make TypeID's just be gensym strings or something so we
-    // don't need this extra level of indirection
-    pub type_vars: im::HashMap<VarSym, TypeId>,
-}
-
 /// Expression ID.  Used for associating individual expressions to types, and whatever
 /// other metadata we feel like.  That way we can keep that data in tables instead of
 /// having to mutate the HIR tree.
@@ -61,30 +33,6 @@ impl Eid {
         ret
     }
 }
-/*
-
-/// Variable ID.  Ibid, for variables.  Are these scoped per function,
-/// or not?  I guess not, each function just keeps track of the Vid's
-/// it knows about but Vid's are never reused.
-///
-/// Also see notes on "alpha renaming" in passes.rs
-#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Vid(usize);
-
-/// Ugly horrible global for storing index values for expression ID's
-/// TODO: Someday make this an atomic or something other than a rwlock
-static NEXT_VID: Lazy<RwLock<Vid>> = Lazy::new(|| RwLock::new(Vid(0)));
-
-impl Vid {
-    pub fn new() -> Self {
-        let mut current = NEXT_VID.write().unwrap();
-        let ret = *current;
-        let next_eid = Vid(current.0 + 1);
-        *current = next_eid;
-        ret
-    }
-}
-*/
 
 /// An expression with a type annotation.
 /// Currently will be () for something that hasn't been
@@ -94,8 +42,6 @@ impl Vid {
 pub struct TypedExpr {
     /// expression
     pub e: Expr,
-    /// Scope of this expression
-    pub s: ISymtbl,
     /// Expression ID
     pub id: Eid,
 }
@@ -151,7 +97,6 @@ pub enum Expr {
     },
     StructCtor {
         body: Vec<(VarSym, TypedExpr)>,
-        //types: BTreeMap<VarSym, TypeSym>,
     },
     StructRef {
         expr: Box<TypedExpr>,
@@ -356,15 +301,15 @@ fn lower_expr(expr: &ast::Expr) -> TypedExpr {
                 .collect();
             Expr::StructCtor { body: body_pairs }
         }
-        E::StructCtor { body, types } => {
+        E::StructCtor {
+            body,
+            types: _types,
+        } => {
             let lowered_body = body
                 .iter()
                 .map(|(nm, expr)| (*nm, lower_expr(expr)))
                 .collect();
-            Expr::StructCtor {
-                body: lowered_body,
-                //types: types.clone(),
-            }
+            Expr::StructCtor { body: lowered_body }
         }
         // Turn tuple.0 into struct._0
         E::TupleRef { expr, elt } => Expr::StructRef {
@@ -388,7 +333,6 @@ fn lower_expr(expr: &ast::Expr) -> TypedExpr {
     };
     TypedExpr {
         e: new_exp,
-        s: ISymtbl::default(),
         id: Eid::new(),
     }
 }
@@ -427,7 +371,11 @@ fn lower_decl(accm: &mut Vec<Decl>, decl: &ast::Decl) {
         }),
         // this needs to generate the typedef AND the type constructor
         // declaration.  Plus the type deconstructor.
-        D::TypeDef { name, typedecl, .. } => {
+        D::TypeDef {
+            name: _name,
+            typedecl: _typedecl,
+            ..
+        } => {
             todo!("named types");
             /*
 
@@ -504,19 +452,6 @@ fn lower_decls(decls: &[ast::Decl]) -> Ir {
     Ir { decls: accm }
 }
 
-/// Shortcut to take an Expr and wrap it
-/// in a TypedExpr with a unit type.
-///
-/// TODO: Better name?
-#[cfg(test)]
-pub(crate) fn plz(e: Expr) -> Box<TypedExpr> {
-    Box::new(TypedExpr {
-        e,
-        s: ISymtbl::default(),
-        id: Eid::new(),
-    })
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -532,19 +467,28 @@ mod tests {
     }
 
     /*
-    /// Does `return;` turn into `return ();`?
-    /// Not doing that to make parsing simpler, since we don't
-    /// actually have semicolons.
-    #[test]
-    fn test_return_none() {
-        let input = A::Return { retval: None };
-        let output = *plz(I::Return {
-            retval: plz(I::unit()),
-        });
-        let res = lower_expr(&input);
-        assert_eq!(&res, &output);
+    /// Shortcut to take an Expr and wrap it
+    /// in a TypedExpr with a unit type.
+    ///
+    /// TODO: Better name?
+    #[cfg(test)]
+    pub(crate) fn plz(e: Expr) -> Box<TypedExpr> {
+        Box::new(TypedExpr { e, id: Eid::new() })
     }
-    */
+
+        /// Does `return;` turn into `return ();`?
+        /// Not doing that to make parsing simpler, since we don't
+        /// actually have semicolons.
+        #[test]
+        fn test_return_none() {
+            let input = A::Return { retval: None };
+            let output = *plz(I::Return {
+                retval: plz(I::unit()),
+            });
+            let res = lower_expr(&input);
+            assert_eq!(&res, &output);
+        }
+        */
     /* TODO: Unfuck these tests, Eid doesn't compare correctly :|
 
     /// Do we turn chained if's properly into nested ones?
