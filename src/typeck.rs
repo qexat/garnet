@@ -206,8 +206,20 @@ pub struct VarBinding {
 }
 
 /// A generated type variable.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct TypeVar(usize);
+
+/// What a type var may be equal to.
+///
+/// I tend to think of these as "facts we know about our types", but apparently "constraints" is a
+/// more proper term.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum Constraint {
+    /// var 1 == var 2
+    TypeVar(TypeVar),
+    /// var 1 == some known type
+    TypeSym(TypeSym),
+}
 
 /// Top level type checking context struct.
 #[derive(Clone, Debug)]
@@ -216,11 +228,17 @@ pub struct Tck {
     /// The return type may not be known at any particular time,
     /// or may have partial type data known about it, which is fine.
     /// This table gets updated with real types as we figure them out.
-    exprtypes: HashMap<hir::Eid, TypeSym>,
+    exprtypes: HashMap<hir::Eid, TypeVar>,
+
+    /// What info we know about our typevars.
+    /// We may have multiple constraints for each type var, so for now
+    /// this is just a dumb vec.
+    constraints: Vec<(TypeVar, Constraint)>,
     /// Stores a map of the variables and types in scope at every
     /// expression in our program.  A liiiiiittle brute force, I
     /// admit, but pretty simple.  Maybe someday use the `im` crate?
     scopes: HashMap<hir::Eid, HashMap<VarSym, VarBinding>>,
+    next_typevar: usize,
 }
 
 impl Default for Tck {
@@ -228,18 +246,109 @@ impl Default for Tck {
     fn default() -> Self {
         Tck {
             exprtypes: Default::default(),
+            constraints: Default::default(),
             scopes: Default::default(),
+            next_typevar: 0,
         }
     }
 }
 
 impl Tck {
-    /// Panics if type does not exist.
-    pub fn get_type(&self, eid: hir::Eid) -> TypeSym {
+    /// Gets the concrete type associated with a particular expr ID.
+    /// Assumes that we have already found a solution for it.
+    ///
+    /// Panics if expr id does not exist.
+    pub fn get_solved_type(&self, eid: hir::Eid) -> TypeSym {
+        todo!("actually solve types")
+        /*
         *self
             .exprtypes
             .get(&eid)
             .expect("Tried to get type for Eid that doesn't exist!")
+            */
+    }
+
+    pub fn new_typevar(&mut self) -> TypeVar {
+        let tv = TypeVar(self.next_typevar);
+        self.next_typevar += 1;
+        tv
+    }
+}
+
+/// Scan through all decl's and add any bindings to the symbol table,
+/// so we don't need to do anything with forward references.
+fn predeclare_decl(tck: &mut Tck, decl: &hir::Decl) {
+    match decl {
+        hir::Decl::Function {
+            name, signature, ..
+        } => {
+            if tck.symtbl.binding_exists(*name) {
+                panic!("Tried to redeclare function {}!", INT.fetch(*name));
+            }
+            // Add function to global scope
+            let type_params = signature.params.iter().map(|(_name, t)| *t).collect();
+            let function_type = INT.intern_type(&TypeDef::Lambda {
+                generics: signature.generics.clone(),
+                params: type_params,
+                rettype: signature.rettype,
+            });
+            tck.symtbl.add_var(*name, function_type, false);
+            tck.ctx = tck.ctx.clone().add_var(*name, function_type, false);
+        }
+        hir::Decl::Const { name, typename, .. } => {
+            if tck.symtbl.binding_exists(*name) {
+                panic!("Tried to redeclare const {}!", INT.fetch(*name));
+            }
+            tck.symtbl.add_var(*name, *typename, false);
+            tck.ctx = tck.ctx.clone().add_var(*name, *typename, false);
+        }
+        hir::Decl::TypeDef { name, typedecl } => {
+            // Gotta make sure there's no duplicate declarations
+            // This kinda has to happen here rather than in typeck()
+            if tck.symtbl.get_typedef(*name).is_some() {
+                panic!("Tried to redeclare type {}!", INT.fetch(*name));
+            }
+            tck.symtbl.add_type(*name, *typedecl);
+            todo!("Predeclare typedef");
+        }
+        hir::Decl::Constructor { name, signature } => {
+            {
+                if tck.symtbl.get_var(*name).is_ok() {
+                    panic!(
+                        "Aieeee, redeclaration of function/type constructor named {}",
+                        INT.fetch(*name)
+                    );
+                }
+                let type_params = signature.params.iter().map(|(_name, t)| *t).collect();
+                let function_type = INT.intern_type(&TypeDef::Lambda {
+                    generics: vec![],
+                    params: type_params,
+                    rettype: signature.rettype,
+                });
+                tck.symtbl.add_var(*name, function_type, false);
+            }
+
+            // Also we need to add a deconstructor function.  This is kinda a placeholder, but,
+            // should work for now.
+            {
+                let deconstruct_name = INT.intern(format!("{}_unwrap", INT.fetch(*name)));
+                if tck.symtbl.get_var(deconstruct_name).is_ok() {
+                    panic!(
+                        "Aieeee, redeclaration of function/type destructure named {}",
+                        INT.fetch(deconstruct_name)
+                    );
+                }
+                let type_params = vec![signature.rettype];
+                let rettype = signature.params[0].1;
+                let function_type = INT.intern_type(&TypeDef::Lambda {
+                    generics: vec![],
+                    params: type_params,
+                    rettype,
+                });
+                tck.symtbl.add_var(deconstruct_name, function_type, false);
+            }
+            todo!("Predeclare constructor");
+        }
     }
 }
 
