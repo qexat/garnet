@@ -96,7 +96,6 @@ fn lambda_lift_expr(expr: TypedExpr, output_funcs: &mut Vec<D>) -> TypedExpr {
     };
     hir::TypedExpr {
         e: result,
-        s: expr.s,
         id: expr.id,
     }
 }
