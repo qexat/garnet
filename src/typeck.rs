@@ -8,7 +8,7 @@
 //! then unify to solve them, probably in a more-or-less-bidirectional
 //! fashion.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::hir::{self, Expr};
 use crate::{TypeDef, TypeSym, VarSym, INT};
@@ -206,14 +206,14 @@ pub struct VarBinding {
 }
 
 /// A generated type variable.
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct TypeVar(usize);
 
 /// What a type var may be equal to.
 ///
 /// I tend to think of these as "facts we know about our types", but apparently "constraints" is a
 /// more proper term.
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub enum Constraint {
     /// var 1 == var 2
     TypeVar(TypeVar),
@@ -221,35 +221,187 @@ pub enum Constraint {
     TypeSym(TypeSym),
 }
 
+/// Immutable symbol table.  We just keep one of these associated with every expression,
+/// which describes that expression's scope.  Since it's immutable, cloning and modifying
+/// it only changes the parts that are necessary.
+///
+/// This means that we always can look at any expression and see its entire scope, and
+/// keeping track of scope pushes/pops is basically implicit since there's no mutable state
+/// involved.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Symtbl {
+    pub vars: im::HashMap<VarSym, VarBinding>,
+    pub typenames: im::HashMap<VarSym, TypeSym>,
+}
+
+impl Default for Symtbl {
+    fn default() -> Self {
+        Symtbl {
+            vars: Default::default(),
+            typenames: Default::default(),
+        }
+    }
+}
+
+impl Symtbl {
+    fn add_type(&mut self, name: VarSym, typedef: TypeSym) {
+        self.typenames.insert(name, typedef);
+    }
+
+    fn get_type(&mut self, name: VarSym) -> Option<TypeSym> {
+        self.typenames.get(&name).cloned()
+    }
+
+    /*
+    fn add_type_var(&mut self, name: VarSym, id: TypeId) {
+        self.type_vars.insert(name, id);
+    }
+
+    fn get_type_var(&mut self, name: VarSym) -> Option<TypeId> {
+        self.type_vars.get(&name).cloned()
+    }
+    */
+
+    /*
+    /// Looks up a typedef and if it is `Named` try to keep looking
+    /// it up until we find the actual concrete type.  Returns None
+    /// if it can't.
+    ///
+    /// TODO: This is weird, currently necessary for structs though.
+    fn follow_typedef(&mut self, name: VarSym) -> Option<TypeSym> {
+        match self.types.get(&name) {
+            Some(tsym) => match &*INT.fetch_type(*tsym) {
+                &TypeDef::Named(vsym) => self.follow_typedef(vsym),
+                _other => Some(*tsym),
+            },
+            None => None,
+        }
+    }
+
+    /// Take a typesym and look it up to a concrete type definition of some kind.
+    /// Recursively follows named types, which might or might not be a good idea...
+    ///
+    /// TODO: This is weird, currently necessary for structs though.
+    fn resolve_typedef(&mut self, t: TypeSym) -> Option<std::sync::Arc<TypeDef>> {
+        let tdef = INT.fetch_type(t);
+        match &*tdef {
+            TypeDef::Named(vsym) => self.follow_typedef(*vsym).map(|sym| INT.fetch_type(sym)),
+            _other => Some(tdef),
+        }
+    }
+    */
+
+    /*
+    /// Returns Ok if the type exists, or a TypeError of the appropriate
+    /// kind if it does not.
+    fn type_exists(&mut self, tsym: TypeSym) -> Result<(), TypeError> {
+        match &*INT.fetch_type(tsym) {
+            /*
+             * TODO
+            TypeDef::Named(name) => {
+                if self.types.get(name).is_some() {
+                    Ok(())
+                } else {
+                    Err(TypeError::UnknownType(*name))
+                }
+            }
+            */
+            // Primitive type
+            _ => Ok(()),
+        }
+    }
+    */
+
+    /// Add a variable to the top level of the scope.
+    /// Shadows the old var if it already exists in that scope.
+    fn add_var(&mut self, name: VarSym, binding: VarBinding) {
+        self.vars.insert(name, binding);
+    }
+
+    /// Get the type of the given variable, or an error
+    fn get_var(&self, name: VarSym) -> Result<TypeSym, TypeError> {
+        Ok(self.get_binding(name)?.typename)
+    }
+
+    /// Get (a clone of) the binding of the given variable, or an error
+    fn get_binding(&self, name: VarSym) -> Result<VarBinding, TypeError> {
+        if let Some(binding) = self.vars.get(&name) {
+            return Ok(binding.clone());
+        }
+        Err(TypeError::UnknownVar(name))
+    }
+
+    fn binding_exists(&self, name: VarSym) -> bool {
+        self.get_binding(name).is_ok()
+    }
+}
+
 /// Top level type checking context struct.
 #[derive(Clone, Debug)]
 pub struct Tck {
-    /// A mapping containing the return types of all expressions.
-    /// The return type may not be known at any particular time,
-    /// or may have partial type data known about it, which is fine.
-    /// This table gets updated with real types as we figure them out.
+    /// A mapping containing a type variable for each expression.
+    /// Then we update the type variables with what we know about them
+    /// as we typecheck/infer.
     exprtypes: HashMap<hir::Eid, TypeVar>,
 
     /// What info we know about our typevars.
-    /// We may have multiple constraints for each type var, so for now
-    /// this is just a dumb vec.
-    constraints: Vec<(TypeVar, Constraint)>,
-    /// Stores a map of the variables and types in scope at every
-    /// expression in our program.  A liiiiiittle brute force, I
-    /// admit, but pretty simple.  Maybe someday use the `im` crate?
-    scopes: HashMap<hir::Eid, HashMap<VarSym, VarBinding>>,
+    /// We may have multiple constraints for each type var, we keep
+    /// a set of them.
+    constraints: HashMap<TypeVar, HashSet<Constraint>>,
+    /// Symbol table.  Current vars and types in scope.
+    symtbl: Symtbl,
+
+    /// Index of the next type var gensym.
     next_typevar: usize,
 }
 
 impl Default for Tck {
     /// Create a new Tck with whatever default types etc we need.
     fn default() -> Self {
-        Tck {
+        let mut x = Tck {
             exprtypes: Default::default(),
             constraints: Default::default(),
-            scopes: Default::default(),
+            symtbl: Default::default(),
             next_typevar: 0,
+        };
+        // We add a built-in function for printing, currently.
+        {
+            let name = INT.intern("__println");
+            let typesym = INT.intern_type(&TypeDef::Lambda {
+                generics: vec![],
+                params: vec![INT.i32()],
+                rettype: INT.unit(),
+            });
+            x.add_var(name, typesym, false);
         }
+        {
+            let name = INT.intern("__println_bool");
+            let typesym = INT.intern_type(&TypeDef::Lambda {
+                generics: vec![],
+                params: vec![INT.bool()],
+                rettype: INT.unit(),
+            });
+            x.add_var(name, typesym, false);
+        }
+        {
+            let name = INT.intern("__println_i64");
+            let typesym = INT.intern_type(&TypeDef::Lambda {
+                generics: vec![],
+                params: vec![INT.i64()],
+                rettype: INT.unit(),
+            });
+            x.add_var(name, typesym, false);
+        }
+        {
+            let name = INT.intern("__println_i16");
+            let typesym = INT.intern_type(&TypeDef::Lambda {
+                generics: vec![],
+                params: vec![INT.i16()],
+                rettype: INT.unit(),
+            });
+            x.add_var(name, typesym, false);
+        }
+        x
     }
 }
 
@@ -272,6 +424,27 @@ impl Tck {
         let tv = TypeVar(self.next_typevar);
         self.next_typevar += 1;
         tv
+    }
+
+    /// If the var's type is unknown, then we create a type var for it.
+    ///
+    /// If the var has a type associated with it, then we create a type
+    /// var for it and list it as a known fact.
+    pub fn add_var(&mut self, name: VarSym, ty: Option<TypeSym>, mutable: bool) {
+        let tv = self.new_typevar();
+        let binding = VarBinding {
+            name,
+            typevar: tv,
+            mutable: false,
+        };
+        if let Some(t) = ty {
+            self.add_constraint(tv, t)
+        }
+        self.symtbl.insert(name, binding);
+    }
+
+    pub fn add_constraint(&mut self) {
+        todo!()
     }
 }
 
