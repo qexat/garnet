@@ -16,6 +16,7 @@ use crate::{TypeDef, TypeSym, VarSym, INT};
 #[derive(Debug, Clone)]
 pub enum TypeError {
     UnknownVar(VarSym),
+    AlreadyDefined(VarSym),
     /*
     UnknownType(VarSym),
     InvalidReturn,
@@ -92,6 +93,10 @@ impl TypeError {
     pub fn format(&self) -> String {
         match self {
             TypeError::UnknownVar(sym) => format!("Unknown var: {}", INT.fetch(*sym)),
+            TypeError::AlreadyDefined(sym) => format!(
+                "Type, var, const, or function already defined: {}",
+                INT.fetch(*sym)
+            ),
             /*
             TypeError::UnknownType(sym) => format!("Unknown type: {}", INT.fetch(*sym)),
             TypeError::InvalidReturn => {
@@ -314,13 +319,14 @@ impl Symtbl {
 
     /// Add a variable to the top level of the scope.
     /// Shadows the old var if it already exists in that scope.
-    fn add_var(&mut self, name: VarSym, binding: VarBinding) {
+    fn add_binding(&mut self, name: VarSym, binding: VarBinding) {
         self.vars.insert(name, binding);
     }
 
-    /// Get the type of the given variable, or an error
-    fn get_var(&self, name: VarSym) -> Result<TypeSym, TypeError> {
-        Ok(self.get_binding(name)?.typename)
+    /// Get the type of the given variable, or an error.
+    /// The type will be a type variable that must then be unified, I guess.
+    fn get_var(&self, name: VarSym) -> Result<TypeVar, TypeError> {
+        Ok(self.get_binding(name)?.typevar)
     }
 
     /// Get (a clone of) the binding of the given variable, or an error
@@ -345,8 +351,8 @@ pub struct Tck {
     exprtypes: HashMap<hir::Eid, TypeVar>,
 
     /// What info we know about our typevars.
-    /// We may have multiple constraints for each type var, we keep
-    /// a set of them.
+    /// We may have multiple non-identical constraints for each type var,
+    /// so we keep a set of them.
     constraints: HashMap<TypeVar, HashSet<Constraint>>,
     /// Symbol table.  Current vars and types in scope.
     symtbl: Symtbl,
@@ -372,7 +378,7 @@ impl Default for Tck {
                 params: vec![INT.i32()],
                 rettype: INT.unit(),
             });
-            x.add_var(name, typesym, false);
+            x.add_var(name, Some(typesym), false);
         }
         {
             let name = INT.intern("__println_bool");
@@ -381,7 +387,7 @@ impl Default for Tck {
                 params: vec![INT.bool()],
                 rettype: INT.unit(),
             });
-            x.add_var(name, typesym, false);
+            x.add_var(name, Some(typesym), false);
         }
         {
             let name = INT.intern("__println_i64");
@@ -390,7 +396,7 @@ impl Default for Tck {
                 params: vec![INT.i64()],
                 rettype: INT.unit(),
             });
-            x.add_var(name, typesym, false);
+            x.add_var(name, Some(typesym), false);
         }
         {
             let name = INT.intern("__println_i16");
@@ -399,7 +405,7 @@ impl Default for Tck {
                 params: vec![INT.i16()],
                 rettype: INT.unit(),
             });
-            x.add_var(name, typesym, false);
+            x.add_var(name, Some(typesym), false);
         }
         x
     }
@@ -437,49 +443,44 @@ impl Tck {
             typevar: tv,
             mutable: false,
         };
+        // If we know the real type of the variable, save it
         if let Some(t) = ty {
-            self.add_constraint(tv, t)
+            self.add_constraint(tv, Constraint::TypeSym(t));
         }
-        self.symtbl.insert(name, binding);
+        self.symtbl.add_binding(name, binding);
     }
 
-    pub fn add_constraint(&mut self) {
-        todo!()
+    pub fn add_constraint(&mut self, tv: TypeVar, constraint: Constraint) {
+        let entry = self.constraints.entry(tv).or_insert(HashSet::new());
+        entry.insert(constraint);
     }
 }
 
 /// Scan through all decl's and add any bindings to the symbol table,
 /// so we don't need to do anything with forward references.
-fn predeclare_decl(tck: &mut Tck, decl: &hir::Decl) {
+fn predeclare_decl(tck: &mut Tck, decl: &hir::Decl) -> Result<(), TypeError> {
     match decl {
         hir::Decl::Function {
             name, signature, ..
         } => {
             if tck.symtbl.binding_exists(*name) {
-                panic!("Tried to redeclare function {}!", INT.fetch(*name));
+                return Err(TypeError::AlreadyDefined(*name));
             }
             // Add function to global scope
-            let type_params = signature.params.iter().map(|(_name, t)| *t).collect();
-            let function_type = INT.intern_type(&TypeDef::Lambda {
-                generics: signature.generics.clone(),
-                params: type_params,
-                rettype: signature.rettype,
-            });
-            tck.symtbl.add_var(*name, function_type, false);
-            tck.ctx = tck.ctx.clone().add_var(*name, function_type, false);
+            let function_type = signature.to_type();
+            tck.add_var(*name, Some(function_type), false);
         }
         hir::Decl::Const { name, typename, .. } => {
             if tck.symtbl.binding_exists(*name) {
-                panic!("Tried to redeclare const {}!", INT.fetch(*name));
+                return Err(TypeError::AlreadyDefined(*name));
             }
-            tck.symtbl.add_var(*name, *typename, false);
-            tck.ctx = tck.ctx.clone().add_var(*name, *typename, false);
+            tck.add_var(*name, Some(*typename), false);
         }
         hir::Decl::TypeDef { name, typedecl } => {
             // Gotta make sure there's no duplicate declarations
             // This kinda has to happen here rather than in typeck()
-            if tck.symtbl.get_typedef(*name).is_some() {
-                panic!("Tried to redeclare type {}!", INT.fetch(*name));
+            if tck.symtbl.get_type(*name).is_some() {
+                return Err(TypeError::AlreadyDefined(*name));
             }
             tck.symtbl.add_type(*name, *typedecl);
             todo!("Predeclare typedef");
@@ -487,18 +488,10 @@ fn predeclare_decl(tck: &mut Tck, decl: &hir::Decl) {
         hir::Decl::Constructor { name, signature } => {
             {
                 if tck.symtbl.get_var(*name).is_ok() {
-                    panic!(
-                        "Aieeee, redeclaration of function/type constructor named {}",
-                        INT.fetch(*name)
-                    );
+                    return Err(TypeError::AlreadyDefined(*name));
                 }
-                let type_params = signature.params.iter().map(|(_name, t)| *t).collect();
-                let function_type = INT.intern_type(&TypeDef::Lambda {
-                    generics: vec![],
-                    params: type_params,
-                    rettype: signature.rettype,
-                });
-                tck.symtbl.add_var(*name, function_type, false);
+                let function_type = signature.to_type();
+                tck.add_var(*name, Some(function_type), false);
             }
 
             // Also we need to add a deconstructor function.  This is kinda a placeholder, but,
@@ -506,10 +499,7 @@ fn predeclare_decl(tck: &mut Tck, decl: &hir::Decl) {
             {
                 let deconstruct_name = INT.intern(format!("{}_unwrap", INT.fetch(*name)));
                 if tck.symtbl.get_var(deconstruct_name).is_ok() {
-                    panic!(
-                        "Aieeee, redeclaration of function/type destructure named {}",
-                        INT.fetch(deconstruct_name)
-                    );
+                    return Err(TypeError::AlreadyDefined(*name));
                 }
                 let type_params = vec![signature.rettype];
                 let rettype = signature.params[0].1;
@@ -518,22 +508,25 @@ fn predeclare_decl(tck: &mut Tck, decl: &hir::Decl) {
                     params: type_params,
                     rettype,
                 });
-                tck.symtbl.add_var(deconstruct_name, function_type, false);
+                tck.add_var(deconstruct_name, Some(function_type), false);
             }
             todo!("Predeclare constructor");
         }
     }
+    Ok(())
+}
+
+fn typecheck_decl(tck: &mut Tck, decl: &hir::Decl) -> Result<(), TypeError> {
+    todo!()
 }
 
 pub fn typecheck(ir: hir::Ir) -> Result<Tck, TypeError> {
     let mut tck = Tck::default();
-    /*
-    ir.decls.iter().for_each(|d| predeclare_decl(&mut tck, d));
-    let checked_decls = ir
-        .decls
-        .into_iter()
-        .map(|decl| typecheck_decl(&mut tck, decl))
-        .collect::<Result<Vec<hir::Decl>, TypeError>>()?;
-    */
+    for decl in &ir.decls {
+        predeclare_decl(&mut tck, decl)?;
+    }
+    for decl in &ir.decls {
+        typecheck_decl(&mut tck, decl)?;
+    }
     Ok(tck)
 }
