@@ -342,6 +342,72 @@ impl Symtbl {
     }
 }
 
+/// A unique var ID used to unambiguously identify variables regardless of scope.
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+struct UniqueVar(usize);
+
+/// Tracks variables and names in scope.
+/// So the way we do this is is a little weird 'cause we can't
+/// forget scope info.  We needd to know stuff about specific variables
+/// that may be used to solve type inference stuff above their scope
+/// or even before they're declared.
+///
+/// SO.  This is the usual scope-as-stack-of-vars type thing.
+/// We use this to do our normal scope cehcking, and also create a
+/// mapping from exprid to a unique variable id for every variable
+/// use and declaration.
+///
+/// That way we can have a list of all the variables in each
+/// function regardless of name, and just totally ignore scoping
+/// from then on.
+#[derive(Clone, Debug)]
+struct Scope {
+    vars: Vec<HashMap<hir::Eid, UniqueVar>>,
+}
+
+impl Default for Scope {
+    /// We start with an empty toplevel scope existing.
+    fn default() {
+        Scope {
+            vars: vec![HashMap::new()],
+        }
+    }
+}
+
+impl Scope {
+    fn push(&mut self) {
+        self.vars.push(HashMap::new());
+    }
+
+    fn pop(&mut self) {
+        self.vars.pop().expect("Scope stack underflow");
+    }
+
+    fn with_scope(&mut self, f: impl Fn()) {
+        self.push();
+        f();
+        self.pop();
+    }
+
+    fn add_var(&mut self, eid: hir::Eid, unique: UniqueVar) {
+        self.vars
+            .last_mut()
+            .expect("Scope stack underflow")
+            .insert(eid, unique);
+    }
+
+    /// Checks whether the var exists in the currently alive scopes
+    fn get_var_with_scope(&self, eid: hir::Eid) -> Option<UniqueVar> {
+        for scope in self.vars.iter().rev() {
+            let v = scope.get(&eid);
+            if v.is_some() {
+                return v.cloned();
+            }
+        }
+        return None;
+    }
+}
+
 /// Top level type checking context struct.
 #[derive(Clone, Debug)]
 pub struct Tck {
@@ -359,6 +425,11 @@ pub struct Tck {
 
     /// Index of the next type var gensym.
     next_typevar: usize,
+
+    /// Index of the next unique var symbol.  These could be
+    /// unique per function or globally, for now they're globally
+    /// because there's no real reason not to be.
+    next_uniquevar: usize,
 }
 
 impl Default for Tck {
@@ -369,6 +440,7 @@ impl Default for Tck {
             constraints: Default::default(),
             symtbl: Default::default(),
             next_typevar: 0,
+            next_uniquevar: 0,
         };
         // We add a built-in function for printing, currently.
         {
@@ -426,10 +498,16 @@ impl Tck {
             */
     }
 
-    pub fn new_typevar(&mut self) -> TypeVar {
+    fn new_typevar(&mut self) -> TypeVar {
         let tv = TypeVar(self.next_typevar);
         self.next_typevar += 1;
         tv
+    }
+
+    fn new_uniquevar(&mut self) -> UniqueVar {
+        let uv = UniqueVar(self.next_typevar);
+        self.next_uniquevar += 1;
+        uv
     }
 
     /// If the var's type is unknown, then we create a type var for it.
@@ -441,7 +519,7 @@ impl Tck {
         let binding = VarBinding {
             name,
             typevar: tv,
-            mutable: false,
+            mutable,
         };
         // If we know the real type of the variable, save it
         if let Some(t) = ty {
