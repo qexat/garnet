@@ -367,7 +367,7 @@ struct Scope {
 
 impl Default for Scope {
     /// We start with an empty toplevel scope existing.
-    fn default() {
+    fn default() -> Scope {
         Scope {
             vars: vec![HashMap::new()],
         }
@@ -383,11 +383,15 @@ impl Scope {
         self.vars.pop().expect("Scope stack underflow");
     }
 
-    fn with_scope(&mut self, f: impl Fn()) {
+    /* Harder than it looks, leads to double-borrows of Tck.
+     * Try scope guard maybe?  Might do the same if we nest scopes.
+    fn with_scope<T, E>(&mut self, f: impl Fn() -> Result<T, E>) -> Result<T, E> {
         self.push();
-        f();
+        let x = f();
         self.pop();
+        x
     }
+    */
 
     fn add_var(&mut self, eid: hir::Eid, unique: UniqueVar) {
         self.vars
@@ -423,6 +427,19 @@ pub struct Tck {
     /// Symbol table.  Current vars and types in scope.
     symtbl: Symtbl,
 
+    /// Contains the EID -> uniquevar mappings for all the
+    /// variables in current compilation unit.  Maybe it
+    /// would be simple to alpha-rename vars at some point
+    /// to give them unique ID's explicitly?  We need
+    /// scope checking info for that anyway; it's a bit
+    /// more of a low-level thing.
+    /// idk.
+    all_vars: HashMap<hir::Eid, UniqueVar>,
+    /// The current scope stack.
+    /// This is its own type 'cause it's a little clearer
+    /// where we're manipulating scope vs. all vars.
+    scope: Scope,
+
     /// Index of the next type var gensym.
     next_typevar: usize,
 
@@ -439,6 +456,8 @@ impl Default for Tck {
             exprtypes: Default::default(),
             constraints: Default::default(),
             symtbl: Default::default(),
+            all_vars: Default::default(),
+            scope: Default::default(),
             next_typevar: 0,
             next_uniquevar: 0,
         };
@@ -594,8 +613,83 @@ fn predeclare_decl(tck: &mut Tck, decl: &hir::Decl) -> Result<(), TypeError> {
     Ok(())
 }
 
+/// The "check" step of our vaguely-bidi type inference.  This is where
+/// checking an expr starts.
+///
+/// rettype is the function return type, any non-local exits (`return`,
+/// `?`, etc) need to have that type.
+fn expr_check(
+    tck: &mut Tck,
+    expr: &hir::TypedExpr,
+    expected: TypeSym,
+    rettype: TypeSym,
+) -> Result<(), TypeError> {
+    todo!("Expr_check")
+}
+
 fn typecheck_decl(tck: &mut Tck, decl: &hir::Decl) -> Result<(), TypeError> {
-    todo!()
+    match decl {
+        hir::Decl::Function {
+            name,
+            signature,
+            body,
+        } => {
+            // Add signature to known-types
+            let mut res = Ok(());
+            tck.scope.push();
+            // TODO NEXT: handle last expr
+            for expr in body {
+                res = expr_check(tck, expr, INT.unit());
+            }
+            tck.scope.pop();
+            res
+        }
+        _ => todo!("Typecheck decl type {:?}", decl),
+        /*
+        hir::Decl::Const { name, typename, .. } => {
+            if tck.symtbl.binding_exists(*name) {
+                return Err(TypeError::AlreadyDefined(*name));
+            }
+            tck.add_var(*name, Some(*typename), false);
+        }
+        hir::Decl::TypeDef { name, typedecl } => {
+            // Gotta make sure there's no duplicate declarations
+            // This kinda has to happen here rather than in typeck()
+            if tck.symtbl.get_type(*name).is_some() {
+                return Err(TypeError::AlreadyDefined(*name));
+            }
+            tck.symtbl.add_type(*name, *typedecl);
+            todo!("Predeclare typedef");
+        }
+        hir::Decl::Constructor { name, signature } => {
+            {
+                if tck.symtbl.get_var(*name).is_ok() {
+                    return Err(TypeError::AlreadyDefined(*name));
+                }
+                let function_type = signature.to_type();
+                tck.add_var(*name, Some(function_type), false);
+            }
+
+            // Also we need to add a deconstructor function.  This is kinda a placeholder, but,
+            // should work for now.
+            {
+                let deconstruct_name = INT.intern(format!("{}_unwrap", INT.fetch(*name)));
+                if tck.symtbl.get_var(deconstruct_name).is_ok() {
+                    return Err(TypeError::AlreadyDefined(*name));
+                }
+                let type_params = vec![signature.rettype];
+                let rettype = signature.params[0].1;
+                let function_type = INT.intern_type(&TypeDef::Lambda {
+                    generics: vec![],
+                    params: type_params,
+                    rettype,
+                });
+                tck.add_var(deconstruct_name, Some(function_type), false);
+            }
+            todo!("Predeclare constructor");
+        }
+        */
+    }
 }
 
 pub fn typecheck(ir: hir::Ir) -> Result<Tck, TypeError> {
