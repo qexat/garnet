@@ -8,6 +8,7 @@
 //! then unify to solve them, probably in a more-or-less-bidirectional
 //! fashion.
 
+use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 
 use crate::hir::{self, Expr};
@@ -17,6 +18,11 @@ use crate::{TypeDef, TypeSym, VarSym, INT};
 pub enum TypeError {
     UnknownVar(VarSym),
     AlreadyDefined(VarSym),
+    TypeMismatch {
+        expr_name: Cow<'static, str>,
+        got: TypeSym,
+        expected: TypeSym,
+    },
     /*
     UnknownType(VarSym),
     InvalidReturn,
@@ -70,11 +76,6 @@ pub enum TypeError {
         expected: Vec<VarSym>,
         got: VarSym,
     },
-    TypeMismatch {
-        expr_name: Cow<'static, str>,
-        got: TypeSym,
-        expected: TypeSym,
-    },
     Mutability {
         expr_name: Cow<'static, str>,
     },
@@ -96,6 +97,16 @@ impl TypeError {
             TypeError::AlreadyDefined(sym) => format!(
                 "Type, var, const, or function already defined: {}",
                 INT.fetch(*sym)
+            ),
+            TypeError::TypeMismatch {
+                expr_name,
+                expected,
+                got,
+            } => format!(
+                "Type mismatch in '{}' expresssion, expected {} but got {}",
+                expr_name,
+                INT.fetch_type(*expected).get_name(),
+                INT.fetch_type(*got).get_name()
             ),
             /*
             TypeError::UnknownType(sym) => format!("Unknown type: {}", INT.fetch(*sym)),
@@ -184,16 +195,6 @@ impl TypeError {
                     expected_names,
                 )
             }
-            TypeError::TypeMismatch {
-                expr_name,
-                expected,
-                got,
-            } => format!(
-                "Type mismatch in '{}' expresssion, expected {} but got {}",
-                expr_name,
-                INT.fetch_type(*expected).get_name(),
-                INT.fetch_type(*got).get_name()
-            ),
             TypeError::Mutability { expr_name } => {
                 format!("Mutability mismatch in '{}' expresssion", expr_name)
             }
@@ -634,13 +635,39 @@ fn typecheck_decl(tck: &mut Tck, decl: &hir::Decl) -> Result<(), TypeError> {
             signature,
             body,
         } => {
-            // Add signature to known-types
-            let mut res = Ok(());
             tck.scope.push();
-            // TODO NEXT: handle last expr
-            for expr in body {
-                res = expr_check(tck, expr, INT.unit());
+
+            // TODO NEXT: Add signature to known-types
+
+            let mut res = Ok(());
+            let last_expr_idx = body.len();
+            // This is the sort of thing that feels like there should
+            // be some turbo fancy combinator for it and it really isn't
+            // worth the trouble.
+            if last_expr_idx > 0 {
+                for expr in &body[..(last_expr_idx - 1)] {
+                    res = expr_check(tck, expr, INT.unit(), signature.rettype);
+                    if res.is_err() {
+                        break;
+                    }
+                }
+                res = expr_check(
+                    tck,
+                    &body[last_expr_idx - 1],
+                    signature.rettype,
+                    signature.rettype,
+                );
+            } else {
+                // Body is empty, is the return type Unit?
+                if signature.rettype != INT.unit() {
+                    res = Err(TypeError::TypeMismatch {
+                        expr_name: Cow::from("empty function body"),
+                        got: INT.unit(),
+                        expected: signature.rettype,
+                    });
+                }
             }
+
             tck.scope.pop();
             res
         }
