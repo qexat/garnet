@@ -9,7 +9,9 @@
 //! fashion.
 
 use std::borrow::Cow;
+use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
+use std::rc::Rc;
 
 use crate::hir::{self, Expr};
 use crate::{TypeDef, TypeSym, VarSym, INT};
@@ -361,41 +363,48 @@ struct UniqueVar(usize);
 /// That way we can have a list of all the variables in each
 /// function regardless of name, and just totally ignore scoping
 /// from then on.
+///
+/// Uses internal mutability and returns a guard type to manage push/pops
+/// because otherwise life is kinda awful.
 #[derive(Clone, Debug)]
 struct Scope {
-    vars: Vec<HashMap<hir::Eid, UniqueVar>>,
+    vars: Rc<RefCell<Vec<HashMap<hir::Eid, UniqueVar>>>>,
 }
 
 impl Default for Scope {
     /// We start with an empty toplevel scope existing.
     fn default() -> Scope {
         Scope {
-            vars: vec![HashMap::new()],
+            vars: Rc::new(RefCell::new(vec![HashMap::new()])),
         }
     }
 }
 
+pub struct ScopeGuard {
+    scope: Scope,
+}
+
+impl Drop for ScopeGuard {
+    fn drop(&mut self) {
+        self.scope.pop();
+    }
+}
+
 impl Scope {
-    fn push(&mut self) {
-        self.vars.push(HashMap::new());
+    fn push(&self) -> ScopeGuard {
+        self.vars.borrow_mut().push(HashMap::new());
+        ScopeGuard {
+            scope: self.clone(),
+        }
     }
 
-    fn pop(&mut self) {
-        self.vars.pop().expect("Scope stack underflow");
+    fn pop(&self) {
+        self.vars.borrow_mut().pop().expect("Scope stack underflow");
     }
 
-    /* Harder than it looks, leads to double-borrows of Tck.
-     * Try scope guard maybe?  Might do the same if we nest scopes.
-    fn with_scope<T, E>(&mut self, f: impl Fn() -> Result<T, E>) -> Result<T, E> {
-        self.push();
-        let x = f();
-        self.pop();
-        x
-    }
-    */
-
-    fn add_var(&mut self, eid: hir::Eid, unique: UniqueVar) {
+    fn add_var(&self, eid: hir::Eid, unique: UniqueVar) {
         self.vars
+            .borrow_mut()
             .last_mut()
             .expect("Scope stack underflow")
             .insert(eid, unique);
@@ -403,7 +412,7 @@ impl Scope {
 
     /// Checks whether the var exists in the currently alive scopes
     fn get_var_with_scope(&self, eid: hir::Eid) -> Option<UniqueVar> {
-        for scope in self.vars.iter().rev() {
+        for scope in self.vars.borrow().iter().rev() {
             let v = scope.get(&eid);
             if v.is_some() {
                 return v.cloned();
@@ -635,32 +644,28 @@ fn typecheck_decl(tck: &mut Tck, decl: &hir::Decl) -> Result<(), TypeError> {
             signature,
             body,
         } => {
-            tck.scope.push();
+            let _guard = tck.scope.push();
 
             // TODO NEXT: Add signature to known-types
 
-            let mut res = Ok(());
             let last_expr_idx = body.len();
             // This is the sort of thing that feels like there should
             // be some turbo fancy combinator for it and it really isn't
             // worth the trouble.
             if last_expr_idx > 0 {
                 for expr in &body[..(last_expr_idx - 1)] {
-                    res = expr_check(tck, expr, INT.unit(), signature.rettype);
-                    if res.is_err() {
-                        break;
-                    }
+                    expr_check(tck, expr, INT.unit(), signature.rettype)?;
                 }
-                res = expr_check(
+                expr_check(
                     tck,
                     &body[last_expr_idx - 1],
                     signature.rettype,
                     signature.rettype,
-                );
+                )?;
             } else {
                 // Body is empty, is the return type Unit?
                 if signature.rettype != INT.unit() {
-                    res = Err(TypeError::TypeMismatch {
+                    return Err(TypeError::TypeMismatch {
                         expr_name: Cow::from("empty function body"),
                         got: INT.unit(),
                         expected: signature.rettype,
@@ -668,8 +673,7 @@ fn typecheck_decl(tck: &mut Tck, decl: &hir::Decl) -> Result<(), TypeError> {
                 }
             }
 
-            tck.scope.pop();
-            res
+            Ok(())
         }
         _ => todo!("Typecheck decl type {:?}", decl),
         /*
