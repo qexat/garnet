@@ -364,8 +364,9 @@ struct UniqueVar(usize);
 /// function regardless of name, and just totally ignore scoping
 /// from then on.
 ///
-/// Uses internal mutability and returns a guard type to manage push/pops
-/// because otherwise life is kinda awful.
+/// Uses internal mutability and returns a guard value to manage push/pops
+/// because otherwise life is kinda awful.  Just do `let _guard = scope.push()`
+/// and it will pop automatically when the _guard value is dropped.
 #[derive(Clone, Debug)]
 struct Scope {
     vars: Rc<RefCell<Vec<HashMap<hir::Eid, UniqueVar>>>>,
@@ -623,18 +624,100 @@ fn predeclare_decl(tck: &mut Tck, decl: &hir::Decl) -> Result<(), TypeError> {
     Ok(())
 }
 
+// TODO: Might have to create an existential var or something instead of iunknown()
+fn infer_literal(lit: &hir::Literal) -> Result<TypeSym, TypeError> {
+    match lit {
+        hir::Literal::Integer(_) => Ok(INT.iunknown()),
+        hir::Literal::SizedInteger { vl: _, bytes } => Ok(INT.intern_type(&TypeDef::SInt(*bytes))),
+        hir::Literal::Bool(_) => Ok(INT.bool()),
+    }
+}
+
+/// The infer part of our vaguely-bidi type checker.
+/// It outputs a constraint -- basically the expression
+/// given must either resolve to a known type, or an unknown
+/// type where it says "I don't know what type this expression is,
+/// but I know it must be the same as `TypeVar(foo)`"
+fn infer_expr(
+    tck: &mut Tck,
+    expr: &hir::TypedExpr,
+    rettype: TypeSym,
+) -> Result<Constraint, TypeError> {
+    todo!()
+}
+
 /// The "check" step of our vaguely-bidi type inference.  This is where
 /// checking an expr starts.
 ///
 /// rettype is the function return type, any non-local exits (`return`,
-/// `?`, etc) need to have that type.
-fn expr_check(
+/// `?`, etc) need to know that type.
+fn check_expr(
     tck: &mut Tck,
     expr: &hir::TypedExpr,
     expected: TypeSym,
     rettype: TypeSym,
 ) -> Result<(), TypeError> {
-    todo!("Expr_check")
+    let tdef = &*INT.fetch_type(expected);
+    match (&expr.e, tdef) {
+        (Expr::Lit { val }, TypeDef::SInt(size)) => {
+            let lit_type = infer_literal(val)?;
+            match &*INT.fetch_type(lit_type) {
+                TypeDef::UnknownInt => {
+                    // Ok, the type of this expr is now that int type
+                    todo!()
+                    //tck.set_type(expr.id, t);
+                    //Ok(())
+                }
+                TypeDef::SInt(size2) if *size == *size2 => Ok(()),
+                _ => Err(TypeError::TypeMismatch {
+                    expr_name: format!("{:?}", &expr.e).into(),
+                    got: lit_type,
+                    expected: INT.iunknown(),
+                }),
+            }
+        }
+        (e, b) => {
+            eprintln!("Checking thing: {:?} {:?}", e, b);
+            let a = infer_expr(tck, expr, rettype)?;
+            eprintln!("Type of {:?} is: {:?}", e, a);
+            // What is a substitution? It's a ~~miserable pile of secrets~~
+            // map from type variables to types.
+            todo!()
+            //let x = self.type_sub(self.ctx.subst(a), self.ctx.subst(t));
+            //eprintln!("Type subbed: {:?}, {:?}", x, self.ctx);
+            //x
+        }
+    }
+}
+
+/// Check multiple expressions, assuming the last one matches
+/// `expected` and the others match `unit`
+fn check_exprs(
+    tck: &mut Tck,
+    exprs: &[hir::TypedExpr],
+    expected: TypeSym,
+    rettype: TypeSym,
+) -> Result<(), TypeError> {
+    let last_expr_idx = exprs.len();
+    // This is the sort of thing that feels like there should
+    // be some turbo fancy combinator for it and it really isn't
+    // worth the trouble.
+    if last_expr_idx > 0 {
+        for expr in &exprs[..(last_expr_idx - 1)] {
+            check_expr(tck, expr, INT.unit(), rettype)?;
+        }
+        check_expr(tck, &exprs[last_expr_idx - 1], rettype, rettype)?;
+    } else {
+        // Body is empty, is the return type Unit?
+        if rettype != INT.unit() {
+            return Err(TypeError::TypeMismatch {
+                expr_name: Cow::from("empty expressions"),
+                got: INT.unit(),
+                expected,
+            });
+        }
+    }
+    Ok(())
 }
 
 fn typecheck_decl(tck: &mut Tck, decl: &hir::Decl) -> Result<(), TypeError> {
@@ -645,35 +728,9 @@ fn typecheck_decl(tck: &mut Tck, decl: &hir::Decl) -> Result<(), TypeError> {
             body,
         } => {
             let _guard = tck.scope.push();
-
             // TODO NEXT: Add signature to known-types
-
-            let last_expr_idx = body.len();
-            // This is the sort of thing that feels like there should
-            // be some turbo fancy combinator for it and it really isn't
-            // worth the trouble.
-            if last_expr_idx > 0 {
-                for expr in &body[..(last_expr_idx - 1)] {
-                    expr_check(tck, expr, INT.unit(), signature.rettype)?;
-                }
-                expr_check(
-                    tck,
-                    &body[last_expr_idx - 1],
-                    signature.rettype,
-                    signature.rettype,
-                )?;
-            } else {
-                // Body is empty, is the return type Unit?
-                if signature.rettype != INT.unit() {
-                    return Err(TypeError::TypeMismatch {
-                        expr_name: Cow::from("empty function body"),
-                        got: INT.unit(),
-                        expected: signature.rettype,
-                    });
-                }
-            }
-
-            Ok(())
+            // Add function params
+            check_exprs(tck, &body, signature.rettype, signature.rettype)
         }
         _ => todo!("Typecheck decl type {:?}", decl),
         /*
