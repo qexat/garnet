@@ -236,6 +236,9 @@ pub enum Constraint {
 /// This means that we always can look at any expression and see its entire scope, and
 /// keeping track of scope pushes/pops is basically implicit since there's no mutable state
 /// involved.
+///
+/// TODO NEXT: Might need to make this UniqueVar -> VarBinding, and also have a
+/// reverse lookup table too?
 #[derive(Clone, Debug, PartialEq)]
 pub struct Symtbl {
     pub vars: im::HashMap<VarSym, VarBinding>,
@@ -369,7 +372,7 @@ struct UniqueVar(usize);
 /// and it will pop automatically when the _guard value is dropped.
 #[derive(Clone, Debug)]
 struct Scope {
-    vars: Rc<RefCell<Vec<HashMap<hir::Eid, UniqueVar>>>>,
+    vars: Rc<RefCell<Vec<HashMap<VarSym, UniqueVar>>>>,
 }
 
 impl Default for Scope {
@@ -403,18 +406,18 @@ impl Scope {
         self.vars.borrow_mut().pop().expect("Scope stack underflow");
     }
 
-    fn add_var(&self, eid: hir::Eid, unique: UniqueVar) {
+    fn add_var(&self, var: VarSym, unique: UniqueVar) {
         self.vars
             .borrow_mut()
             .last_mut()
             .expect("Scope stack underflow")
-            .insert(eid, unique);
+            .insert(var, unique);
     }
 
     /// Checks whether the var exists in the currently alive scopes
-    fn get_var_with_scope(&self, eid: hir::Eid) -> Option<UniqueVar> {
+    fn get_var_with_scope(&self, var: VarSym) -> Option<UniqueVar> {
         for scope in self.vars.borrow().iter().rev() {
-            let v = scope.get(&eid);
+            let v = scope.get(&var);
             if v.is_some() {
                 return v.cloned();
             }
@@ -435,20 +438,16 @@ pub struct Tck {
     /// We may have multiple non-identical constraints for each type var,
     /// so we keep a set of them.
     constraints: HashMap<TypeVar, HashSet<Constraint>>,
-    /// Symbol table.  Current vars and types in scope.
+
+    /// Symbol table.  All known vars and types.
     symtbl: Symtbl,
 
-    /// Contains the EID -> uniquevar mappings for all the
-    /// variables in current compilation unit.  Maybe it
-    /// would be simple to alpha-rename vars at some point
-    /// to give them unique ID's explicitly?  We need
-    /// scope checking info for that anyway; it's a bit
-    /// more of a low-level thing.
-    /// idk.
-    all_vars: HashMap<hir::Eid, UniqueVar>,
     /// The current scope stack.
     /// This is its own type 'cause it's a little clearer
     /// where we're manipulating scope vs. all vars.
+    ///
+    /// So the Scope gives us varsym -> uniquevar, and
+    /// symtbl gives us uniquevar -> binding
     scope: Scope,
 
     /// Index of the next type var gensym.
@@ -467,7 +466,6 @@ impl Default for Tck {
             exprtypes: Default::default(),
             constraints: Default::default(),
             symtbl: Default::default(),
-            all_vars: Default::default(),
             scope: Default::default(),
             next_typevar: 0,
             next_uniquevar: 0,
@@ -625,6 +623,7 @@ fn predeclare_decl(tck: &mut Tck, decl: &hir::Decl) -> Result<(), TypeError> {
 }
 
 // TODO: Might have to create an existential var or something instead of iunknown()
+// Yeah it should give you a constraint, not a type
 fn infer_literal(lit: &hir::Literal) -> Result<TypeSym, TypeError> {
     match lit {
         hir::Literal::Integer(_) => Ok(INT.iunknown()),
@@ -695,8 +694,8 @@ fn check_expr(
 fn check_exprs(
     tck: &mut Tck,
     exprs: &[hir::TypedExpr],
-    expected: TypeSym,
-    rettype: TypeSym,
+    expected: TypeVar,
+    rettype: TypeVar,
 ) -> Result<(), TypeError> {
     let last_expr_idx = exprs.len();
     // This is the sort of thing that feels like there should
@@ -728,8 +727,8 @@ fn typecheck_decl(tck: &mut Tck, decl: &hir::Decl) -> Result<(), TypeError> {
             body,
         } => {
             let _guard = tck.scope.push();
-            // TODO NEXT: Add signature to known-types
-            // Add function params
+            // TODO NEXT: Add function params to symbol table
+            for (var, ty) in &signature.params {}
             check_exprs(tck, &body, signature.rettype, signature.rettype)
         }
         _ => todo!("Typecheck decl type {:?}", decl),
