@@ -229,6 +229,13 @@ pub enum Constraint {
     TypeSym(TypeSym),
 }
 
+/// A unique var ID used to unambiguously identify variables regardless of scope.
+///
+/// They need to be unique at least per compilation unit, but since we don't really do compilation
+/// units other than a single file right now, that's fine.
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+struct UniqueVar(usize);
+
 /// Immutable symbol table.  We just keep one of these associated with every expression,
 /// which describes that expression's scope.  Since it's immutable, cloning and modifying
 /// it only changes the parts that are necessary.
@@ -241,8 +248,8 @@ pub enum Constraint {
 /// reverse lookup table too?
 #[derive(Clone, Debug, PartialEq)]
 pub struct Symtbl {
-    pub vars: im::HashMap<VarSym, VarBinding>,
-    pub typenames: im::HashMap<VarSym, TypeSym>,
+    vars: im::HashMap<UniqueVar, VarBinding>,
+    typenames: im::HashMap<VarSym, TypeSym>,
 }
 
 impl Default for Symtbl {
@@ -325,32 +332,29 @@ impl Symtbl {
 
     /// Add a variable to the top level of the scope.
     /// Shadows the old var if it already exists in that scope.
-    fn add_binding(&mut self, name: VarSym, binding: VarBinding) {
+    fn add_binding(&mut self, name: UniqueVar, binding: VarBinding) {
         self.vars.insert(name, binding);
     }
 
     /// Get the type of the given variable, or an error.
     /// The type will be a type variable that must then be unified, I guess.
-    fn get_var(&self, name: VarSym) -> Result<TypeVar, TypeError> {
+    fn get_var_type(&self, name: UniqueVar) -> Result<TypeVar, TypeError> {
         Ok(self.get_binding(name)?.typevar)
     }
 
     /// Get (a clone of) the binding of the given variable, or an error
-    fn get_binding(&self, name: VarSym) -> Result<VarBinding, TypeError> {
+    fn get_binding(&self, name: UniqueVar) -> Result<VarBinding, TypeError> {
         if let Some(binding) = self.vars.get(&name) {
             return Ok(binding.clone());
         }
-        Err(TypeError::UnknownVar(name))
+        //Err(TypeError::UnknownVar(name))
+        panic!("Unique var is unbound: {:?}", name);
     }
 
-    fn binding_exists(&self, name: VarSym) -> bool {
+    fn binding_exists(&self, name: UniqueVar) -> bool {
         self.get_binding(name).is_ok()
     }
 }
-
-/// A unique var ID used to unambiguously identify variables regardless of scope.
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
-struct UniqueVar(usize);
 
 /// Tracks variables and names in scope.
 /// So the way we do this is is a little weird 'cause we can't
@@ -424,6 +428,10 @@ impl Scope {
         }
         return None;
     }
+
+    fn var_is_bound(&self, var: VarSym) -> bool {
+        self.get_var_with_scope(var).is_some()
+    }
 }
 
 /// Top level type checking context struct.
@@ -478,7 +486,7 @@ impl Default for Tck {
                 params: vec![INT.i32()],
                 rettype: INT.unit(),
             });
-            x.add_var(name, Some(typesym), false);
+            x.create_var(name, Some(typesym), false);
         }
         {
             let name = INT.intern("__println_bool");
@@ -487,7 +495,7 @@ impl Default for Tck {
                 params: vec![INT.bool()],
                 rettype: INT.unit(),
             });
-            x.add_var(name, Some(typesym), false);
+            x.create_var(name, Some(typesym), false);
         }
         {
             let name = INT.intern("__println_i64");
@@ -496,7 +504,7 @@ impl Default for Tck {
                 params: vec![INT.i64()],
                 rettype: INT.unit(),
             });
-            x.add_var(name, Some(typesym), false);
+            x.create_var(name, Some(typesym), false);
         }
         {
             let name = INT.intern("__println_i16");
@@ -505,7 +513,7 @@ impl Default for Tck {
                 params: vec![INT.i16()],
                 rettype: INT.unit(),
             });
-            x.add_var(name, Some(typesym), false);
+            x.create_var(name, Some(typesym), false);
         }
         x
     }
@@ -526,6 +534,16 @@ impl Tck {
             */
     }
 
+    /// Create a new type var and associate it with the given expression ID
+    pub fn create_exprtype(&mut self, eid: hir::Eid) -> TypeVar {
+        let tv = self.new_typevar();
+        let old = self.exprtypes.insert(eid, tv);
+        if old.is_some() {
+            panic!("Tried to bind Eid twice, how unique is it?!");
+        }
+        tv
+    }
+
     fn new_typevar(&mut self) -> TypeVar {
         let tv = TypeVar(self.next_typevar);
         self.next_typevar += 1;
@@ -542,7 +560,11 @@ impl Tck {
     ///
     /// If the var has a type associated with it, then we create a type
     /// var for it and list it as a known fact.
-    pub fn add_var(&mut self, name: VarSym, ty: Option<TypeSym>, mutable: bool) {
+    ///
+    /// We return the UniqueVar ID so we can add it to a Scope as well.
+    /// We might just want to handle that here, we will see.
+    pub fn create_var(&mut self, name: VarSym, ty: Option<TypeSym>, mutable: bool) -> UniqueVar {
+        let uniquevar = self.new_uniquevar();
         let tv = self.new_typevar();
         let binding = VarBinding {
             name,
@@ -553,7 +575,8 @@ impl Tck {
         if let Some(t) = ty {
             self.add_constraint(tv, Constraint::TypeSym(t));
         }
-        self.symtbl.add_binding(name, binding);
+        self.symtbl.add_binding(uniquevar, binding);
+        uniquevar
     }
 
     pub fn add_constraint(&mut self, tv: TypeVar, constraint: Constraint) {
@@ -569,18 +592,19 @@ fn predeclare_decl(tck: &mut Tck, decl: &hir::Decl) -> Result<(), TypeError> {
         hir::Decl::Function {
             name, signature, ..
         } => {
-            if tck.symtbl.binding_exists(*name) {
+            // Does var exist in the global scope?
+            if tck.scope.var_is_bound(*name) {
                 return Err(TypeError::AlreadyDefined(*name));
             }
             // Add function to global scope
             let function_type = signature.to_type();
-            tck.add_var(*name, Some(function_type), false);
+            tck.create_var(*name, Some(function_type), false);
         }
         hir::Decl::Const { name, typename, .. } => {
-            if tck.symtbl.binding_exists(*name) {
+            if tck.scope.var_is_bound(*name) {
                 return Err(TypeError::AlreadyDefined(*name));
             }
-            tck.add_var(*name, Some(*typename), false);
+            tck.create_var(*name, Some(*typename), false);
         }
         hir::Decl::TypeDef { name, typedecl } => {
             // Gotta make sure there's no duplicate declarations
@@ -593,18 +617,18 @@ fn predeclare_decl(tck: &mut Tck, decl: &hir::Decl) -> Result<(), TypeError> {
         }
         hir::Decl::Constructor { name, signature } => {
             {
-                if tck.symtbl.get_var(*name).is_ok() {
+                if tck.scope.var_is_bound(*name) {
                     return Err(TypeError::AlreadyDefined(*name));
                 }
                 let function_type = signature.to_type();
-                tck.add_var(*name, Some(function_type), false);
+                tck.create_var(*name, Some(function_type), false);
             }
 
             // Also we need to add a deconstructor function.  This is kinda a placeholder, but,
             // should work for now.
             {
                 let deconstruct_name = INT.intern(format!("{}_unwrap", INT.fetch(*name)));
-                if tck.symtbl.get_var(deconstruct_name).is_ok() {
+                if tck.scope.var_is_bound(deconstruct_name) {
                     return Err(TypeError::AlreadyDefined(*name));
                 }
                 let type_params = vec![signature.rettype];
@@ -614,7 +638,7 @@ fn predeclare_decl(tck: &mut Tck, decl: &hir::Decl) -> Result<(), TypeError> {
                     params: type_params,
                     rettype,
                 });
-                tck.add_var(deconstruct_name, Some(function_type), false);
+                tck.create_var(deconstruct_name, Some(function_type), false);
             }
             todo!("Predeclare constructor");
         }
@@ -632,6 +656,8 @@ fn infer_literal(lit: &hir::Literal) -> Result<TypeSym, TypeError> {
     }
 }
 
+fn try_solve_type(tck: &mut Tck, uniquetype: ty) -> Option<TypeSym> {}
+
 /// The infer part of our vaguely-bidi type checker.
 /// It outputs a constraint -- basically the expression
 /// given must either resolve to a known type, or an unknown
@@ -640,7 +666,7 @@ fn infer_literal(lit: &hir::Literal) -> Result<TypeSym, TypeError> {
 fn infer_expr(
     tck: &mut Tck,
     expr: &hir::TypedExpr,
-    rettype: TypeSym,
+    rettype: TypeVar,
 ) -> Result<Constraint, TypeError> {
     todo!()
 }
@@ -653,12 +679,12 @@ fn infer_expr(
 fn check_expr(
     tck: &mut Tck,
     expr: &hir::TypedExpr,
-    expected: TypeSym,
-    rettype: TypeSym,
+    expected: TypeVar,
+    rettype: TypeVar,
 ) -> Result<(), TypeError> {
-    let tdef = &*INT.fetch_type(expected);
-    match (&expr.e, tdef) {
-        (Expr::Lit { val }, TypeDef::SInt(size)) => {
+    //let tdef = &*INT.fetch_type(expected);
+    match &expr.e {
+        Expr::Lit { val } => {
             let lit_type = infer_literal(val)?;
             match &*INT.fetch_type(lit_type) {
                 TypeDef::UnknownInt => {
@@ -709,11 +735,14 @@ fn check_exprs(
     } else {
         // Body is empty, is the return type Unit?
         if rettype != INT.unit() {
+            /*
             return Err(TypeError::TypeMismatch {
                 expr_name: Cow::from("empty expressions"),
                 got: INT.unit(),
                 expected,
             });
+            */
+            todo!()
         }
     }
     Ok(())
@@ -727,9 +756,13 @@ fn typecheck_decl(tck: &mut Tck, decl: &hir::Decl) -> Result<(), TypeError> {
             body,
         } => {
             let _guard = tck.scope.push();
-            // TODO NEXT: Add function params to symbol table
-            for (var, ty) in &signature.params {}
-            check_exprs(tck, &body, signature.rettype, signature.rettype)
+            // Add function params to symbol table and scope
+            for (var, ty) in &signature.params {
+                let uniquevar = tck.create_var(*var, Some(*ty), false);
+                tck.scope.add_var(*var, uniquevar);
+            }
+            let rettype = tck.new_typevar();
+            check_exprs(tck, &body, rettype, rettype)
         }
         _ => todo!("Typecheck decl type {:?}", decl),
         /*
