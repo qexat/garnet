@@ -445,7 +445,7 @@ pub struct Tck {
     /// What info we know about our typevars.
     /// We may have multiple non-identical constraints for each type var,
     /// so we keep a set of them.
-    constraints: HashMap<TypeVar, HashSet<Constraint>>,
+    constraints: HashMap<TypeVar, Constraint>,
 
     /// Symbol table.  All known vars and types.
     symtbl: Symtbl,
@@ -580,8 +580,18 @@ impl Tck {
     }
 
     fn add_constraint(&mut self, tv: TypeVar, constraint: Constraint) {
-        let entry = self.constraints.entry(tv).or_insert(HashSet::new());
-        entry.insert(constraint);
+        use std::collections::hash_map::Entry;
+        match self.constraints.entry(tv) {
+            Entry::Occupied(o) => {
+                panic!(
+                    "Duplicate type var {:?} with constraints {:?} and {:?}, should never happen?",
+                    tv,
+                    o.get(),
+                    constraint
+                )
+            }
+            Entry::Vacant(v) => v.insert(constraint),
+        };
     }
 }
 
@@ -656,8 +666,49 @@ fn infer_literal(lit: &hir::Literal) -> Result<TypeSym, TypeError> {
     }
 }
 
+/// Called "reconstruct" in zesterer's
+/// "Type inference in less than 100 lines of Rust"
+///
+/// or maybe called "subst" in "Complete & Easy"
 fn try_solve_type(tck: &mut Tck, tv: TypeVar) -> Option<TypeSym> {
     todo!()
+}
+
+/// Try to set v1 equal to v2
+fn try_unify(tck: &mut Tck, v1: TypeVar, v2: TypeVar) -> Result<(), TypeError> {
+    let t1 = *tck.constraints.get(&v1).expect("Shouldn't happen?");
+    let t2 = *tck.constraints.get(&v2).expect("Shouldn't happen?");
+    match (t1, t2) {
+        // Follow any references
+        (Constraint::TypeVar(t1var), _) => try_unify(tck, t1var, v2),
+        (_, Constraint::TypeVar(t2var)) => try_unify(tck, v1, t2var),
+        (Constraint::TypeSym(s1), Constraint::TypeSym(s2)) => {
+            // Resolve type syms and unify from there
+            let tdef1 = &*INT.fetch_type(s1);
+            let tdef2 = &*INT.fetch_type(s2);
+            match (tdef1, tdef2) {
+                // Primitives are easy
+                (TypeDef::Bool, TypeDef::Bool) => Ok(()),
+                (TypeDef::SInt(i1), TypeDef::SInt(i2)) if i1 == i2 => Ok(()),
+                (TypeDef::UnknownInt, TypeDef::UnknownInt) => Ok(()),
+                // If we have a known an unknown int, update the unknown
+                // one to match the known one
+                (TypeDef::UnknownInt, TypeDef::SInt(_i2)) => {
+                    tck.constraints.insert(v1, t2);
+                    Ok(())
+                }
+                (TypeDef::SInt(_i1), TypeDef::UnknownInt) => {
+                    tck.constraints.insert(v2, t1);
+                    Ok(())
+                }
+                (s1, s2) => panic!(
+                    "Type mismatch trying to unify concrete types {:?} and {:?}",
+                    s1, s2
+                ),
+            }
+        }
+        (a, b) => panic!("Type mismatch trying to unify {:?} and {:?}", a, b),
+    }
 }
 
 /// The infer part of our vaguely-bidi type checker.
@@ -670,7 +721,7 @@ fn infer_expr(
     expr: &hir::TypedExpr,
     rettype: TypeVar,
 ) -> Result<Constraint, TypeError> {
-    todo!()
+    todo!("infer_expr")
 }
 
 /// The "check" step of our vaguely-bidi type inference.  This is where
@@ -688,8 +739,11 @@ fn check_expr(
     match &expr.e {
         Expr::Lit { val } => {
             let lit_type = infer_literal(val)?;
+            let lit_typevar = tck.create_exprtype(expr.id);
+            tck.add_constraint(lit_typevar, Constraint::TypeSym(lit_type));
             // Ok so we know that typevar must be the inferred type...
-            tck.add_constraint(expected, Constraint::TypeSym(lit_type));
+            // So do we just unify every time we infer something?
+            try_unify(tck, expected, lit_typevar)?;
             /*
             match &*INT.fetch_type(lit_type) {
                 TypeDef::UnknownInt => {
@@ -783,8 +837,9 @@ fn typecheck_decl(tck: &mut Tck, decl: &hir::Decl) -> Result<(), TypeError> {
             let rettype = tck.new_typevar();
             check_exprs(tck, &body, rettype, rettype)
             // TODO NEXT: Now that we've checked everything in the
-            // function, we need to unify and attempt to solve any
+            // function, we need to reconstruct and attempt to solve any
             // unknowns, and error if there are any unknowns left over.
+            // I think?
         }
         _ => todo!("Typecheck decl type {:?}", decl),
         /*
