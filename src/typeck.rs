@@ -563,7 +563,7 @@ impl Tck {
     ///
     /// We return the UniqueVar ID so we can add it to a Scope as well.
     /// We might just want to handle that here, we will see.
-    pub fn create_var(&mut self, name: VarSym, ty: Option<TypeSym>, mutable: bool) -> UniqueVar {
+    fn create_var(&mut self, name: VarSym, ty: Option<TypeSym>, mutable: bool) -> UniqueVar {
         let uniquevar = self.new_uniquevar();
         let tv = self.new_typevar();
         let binding = VarBinding {
@@ -579,7 +579,7 @@ impl Tck {
         uniquevar
     }
 
-    pub fn add_constraint(&mut self, tv: TypeVar, constraint: Constraint) {
+    fn add_constraint(&mut self, tv: TypeVar, constraint: Constraint) {
         let entry = self.constraints.entry(tv).or_insert(HashSet::new());
         entry.insert(constraint);
     }
@@ -656,7 +656,9 @@ fn infer_literal(lit: &hir::Literal) -> Result<TypeSym, TypeError> {
     }
 }
 
-fn try_solve_type(tck: &mut Tck, uniquetype: ty) -> Option<TypeSym> {}
+fn try_solve_type(tck: &mut Tck, tv: TypeVar) -> Option<TypeSym> {
+    todo!()
+}
 
 /// The infer part of our vaguely-bidi type checker.
 /// It outputs a constraint -- basically the expression
@@ -686,6 +688,9 @@ fn check_expr(
     match &expr.e {
         Expr::Lit { val } => {
             let lit_type = infer_literal(val)?;
+            // Ok so we know that typevar must be the inferred type...
+            tck.add_constraint(expected, Constraint::TypeSym(lit_type));
+            /*
             match &*INT.fetch_type(lit_type) {
                 TypeDef::UnknownInt => {
                     // Ok, the type of this expr is now that int type
@@ -693,16 +698,34 @@ fn check_expr(
                     //tck.set_type(expr.id, t);
                     //Ok(())
                 }
-                TypeDef::SInt(size2) if *size == *size2 => Ok(()),
+                TypeDef::SInt(size2) => {
+                    todo!()
+                }
                 _ => Err(TypeError::TypeMismatch {
                     expr_name: format!("{:?}", &expr.e).into(),
                     got: lit_type,
                     expected: INT.iunknown(),
                 }),
             }
+            */
         }
-        (e, b) => {
-            eprintln!("Checking thing: {:?} {:?}", e, b);
+        Expr::Let {
+            varname,
+            typename,
+            init,
+            mutable,
+        } => {
+            let uniquevar = tck.create_var(*varname, Some(*typename), *mutable);
+            // get the type var for that particular variable
+            let var_type = tck
+                .symtbl
+                .get_var_type(uniquevar)
+                .expect("Should never happen");
+            check_expr(tck, init, var_type, rettype)?;
+            tck.add_constraint(expected, Constraint::TypeSym(INT.unit()));
+        }
+        e => {
+            eprintln!("Checking thing: {:?} ", e);
             let a = infer_expr(tck, expr, rettype)?;
             eprintln!("Type of {:?} is: {:?}", e, a);
             // What is a substitution? It's a ~~miserable pile of secrets~~
@@ -713,6 +736,7 @@ fn check_expr(
             //x
         }
     }
+    Ok(())
 }
 
 /// Check multiple expressions, assuming the last one matches
@@ -724,26 +748,21 @@ fn check_exprs(
     rettype: TypeVar,
 ) -> Result<(), TypeError> {
     let last_expr_idx = exprs.len();
-    // This is the sort of thing that feels like there should
+    // This loop is the sort of thing that feels like there should
     // be some turbo fancy combinator for it and it really isn't
     // worth the trouble.
+    // I guess it'd be easier with recursion but eh
     if last_expr_idx > 0 {
         for expr in &exprs[..(last_expr_idx - 1)] {
-            check_expr(tck, expr, INT.unit(), rettype)?;
+            // We create a type variable for the expr, then
+            // check to collect constraint info on it
+            let tv = tck.create_exprtype(expr.id);
+            check_expr(tck, expr, tv, rettype)?;
         }
         check_expr(tck, &exprs[last_expr_idx - 1], rettype, rettype)?;
     } else {
-        // Body is empty, is the return type Unit?
-        if rettype != INT.unit() {
-            /*
-            return Err(TypeError::TypeMismatch {
-                expr_name: Cow::from("empty expressions"),
-                got: INT.unit(),
-                expected,
-            });
-            */
-            todo!()
-        }
+        // Body is empty, so the return type must be unit
+        tck.add_constraint(rettype, Constraint::TypeSym(INT.unit()));
     }
     Ok(())
 }
@@ -763,6 +782,9 @@ fn typecheck_decl(tck: &mut Tck, decl: &hir::Decl) -> Result<(), TypeError> {
             }
             let rettype = tck.new_typevar();
             check_exprs(tck, &body, rettype, rettype)
+            // TODO NEXT: Now that we've checked everything in the
+            // function, we need to unify and attempt to solve any
+            // unknowns, and error if there are any unknowns left over.
         }
         _ => todo!("Typecheck decl type {:?}", decl),
         /*
