@@ -3,6 +3,7 @@
 
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
+use std::fmt;
 use std::sync::Arc;
 
 pub mod ast;
@@ -25,8 +26,14 @@ use once_cell::sync::Lazy;
 pub static INT: Lazy<Cx> = Lazy::new(Cx::new);
 
 /// The interned name of a type
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct TypeSym(pub usize);
+
+impl fmt::Debug for TypeSym {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "TypeSym({}, {:?})", self.0, INT.fetch_type(*self))
+    }
+}
 
 /*
 /// A synthesized type with a number attached to it.
