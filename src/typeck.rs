@@ -25,6 +25,9 @@ pub enum TypeError {
         got: TypeSym,
         expected: TypeSym,
     },
+    AmbiguousType {
+        expr_name: Cow<'static, str>,
+    },
     /*
     UnknownType(VarSym),
     InvalidReturn,
@@ -110,97 +113,99 @@ impl TypeError {
                 INT.fetch_type(*expected).get_name(),
                 INT.fetch_type(*got).get_name()
             ),
-            /*
-            TypeError::UnknownType(sym) => format!("Unknown type: {}", INT.fetch(*sym)),
-            TypeError::InvalidReturn => {
-                "return expression happened somewhere that isn't in a function!".to_string()
-            }
-            TypeError::Return {
-                fname,
-                got,
-                expected,
-            } => format!(
-                "Function {} returns {} but should return {}",
-                INT.fetch(*fname),
-                INT.fetch_type(*got).get_name(),
-                INT.fetch_type(*expected).get_name(),
-            ),
-            TypeError::BopType {
-                bop,
-                got1,
-                got2,
-                expected,
-            } => format!(
-                "Invalid types for BOp {:?}: expected {}, got {} + {}",
-                bop,
-                INT.fetch_type(*expected).get_name(),
-                INT.fetch_type(*got1).get_name(),
-                INT.fetch_type(*got2).get_name()
-            ),
-            TypeError::UopType { op, got, expected } => format!(
-                "Invalid types for UOp {:?}: expected {}, got {}",
-                op,
-                INT.fetch_type(*expected).get_name(),
-                INT.fetch_type(*got).get_name()
-            ),
-            TypeError::LetType {
-                name,
-                got,
-                expected,
-            } => format!(
-                "initializer for variable {}: expected {} ({:?}), got {} ({:?})",
-                INT.fetch(*name),
-                INT.fetch_type(*expected).get_name(),
-                *expected,
-                INT.fetch_type(*got).get_name(),
-                *got,
-            ),
-            TypeError::IfType { expected, got } => format!(
-                "If block return type is {}, but we thought it should be something like {}",
-                INT.fetch_type(*expected).get_name(),
-                INT.fetch_type(*got).get_name(),
-            ),
-            TypeError::Cond { got } => format!(
-                "If expr condition is {}, not bool",
-                INT.fetch_type(*got).get_name(),
-            ),
-            TypeError::Param { got, expected } => format!(
-                "Function wanted type {} in param but got type {}",
-                INT.fetch_type(*expected).get_name(),
-                INT.fetch_type(*got).get_name()
-            ),
-            TypeError::Call { got } => format!(
-                "Tried to call function but it is not a function, it is a {}",
-                INT.fetch_type(*got).get_name()
-            ),
-            TypeError::TupleRef { got } => format!(
-                "Tried to reference tuple but didn't get a tuple, got {}",
-                INT.fetch_type(*got).get_name()
-            ),
-            TypeError::StructRef { fieldname, got } => format!(
-                "Tried to reference field {} of struct, but struct is {}",
-                INT.fetch(*fieldname),
-                INT.fetch_type(*got).get_name(),
-            ),
-            TypeError::StructField { expected, got } => format!(
-                "Invalid field in struct constructor: expected {:?}, but got {:?}",
-                expected, got
-            ),
-            TypeError::EnumVariant { expected, got } => {
-                let expected_names: Vec<String> = expected
-                    .into_iter()
-                    .map(|nm| (&*INT.fetch(*nm)).clone())
-                    .collect();
-                format!(
-                    "Unknown enum variant '{}', valid ones are {:?}",
-                    INT.fetch(*got),
-                    expected_names,
-                )
-            }
-            TypeError::Mutability { expr_name } => {
-                format!("Mutability mismatch in '{}' expresssion", expr_name)
-            }
-            */
+            TypeError::AmbiguousType { expr_name } => {
+                format!("Ambiguous/unknown type for expression '{}'", expr_name)
+            } /*
+              TypeError::UnknownType(sym) => format!("Unknown type: {}", INT.fetch(*sym)),
+              TypeError::InvalidReturn => {
+                  "return expression happened somewhere that isn't in a function!".to_string()
+              }
+              TypeError::Return {
+                  fname,
+                  got,
+                  expected,
+              } => format!(
+                  "Function {} returns {} but should return {}",
+                  INT.fetch(*fname),
+                  INT.fetch_type(*got).get_name(),
+                  INT.fetch_type(*expected).get_name(),
+              ),
+              TypeError::BopType {
+                  bop,
+                  got1,
+                  got2,
+                  expected,
+              } => format!(
+                  "Invalid types for BOp {:?}: expected {}, got {} + {}",
+                  bop,
+                  INT.fetch_type(*expected).get_name(),
+                  INT.fetch_type(*got1).get_name(),
+                  INT.fetch_type(*got2).get_name()
+              ),
+              TypeError::UopType { op, got, expected } => format!(
+                  "Invalid types for UOp {:?}: expected {}, got {}",
+                  op,
+                  INT.fetch_type(*expected).get_name(),
+                  INT.fetch_type(*got).get_name()
+              ),
+              TypeError::LetType {
+                  name,
+                  got,
+                  expected,
+              } => format!(
+                  "initializer for variable {}: expected {} ({:?}), got {} ({:?})",
+                  INT.fetch(*name),
+                  INT.fetch_type(*expected).get_name(),
+                  *expected,
+                  INT.fetch_type(*got).get_name(),
+                  *got,
+              ),
+              TypeError::IfType { expected, got } => format!(
+                  "If block return type is {}, but we thought it should be something like {}",
+                  INT.fetch_type(*expected).get_name(),
+                  INT.fetch_type(*got).get_name(),
+              ),
+              TypeError::Cond { got } => format!(
+                  "If expr condition is {}, not bool",
+                  INT.fetch_type(*got).get_name(),
+              ),
+              TypeError::Param { got, expected } => format!(
+                  "Function wanted type {} in param but got type {}",
+                  INT.fetch_type(*expected).get_name(),
+                  INT.fetch_type(*got).get_name()
+              ),
+              TypeError::Call { got } => format!(
+                  "Tried to call function but it is not a function, it is a {}",
+                  INT.fetch_type(*got).get_name()
+              ),
+              TypeError::TupleRef { got } => format!(
+                  "Tried to reference tuple but didn't get a tuple, got {}",
+                  INT.fetch_type(*got).get_name()
+              ),
+              TypeError::StructRef { fieldname, got } => format!(
+                  "Tried to reference field {} of struct, but struct is {}",
+                  INT.fetch(*fieldname),
+                  INT.fetch_type(*got).get_name(),
+              ),
+              TypeError::StructField { expected, got } => format!(
+                  "Invalid field in struct constructor: expected {:?}, but got {:?}",
+                  expected, got
+              ),
+              TypeError::EnumVariant { expected, got } => {
+                  let expected_names: Vec<String> = expected
+                      .into_iter()
+                      .map(|nm| (&*INT.fetch(*nm)).clone())
+                      .collect();
+                  format!(
+                      "Unknown enum variant '{}', valid ones are {:?}",
+                      INT.fetch(*got),
+                      expected_names,
+                  )
+              }
+              TypeError::Mutability { expr_name } => {
+                  format!("Mutability mismatch in '{}' expresssion", expr_name)
+              }
+              */
         }
     }
 }
@@ -520,18 +525,24 @@ impl Default for Tck {
 }
 
 impl Tck {
-    /// Gets the concrete type associated with a particular expr ID.
-    /// Assumes that we have already found a solution for it.
+    /// Takes a typevar and follows whatever constraints
+    /// we have on it until it hits a real type.  Returns
+    /// None if it can't do that.
     ///
-    /// Panics if expr id does not exist.
-    pub fn get_solved_type(&self, eid: hir::Eid) -> TypeSym {
-        todo!("actually solve types")
-        /*
-        *self
-            .exprtypes
-            .get(&eid)
-            .expect("Tried to get type for Eid that doesn't exist!")
-            */
+    /// Panics if the typevars form a loop, which should never happen.
+    pub fn follow_typevar(&self, tv: TypeVar) -> Option<TypeSym> {
+        fn helper(tck: &Tck, tv: TypeVar, original_typevar: TypeVar) -> Option<TypeSym> {
+            let constraint = tck.constraints.get(&tv)?;
+            match constraint {
+                Constraint::TypeVar(tv2) => {
+                    assert!(*tv2 != original_typevar);
+                    helper(tck, *tv2, original_typevar)
+                }
+                Constraint::TypeSym(ts) => Some(*ts),
+            }
+        }
+
+        helper(self, tv, tv)
     }
 
     /// Create a new type var and associate it with the given expression ID
@@ -554,6 +565,12 @@ impl Tck {
         let uv = UniqueVar(self.next_typevar);
         self.next_uniquevar += 1;
         uv
+    }
+
+    /// Try getting the typevar for the given expression.
+    /// Returns None if it does not have one.
+    pub fn get_typevar_for_expression(&self, expr: &hir::TypedExpr) -> Option<TypeVar> {
+        self.exprtypes.get(&expr.id).cloned()
     }
 
     /// If the var's type is unknown, then we create a type var for it.
@@ -580,6 +597,7 @@ impl Tck {
     }
 
     fn add_constraint(&mut self, tv: TypeVar, constraint: Constraint) {
+        println!("Adding constraint {:?} to typevar {:?}", constraint, tv);
         use std::collections::hash_map::Entry;
         match self.constraints.entry(tv) {
             Entry::Occupied(o) => {
@@ -670,8 +688,18 @@ fn infer_literal(lit: &hir::Literal) -> Result<TypeSym, TypeError> {
 /// "Type inference in less than 100 lines of Rust"
 ///
 /// or maybe called "subst" in "Complete & Easy"
+///
+/// ...we're gonna have to have a TypeDef that has
+/// typevars rather than varsym's in it, aren't we.
 fn try_solve_type(tck: &mut Tck, tv: TypeVar) -> Option<TypeSym> {
-    todo!()
+    let tsym = tck.follow_typevar(tv)?;
+    let tdef = &*INT.fetch_type(tsym);
+    match tdef {
+        TypeDef::UnknownInt => Some(tsym),
+        TypeDef::SInt(_) => Some(tsym),
+        TypeDef::Tuple(items) if items.len() == 0 => Some(tsym),
+        other => todo!("Solve {:?}", other),
+    }
 }
 
 /// Try to set v1 equal to v2
@@ -813,7 +841,12 @@ fn check_exprs(
             let tv = tck.create_exprtype(expr.id);
             check_expr(tck, expr, tv, rettype)?;
         }
-        check_expr(tck, &exprs[last_expr_idx - 1], rettype, rettype)?;
+        // Set the type of the last expression to be the expected type
+        let last_expr = &exprs[last_expr_idx - 1];
+        let tv = tck.create_exprtype(last_expr.id);
+        check_expr(tck, last_expr, tv, rettype)?;
+        tck.add_constraint(expected, Constraint::TypeVar(tv));
+        //try_unify(tck, tv, rettype)?;
     } else {
         // Body is empty, so the return type must be unit
         tck.add_constraint(rettype, Constraint::TypeSym(INT.unit()));
@@ -835,11 +868,21 @@ fn typecheck_decl(tck: &mut Tck, decl: &hir::Decl) -> Result<(), TypeError> {
                 tck.scope.add_var(*var, uniquevar);
             }
             let rettype = tck.new_typevar();
-            check_exprs(tck, &body, rettype, rettype)
-            // TODO NEXT: Now that we've checked everything in the
+            check_exprs(tck, &body, rettype, rettype)?;
+            // Now that we've checked everything in the
             // function, we need to reconstruct and attempt to solve any
             // unknowns, and error if there are any unknowns left over.
-            // I think?
+            for expr in body {
+                let tv = tck
+                    .get_typevar_for_expression(expr)
+                    .expect(&format!("No typevar for expression {:?}, aieeee", expr));
+                if try_solve_type(tck, tv).is_none() {
+                    return Err(TypeError::AmbiguousType {
+                        expr_name: format!("{:?}", expr).into(),
+                    });
+                }
+            }
+            Ok(())
         }
         _ => todo!("Typecheck decl type {:?}", decl),
         /*
