@@ -77,6 +77,13 @@ impl From<VarSym> for usize {
     }
 }
 
+impl VarSym {
+    /// Same as TypeSym::val()
+    fn val(&self) -> Arc<String> {
+        INT.fetch(*self)
+    }
+}
+
 /// A path of modules/structs/whatever
 /// `foo.bar.bop`
 pub struct Path {
