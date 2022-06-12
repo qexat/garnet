@@ -35,12 +35,6 @@ impl fmt::Debug for TypeSym {
     }
 }
 
-/*
-/// A synthesized type with a number attached to it.
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct TypeId(pub usize);
-*/
-
 /// Required for interner interface.
 impl From<usize> for TypeSym {
     fn from(i: usize) -> TypeSym {
@@ -52,6 +46,16 @@ impl From<usize> for TypeSym {
 impl From<TypeSym> for usize {
     fn from(i: TypeSym) -> usize {
         i.0
+    }
+}
+
+impl TypeSym {
+    /// Get the value represented by the interned symbol.
+    ///
+    /// Can't return a reference, annoyingly, as it
+    /// would result in "returning a value to a local"
+    fn val(&self) -> Arc<TypeDef> {
+        INT.fetch_type(*self)
     }
 }
 
@@ -90,7 +94,7 @@ pub type TypeConstraint = VarSym;
 
 /// A complete-ish description of a type.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum TypeDef {
+pub enum TypeDef<T = TypeSym> {
     /// Signed integer with the given number of bytes
     SInt(u8),
     /// An integer of unknown size, from an integer literal
@@ -98,17 +102,17 @@ pub enum TypeDef {
     /// Boolean, obv's
     Bool,
     /// Tuple.  The types inside it may or may not be fully known I guess
-    Tuple(Vec<TypeSym>),
+    Tuple(Vec<T>),
     /// Never is a real type, I guess!
     Never,
     /// The type of a lambda is its signature.
     Lambda {
         generics: Vec<TypeConstraint>,
-        params: Vec<TypeSym>,
-        rettype: TypeSym,
+        params: Vec<T>,
+        rettype: T,
     },
     /// A struct.
-    Struct { fields: BTreeMap<VarSym, TypeSym> },
+    Struct { fields: BTreeMap<VarSym, T> },
     Enum {
         /// TODO: For now the only size of an enum is i32.
         variants: Vec<(VarSym, i32)>,

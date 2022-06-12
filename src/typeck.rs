@@ -546,9 +546,9 @@ impl Tck {
     }
 
     /// Create a new type var and associate it with the given expression ID
-    pub fn create_exprtype(&mut self, eid: hir::Eid) -> TypeVar {
+    pub fn create_exprtype(&mut self, expr: &hir::TypedExpr) -> TypeVar {
         let tv = self.new_typevar();
-        let old = self.exprtypes.insert(eid, tv);
+        let old = self.exprtypes.insert(expr.id, tv);
         if old.is_some() {
             panic!("Tried to bind Eid twice, how unique is it?!");
         }
@@ -693,7 +693,7 @@ fn infer_literal(lit: &hir::Literal) -> Result<TypeSym, TypeError> {
 /// typevars rather than varsym's in it, aren't we.
 fn try_solve_type(tck: &mut Tck, tv: TypeVar) -> Option<TypeSym> {
     let tsym = tck.follow_typevar(tv)?;
-    let tdef = &*INT.fetch_type(tsym);
+    let tdef = &*tsym.val();
     match tdef {
         TypeDef::UnknownInt => Some(tsym),
         TypeDef::SInt(_) => Some(tsym),
@@ -710,10 +710,10 @@ fn try_unify(tck: &mut Tck, v1: TypeVar, v2: TypeVar) -> Result<(), TypeError> {
         // Follow any references
         (Constraint::TypeVar(t1var), _) => try_unify(tck, t1var, v2),
         (_, Constraint::TypeVar(t2var)) => try_unify(tck, v1, t2var),
+        // Un-intern type syms and unify from there
         (Constraint::TypeSym(s1), Constraint::TypeSym(s2)) => {
-            // Resolve type syms and unify from there
-            let tdef1 = &*INT.fetch_type(s1);
-            let tdef2 = &*INT.fetch_type(s2);
+            let tdef1 = &*s1.val();
+            let tdef2 = &*s1.val();
             match (tdef1, tdef2) {
                 // Primitives are easy
                 (TypeDef::Bool, TypeDef::Bool) => Ok(()),
@@ -749,7 +749,60 @@ fn infer_expr(
     expr: &hir::TypedExpr,
     rettype: TypeVar,
 ) -> Result<Constraint, TypeError> {
-    todo!("infer_expr")
+    match &expr.e {
+        Expr::Lit { val } => {
+            let lit_type = infer_literal(val)?;
+            Ok(Constraint::TypeSym(lit_type))
+        }
+        Expr::BinOp { op, lhs, rhs } => {
+            use crate::ast::BOp::*;
+            match op {
+                // Logical operations always take and return bool
+                And | Or | Xor => {
+                    let booltype = INT.bool();
+                    let lhs_typevar = tck.create_exprtype(lhs);
+                    check_expr(tck, lhs, lhs_typevar, rettype)?;
+                    let rhs_typevar = tck.create_exprtype(rhs);
+                    check_expr(tck, rhs, rhs_typevar, rettype)?;
+                    Ok(Constraint::TypeSym(booltype))
+                }
+                // If we have a numerical operation, we find the types
+                // of the arguments and make sure they are matching numeric
+                // types.
+                Add | Sub | Mul | Div | Mod => {
+                    // Input constraints: LHS and RHS must be the same type
+                    let lhs_typevar = tck.create_exprtype(lhs);
+                    let rhs_typevar = tck.create_exprtype(rhs);
+                    tck.add_constraint(lhs_typevar, Constraint::TypeVar(rhs_typevar));
+                    // Input constraint: RHS must be a number (and thus
+                    // LHS must be a number)
+                    tck.add_constraint(rhs_typevar, Constraint::TypeSym(INT.iunknown()));
+                    // Output constraint: This operation returns
+                    // some kind of integer that is the same as the
+                    // input types.
+                    let ret = Ok(Constraint::TypeVar(lhs_typevar));
+
+                    let _lhs_constraint = infer_expr(tck, lhs, rettype)?;
+                    let _rhs_constraint = infer_expr(tck, rhs, rettype)?;
+                    try_unify(tck, lhs_typevar, rhs_typevar)?;
+
+                    ret
+                }
+                other => todo!("binop: {:?}", op),
+            }
+        }
+        Expr::Var { name } => {
+            let uvar = tck
+                .scope
+                .get_var_with_scope(*name)
+                .ok_or(TypeError::UnknownVar(*name))?;
+            let typevar = tck.symtbl.get_binding(uvar)?.typevar;
+            Ok(Constraint::TypeVar(typevar))
+        }
+        e => {
+            todo!("infer_expr: {:?}", e)
+        }
+    }
 }
 
 /// The "check" step of our vaguely-bidi type inference.  This is where
@@ -767,7 +820,7 @@ fn check_expr(
     match &expr.e {
         Expr::Lit { val } => {
             let lit_type = infer_literal(val)?;
-            let lit_typevar = tck.create_exprtype(expr.id);
+            let lit_typevar = tck.create_exprtype(expr);
             tck.add_constraint(lit_typevar, Constraint::TypeSym(lit_type));
             // Ok so we know that typevar must be the inferred type...
             // So do we just unify every time we infer something?
@@ -806,13 +859,63 @@ fn check_expr(
             check_expr(tck, init, var_type, rettype)?;
             tck.add_constraint(expected, Constraint::TypeSym(INT.unit()));
         }
+        Expr::Var { name } => {
+            let uvar = tck
+                .scope
+                .get_var_with_scope(*name)
+                .ok_or(TypeError::UnknownVar(*name))?;
+            let typevar = tck.symtbl.get_binding(uvar)?.typevar;
+            try_unify(tck, typevar, expected)?;
+        }
+        /*
+        Expr::BinOp { op, lhs, rhs } => {
+            use crate::ast::BOp::*;
+            match op {
+                // Logical operations always take and return bool
+                // I guess we don't gotta infer shit 'cause we know
+                // what types always should be?
+                And | Or | Xor => {
+                    let booltype = INT.bool();
+                    let lhs_typevar = tck.create_exprtype(lhs);
+                    check_expr(tck, lhs, lhs_typevar, rettype)?;
+                    let rhs_typevar = tck.create_exprtype(rhs);
+                    check_expr(tck, rhs, rhs_typevar, rettype)?;
+                    Ok(Constraint::TypeSym(booltype))
+                }
+                // If we have a numerical operation, we find the types
+                // of the arguments and make sure they are matching numeric
+                // types.
+                Add | Sub | Mul | Div | Mod => {
+                    // Input constraints: LHS and RHS must be the same type
+                    let lhs_typevar = tck.create_exprtype(lhs);
+                    let rhs_typevar = tck.create_exprtype(rhs);
+                    tck.add_constraint(lhs_typevar, Constraint::TypeVar(rhs_typevar));
+                    // Input constraint: RHS must be a number (and thus
+                    // LHS must be a number)
+                    tck.add_constraint(rhs_typevar, Constraint::TypeSym(INT.iunknown()));
+                    // Output constraint: This operation returns
+                    // some kind of integer that is the same as the
+                    // input types.
+                    let ret = Ok(Constraint::TypeVar(lhs_typevar));
+
+                    let _lhs_constraint = infer_expr(tck, lhs, rettype)?;
+                    let _rhs_constraint = infer_expr(tck, rhs, rettype)?;
+                    try_unify(tck, lhs_typevar, rhs_typevar)?;
+
+                    ret
+                }
+                other => todo!("binop: {:?}", op),
+            }
+        */
         e => {
+            todo!("check_expr for expr {:?}", e)
+            /*
             eprintln!("Checking thing: {:?} ", e);
             let a = infer_expr(tck, expr, rettype)?;
             eprintln!("Type of {:?} is: {:?}", e, a);
+                */
             // What is a substitution? It's a ~~miserable pile of secrets~~
             // map from type variables to types.
-            todo!()
             //let x = self.type_sub(self.ctx.subst(a), self.ctx.subst(t));
             //eprintln!("Type subbed: {:?}, {:?}", x, self.ctx);
             //x
@@ -838,12 +941,12 @@ fn check_exprs(
         for expr in &exprs[..(last_expr_idx - 1)] {
             // We create a type variable for the expr, then
             // check to collect constraint info on it
-            let tv = tck.create_exprtype(expr.id);
+            let tv = tck.create_exprtype(expr);
             check_expr(tck, expr, tv, rettype)?;
         }
         // Set the type of the last expression to be the expected type
         let last_expr = &exprs[last_expr_idx - 1];
-        let tv = tck.create_exprtype(last_expr.id);
+        let tv = tck.create_exprtype(last_expr);
         check_expr(tck, last_expr, tv, rettype)?;
         tck.add_constraint(expected, Constraint::TypeVar(tv));
         //try_unify(tck, tv, rettype)?;
