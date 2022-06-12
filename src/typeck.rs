@@ -10,7 +10,7 @@
 
 use std::borrow::Cow;
 use std::cell::RefCell;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::rc::Rc;
 
 use crate::hir::{self, Expr};
@@ -98,10 +98,10 @@ impl std::fmt::Display for TypeError {
 impl TypeError {
     pub fn format(&self) -> String {
         match self {
-            TypeError::UnknownVar(sym) => format!("Unknown var: {}", INT.fetch(*sym)),
+            TypeError::UnknownVar(sym) => format!("Unknown var: {}", sym.val()),
             TypeError::AlreadyDefined(sym) => format!(
                 "Type, var, const, or function already defined: {}",
-                INT.fetch(*sym)
+                sym.val()
             ),
             TypeError::TypeMismatch {
                 expr_name,
@@ -110,13 +110,13 @@ impl TypeError {
             } => format!(
                 "Type mismatch in '{}' expresssion, expected {} but got {}",
                 expr_name,
-                INT.fetch_type(*expected).get_name(),
-                INT.fetch_type(*got).get_name()
+                expected.val().get_name(),
+                got.val().get_name()
             ),
             TypeError::AmbiguousType { expr_name } => {
                 format!("Ambiguous/unknown type for expression '{}'", expr_name)
             } /*
-              TypeError::UnknownType(sym) => format!("Unknown type: {}", INT.fetch(*sym)),
+              TypeError::UnknownType(sym) => format!("Unknown type: {}", *sym.val()),
               TypeError::InvalidReturn => {
                   "return expression happened somewhere that isn't in a function!".to_string()
               }
@@ -126,9 +126,9 @@ impl TypeError {
                   expected,
               } => format!(
                   "Function {} returns {} but should return {}",
-                  INT.fetch(*fname),
-                  INT.fetch_type(*got).get_name(),
-                  INT.fetch_type(*expected).get_name(),
+                  *fname.val(),
+                  *got.val().get_name(),
+                  *expected.val().get_name(),
               ),
               TypeError::BopType {
                   bop,
@@ -138,15 +138,15 @@ impl TypeError {
               } => format!(
                   "Invalid types for BOp {:?}: expected {}, got {} + {}",
                   bop,
-                  INT.fetch_type(*expected).get_name(),
-                  INT.fetch_type(*got1).get_name(),
-                  INT.fetch_type(*got2).get_name()
+                  *expected.val().get_name(),
+                  *got1.val().get_name(),
+                  *got2.val().get_name()
               ),
               TypeError::UopType { op, got, expected } => format!(
                   "Invalid types for UOp {:?}: expected {}, got {}",
                   op,
-                  INT.fetch_type(*expected).get_name(),
-                  INT.fetch_type(*got).get_name()
+                  *expected.val().get_name(),
+                  *got.val().get_name()
               ),
               TypeError::LetType {
                   name,
@@ -154,38 +154,38 @@ impl TypeError {
                   expected,
               } => format!(
                   "initializer for variable {}: expected {} ({:?}), got {} ({:?})",
-                  INT.fetch(*name),
-                  INT.fetch_type(*expected).get_name(),
+                  *name.val(),
+                  *expected.val().get_name(),
                   *expected,
-                  INT.fetch_type(*got).get_name(),
+                  *got.val().get_name(),
                   *got,
               ),
               TypeError::IfType { expected, got } => format!(
                   "If block return type is {}, but we thought it should be something like {}",
-                  INT.fetch_type(*expected).get_name(),
-                  INT.fetch_type(*got).get_name(),
+                  *expected.val().get_name(),
+                  *got.val().get_name(),
               ),
               TypeError::Cond { got } => format!(
                   "If expr condition is {}, not bool",
-                  INT.fetch_type(*got).get_name(),
+                  *got.val().get_name(),
               ),
               TypeError::Param { got, expected } => format!(
                   "Function wanted type {} in param but got type {}",
-                  INT.fetch_type(*expected).get_name(),
-                  INT.fetch_type(*got).get_name()
+                  *expected.val().get_name(),
+                  *got.val().get_name()
               ),
               TypeError::Call { got } => format!(
                   "Tried to call function but it is not a function, it is a {}",
-                  INT.fetch_type(*got).get_name()
+                  *got.val().get_name()
               ),
               TypeError::TupleRef { got } => format!(
                   "Tried to reference tuple but didn't get a tuple, got {}",
-                  INT.fetch_type(*got).get_name()
+                  *got.val().get_name()
               ),
               TypeError::StructRef { fieldname, got } => format!(
                   "Tried to reference field {} of struct, but struct is {}",
-                  INT.fetch(*fieldname),
-                  INT.fetch_type(*got).get_name(),
+                  *fieldname.val(),
+                  *got.val().get_name(),
               ),
               TypeError::StructField { expected, got } => format!(
                   "Invalid field in struct constructor: expected {:?}, but got {:?}",
@@ -194,11 +194,11 @@ impl TypeError {
               TypeError::EnumVariant { expected, got } => {
                   let expected_names: Vec<String> = expected
                       .into_iter()
-                      .map(|nm| (&*INT.fetch(*nm)).clone())
+                      .map(|nm| (&**nm.val()).clone())
                       .collect();
                   format!(
                       "Unknown enum variant '{}', valid ones are {:?}",
-                      INT.fetch(*got),
+                      *got.val(),
                       expected_names,
                   )
               }
@@ -293,7 +293,7 @@ impl Symtbl {
     /// TODO: This is weird, currently necessary for structs though.
     fn follow_typedef(&mut self, name: VarSym) -> Option<TypeSym> {
         match self.types.get(&name) {
-            Some(tsym) => match &*INT.fetch_type(*tsym) {
+            Some(tsym) => match &**tsym.val() {
                 &TypeDef::Named(vsym) => self.follow_typedef(vsym),
                 _other => Some(*tsym),
             },
@@ -306,9 +306,9 @@ impl Symtbl {
     ///
     /// TODO: This is weird, currently necessary for structs though.
     fn resolve_typedef(&mut self, t: TypeSym) -> Option<std::sync::Arc<TypeDef>> {
-        let tdef = INT.fetch_type(t);
+        let tdef = t.val();
         match &*tdef {
-            TypeDef::Named(vsym) => self.follow_typedef(*vsym).map(|sym| INT.fetch_type(sym)),
+            TypeDef::Named(vsym) => self.follow_typedef(*vsym).map(|sym| sym.val()),
             _other => Some(tdef),
         }
     }
@@ -318,7 +318,7 @@ impl Symtbl {
     /// Returns Ok if the type exists, or a TypeError of the appropriate
     /// kind if it does not.
     fn type_exists(&mut self, tsym: TypeSym) -> Result<(), TypeError> {
-        match &*INT.fetch_type(tsym) {
+        match &*tsym.val() {
             /*
              * TODO
             TypeDef::Named(name) => {
@@ -655,7 +655,7 @@ fn predeclare_decl(tck: &mut Tck, decl: &hir::Decl) -> Result<(), TypeError> {
             // Also we need to add a deconstructor function.  This is kinda a placeholder, but,
             // should work for now.
             {
-                let deconstruct_name = INT.intern(format!("{}_unwrap", INT.fetch(*name)));
+                let deconstruct_name = INT.intern(format!("{}_unwrap", *name.val()));
                 if tck.scope.var_is_bound(deconstruct_name) {
                     return Err(TypeError::AlreadyDefined(*name));
                 }
@@ -816,33 +816,15 @@ fn check_expr(
     expected: TypeVar,
     rettype: TypeVar,
 ) -> Result<(), TypeError> {
-    //let tdef = &*INT.fetch_type(expected);
+    //let tdef = &*expected.val();
     match &expr.e {
         Expr::Lit { val } => {
-            let lit_type = infer_literal(val)?;
             let lit_typevar = tck.create_exprtype(expr);
-            tck.add_constraint(lit_typevar, Constraint::TypeSym(lit_type));
+            let constraint = infer_expr(tck, expr, rettype)?;
+            tck.add_constraint(lit_typevar, constraint);
             // Ok so we know that typevar must be the inferred type...
             // So do we just unify every time we infer something?
             try_unify(tck, expected, lit_typevar)?;
-            /*
-            match &*INT.fetch_type(lit_type) {
-                TypeDef::UnknownInt => {
-                    // Ok, the type of this expr is now that int type
-                    todo!()
-                    //tck.set_type(expr.id, t);
-                    //Ok(())
-                }
-                TypeDef::SInt(size2) => {
-                    todo!()
-                }
-                _ => Err(TypeError::TypeMismatch {
-                    expr_name: format!("{:?}", &expr.e).into(),
-                    got: lit_type,
-                    expected: INT.iunknown(),
-                }),
-            }
-            */
         }
         Expr::Let {
             varname,
@@ -858,6 +840,9 @@ fn check_expr(
                 .expect("Should never happen");
             check_expr(tck, init, var_type, rettype)?;
             tck.add_constraint(expected, Constraint::TypeSym(INT.unit()));
+            // Technically redundant for now but we might need to
+            // unify later when type vars may have generics in them.
+            try_unify(tck, expected, var_type)?;
         }
         Expr::Var { name } => {
             let uvar = tck
@@ -1016,7 +1001,7 @@ fn typecheck_decl(tck: &mut Tck, decl: &hir::Decl) -> Result<(), TypeError> {
             // Also we need to add a deconstructor function.  This is kinda a placeholder, but,
             // should work for now.
             {
-                let deconstruct_name = INT.intern(format!("{}_unwrap", INT.fetch(*name)));
+                let deconstruct_name = INT.intern(format!("{}_unwrap", *name.val()));
                 if tck.symtbl.get_var(deconstruct_name).is_ok() {
                     return Err(TypeError::AlreadyDefined(*name));
                 }
