@@ -550,7 +550,10 @@ impl Tck {
         let tv = self.new_typevar();
         let old = self.exprtypes.insert(expr.id, tv);
         if old.is_some() {
-            panic!("Tried to bind Eid twice, how unique is it?!");
+            panic!(
+                "Tried to bind {:?} twice, how unique is it?!\nExpr is {:?}",
+                expr.id, expr
+            );
         }
         tv
     }
@@ -703,6 +706,59 @@ fn try_solve_type(tck: &mut Tck, tv: TypeVar) -> Option<TypeSym> {
 }
 
 /// Try to set v1 equal to v2
+fn try_unify2(tck: &mut Tck, c1: Constraint, c2: Constraint) -> Result<(), TypeError> {
+    match (c1, c2) {
+        // Follow any references
+        (Constraint::TypeVar(t1var), _) => {
+            let tc1 = *tck.constraints.get(&t1var).expect("Shouldn't happen?");
+            // TODO: Make sure t1var doesn't occur in the constraint
+            try_unify2(tck, tc1, c2)
+        }
+        (_, Constraint::TypeVar(t2var)) => {
+            let tc2 = *tck.constraints.get(&t2var).expect("Shouldn't happen?");
+            // TODO: Make sure t2var doesn't occur in the constraint
+            try_unify2(tck, c1, tc2)
+        }
+        // Un-intern type syms and unify from there
+        (Constraint::TypeSym(s1), Constraint::TypeSym(s2)) => {
+            let tdef1 = &*s1.val();
+            let tdef2 = &*s2.val();
+            use TypeDef::*;
+            match (tdef1, tdef2) {
+                // Primitives are easy
+                (Bool, Bool) => Ok(()),
+                (SInt(i1), SInt(i2)) if i1 == i2 => Ok(()),
+                (UnknownInt, UnknownInt) => Ok(()),
+                // If we have a known an unknown int, update the unknown
+                // one to match the known one
+                (UnknownInt, SInt(_i2)) => {
+                    /*
+                    tck.constraints.insert(v1, t2);
+                    Ok(())
+                    */
+                    todo!()
+                }
+                (SInt(_i1), UnknownInt) => {
+                    /*
+                    tck.constraints.insert(v2, t1);
+                    Ok(())
+                    */
+                    todo!()
+                }
+                // If the types are actually literally equal then there's
+                // not really any way for them to not be identical?
+                (s1, s2) if s1 == s2 => Ok(()),
+
+                (s1, s2) => panic!(
+                    "Type mismatch trying to unify concrete types {:?} and {:?}",
+                    s1, s2
+                ),
+            }
+        }
+    }
+}
+
+/// Try to set v1 equal to v2
 fn try_unify(tck: &mut Tck, v1: TypeVar, v2: TypeVar) -> Result<(), TypeError> {
     let t1 = *tck.constraints.get(&v1).expect("Shouldn't happen?");
     let t2 = *tck.constraints.get(&v2).expect("Shouldn't happen?");
@@ -713,29 +769,33 @@ fn try_unify(tck: &mut Tck, v1: TypeVar, v2: TypeVar) -> Result<(), TypeError> {
         // Un-intern type syms and unify from there
         (Constraint::TypeSym(s1), Constraint::TypeSym(s2)) => {
             let tdef1 = &*s1.val();
-            let tdef2 = &*s1.val();
+            let tdef2 = &*s2.val();
+            use TypeDef::*;
             match (tdef1, tdef2) {
                 // Primitives are easy
-                (TypeDef::Bool, TypeDef::Bool) => Ok(()),
-                (TypeDef::SInt(i1), TypeDef::SInt(i2)) if i1 == i2 => Ok(()),
-                (TypeDef::UnknownInt, TypeDef::UnknownInt) => Ok(()),
+                (Bool, Bool) => Ok(()),
+                (SInt(i1), SInt(i2)) if i1 == i2 => Ok(()),
+                (UnknownInt, UnknownInt) => Ok(()),
                 // If we have a known an unknown int, update the unknown
                 // one to match the known one
-                (TypeDef::UnknownInt, TypeDef::SInt(_i2)) => {
+                (UnknownInt, SInt(_i2)) => {
                     tck.constraints.insert(v1, t2);
                     Ok(())
                 }
-                (TypeDef::SInt(_i1), TypeDef::UnknownInt) => {
+                (SInt(_i1), UnknownInt) => {
                     tck.constraints.insert(v2, t1);
                     Ok(())
                 }
+                // If the types are actually literally equal then there's
+                // not really any way for them to not be identical?
+                (s1, s2) if s1 == s2 => Ok(()),
+
                 (s1, s2) => panic!(
                     "Type mismatch trying to unify concrete types {:?} and {:?}",
                     s1, s2
                 ),
             }
         }
-        (a, b) => panic!("Type mismatch trying to unify {:?} and {:?}", a, b),
     }
 }
 
@@ -747,13 +807,22 @@ fn try_unify(tck: &mut Tck, v1: TypeVar, v2: TypeVar) -> Result<(), TypeError> {
 fn infer_expr(
     tck: &mut Tck,
     expr: &hir::TypedExpr,
-    rettype: TypeVar,
+    _rettype: TypeVar,
 ) -> Result<Constraint, TypeError> {
     match &expr.e {
         Expr::Lit { val } => {
             let lit_type = infer_literal(val)?;
             Ok(Constraint::TypeSym(lit_type))
         }
+        Expr::Var { name } => {
+            let uvar = tck
+                .scope
+                .get_var_with_scope(*name)
+                .ok_or(TypeError::UnknownVar(*name))?;
+            let typevar = tck.symtbl.get_binding(uvar)?.typevar;
+            Ok(Constraint::TypeVar(typevar))
+        }
+        /*
         Expr::BinOp { op, lhs, rhs } => {
             use crate::ast::BOp::*;
             match op {
@@ -791,14 +860,7 @@ fn infer_expr(
                 other => todo!("binop: {:?}", op),
             }
         }
-        Expr::Var { name } => {
-            let uvar = tck
-                .scope
-                .get_var_with_scope(*name)
-                .ok_or(TypeError::UnknownVar(*name))?;
-            let typevar = tck.symtbl.get_binding(uvar)?.typevar;
-            Ok(Constraint::TypeVar(typevar))
-        }
+        */
         e => {
             todo!("infer_expr: {:?}", e)
         }
@@ -810,6 +872,12 @@ fn infer_expr(
 ///
 /// rettype is the function return type, any non-local exits (`return`,
 /// `?`, etc) need to know that type.
+///
+/// The process:
+///  * Create typevar for expr
+///  * Infer types for subexpr's if necessary
+///  * xor check types for subexpr's if we know what they should be
+///  * If we inferred, unify "expected" with the subexpression's typevar
 fn check_expr(
     tck: &mut Tck,
     expr: &hir::TypedExpr,
@@ -818,13 +886,13 @@ fn check_expr(
 ) -> Result<(), TypeError> {
     //let tdef = &*expected.val();
     match &expr.e {
-        Expr::Lit { val } => {
-            let lit_typevar = tck.create_exprtype(expr);
+        Expr::Lit { .. } => {
             let constraint = infer_expr(tck, expr, rettype)?;
-            tck.add_constraint(lit_typevar, constraint);
+            tck.add_constraint(expected, constraint);
             // Ok so we know that typevar must be the inferred type...
             // So do we just unify every time we infer something?
-            try_unify(tck, expected, lit_typevar)?;
+            //try_unify2(tck, expected, lit_typevar)?;
+            todo!()
         }
         Expr::Let {
             varname,
@@ -852,7 +920,6 @@ fn check_expr(
             let typevar = tck.symtbl.get_binding(uvar)?.typevar;
             try_unify(tck, typevar, expected)?;
         }
-        /*
         Expr::BinOp { op, lhs, rhs } => {
             use crate::ast::BOp::*;
             match op {
@@ -861,12 +928,11 @@ fn check_expr(
                 // what types always should be?
                 And | Or | Xor => {
                     let booltype = INT.bool();
-                    let lhs_typevar = tck.create_exprtype(lhs);
-                    check_expr(tck, lhs, lhs_typevar, rettype)?;
-                    let rhs_typevar = tck.create_exprtype(rhs);
-                    check_expr(tck, rhs, rhs_typevar, rettype)?;
-                    Ok(Constraint::TypeSym(booltype))
+                    tck.add_constraint(expected, Constraint::TypeSym(booltype));
+                    check_expr(tck, lhs, expected, rettype)?;
+                    check_expr(tck, rhs, expected, rettype)?;
                 }
+                /*
                 // If we have a numerical operation, we find the types
                 // of the arguments and make sure they are matching numeric
                 // types.
@@ -889,9 +955,10 @@ fn check_expr(
 
                     ret
                 }
-                other => todo!("binop: {:?}", op),
+                */
+                other => todo!("binop: {:?}", other),
             }
-        */
+        }
         e => {
             todo!("check_expr for expr {:?}", e)
             /*
@@ -934,7 +1001,6 @@ fn check_exprs(
         let tv = tck.create_exprtype(last_expr);
         check_expr(tck, last_expr, tv, rettype)?;
         tck.add_constraint(expected, Constraint::TypeVar(tv));
-        //try_unify(tck, tv, rettype)?;
     } else {
         // Body is empty, so the return type must be unit
         tck.add_constraint(rettype, Constraint::TypeSym(INT.unit()));
