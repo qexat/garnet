@@ -923,14 +923,34 @@ fn check_expr(
                     let numconstraint = Constraint::TypeSym(INT.iunknown());
                     check_expr(tck, lhs, numconstraint, rettype)?;
                     let lhs_var = tck.get_typevar_for_expression(lhs).expect("Can't happen?");
-                    println!("GLAR, {:?}", lhs_var);
                     check_expr(tck, rhs, Constraint::TypeVar(lhs_var), rettype)?;
 
                     // Make sure the return type matches the type for the inputs
                     tck.add_constraint(expr_typevar, Constraint::TypeVar(lhs_var));
                     try_unify(tck, expr_typevar, expected_var)?;
                 }
-                other => todo!("binop: {:?}", other),
+                // Comparison takes two values that must be the same type of number,
+                // and returns a bool
+                Gt | Lt | Gte | Lte => {
+                    let numconstraint = Constraint::TypeSym(INT.iunknown());
+                    check_expr(tck, lhs, numconstraint, rettype)?;
+                    let lhs_var = tck.get_typevar_for_expression(lhs).expect("Can't happen?");
+                    check_expr(tck, rhs, Constraint::TypeVar(lhs_var), rettype)?;
+
+                    let boolconstraint = Constraint::TypeSym(INT.bool());
+                    tck.add_constraint(expr_typevar, boolconstraint);
+                    try_unify(tck, expr_typevar, expected_var)?;
+                }
+                // Equality take two values that must be the same type,
+                // and return a bool
+                Eq | Neq => {
+                    let lhs_constraint = infer_expr(tck, lhs, rettype)?;
+                    check_expr(tck, rhs, lhs_constraint, rettype)?;
+
+                    let boolconstraint = Constraint::TypeSym(INT.bool());
+                    tck.add_constraint(expr_typevar, boolconstraint);
+                    try_unify(tck, expr_typevar, expected_var)?;
+                }
             }
         }
         Expr::Funcall { func, params } => {
