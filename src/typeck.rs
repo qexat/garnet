@@ -593,6 +593,7 @@ impl Tck {
         };
         // If we know the real type of the variable, save it
         if let Some(t) = ty {
+            println!("Adding constraint {:?} to typevar {:?}", t, tv);
             self.add_constraint(tv, Constraint::TypeSym(t));
         }
         self.symtbl.add_binding(uniquevar, binding);
@@ -713,8 +714,9 @@ fn try_solve_type(tck: &mut Tck, tv: TypeVar) -> Option<TypeSym> {
 
 /// Try to set v1 equal to v2
 fn try_unify(tck: &mut Tck, v1: TypeVar, v2: TypeVar) -> Result<(), TypeError> {
-    let t1 = *tck.constraints.get(&v1).expect("Shouldn't happen?");
-    let t2 = *tck.constraints.get(&v2).expect("Shouldn't happen?");
+    println!("Unifying {:?} and {:?}", v1, v2);
+    let t1 = *tck.constraints.get(&v1).expect("Shouldn't happen 1?");
+    let t2 = *tck.constraints.get(&v2).expect("Shouldn't happen 2?");
     match (t1, t2) {
         // Follow any references
         (Constraint::TypeVar(t1var), _) => try_unify(tck, t1var, v2),
@@ -842,10 +844,17 @@ fn check_expr(
     // Constraint's, so it can update the variables involved.
     let expected_var = tck.new_typevar();
     tck.add_constraint(expected_var, expected);
+    println!("Checking expression {:?}", expr);
+    println!(
+        "Expr typevar: {:?}, expected type {:?}",
+        expr_typevar, expected
+    );
     match &expr.e {
         Expr::Lit { .. } => {
             let constraint = infer_expr(tck, expr, rettype)?;
+            println!("Inferred {:?} for expr {:?}", constraint, expr_typevar);
             tck.add_constraint(expr_typevar, constraint);
+            println!("Lit typevar is {:?}", expr_typevar);
             try_unify(tck, expected_var, expr_typevar)?;
         }
         Expr::Let {
@@ -879,6 +888,12 @@ fn check_expr(
             // find its type variable and see if it unifies with
             // our expected type
             let typevar = tck.symtbl.get_binding(uvar)?.typevar;
+            println!("Unique var {:?} has typevar {:?}", uvar, typevar);
+            // We gotta remember: We have typevars for variables, and typevars
+            // for expressions, and they are *not the same* because variables
+            // can be declared in function args which are not expressions.
+            // So here we make them depend on each other so we can unify em.
+            tck.add_constraint(expr_typevar, Constraint::TypeVar(typevar));
             try_unify(tck, typevar, expected_var)?;
         }
         Expr::BinOp { op, lhs, rhs } => {
@@ -895,30 +910,26 @@ fn check_expr(
                     tck.add_constraint(expr_typevar, boolconstraint);
                     try_unify(tck, expr_typevar, expected_var)?;
                 }
-                /*
                 // If we have a numerical operation, we find the types
                 // of the arguments and make sure they are matching numeric
                 // types.
                 Add | Sub | Mul | Div | Mod => {
                     // Input constraints: LHS and RHS must be the same type
-                    let lhs_typevar = tck.create_exprtype(lhs);
-                    let rhs_typevar = tck.create_exprtype(rhs);
-                    tck.add_constraint(lhs_typevar, Constraint::TypeVar(rhs_typevar));
-                    // Input constraint: RHS must be a number (and thus
-                    // LHS must be a number)
-                    tck.add_constraint(rhs_typevar, Constraint::TypeSym(INT.iunknown()));
-                    // Output constraint: This operation returns
-                    // some kind of integer that is the same as the
-                    // input types.
-                    let ret = Ok(Constraint::TypeVar(lhs_typevar));
+                    // and must be numbers
+                    //
+                    // Sooo I think we check one side of the expr is
+                    // some kind of integer,
+                    // then check that the other side is compatible with it?
+                    let numconstraint = Constraint::TypeSym(INT.iunknown());
+                    check_expr(tck, lhs, numconstraint, rettype)?;
+                    let lhs_var = tck.get_typevar_for_expression(lhs).expect("Can't happen?");
+                    println!("GLAR, {:?}", lhs_var);
+                    check_expr(tck, rhs, Constraint::TypeVar(lhs_var), rettype)?;
 
-                    let _lhs_constraint = infer_expr(tck, lhs, rettype)?;
-                    let _rhs_constraint = infer_expr(tck, rhs, rettype)?;
-                    try_unify(tck, lhs_typevar, rhs_typevar)?;
-
-                    ret
+                    // Make sure the return type matches the type for the inputs
+                    tck.add_constraint(expr_typevar, Constraint::TypeVar(lhs_var));
+                    try_unify(tck, expr_typevar, expected_var)?;
                 }
-                */
                 other => todo!("binop: {:?}", other),
             }
         }
