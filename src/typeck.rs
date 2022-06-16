@@ -1001,6 +1001,19 @@ fn check_expr(
                 }
             }
         }
+        // Ok so we need to assert that for each
+        // IfCase, the condition returns a bool and the
+        // bodies all return the same type.
+        // The HIR has no falseblock, it just always inserts
+        // `if(true)` at the end
+        Expr::If { cases } => {
+            let boolconstraint = Constraint::TypeSym(INT.bool());
+            tck.add_constraint(expr_typevar, expected);
+            for (cond, body) in cases {
+                check_expr(tck, cond, boolconstraint, rettype)?;
+                check_exprs(tck, body, Constraint::TypeVar(expr_typevar), rettype)?;
+            }
+        }
         e => {
             todo!("check_expr for expr {:?}", e)
             /*
