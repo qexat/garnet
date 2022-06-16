@@ -1013,6 +1013,32 @@ fn check_expr(
                 check_expr(tck, cond, boolconstraint, rettype)?;
                 check_exprs(tck, body, Constraint::TypeVar(expr_typevar), rettype)?;
             }
+            try_unify(tck, expr_typevar, expected_var)?;
+        }
+        Expr::Block { body } => {
+            tck.add_constraint(expr_typevar, expected);
+            check_exprs(tck, body, Constraint::TypeVar(expr_typevar), rettype)?;
+            try_unify(tck, expr_typevar, expected_var)?;
+        }
+        Expr::UniOp { op, rhs } => {
+            use crate::ast::UOp;
+            match op {
+                UOp::Neg => {
+                    let intconstraint = Constraint::TypeSym(INT.iunknown());
+                    check_expr(tck, rhs, intconstraint, rettype)?;
+                    // Return type of this expression is the same as the input type
+                    let rhs_var = tck.get_typevar_for_expression(rhs).expect("Can't happen?");
+                    tck.add_constraint(expr_typevar, Constraint::TypeVar(rhs_var));
+                    try_unify(tck, expr_typevar, expected_var)?;
+                }
+                UOp::Not => {
+                    let boolconstraint = Constraint::TypeSym(INT.bool());
+                    check_expr(tck, rhs, boolconstraint, rettype)?;
+                    tck.add_constraint(expr_typevar, boolconstraint);
+                    try_unify(tck, expr_typevar, expected_var)?;
+                }
+                other => todo!("Uni op: {:?}", other),
+            }
         }
         e => {
             todo!("check_expr for expr {:?}", e)
@@ -1047,7 +1073,15 @@ fn check_exprs(
     if last_expr_idx > 0 {
         for expr in &exprs[..(last_expr_idx - 1)] {
             // We expect exprs in the body of the value to return unit
+            // ...but we want to allow them to be anything...
+            // TODO: Try doing infer_expr() here?  Then if
+            // it still infers to a type variable that isn't bound
+            // to anything it'll expode in the
+            // try_solve_type(tck, tv) step?  Not sure that call
+            // recurses down all exprs tbf.  Hmmmm.
             let cons = Constraint::TypeSym(INT.unit());
+            //let dummy_typevar = tck.new_typevar();
+            //let cons = Constraint::TypeVar(dummy_typevar);
             check_expr(tck, expr, cons, rettype)?;
         }
         // Check that the last expression has the expected
