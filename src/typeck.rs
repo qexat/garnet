@@ -1040,6 +1040,21 @@ fn check_expr(
                 other => todo!("Uni op: {:?}", other),
             }
         }
+        Expr::Loop { body } => {
+            tck.add_constraint(expr_typevar, expected);
+            check_exprs(tck, body, Constraint::TypeVar(expr_typevar), rettype)?;
+            todo!("loop");
+        }
+        Expr::Assign { lhs, rhs } => {
+            todo!("assign")
+        }
+        Expr::Break => {
+            // TODO someday: make loops/breaks return a value?
+            todo!("break")
+        }
+        Expr::Return { retval } => {
+            todo!("return")
+        }
         e => {
             todo!("check_expr for expr {:?}", e)
             /*

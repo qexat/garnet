@@ -1,0 +1,13 @@
+-- Compile:
+--   status: error
+
+--- What if we try to break outside of a loop?
+fn main(): {} =
+    let mut i: I32 = 0;
+    break
+    loop
+        i = i + 1
+        if i > 10 then break end
+    end
+    __println(i)
+end
