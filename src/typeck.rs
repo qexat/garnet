@@ -28,6 +28,9 @@ pub enum TypeError {
     AmbiguousType {
         expr_name: Cow<'static, str>,
     },
+    Mutability {
+        expr_name: Cow<'static, str>,
+    },
     /*
     UnknownType(VarSym),
     InvalidReturn,
@@ -81,9 +84,6 @@ pub enum TypeError {
         expected: Vec<VarSym>,
         got: VarSym,
     },
-    Mutability {
-        expr_name: Cow<'static, str>,
-    },
     */
 }
 
@@ -115,6 +115,9 @@ impl TypeError {
             ),
             TypeError::AmbiguousType { expr_name } => {
                 format!("Ambiguous/unknown type for expression '{}'", expr_name)
+            }
+            TypeError::Mutability { expr_name } => {
+                format!("Mutability mismatch in '{}' expresssion", expr_name)
             } /*
               TypeError::UnknownType(sym) => format!("Unknown type: {}", *sym.val()),
               TypeError::InvalidReturn => {
@@ -201,9 +204,6 @@ impl TypeError {
                       *got.val(),
                       expected_names,
                   )
-              }
-              TypeError::Mutability { expr_name } => {
-                  format!("Mutability mismatch in '{}' expresssion", expr_name)
               }
               */
         }
@@ -616,6 +616,24 @@ impl Tck {
             Entry::Vacant(v) => v.insert(constraint),
         };
     }
+
+    /// So, what is an lvalue?
+    /// Well, it's a variable,
+    /// or it's an lvalue in a deref expr or tupleref
+    fn is_mutable_lvalue(&self, expr: &hir::Expr) -> Result<bool, TypeError> {
+        match expr {
+            hir::Expr::Var { name } => {
+                let uniquevar = self
+                    .scope
+                    .get_var_with_scope(*name)
+                    .ok_or(TypeError::UnknownVar(*name))?;
+                let binding = self.symtbl.get_binding(uniquevar)?;
+                Ok(binding.mutable)
+            }
+            hir::Expr::StructRef { expr, .. } => self.is_mutable_lvalue(&expr.e),
+            _ => Ok(false),
+        }
+    }
 }
 
 /// Scan through all decl's and add any bindings to the symbol table,
@@ -715,8 +733,18 @@ fn try_solve_type(tck: &mut Tck, tv: TypeVar) -> Option<TypeSym> {
 /// Try to set v1 equal to v2
 fn try_unify(tck: &mut Tck, v1: TypeVar, v2: TypeVar) -> Result<(), TypeError> {
     println!("Unifying {:?} and {:?}", v1, v2);
-    let t1 = *tck.constraints.get(&v1).expect("Shouldn't happen 1?");
-    let t2 = *tck.constraints.get(&v2).expect("Shouldn't happen 2?");
+    let t1 = *tck.constraints.get(&v1).unwrap_or_else(|| {
+        panic!(
+            "Type variable 1 {:?} has no constraints, should not happen!",
+            v1
+        )
+    });
+    let t2 = *tck.constraints.get(&v2).unwrap_or_else(|| {
+        panic!(
+            "Type variable 2 {:?} has no constraints, should not happen!",
+            v2
+        )
+    });
     match (t1, t2) {
         // Follow any references
         (Constraint::TypeVar(t1var), _) => try_unify(tck, t1var, v2),
@@ -1046,7 +1074,23 @@ fn check_expr(
             todo!("loop");
         }
         Expr::Assign { lhs, rhs } => {
-            todo!("assign")
+            // Similar to `let`
+            // hm right now our only lvalues are variables, so this is simple
+            // for now but will get more complicated.
+            if !tck.is_mutable_lvalue(&lhs.e)? {
+                return Err(TypeError::Mutability {
+                    expr_name: "assignment".into(),
+                });
+            }
+            let lconstraint = infer_expr(tck, lhs, rettype)?;
+            let lhs_typevar = tck.create_exprtype(lhs);
+            tck.add_constraint(lhs_typevar, lconstraint);
+            check_expr(tck, rhs, lconstraint, rettype)?;
+            let rhs_typevar = tck.get_typevar_for_expression(rhs).expect("Can't happen?");
+            try_unify(tck, lhs_typevar, rhs_typevar)?;
+            // An assignment always returns unit
+            tck.add_constraint(expr_typevar, Constraint::TypeSym(INT.unit()));
+            try_unify(tck, expected_var, expr_typevar)?;
         }
         Expr::Break => {
             // TODO someday: make loops/breaks return a value?
