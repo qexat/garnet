@@ -60,7 +60,7 @@ impl TypeSym {
 }
 
 /// The interned name of a variable/value
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct VarSym(pub usize);
 
 /// Required for interner interface.
@@ -74,6 +74,12 @@ impl From<usize> for VarSym {
 impl From<VarSym> for usize {
     fn from(i: VarSym) -> usize {
         i.0
+    }
+}
+
+impl fmt::Debug for VarSym {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "VarSym({}, {:?})", self.0, INT.fetch(*self))
     }
 }
 

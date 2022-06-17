@@ -739,6 +739,7 @@ fn try_solve_type(tck: &mut Tck, tv: TypeVar) -> Option<TypeSym> {
             params,
             rettype,
         } if generics.len() == 0 => Some(tsym),
+        TypeDef::Never => Some(tsym),
         other => todo!("Solve {:?}", other),
     }
 }
@@ -785,6 +786,11 @@ fn try_unify(tck: &mut Tck, v1: TypeVar, v2: TypeVar) -> Result<(), TypeError> {
                 // If the types are actually literally equal then there's
                 // not really any way for them to not be identical?
                 (s1, s2) if s1 == s2 => Ok(()),
+                // Never types!  They never occur, so they always match
+                // anything.
+                // I think?  Hmmmm...
+                (Never, _) => Ok(()),
+                (_, Never) => Ok(()),
 
                 (s1, s2) => panic!(
                     "Type mismatch trying to unify concrete types {:?} and {:?}",
@@ -856,8 +862,73 @@ fn infer_expr(
                 other => todo!("binop: {:?}", other),
             }
         }
+        Expr::Funcall { .. } => {
+            todo!("infer funcall")
+        }
+        Expr::If { cases } => {
+            let boolconstraint = Constraint::bool();
+            //let body_rettype = Constraint::TypeVar(tck.new_typevar());
+            assert_ne!(cases.len(), 0,  "The length of cases can not be 0 because we always have at least an if case and an else cases added in lowering");
+            let mut last_constraint = Constraint::unit();
+            for (cond, body) in cases {
+                check_expr(tck, cond, boolconstraint, rettype)?;
+                //check_exprs(tck, body, body_rettype, rettype)?;
+                last_constraint = infer_exprs(tck, body, rettype)?;
+            }
+            let expr_typevar = tck.new_typevar();
+            tck.add_constraint(expr_typevar, last_constraint);
+            Ok(Constraint::TypeVar(expr_typevar))
+        }
+        Expr::UniOp { op, rhs } => {
+            use crate::ast::UOp::*;
+            match op {
+                Neg => {
+                    let intconstraint = Constraint::iunknown();
+                    check_expr(tck, rhs, intconstraint, rettype)?;
+                    Ok(intconstraint)
+                }
+                Not => {
+                    let boolconstraint = Constraint::bool();
+                    check_expr(tck, rhs, boolconstraint, rettype)?;
+                    Ok(boolconstraint)
+                }
+                other => todo!("Infer uni op {:?}", other),
+            }
+        }
+        Expr::Let { .. } => {
+            let unitconstraint = Constraint::unit();
+            check_expr(tck, expr, unitconstraint, rettype)?;
+            Ok(unitconstraint)
+        }
         e => {
             todo!("infer_expr: {:?}", e)
+        }
+    }
+}
+
+/// Just like check_exprs(), but starts off with inferring.
+fn infer_exprs(
+    tck: &mut Tck,
+    exprs: &[hir::TypedExpr],
+    rettype: TypeSym,
+) -> Result<Constraint, TypeError> {
+    let last_expr_idx = exprs.len();
+    if last_expr_idx > 0 {
+        for expr in &exprs[..(last_expr_idx - 1)] {
+            let _ignore = infer_expr(tck, expr, rettype)?;
+        }
+        let last_expr = &exprs[last_expr_idx - 1];
+        infer_expr(tck, last_expr, rettype)
+    } else {
+        // Body is empty, so the return type must be unit
+        if rettype == INT.unit() {
+            Ok(Constraint::unit())
+        } else {
+            Err(TypeError::TypeMismatch {
+                expr_name: "empty block".into(),
+                got: rettype,
+                expected: INT.unit(),
+            })
         }
     }
 }
@@ -1004,13 +1075,6 @@ fn check_expr(
             // have generic types or typevars, we *always* know the signature
             // of each of a function.
 
-            // So we can just grab the signature of our func...
-            /*
-            let func_typedef = &*match func_constraint {
-                Constraint::TypeSym(s) => s.val(),
-                Constraint::TypeVar(_) => panic!("unconstrainted function, should never happen!"),
-            };
-            */
             let func_typesym = try_solve_type(tck, func_typevar).unwrap();
             let func_typedef = &*func_typesym.val();
             // And if it's actually a function...
@@ -1121,7 +1185,10 @@ fn check_expr(
             try_unify(tck, expr_typevar, expected_var)?;
         }
         Expr::Return { retval } => {
-            todo!("return")
+            let retconstraint = Constraint::TypeSym(rettype);
+            check_expr(tck, retval, retconstraint, rettype)?;
+            tck.add_constraint(expr_typevar, Constraint::TypeSym(INT.never()));
+            try_unify(tck, expr_typevar, expected_var)?;
         }
         e => {
             todo!("check_expr for expr {:?}", e)
@@ -1157,14 +1224,17 @@ fn check_exprs(
         for expr in &exprs[..(last_expr_idx - 1)] {
             // We expect exprs in the body of the value to return unit
             // ...but we want to allow them to be anything...
-            // TODO: Try doing infer_expr() here?  Then if
-            // it still infers to a type variable that isn't bound
-            // to anything it'll expode in the
-            // try_solve_type(tck, tv) step?  Not sure that call
-            // recurses down all exprs tbf.  Hmmmm.
-            let cons = Constraint::unit();
-            //let dummy_typevar = tck.new_typevar();
-            //let cons = Constraint::TypeVar(dummy_typevar);
+            // So... I guess we check that they are equivalent to the
+            // bottom type?
+            //
+            // TODO: I'm REALLY NOT SURE using the Never type here is
+            // at all correct, but it works for now?
+            // Maybe try inferring the expr's instead.
+            // Another option would be to do basically what Rust does
+            // with ; and wrap contiguous expressions in an `ignore` function,
+            // but that feels kinda weird, especially since we don't
+            // require semicolons.
+            let cons = Constraint::TypeSym(INT.never());
             check_expr(tck, expr, cons, rettype)?;
         }
         // Check that the last expression has the expected
