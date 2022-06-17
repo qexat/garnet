@@ -234,6 +234,19 @@ pub enum Constraint {
     TypeSym(TypeSym),
 }
 
+impl Constraint {
+    // Shortcuts for common known types
+    fn bool() -> Self {
+        Constraint::TypeSym(INT.bool())
+    }
+    fn unit() -> Self {
+        Constraint::TypeSym(INT.unit())
+    }
+    fn iunknown() -> Self {
+        Constraint::TypeSym(INT.iunknown())
+    }
+}
+
 /// A unique var ID used to unambiguously identify variables regardless of scope.
 ///
 /// They need to be unique at least per compilation unit, but since we don't really do compilation
@@ -810,7 +823,7 @@ fn infer_expr(
             match op {
                 // Logical operations always take and return bool
                 And | Or | Xor => {
-                    let boolconstraint = Constraint::TypeSym(INT.bool());
+                    let boolconstraint = Constraint::bool();
                     check_expr(tck, lhs, boolconstraint, rettype)?;
                     check_expr(tck, rhs, boolconstraint, rettype)?;
 
@@ -827,7 +840,7 @@ fn infer_expr(
                     tck.add_constraint(lhs_typevar, Constraint::TypeVar(rhs_typevar));
                     // Input constraint: RHS must be a number (and thus
                     // LHS must be a number)
-                    tck.add_constraint(rhs_typevar, Constraint::TypeSym(INT.iunknown()));
+                    tck.add_constraint(rhs_typevar, Constraint::iunknown());
                     // Output constraint: This operation returns
                     // some kind of integer that is the same as the
                     // input types.
@@ -904,7 +917,7 @@ fn check_expr(
             // The return type of the `let` expression is unit, so
             // set it to that and make sure it unifies with the expected
             // type.
-            tck.add_constraint(expr_typevar, Constraint::TypeSym(INT.unit()));
+            tck.add_constraint(expr_typevar, Constraint::unit());
             try_unify(tck, expected_var, expr_typevar)?;
         }
         Expr::Var { name } => {
@@ -930,7 +943,7 @@ fn check_expr(
                 // Logical operations always take and return bool
                 And | Or | Xor => {
                     // Make sure our subexpr's return bool
-                    let boolconstraint = Constraint::TypeSym(INT.bool());
+                    let boolconstraint = Constraint::bool();
                     check_expr(tck, lhs, boolconstraint, rettype)?;
                     check_expr(tck, rhs, boolconstraint, rettype)?;
                     // Make it so the current expr returns bool and check whether
@@ -948,7 +961,7 @@ fn check_expr(
                     // Sooo I think we check one side of the expr is
                     // some kind of integer,
                     // then check that the other side is compatible with it?
-                    let numconstraint = Constraint::TypeSym(INT.iunknown());
+                    let numconstraint = Constraint::iunknown();
                     check_expr(tck, lhs, numconstraint, rettype)?;
                     let lhs_var = tck.get_typevar_for_expression(lhs).expect("Can't happen?");
                     check_expr(tck, rhs, Constraint::TypeVar(lhs_var), rettype)?;
@@ -960,12 +973,12 @@ fn check_expr(
                 // Comparison takes two values that must be the same type of number,
                 // and returns a bool
                 Gt | Lt | Gte | Lte => {
-                    let numconstraint = Constraint::TypeSym(INT.iunknown());
+                    let numconstraint = Constraint::iunknown();
                     check_expr(tck, lhs, numconstraint, rettype)?;
                     let lhs_var = tck.get_typevar_for_expression(lhs).expect("Can't happen?");
                     check_expr(tck, rhs, Constraint::TypeVar(lhs_var), rettype)?;
 
-                    let boolconstraint = Constraint::TypeSym(INT.bool());
+                    let boolconstraint = Constraint::bool();
                     tck.add_constraint(expr_typevar, boolconstraint);
                     try_unify(tck, expr_typevar, expected_var)?;
                 }
@@ -975,7 +988,7 @@ fn check_expr(
                     let lhs_constraint = infer_expr(tck, lhs, rettype)?;
                     check_expr(tck, rhs, lhs_constraint, rettype)?;
 
-                    let boolconstraint = Constraint::TypeSym(INT.bool());
+                    let boolconstraint = Constraint::bool();
                     tck.add_constraint(expr_typevar, boolconstraint);
                     try_unify(tck, expr_typevar, expected_var)?;
                 }
@@ -1035,7 +1048,7 @@ fn check_expr(
         // The HIR has no falseblock, it just always inserts
         // `if(true)` at the end
         Expr::If { cases } => {
-            let boolconstraint = Constraint::TypeSym(INT.bool());
+            let boolconstraint = Constraint::bool();
             tck.add_constraint(expr_typevar, expected);
             for (cond, body) in cases {
                 check_expr(tck, cond, boolconstraint, rettype)?;
@@ -1052,7 +1065,7 @@ fn check_expr(
             use crate::ast::UOp;
             match op {
                 UOp::Neg => {
-                    let intconstraint = Constraint::TypeSym(INT.iunknown());
+                    let intconstraint = Constraint::iunknown();
                     check_expr(tck, rhs, intconstraint, rettype)?;
                     // Return type of this expression is the same as the input type
                     let rhs_var = tck.get_typevar_for_expression(rhs).expect("Can't happen?");
@@ -1060,7 +1073,7 @@ fn check_expr(
                     try_unify(tck, expr_typevar, expected_var)?;
                 }
                 UOp::Not => {
-                    let boolconstraint = Constraint::TypeSym(INT.bool());
+                    let boolconstraint = Constraint::bool();
                     check_expr(tck, rhs, boolconstraint, rettype)?;
                     tck.add_constraint(expr_typevar, boolconstraint);
                     try_unify(tck, expr_typevar, expected_var)?;
@@ -1069,9 +1082,12 @@ fn check_expr(
             }
         }
         Expr::Loop { body } => {
-            tck.add_constraint(expr_typevar, expected);
-            check_exprs(tck, body, Constraint::TypeVar(expr_typevar), rettype)?;
-            todo!("loop");
+            let unitconstraint = Constraint::unit();
+            check_exprs(tck, body, unitconstraint, rettype)?;
+
+            // Loops return unit (for now)
+            tck.add_constraint(expr_typevar, unitconstraint);
+            try_unify(tck, expr_typevar, expected_var)?;
         }
         Expr::Assign { lhs, rhs } => {
             // Similar to `let`
@@ -1089,12 +1105,20 @@ fn check_expr(
             let rhs_typevar = tck.get_typevar_for_expression(rhs).expect("Can't happen?");
             try_unify(tck, lhs_typevar, rhs_typevar)?;
             // An assignment always returns unit
-            tck.add_constraint(expr_typevar, Constraint::TypeSym(INT.unit()));
+            tck.add_constraint(expr_typevar, Constraint::unit());
             try_unify(tck, expected_var, expr_typevar)?;
         }
         Expr::Break => {
-            // TODO someday: make loops/breaks return a value?
-            todo!("break")
+            // Break's just return unit (for now)
+            let unitconstraint = Constraint::unit();
+            tck.add_constraint(expr_typevar, unitconstraint);
+            try_unify(tck, expr_typevar, expected_var)?;
+        }
+        Expr::StructCtor { body } if body.len() == 0 => {
+            // This is just a unit literal
+            let unitconstraint = Constraint::unit();
+            tck.add_constraint(expr_typevar, unitconstraint);
+            try_unify(tck, expr_typevar, expected_var)?;
         }
         Expr::Return { retval } => {
             todo!("return")
@@ -1138,7 +1162,7 @@ fn check_exprs(
             // to anything it'll expode in the
             // try_solve_type(tck, tv) step?  Not sure that call
             // recurses down all exprs tbf.  Hmmmm.
-            let cons = Constraint::TypeSym(INT.unit());
+            let cons = Constraint::unit();
             //let dummy_typevar = tck.new_typevar();
             //let cons = Constraint::TypeVar(dummy_typevar);
             check_expr(tck, expr, cons, rettype)?;
@@ -1244,7 +1268,7 @@ fn typecheck_decl(tck: &mut Tck, decl: &hir::Decl) -> Result<(), TypeError> {
     }
 }
 
-pub fn typecheck(ir: hir::Ir) -> Result<Tck, TypeError> {
+pub fn typecheck(ir: &hir::Ir) -> Result<Tck, TypeError> {
     let mut tck = Tck::default();
     for decl in &ir.decls {
         predeclare_decl(&mut tck, decl)?;
