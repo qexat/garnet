@@ -289,16 +289,6 @@ impl Symtbl {
     }
 
     /*
-    fn add_type_var(&mut self, name: VarSym, id: TypeId) {
-        self.type_vars.insert(name, id);
-    }
-
-    fn get_type_var(&mut self, name: VarSym) -> Option<TypeId> {
-        self.type_vars.get(&name).cloned()
-    }
-    */
-
-    /*
     /// Looks up a typedef and if it is `Named` try to keep looking
     /// it up until we find the actual concrete type.  Returns None
     /// if it can't.
@@ -313,7 +303,9 @@ impl Symtbl {
             None => None,
         }
     }
+    */
 
+    /*
     /// Take a typesym and look it up to a concrete type definition of some kind.
     /// Recursively follows named types, which might or might not be a good idea...
     ///
@@ -321,7 +313,7 @@ impl Symtbl {
     fn resolve_typedef(&mut self, t: TypeSym) -> Option<std::sync::Arc<TypeDef>> {
         let tdef = t.val();
         match &*tdef {
-            TypeDef::Named(vsym) => self.follow_typedef(*vsym).map(|sym| sym.val()),
+            TypeDef::NamedType(vsym) => self.resolve_typedef(*vsym).map(|sym| sym.val()),
             _other => Some(tdef),
         }
     }
@@ -348,10 +340,12 @@ impl Symtbl {
     }
     */
 
-    /// Add a variable to the top level of the scope.
-    /// Shadows the old var if it already exists in that scope.
+    /// Add a variable to the symbol table.  Panics on duplicates,
+    /// since UniqueVar's are supposed to be, you know, unique.
     fn add_binding(&mut self, name: UniqueVar, binding: VarBinding) {
-        self.vars.insert(name, binding);
+        if self.vars.insert(name, binding).is_some() {
+            panic!("Unique var is not unique enough: {:?}", name)
+        }
     }
 
     /// Get the type of the given variable, or an error.
@@ -369,7 +363,7 @@ impl Symtbl {
         panic!("Unique var is unbound: {:?}", name);
     }
 
-    fn binding_exists(&self, name: UniqueVar) -> bool {
+    fn _binding_exists(&self, name: UniqueVar) -> bool {
         self.get_binding(name).is_ok()
     }
 }
@@ -395,6 +389,12 @@ impl Symtbl {
 #[derive(Clone, Debug)]
 struct Scope {
     vars: Rc<RefCell<Vec<HashMap<VarSym, UniqueVar>>>>,
+    /// We don't need a stack for generic types, they only
+    /// occur at top-level constructs.  (Nested functions get
+    /// lambda-lifted before now, remember.)
+    /// They're kept here rather than in the Symtbl though,
+    /// because they're context-dependent.
+    generic_types: HashMap<VarSym, TypeVar>,
 }
 
 impl Default for Scope {
@@ -402,6 +402,7 @@ impl Default for Scope {
     fn default() -> Scope {
         Scope {
             vars: Rc::new(RefCell::new(vec![HashMap::new()])),
+            generic_types: HashMap::new(),
         }
     }
 }
@@ -449,6 +450,18 @@ impl Scope {
 
     fn var_is_bound(&self, var: VarSym) -> bool {
         self.get_var_with_scope(var).is_some()
+    }
+
+    fn add_generic(&mut self, name: VarSym, tvar: TypeVar) {
+        self.generic_types.insert(name, tvar);
+    }
+
+    fn get_generic(&mut self, name: VarSym) -> Option<TypeVar> {
+        self.generic_types.get(&name).cloned()
+    }
+
+    fn clear_generics(&mut self) {
+        self.generic_types.clear();
     }
 }
 
@@ -736,10 +749,11 @@ fn try_solve_type(tck: &mut Tck, tv: TypeVar) -> Option<TypeSym> {
         TypeDef::Tuple(items) if items.len() == 0 => Some(tsym),
         TypeDef::Lambda {
             generics,
-            params,
-            rettype,
+            params: _,
+            rettype: _,
         } if generics.len() == 0 => Some(tsym),
         TypeDef::Never => Some(tsym),
+        TypeDef::NamedType(..) => Some(tsym),
         other => todo!("Solve {:?}", other),
     }
 }
@@ -1268,6 +1282,12 @@ fn typecheck_decl(tck: &mut Tck, decl: &hir::Decl) -> Result<(), TypeError> {
             for (var, ty) in &signature.params {
                 let uniquevar = tck.create_var(*var, Some(*ty), false);
                 tck.scope.add_var(*var, uniquevar);
+            }
+            // Add generic params to scope
+            tck.scope.clear_generics();
+            for name in &signature.generics {
+                let tv = tck.new_typevar();
+                tck.scope.add_generic(*name, tv);
             }
             check_exprs(
                 tck,
