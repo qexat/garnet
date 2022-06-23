@@ -337,6 +337,10 @@ let x: Foo[I32] = struct {
 }
 ```
 
+NOTE: Erlang uses `#struct_name { ... }` for struct constructors, aka
+"records". I quite like it.  Maybe we can steal it.  Then `#{ .. }` can
+be for anonymous structs.
+
 ## Enum types
 
 C-like enums
