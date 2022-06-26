@@ -28,6 +28,7 @@ codespan-reporting = "0.11"
 im = "15"
 logos = "0.12"
 once_cell = "1"
+qbe = "2"
 
 [dev-dependencies]
 # Use wasmtime to evaluate results of end-to-end tests.
