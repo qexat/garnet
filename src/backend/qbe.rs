@@ -57,29 +57,28 @@ function $__println_bool(w %i) {
 "#
 }
 
-/// Compiles a `TypeDef` into a declaration statement.
-fn compile_typedef(td: &TypeDef) -> Cow<'static, str> {
-    compile_typename(td)
-}
-
-/// Similar to `compile_typedef` but only gets names, not full definitions.
-///
-/// Needed for when we do `let x: Foo = ...` rather than `struct Foo { ... }`
-fn compile_typename(td: &TypeDef) -> Cow<'static, str> {
+fn compile_typedef(td: &TypeDef) -> q::Type {
     use crate::TypeDef::*;
     match td {
-        SInt(16) => "i128".into(),
-        SInt(8) => "i64".into(),
-        SInt(4) => "i32".into(),
-        SInt(2) => "i16".into(),
-        SInt(1) => "i8".into(),
+        SInt(16) => panic!("Who needs i128 anyway, amirite?"),
+        SInt(8) => q::Type::Long,
+        SInt(4) => q::Type::Word,
+        // Halfword and Byte types can't be in function args.
+        // For now we just compile everything to words.
+        // Which will probably not quite work right when we
+        // get to compiling structs, but hey.
+        SInt(2) => q::Type::Word,
+        SInt(1) => q::Type::Word,
         SInt(e) => {
             unreachable!("Invalid integer size: {}", e)
         }
         UnknownInt => unreachable!("Backend got an integer of unknown size, should never happen!"),
-        Bool => "bool".into(),
+        Bool => q::Type::Word,
         Never => panic!("Stable rust can't quite do this yet..."),
         Tuple(types) => {
+            q::Type::Aggregate("TODO".into())
+            //todo!("Tuple")
+            /*
             let mut accm = String::from("(");
             for typ in types {
                 accm += &compile_typename(&*INT.fetch_type(*typ));
@@ -87,12 +86,15 @@ fn compile_typename(td: &TypeDef) -> Cow<'static, str> {
             }
             accm += ")";
             accm.into()
+                */
         }
         Lambda {
             generics,
             params,
             rettype,
         } => {
+            todo!("Lambda")
+            /*
             let mut accm = String::from("fn ");
             // TODO: ...make sure this actually works.
             if generics.len() > 0 {
@@ -111,9 +113,11 @@ fn compile_typename(td: &TypeDef) -> Cow<'static, str> {
             accm += ") -> ";
             accm += &compile_typename(&*INT.fetch_type(*rettype));
             accm.into()
+                */
         }
         //Named(sym) => (&*INT.fetch(*sym)).clone().into(),
         Struct { fields } => {
+            todo!("Struct")
             // We compile our structs into Rust tuples.
             // Our fields are always ordered via BTreeMap etc,
             // so it's okay
@@ -122,31 +126,41 @@ fn compile_typename(td: &TypeDef) -> Cow<'static, str> {
                 todo!("Figure out type thingies");
             }
             */
+            /*
             let mut accm = String::from("(");
             for (nm, typ) in fields.iter() {
                 accm += &format!(
-                    "/* {} */ {}, \n",
+                    "/* {} */
+            {}, \n",
                     INT.fetch(*nm),
                     compile_typename(&*INT.fetch_type(*typ))
                 );
             }
             accm += ")";
             accm.into()
+                */
         }
         Enum { variants: _ } => {
-            todo!("Enums probably should be lowered to numbers?")
+            todo!("Enum")
         }
         NamedType(_vsym) => todo!("Output typevar"),
     }
 }
 
+/// Handy shortcut
+fn compile_typesym(ts: TypeSym) -> q::Type {
+    compile_typedef(&*INT.fetch_type(ts))
+}
+
 pub(super) fn output(lir: &hir::Ir, tck: &Tck) -> Vec<u8> {
-    let mut output = Vec::new();
+    let mut output = vec![];
     output.extend(prelude().as_bytes());
     let mut module = q::Module::new();
     for decl in lir.decls.iter() {
         compile_decl(&mut module, decl, tck);
     }
+    let qbe_text = format!("{}", module);
+    output.extend(qbe_text.as_bytes());
     output
 }
 
@@ -156,6 +170,12 @@ pub(super) fn output(lir: &hir::Ir, tck: &Tck) -> Vec<u8> {
 /// Probably, really.
 fn mangle_name(s: &str) -> String {
     s.replace("@", "__")
+}
+
+/// Gensym a unique name appropriate for a temporary or such
+fn tmp_name(s: &str) -> String {
+    let name = &*INT.gensym("lit").val();
+    mangle_name(name)
 }
 
 fn compile_decl(module: &mut q::Module, decl: &hir::Decl, tck: &Tck) {
@@ -168,10 +188,11 @@ fn compile_decl(module: &mut q::Module, decl: &hir::Decl, tck: &Tck) {
             let linkage = q::Linkage::public();
             let nstr = mangle_name(&*INT.fetch(*name));
             let (args, rettype) = compile_fn_signature(signature);
-            let f = q::Function::new(linkage, nstr, args, rettype);
+            let mut f = q::Function::new(linkage, nstr, args, rettype);
+
+            compile_exprs(&mut f, body, tck);
 
             module.add_function(f);
-            todo!("Compile body");
         }
         /*
         hir::Decl::Const {
@@ -230,27 +251,182 @@ fn compile_decl(module: &mut q::Module, decl: &hir::Decl, tck: &Tck) {
     }
 }
 
+/// Returns (args, rettype)
 fn compile_fn_signature(sig: &ast::Signature) -> (Vec<(q::Type, q::Value)>, Option<q::Type>) {
-    /*
     if sig.generics.len() > 0 {
-        todo!("Output generics to rust, or lower them");
+        todo!("Instantiate generics");
     }
-    let mut accm = String::from("(");
+    let mut args = vec![];
     for (varsym, typesym) in sig.params.iter() {
-        accm += &*INT.fetch(*varsym);
-        accm += ": ";
-        accm += &compile_typename(&*INT.fetch_type(*typesym));
-        accm += ", ";
+        let typedef = &*INT.fetch_type(*typesym);
+        let name = &*INT.fetch(*varsym);
+        let t = compile_typedef(typedef);
+        let n = q::Value::Temporary(name.into());
+        args.push((t, n));
     }
-    accm += ") -> ";
-    accm += &compile_typename(&*INT.fetch_type(sig.rettype));
-    accm
-    */
-    todo!()
+    let rettype = if sig.rettype == INT.unit() {
+        None
+    } else {
+        Some(compile_typedef(&*INT.fetch_type(sig.rettype)))
+    };
+    (args, rettype)
 }
 
 fn compile_exprs(function: &mut q::Function, exprs: &[hir::TypedExpr], tck: &Tck) {
-    todo!()
+    /*
+    let mut current_block = q::Block {
+        label: "start".into(),
+        statements: vec![],
+    };
+    */
+    function.add_block("start".into());
+    for expr in exprs {
+        use hir::Expr as E;
+        // Get the checked type for the expression
+        let typevar = tck.get_typevar_for_expression(expr).unwrap();
+        let typesym = crate::typeck::try_solve_type(tck, typevar).unwrap();
+        let ty = compile_typesym(typesym);
+        // Compile the expression
+        match &expr.e {
+            E::Lit {
+                val: ast::Literal::Integer(i),
+            } => {
+                let name = tmp_name("lit");
+                let val = q::Value::Temporary(name);
+                let instr = q::Instr::Copy(q::Value::Const(*i as u64));
+
+                let stm = q::Statement::Assign(val, ty, instr);
+                let current_block = function.blocks.last_mut().unwrap();
+                current_block.statements.push(stm);
+            }
+            E::Let { varname, init, .. } => {
+                // TODO:
+                // OK so we need to be able to compile some
+                // expressions and know what the name of the
+                // last value is
+                let init_exprs = vec![(**init).clone()];
+                let _ = compile_exprs(function, &init_exprs, tck);
+
+                let name = tmp_name(&format!("var_{}", &*varname.val()));
+                let val = q::Value::Temporary(name);
+                let instr = q::Instr::Copy(q::Value::Temporary("foo".into()));
+
+                let stm = q::Statement::Assign(val, ty, instr);
+                let current_block = function.blocks.last_mut().unwrap();
+                current_block.statements.push(stm);
+            }
+            other => todo!("Compile {:?}", other), /*
+                                                                 E::EnumLit { val: _val, ty: _ty } => todo!(),
+                                                                 E::Lit {
+                                                                     val: ast::Literal::Bool(b),
+                                                                 } => format!("{}", b),
+                                                                 E::Lit {
+                                                                     val: ast::Literal::SizedInteger { vl, bytes },
+                                                                 } => {
+                                                                     let bits = bytes * 8;
+                                                                     format!("{}i{}", vl, bits)
+                                                                 }
+                                                                 E::Var { name, .. } => mangle_name(&*INT.fetch(*name)),
+                                                                 E::BinOp { op, lhs, rhs } => format!(
+                                                                     "({} {} {})",
+                                                                     compile_expr(lhs, tck),
+                                                                     compile_bop(*op),
+                                                                     compile_expr(rhs, tck)
+                                                                 ),
+                                                                 E::UniOp { op, rhs } => {
+                                                                     format!("({}{})", compile_uop(*op), compile_expr(rhs, tck))
+                                                                 }
+                                                                 E::Block { body } => format!("{{\n{}\n}}", compile_exprs(body, ";\n", tck)),
+                                                                 E::Let {
+                                                                     varname,
+                                                                     typename,
+                                                                     init,
+                                                                     mutable,
+                                                                 } => {
+                                                                     let vstr = mangle_name(&*INT.fetch(*varname));
+                                                                     let tstr = compile_typename(&*INT.fetch_type(*typename));
+                                                                     let istr = compile_expr(init, tck);
+                                                                     if *mutable {
+                                                                         format!("let mut {}: {} = {};", vstr, tstr, istr)
+                                                                     } else {
+                                                                         format!("let {}: {} = {};", vstr, tstr, istr)
+                                                                     }
+                                                                 }
+                                                                 E::If { cases } => {
+                                                                     let mut accm = String::new();
+                                                                     let falseblock = cases.last().unwrap().1.clone();
+                                                                     let n = cases.len();
+                                                                     for (i, (cond, body)) in cases[..(n - 1)].iter().enumerate() {
+                                                                         if i == 0 {
+                                                                             accm += "if ";
+                                                                         } else {
+                                                                             accm += " else if "
+                                                                         }
+                                                                         accm += &compile_expr(cond, tck);
+                                                                         accm += " {\n";
+                                                                         accm += &compile_exprs(&body, ";\n", tck);
+                                                                         accm += "} \n";
+                                                                     }
+                                                                     accm += "else {\n";
+                                                                     accm += &compile_exprs(&falseblock, ";\n", tck);
+                                                                     accm += "}\n";
+                                                                     accm
+                                                                 }
+                                                                 E::Loop { body } => {
+                                                                     format!("loop {{\n{}\n}}\n", compile_exprs(body, ";\n", tck))
+                                                                 }
+                                                                 // TODO: We don't have closures, lambda are just functions, so...
+                                                                 E::Lambda { signature, body } => {
+                                                                     format!(
+                                                                         "fn {} {{ {} }}",
+                                                                         compile_fn_signature(signature),
+                                                                         compile_exprs(body, ";\n", tck)
+                                                                     )
+                                                                 }
+                                                                 E::Funcall { func, params } => {
+                                                                     // We have to store an intermediate value for the func, 'cause
+                                                                     // Rust has problems with things like this:
+                                                                     // fn f1() -> i32 { 1 }
+                                                                     // fn f2() -> i32 { 10 }
+                                                                     // fn f() -> i32 { if true { f1 } else { f2 }() }
+                                                                     //
+                                                                     // Should this happen in an IR lowering step?  idk.
+                                                                     let nstr = compile_expr(func, tck);
+                                                                     let pstr = compile_exprs(params, ", ", tck);
+                                                                     format!("{{ let __dummy = {}; __dummy({}) }}", nstr, pstr)
+                                                                 }
+                                                                 E::Break => "break;".to_string(),
+                                                                 E::Return { retval } => {
+                                                                     format!("return {};", compile_expr(retval, tck))
+                                                                 }
+                                                                 /*
+                                                                 E::TupleCtor { body } => {
+                                                                     // We *don't* want join() here, we want to append comma's so that
+                                                                     // `(foo,)` works properly.
+                                                                     let mut accm = String::from("(");
+                                                                     for expr in body {
+                                                                         accm += &compile_expr(expr, tck);
+                                                                         accm += ", ";
+                                                                     }
+                                                                     accm += ")";
+                                                                     accm
+                                                                 }
+                                                                 */
+                                                                 // Unit type
+                                                                 E::StructCtor { body } if body.len() == 0 => String::from(" ()\n"),
+                                                                 E::StructCtor { body } => {
+                                                                     /*
+                                                                     if types.len() > 0 {
+                                                                         todo!("not implemented")
+                                                                     }
+                                                                     */
+                                                                     let mut accm = String::from("(\n");
+                                                                     for (nm, expr) in body {
+                                                                         accm += &format!("/* {} */
+                                                                 {
+                                                   */
+        }
+    }
 }
 
 fn compile_bop(op: hir::BOp) -> &'static str {
@@ -283,154 +459,4 @@ fn compile_uop(op: hir::UOp) -> &'static str {
         UOp::Ref => "&",
         UOp::Deref => "*",
     }
-}
-
-fn compile_expr(function: &mut q::Function, expr: &hir::TypedExpr, tck: &Tck) {
-    use hir::Expr as E;
-    todo!()
-    /*
-    match &expr.e {
-        E::Lit {
-            val: ast::Literal::Integer(i),
-        } => format!("{}", i),
-        E::EnumLit { val: _val, ty: _ty } => todo!(),
-        E::Lit {
-            val: ast::Literal::Bool(b),
-        } => format!("{}", b),
-        E::Lit {
-            val: ast::Literal::SizedInteger { vl, bytes },
-        } => {
-            let bits = bytes * 8;
-            format!("{}i{}", vl, bits)
-        }
-        E::Var { name, .. } => mangle_name(&*INT.fetch(*name)),
-        E::BinOp { op, lhs, rhs } => format!(
-            "({} {} {})",
-            compile_expr(lhs, tck),
-            compile_bop(*op),
-            compile_expr(rhs, tck)
-        ),
-        E::UniOp { op, rhs } => {
-            format!("({}{})", compile_uop(*op), compile_expr(rhs, tck))
-        }
-        E::Block { body } => format!("{{\n{}\n}}", compile_exprs(body, ";\n", tck)),
-        E::Let {
-            varname,
-            typename,
-            init,
-            mutable,
-        } => {
-            let vstr = mangle_name(&*INT.fetch(*varname));
-            let tstr = compile_typename(&*INT.fetch_type(*typename));
-            let istr = compile_expr(init, tck);
-            if *mutable {
-                format!("let mut {}: {} = {};", vstr, tstr, istr)
-            } else {
-                format!("let {}: {} = {};", vstr, tstr, istr)
-            }
-        }
-        E::If { cases } => {
-            let mut accm = String::new();
-            let falseblock = cases.last().unwrap().1.clone();
-            let n = cases.len();
-            for (i, (cond, body)) in cases[..(n - 1)].iter().enumerate() {
-                if i == 0 {
-                    accm += "if ";
-                } else {
-                    accm += " else if "
-                }
-                accm += &compile_expr(cond, tck);
-                accm += " {\n";
-                accm += &compile_exprs(&body, ";\n", tck);
-                accm += "} \n";
-            }
-            accm += "else {\n";
-            accm += &compile_exprs(&falseblock, ";\n", tck);
-            accm += "}\n";
-            accm
-        }
-        E::Loop { body } => {
-            format!("loop {{\n{}\n}}\n", compile_exprs(body, ";\n", tck))
-        }
-        // TODO: We don't have closures, lambda are just functions, so...
-        E::Lambda { signature, body } => {
-            format!(
-                "fn {} {{ {} }}",
-                compile_fn_signature(signature),
-                compile_exprs(body, ";\n", tck)
-            )
-        }
-        E::Funcall { func, params } => {
-            // We have to store an intermediate value for the func, 'cause
-            // Rust has problems with things like this:
-            // fn f1() -> i32 { 1 }
-            // fn f2() -> i32 { 10 }
-            // fn f() -> i32 { if true { f1 } else { f2 }() }
-            //
-            // Should this happen in an IR lowering step?  idk.
-            let nstr = compile_expr(func, tck);
-            let pstr = compile_exprs(params, ", ", tck);
-            format!("{{ let __dummy = {}; __dummy({}) }}", nstr, pstr)
-        }
-        E::Break => "break;".to_string(),
-        E::Return { retval } => {
-            format!("return {};", compile_expr(retval, tck))
-        }
-        /*
-        E::TupleCtor { body } => {
-            // We *don't* want join() here, we want to append comma's so that
-            // `(foo,)` works properly.
-            let mut accm = String::from("(");
-            for expr in body {
-                accm += &compile_expr(expr, tck);
-                accm += ", ";
-            }
-            accm += ")";
-            accm
-        }
-        */
-        // Unit type
-        E::StructCtor { body } if body.len() == 0 => String::from(" ()\n"),
-        E::StructCtor { body } => {
-            /*
-            if types.len() > 0 {
-                todo!("not implemented")
-            }
-            */
-            let mut accm = String::from("(\n");
-            for (nm, expr) in body {
-                accm += &format!("/* {} */
-    {}, \n", INT.fetch(*nm), compile_expr(expr, tck));
-            }
-            accm += ")\n";
-            accm
-        }
-        E::StructRef { expr, elt } => {
-            // We turn our structs into Rust tuples, so we need to
-            // to turn our field names into indices
-            let tv = tck.get_typevar_for_expression(expr).unwrap();
-            let tdef = &*INT.fetch_type(tck.follow_typevar(tv).unwrap());
-            if let TypeDef::Struct { fields } = tdef {
-                let mut nth = 9999_9999;
-                for (i, (nm, _ty)) in fields.iter().enumerate() {
-                    if nm == elt {
-                        nth = i;
-                        break;
-                    }
-                }
-                format!("{}.{}", compile_expr(expr, tck), nth)
-            } else {
-                panic!(
-                    "Struct wasn't actually a struct in backend, was {}.  should never happen",
-                    compile_typename(tdef)
-                )
-            }
-        }
-        E::Assign { lhs, rhs } => {
-            format!("{} = {}", compile_expr(lhs, tck), compile_expr(rhs, tck))
-        }
-        E::Deref { expr } => format!("*{}", compile_expr(expr, tck)),
-        E::Ref { expr } => format!("&{}", compile_expr(expr, tck)),
-    }
-*/
 }
