@@ -740,18 +740,24 @@ fn infer_literal(lit: &hir::Literal) -> Result<TypeSym, TypeError> {
 ///
 /// ...we're gonna have to have a TypeDef that has
 /// typevars rather than varsym's in it, aren't we.
-fn try_solve_type(tck: &mut Tck, tv: TypeVar) -> Option<TypeSym> {
+pub fn try_solve_type(tck: &Tck, tv: TypeVar) -> Option<TypeSym> {
     let tsym = tck.follow_typevar(tv)?;
     let tdef = &*tsym.val();
     match tdef {
         TypeDef::UnknownInt => Some(tsym),
         TypeDef::SInt(_) => Some(tsym),
         TypeDef::Tuple(items) if items.len() == 0 => Some(tsym),
+        // Simple case first
         TypeDef::Lambda {
             generics,
             params: _,
             rettype: _,
         } if generics.len() == 0 => Some(tsym),
+        TypeDef::Lambda {
+            generics,
+            params: _,
+            rettype: _,
+        } => Some(tsym),
         TypeDef::Never => Some(tsym),
         TypeDef::NamedType(..) => Some(tsym),
         other => todo!("Solve {:?}", other),
