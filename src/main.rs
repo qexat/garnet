@@ -39,8 +39,8 @@ struct Opt {
 /// Takes the input file name and the desired name of the
 /// exe file, and returns the name of the file containing
 /// intermediate code.  Which feels sorta weird, but here
-/// we are.  OTOH, the qbe backend has multiple output files
-/// (QBE SSA and generated asm), so who knws, maybe this function
+/// we are.  But if our downstream compiler produces multiple
+/// output files (.S, .o, etc) then maybe this function
 /// should do its own cleanup after all.
 fn compile_rust(input_file: &Path, exe_name: &Path) -> io::Result<PathBuf> {
     let mut rust_file;
@@ -69,36 +69,6 @@ fn compile_rust(input_file: &Path, exe_name: &Path) -> io::Result<PathBuf> {
     Ok(rust_file)
 }
 
-fn compile_qbe(input_file: &Path, exe_name: &Path) -> io::Result<PathBuf> {
-    let mut qbe_file;
-    // Output to file
-    {
-        let src = std::fs::read_to_string(&input_file)?;
-        let output = garnet::compile(&input_file.to_str().unwrap(), &src, Backend::Qbe);
-        qbe_file = input_file.to_owned();
-        qbe_file.set_extension("ssa");
-        std::fs::write(&qbe_file, &output)?;
-    }
-    let mut asm_file_name = exe_name.to_owned();
-    asm_file_name.set_extension("S");
-
-    // Invoke qbe
-    use std::process::{Command, Stdio};
-    let res = Command::new("qbe")
-        .stdin(Stdio::null())
-        .stdout(Stdio::inherit())
-        .arg("-o")
-        .arg(&asm_file_name)
-        .arg(&qbe_file)
-        .output()
-        .expect("Failed to execute qbe");
-    if !res.status.success() {
-        dbg!(&res);
-        panic!("Generated qbe code that could not be compiled");
-    }
-    Ok(qbe_file)
-}
-
 fn main() -> std::io::Result<()> {
     let opt: Opt = argh::from_env();
 
@@ -111,7 +81,6 @@ fn main() -> std::io::Result<()> {
     };
     let output_file = match opt.backend {
         Backend::Rust => compile_rust(&opt.file, &exe_name)?,
-        Backend::Qbe => compile_qbe(&opt.file, &exe_name)?,
         Backend::Null => todo!(),
     };
 
