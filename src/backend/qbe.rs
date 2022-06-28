@@ -2,7 +2,8 @@
 //! Just to see how it goes.
 
 use std::borrow::Cow;
-use std::io::{self, Write};
+
+use qbe as q;
 
 use crate::hir;
 use crate::typeck::Tck;
@@ -142,9 +143,9 @@ fn compile_typename(td: &TypeDef) -> Cow<'static, str> {
 pub(super) fn output(lir: &hir::Ir, tck: &Tck) -> Vec<u8> {
     let mut output = Vec::new();
     output.extend(prelude().as_bytes());
+    let mut module = q::Module::new();
     for decl in lir.decls.iter() {
-        compile_decl(&mut output, decl, tck)
-            .expect("IO error writing output code.  Out of memory???");
+        compile_decl(&mut module, decl, tck);
     }
     output
 }
@@ -157,18 +158,22 @@ fn mangle_name(s: &str) -> String {
     s.replace("@", "__")
 }
 
-fn compile_decl(w: &mut impl Write, decl: &hir::Decl, tck: &Tck) -> io::Result<()> {
+fn compile_decl(module: &mut q::Module, decl: &hir::Decl, tck: &Tck) {
     match decl {
         hir::Decl::Function {
             name,
             signature,
             body,
         } => {
+            let linkage = q::Linkage::public();
             let nstr = mangle_name(&*INT.fetch(*name));
-            let sstr = compile_fn_signature(signature);
-            let bstr = compile_exprs(body, ";\n", tck);
-            writeln!(w, "pub fn {}{} {{\n{}\n}}\n", nstr, sstr, bstr)
+            let (args, rettype) = compile_fn_signature(signature);
+            let f = q::Function::new(linkage, nstr, args, rettype);
+
+            module.add_function(f);
+            todo!("Compile body");
         }
+        /*
         hir::Decl::Const {
             name,
             typename,
@@ -185,7 +190,7 @@ fn compile_decl(w: &mut impl Write, decl: &hir::Decl, tck: &Tck) -> io::Result<(
             let tstr = compile_typedef(&*INT.fetch_type(*typedecl));
             writeln!(w, "pub struct {}({});", nstr, tstr)
         }
-        /*
+
         hir::Decl::StructDef {
             name,
             fields,
@@ -202,7 +207,6 @@ fn compile_decl(w: &mut impl Write, decl: &hir::Decl, tck: &Tck) -> io::Result<(
             }
             writeln!(w, "pub struct {} {{\n {} }}\n", nstr, accm)
         }
-        */
         // For these we have to look at the signature and make a
         // function that constructs a struct or tuple or whatever
         // out of it.
@@ -221,10 +225,13 @@ fn compile_decl(w: &mut impl Write, decl: &hir::Decl, tck: &Tck) -> io::Result<(
             let sig_str = compile_fn_signature(&destructure_signature);
             writeln!(w, "fn {}_unwrap{} {{ input.0 }}\n", nstr, sig_str,)
         }
+        */
+        _ => todo!(),
     }
 }
 
-fn compile_fn_signature(sig: &ast::Signature) -> String {
+fn compile_fn_signature(sig: &ast::Signature) -> (Vec<(q::Type, q::Value)>, Option<q::Type>) {
+    /*
     if sig.generics.len() > 0 {
         todo!("Output generics to rust, or lower them");
     }
@@ -238,11 +245,12 @@ fn compile_fn_signature(sig: &ast::Signature) -> String {
     accm += ") -> ";
     accm += &compile_typename(&*INT.fetch_type(sig.rettype));
     accm
+    */
+    todo!()
 }
 
-fn compile_exprs(exprs: &[hir::TypedExpr], separator: &str, tck: &Tck) -> String {
-    let ss: Vec<String> = exprs.iter().map(|e| compile_expr(e, tck)).collect();
-    ss.join(separator)
+fn compile_exprs(function: &mut q::Function, exprs: &[hir::TypedExpr], tck: &Tck) {
+    todo!()
 }
 
 fn compile_bop(op: hir::BOp) -> &'static str {
@@ -277,8 +285,10 @@ fn compile_uop(op: hir::UOp) -> &'static str {
     }
 }
 
-fn compile_expr(expr: &hir::TypedExpr, tck: &Tck) -> String {
+fn compile_expr(function: &mut q::Function, expr: &hir::TypedExpr, tck: &Tck) {
     use hir::Expr as E;
+    todo!()
+    /*
     match &expr.e {
         E::Lit {
             val: ast::Literal::Integer(i),
@@ -389,7 +399,8 @@ fn compile_expr(expr: &hir::TypedExpr, tck: &Tck) -> String {
             */
             let mut accm = String::from("(\n");
             for (nm, expr) in body {
-                accm += &format!("/* {} */ {}, \n", INT.fetch(*nm), compile_expr(expr, tck));
+                accm += &format!("/* {} */
+    {}, \n", INT.fetch(*nm), compile_expr(expr, tck));
             }
             accm += ")\n";
             accm
@@ -421,4 +432,5 @@ fn compile_expr(expr: &hir::TypedExpr, tck: &Tck) -> String {
         E::Deref { expr } => format!("*{}", compile_expr(expr, tck)),
         E::Ref { expr } => format!("&{}", compile_expr(expr, tck)),
     }
+*/
 }

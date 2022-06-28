@@ -18,6 +18,20 @@ pub enum Backend {
     Null,
 }
 
+impl std::str::FromStr for Backend {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "rust" => Ok(Backend::Rust),
+            "qbe" => Ok(Backend::Qbe),
+            "null" => Ok(Backend::Null),
+            _ => Err(String::from(
+                "Unknown backend!  See the source for which ones are valid.",
+            )),
+        }
+    }
+}
+
 /// Produce a binary module output of some kind for the given backend.
 pub fn output(backend: Backend, program: &hir::Ir, tck: &Tck) -> Vec<u8> {
     match backend {
