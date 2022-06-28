@@ -418,7 +418,11 @@ impl Cx {
 ///
 /// Parse -> lower to IR -> run transformation passes
 /// -> typecheck -> compile to wasm
-pub fn try_compile(filename: &str, src: &str) -> Result<Vec<u8>, typeck::TypeError> {
+pub fn try_compile(
+    filename: &str,
+    src: &str,
+    backend: backend::Backend,
+) -> Result<Vec<u8>, typeck::TypeError> {
     let ast = {
         let mut parser = parser::Parser::new(filename, src);
         parser.parse()
@@ -426,12 +430,12 @@ pub fn try_compile(filename: &str, src: &str) -> Result<Vec<u8>, typeck::TypeErr
     let hir = hir::lower(&ast);
     let hir = passes::run_passes(hir);
     let tck = typeck::typecheck(&hir)?;
-    Ok(backend::output(backend::Backend::Rust, &hir, &tck))
+    Ok(backend::output(backend, &hir, &tck))
 }
 
 /// For when we don't care about catching results
-pub fn compile(filename: &str, src: &str) -> Vec<u8> {
-    try_compile(filename, src).unwrap_or_else(|e| panic!("Type check error: {}", e))
+pub fn compile(filename: &str, src: &str, backend: backend::Backend) -> Vec<u8> {
+    try_compile(filename, src, backend).unwrap_or_else(|e| panic!("Type check error: {}", e))
 }
 
 #[cfg(test)]
