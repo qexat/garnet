@@ -131,7 +131,7 @@ pub enum TypeDef<T = TypeSym> {
         variants: Vec<(VarSym, i32)>,
     },
     /// These are type variables that are explicitly declared by the user.
-    NamedType(VarSym),
+    NamedTypeVar(VarSym),
 }
 
 impl TypeDef {
@@ -255,7 +255,7 @@ impl TypeDef {
                 res += "\n}\n";
                 Cow::Owned(res)
             }
-            TypeDef::NamedType(vsym) => Cow::Owned((&*INT.fetch(*vsym)).clone()),
+            TypeDef::NamedTypeVar(vsym) => Cow::Owned((&*INT.fetch(*vsym)).clone()),
         }
     }
 
@@ -344,7 +344,7 @@ impl Cx {
     /// Intern a new named type var matching the given string
     pub fn named_type(&self, s: impl AsRef<str>) -> TypeSym {
         let sym = self.intern(s);
-        self.types.intern(&TypeDef::NamedType(sym))
+        self.types.intern(&TypeDef::NamedTypeVar(sym))
     }
 
     /// Get the TypeDef for a type symbol

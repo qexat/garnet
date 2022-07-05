@@ -759,7 +759,7 @@ pub fn try_solve_type(tck: &Tck, tv: TypeVar) -> Option<TypeSym> {
             rettype: _,
         } => Some(tsym),
         TypeDef::Never => Some(tsym),
-        TypeDef::NamedType(..) => Some(tsym),
+        TypeDef::NamedTypeVar(..) => Some(tsym),
         other => todo!("Solve {:?}", other),
     }
 }
@@ -811,6 +811,11 @@ fn try_unify(tck: &mut Tck, v1: TypeVar, v2: TypeVar) -> Result<(), TypeError> {
                 // I think?  Hmmmm...
                 (Never, _) => Ok(()),
                 (_, Never) => Ok(()),
+                (NamedTypeVar(nm), thing) => {
+                    let tvar = tck.scope.get_generic(*nm).expect("Unbound generic type");
+                    tck.constraints.insert(tvar, t2);
+                    Ok(())
+                }
 
                 (s1, s2) => panic!(
                     "Type mismatch trying to unify concrete types {:?} and {:?}",
@@ -1102,8 +1107,17 @@ fn check_expr(
                 TypeDef::Lambda {
                     params: param_types,
                     rettype: call_rettype,
-                    generics: _generics,
+                    generics: generics,
                 } => {
+                    // Ok, when we call a function with generic types,
+                    // do we try to substitute those types for what we
+                    // give them and then just check, or do we literally
+                    // instantiate a new function with the types substituted
+                    // and then typecheck as normal?
+                    //
+                    // It has to be the first because all we may actually
+                    // know about the generic is "it is this type var".
+
                     // We go through the params we were given and check
                     // that they match the function's sig
                     assert_eq!(params.len(), param_types.len());
@@ -1194,6 +1208,7 @@ fn check_expr(
         }
         Expr::Break => {
             // Break's just return unit (for now)
+            // TODO: Make sure we're actually in a loop
             let unitconstraint = Constraint::unit();
             tck.add_constraint(expr_typevar, unitconstraint);
             try_unify(tck, expr_typevar, expected_var)?;

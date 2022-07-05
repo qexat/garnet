@@ -115,6 +115,8 @@ fn eat_block_comment(lex: &mut Lexer<TokenKind>) -> String {
 pub enum TokenKind {
     #[regex("[a-zA-Z_][a-zA-Z0-9_]*", |lex| lex.slice().to_owned())]
     Ident(String),
+    #[regex("@[a-zA-Z_][a-zA-Z0-9_]*", |lex| lex.slice().to_owned())]
+    TypeIdent(String),
     #[regex("true|false", |lex| lex.slice().parse())]
     Bool(bool),
     #[regex("[0-9][0-9_]*I8", make_i8)]
@@ -480,7 +482,7 @@ impl<'input> Parser<'input> {
         match self.next() {
             Some(Token {
                 kind: T::Ident(s), ..
-            }) => crate::INT.intern(s),
+            }) => INT.intern(s),
             Some(Token { kind, span }) => {
                 let msg = format!("Parse error: got token {:?}.  Expected identifier.", kind,);
                 let diag = Diagnostic::error()
@@ -628,7 +630,7 @@ impl<'input> Parser<'input> {
         let rettype = if self.try_expect(T::Colon.discr()) {
             self.parse_type()
         } else {
-            crate::INT.unit()
+            INT.unit()
         };
         ast::Signature {
             generics,
@@ -719,7 +721,7 @@ impl<'input> Parser<'input> {
         let rettype = if self.try_expect(T::Colon.discr()) {
             self.parse_type()
         } else {
-            crate::INT.unit()
+            INT.unit()
         };
         TypeDef::Lambda {
             generics,
@@ -1228,38 +1230,48 @@ impl<'input> Parser<'input> {
 
     fn parse_type(&mut self) -> TypeSym {
         let t = self.next();
-        match t {
-            Some(Token {
-                kind: T::Ident(s),
-                span: _,
-            }) => {
-                if let Some(t) = TypeDef::get_primitive_type(s.as_ref()) {
-                    crate::INT.intern_type(&t)
-                } else {
-                    crate::INT.named_type(s)
+        if let Some(inner) = &t {
+            match inner {
+                Token {
+                    kind: T::Ident(s),
+                    span: _,
+                } => {
+                    if let Some(t) = TypeDef::get_primitive_type(s.as_ref()) {
+                        INT.intern_type(&t)
+                    } else {
+                        // TODO: This miiiiight not be the same as parameter
+                        // type variables, as below.
+                        INT.named_type(s)
+                    }
                 }
+                Token {
+                    kind: T::TypeIdent(s),
+                    span: _,
+                } => INT.named_type(s),
+                Token {
+                    kind: T::LBrace, ..
+                } => {
+                    let tuptype = self.parse_tuple_type();
+                    INT.intern_type(&tuptype)
+                }
+                Token { kind: T::Fn, .. } => {
+                    let fntype = self.parse_fn_type();
+                    INT.intern_type(&fntype)
+                }
+                Token {
+                    kind: T::Struct, ..
+                } => {
+                    let fntype = self.parse_struct_type();
+                    INT.intern_type(&fntype)
+                }
+                Token { kind: T::Enum, .. } => {
+                    let fntype = self.parse_enum_type();
+                    INT.intern_type(&fntype)
+                }
+                _other => self.error("type", t),
             }
-            Some(Token {
-                kind: T::LBrace, ..
-            }) => {
-                let tuptype = self.parse_tuple_type();
-                crate::INT.intern_type(&tuptype)
-            }
-            Some(Token { kind: T::Fn, .. }) => {
-                let fntype = self.parse_fn_type();
-                crate::INT.intern_type(&fntype)
-            }
-            Some(Token {
-                kind: T::Struct, ..
-            }) => {
-                let fntype = self.parse_struct_type();
-                crate::INT.intern_type(&fntype)
-            }
-            Some(Token { kind: T::Enum, .. }) => {
-                let fntype = self.parse_enum_type();
-                crate::INT.intern_type(&fntype)
-            }
-            other => self.error("type", other),
+        } else {
+            self.error("type", t)
         }
     }
 }
