@@ -3,9 +3,9 @@
 //! List defined here: https://github.com/minimaxir/big-list-of-naughty-strings
 //! Retrieved Sep 10, 2021
 
-use logos::{Lexer, Logos};
+use logos::Logos;
 
-use garnet::parser::{Parser, TokenKind};
+use garnet::parser::TokenKind;
 
 const BLNS: &[u8] = include_bytes!("blns.txt");
 
