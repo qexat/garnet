@@ -254,16 +254,13 @@ impl Constraint {
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 struct UniqueVar(usize);
 
-/// Immutable symbol table.  We just keep one of these associated with every expression,
-/// which describes that expression's scope.  Since it's immutable, cloning and modifying
-/// it only changes the parts that are necessary.
+/// TODO: Might need have a reverse lookup table too?
 ///
-/// This means that we always can look at any expression and see its entire scope, and
-/// keeping track of scope pushes/pops is basically implicit since there's no mutable state
-/// involved.
+/// TODO: Clean up some of how this is associated with Scope's.  Tck contains a Scope which handles
+/// scope information, and also this Symtbl which handles *all* information which is flat in a
+/// single namespace.
 ///
-/// TODO NEXT: Might need to make this UniqueVar -> VarBinding, and also have a
-/// reverse lookup table too?
+/// TODO: Probably doesn't need to be immutable anymore.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Symtbl {
     vars: im::HashMap<UniqueVar, VarBinding>,
@@ -376,7 +373,7 @@ impl Symtbl {
 ///
 /// SO.  This is the usual scope-as-stack-of-vars type thing.
 /// We use this to do our normal scope cehcking, and also create a
-/// mapping from exprid to a unique variable id for every variable
+/// mapping from var name to a unique variable id for every variable
 /// use and declaration.
 ///
 /// That way we can have a list of all the variables in each
@@ -602,6 +599,10 @@ impl Tck {
         self.exprtypes.get(&expr.id).cloned()
     }
 
+    /// Take a given var sym and crate a new unique name for it, and add
+    /// a binding for it in the current scope.  (Unique names are truly
+    /// unique and thus don't care about scope.)
+    ///
     /// If the var's type is unknown, then we create a type var for it.
     ///
     /// If the var has a type associated with it, then we create a type
@@ -733,6 +734,10 @@ fn infer_literal(lit: &hir::Literal) -> Result<TypeSym, TypeError> {
     }
 }
 
+/// Try to resolve all unknowns in a type and turn them all into knowns.
+/// Right now t his is easy 'casue we only really handle types that can't
+/// contain unknown types.
+///
 /// Called "reconstruct" in zesterer's
 /// "Type inference in less than 100 lines of Rust"
 ///
@@ -754,10 +759,10 @@ pub fn try_solve_type(tck: &Tck, tv: TypeVar) -> Option<TypeSym> {
             rettype: _,
         } if generics.len() == 0 => Some(tsym),
         TypeDef::Lambda {
-            generics,
+            generics: _,
             params: _,
             rettype: _,
-        } => Some(tsym),
+        } => todo!("Reconstruct lambda with generics"),
         TypeDef::Never => Some(tsym),
         TypeDef::NamedTypeVar(..) => Some(tsym),
         other => todo!("Solve {:?}", other),
@@ -811,7 +816,7 @@ fn try_unify(tck: &mut Tck, v1: TypeVar, v2: TypeVar) -> Result<(), TypeError> {
                 // I think?  Hmmmm...
                 (Never, _) => Ok(()),
                 (_, Never) => Ok(()),
-                (NamedTypeVar(nm), thing) => {
+                (NamedTypeVar(nm), _thing) => {
                     let tvar = tck.scope.get_generic(*nm).expect("Unbound generic type");
                     tck.constraints.insert(tvar, t2);
                     Ok(())
@@ -831,6 +836,10 @@ fn try_unify(tck: &mut Tck, v1: TypeVar, v2: TypeVar) -> Result<(), TypeError> {
 /// given must either resolve to a known type, or an unknown
 /// type where it says "I don't know what type this expression is,
 /// but I know it must be the same as `TypeVar(foo)`"
+///
+/// This is kinda deliberately incomplete, as it ends up getting used
+/// less than I expected.  We can fill out more cases as we encounter
+/// them.
 fn infer_expr(
     tck: &mut Tck,
     expr: &hir::TypedExpr,
@@ -961,14 +970,20 @@ fn infer_exprs(
 /// The "check" step of our vaguely-bidi type inference.  This is where
 /// checking an expr starts.
 ///
-/// rettype is the function return type, any non-local exits (`return`,
-/// `?`, etc) need to know that type.
+/// rettype is the return type of the function this expr is in, any non-local exits (`return`, `?`,
+/// etc) need to know that type.
 ///
 /// The process:
 ///  * Create typevar for expr
-///  * Infer types for subexpr's if necessary
-///  * xor check types for subexpr's if we know what they should be
-///  * If we inferred, unify "expected" with the subexpression's typevar
+///  * Create typevar for the `expected` type we are given
+///  * If the desired types for the sort of expression is known, call `check_expr()` with
+///    the target type.  Example: `x and y`, we know the vars must be bool, so we just check against
+///    them.
+///    If we don't know the types (`x + y` may be several types), we call `infer_exprs()` on the
+///    sub-exprs and try to unify them together as necessary (`x` and `y` may be several types, but
+///    must be the same type as each other).
+///  * Add any constraints we have discovered from this process to our `Tck`
+///  * Then we try to unify the `expected` typevar with the expression's typevar
 fn check_expr(
     tck: &mut Tck,
     expr: &hir::TypedExpr,
@@ -1107,7 +1122,7 @@ fn check_expr(
                 TypeDef::Lambda {
                     params: param_types,
                     rettype: call_rettype,
-                    generics: generics,
+                    generics: _generics,
                 } => {
                     // Ok, when we call a function with generic types,
                     // do we try to substitute those types for what we
@@ -1269,6 +1284,8 @@ fn check_exprs(
             // with ; and wrap contiguous expressions in an `ignore` function,
             // but that feels kinda weird, especially since we don't
             // require semicolons.
+            //
+            // Let's roll with something like this for now.
             let cons = Constraint::TypeSym(INT.never());
             check_expr(tck, expr, cons, rettype)?;
         }
@@ -1320,6 +1337,8 @@ fn typecheck_decl(tck: &mut Tck, decl: &hir::Decl) -> Result<(), TypeError> {
             // function, we need to reconstruct and attempt to solve any
             // unknowns, and error if there are any unknowns left over.
             for expr in body {
+                // TODO: Make sure this recursively solves *every* expression's
+                // typevar in the whole tree.  I think it does, but need to double-check.
                 let tv = tck
                     .get_typevar_for_expression(expr)
                     .expect(&format!("No typevar for expression {:?}, aieeee", expr));
@@ -1379,6 +1398,7 @@ fn typecheck_decl(tck: &mut Tck, decl: &hir::Decl) -> Result<(), TypeError> {
     }
 }
 
+/// Top level driver function for type checking.
 pub fn typecheck(ir: &hir::Ir) -> Result<Tck, TypeError> {
     let mut tck = Tck::default();
     for decl in &ir.decls {
