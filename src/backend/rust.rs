@@ -115,7 +115,7 @@ fn compile_typename(td: &TypeDef) -> Cow<'static, str> {
         Enum { variants: _ } => {
             todo!("Enums probably should be lowered to numbers?")
         }
-        NamedType(_vsym) => todo!("Output typevar"),
+        NamedTypeVar(_vsym) => todo!("Output typevar"),
     }
 }
 
