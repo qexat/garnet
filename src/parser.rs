@@ -187,6 +187,8 @@ pub enum TokenKind {
     Semicolon,
     #[token("=")]
     Equals,
+    #[token("$")]
+    Dollar,
 
     // Operators
     #[token("+")]
@@ -561,7 +563,7 @@ impl<'input> Parser<'input> {
     fn parse_const(&mut self, doc_comment: Vec<String>) -> ast::Decl {
         let name = self.expect_ident();
         self.expect(T::Colon);
-        let typename = self.parse_type();
+        let typename = self.parse_type().unwrap();
         self.expect(T::Equals);
         let init = self.parse_expr(0).unwrap();
         ast::Decl::Const {
@@ -602,7 +604,7 @@ impl<'input> Parser<'input> {
     fn parse_typedef(&mut self, doc_comment: Vec<String>) -> ast::Decl {
         let name = self.expect_ident();
         self.expect(T::Equals);
-        let typedecl = self.parse_type();
+        let typedecl = self.parse_type().unwrap();
         ast::Decl::TypeDef {
             name,
             typedecl,
@@ -632,7 +634,7 @@ impl<'input> Parser<'input> {
         let generics = vec![];
         let params = self.parse_fn_args();
         let rettype = if self.try_expect(T::Colon.discr()) {
-            self.parse_type()
+            self.parse_type().unwrap()
         } else {
             INT.unit()
         };
@@ -708,7 +710,7 @@ impl<'input> Parser<'input> {
         while let Some((T::Ident(_i), _span)) = self.lex.peek() {
             let name = self.expect_ident();
             self.expect(T::Colon);
-            let tname = self.parse_type();
+            let tname = self.parse_type().unwrap();
             args.push((name, tname));
 
             if self.try_expect(T::Comma.discr()) {
@@ -725,7 +727,7 @@ impl<'input> Parser<'input> {
         let generics = vec![];
         let params = self.parse_fn_type_args();
         let rettype = if self.try_expect(T::Colon.discr()) {
-            self.parse_type()
+            self.parse_type().unwrap()
         } else {
             INT.unit()
         };
@@ -741,7 +743,7 @@ impl<'input> Parser<'input> {
         self.expect(T::LParen);
 
         while !self.peek_is(T::RParen.discr()) {
-            let tname = self.parse_type();
+            let tname = self.parse_type().unwrap();
             args.push(tname);
 
             if self.try_expect(T::Comma.discr()) {
@@ -763,7 +765,7 @@ impl<'input> Parser<'input> {
                 Some((T::Ident(_i), _span)) => {
                     let name = self.expect_ident();
                     self.expect(T::Colon);
-                    let tname = self.parse_type();
+                    let tname = self.parse_type().unwrap();
                     fields.insert(name, tname);
                 }
                 /*
@@ -874,7 +876,7 @@ impl<'input> Parser<'input> {
     fn parse_tuple_type(&mut self) -> TypeDef {
         let mut body = vec![];
         while !self.peek_is(T::RBrace.discr()) {
-            let t = self.parse_type();
+            let t = self.parse_type().unwrap();
             body.push(t);
             if self.try_expect(T::Comma.discr()) {
             } else {
@@ -1002,6 +1004,14 @@ impl<'input> Parser<'input> {
                             generic_types,
                         }
                     }
+                    T::Dollar => {
+                        let (params, generic_types) = self.parse_function_args();
+                        ast::Expr::Funcall {
+                            func: Box::new(lhs),
+                            params,
+                            generic_types,
+                        }
+                    }
                     T::Colon => {
                         self.expect(T::Colon);
                         let ident = self.expect_ident();
@@ -1087,20 +1097,33 @@ impl<'input> Parser<'input> {
     fn parse_function_args(&mut self) -> (Vec<ast::Expr>, Vec<TypeSym>) {
         let mut params = vec![];
         let mut generics = vec![];
+        // Look for generic decl's of the form
+        // foo$[I32, F32](x, y, z) ...
+        // TODO: This a kinda icky placeholder syntax, but it's
+        // all I can think of for now.
+        // It's basically the tuborfish: foo::<I32, Bar>(x, y, z)
+        // We can't do it inline like foo(x: I32, y, z: F32) 'cause
+        // it may be more complicated than that.
+        // Mayby be x is Vec<T>, may be that foo() returns a random T,
+        // etc.
+        if self.peek_is(T::Dollar.discr()) {
+            self.expect(T::Dollar);
+            self.expect(T::LBracket);
+            while let Some(t) = self.parse_type() {
+                generics.push(t);
+                // TODO: Trailing comma shit etc here
+                if !self.peek_is(T::Comma.discr()) {
+                    break;
+                }
+                self.expect(T::Comma);
+            }
+            self.expect(T::RBracket);
+        }
         self.expect(T::LParen);
         // TODO: Refactor out this optional-trailing-comma pattern somehow?
         // There's now three places it's used and it's only going to grow.
         while let Some(expr) = self.parse_expr(0) {
             params.push(expr);
-            // Look for generic decl's of the form
-            // foo(x type I32, y, z type Bar) ...
-            // TODO: This a kinda icky placeholder syntax, but it's
-            // all I can think of for now.
-            // It's basically the tuborfish: foo::<I32, Bar>(x, y, z)
-            if self.peek_is(T::Type.discr()) {
-                self.expect(T::Type);
-                generics.push(self.parse_type());
-            }
             if !self.peek_is(T::Comma.discr()) {
                 break;
             }
@@ -1120,7 +1143,7 @@ impl<'input> Parser<'input> {
         };
         let varname = self.expect_ident();
         self.expect(T::Colon);
-        let typename = self.parse_type();
+        let typename = self.parse_type().unwrap();
         self.expect(T::Equals);
         let init = Box::new(
             self.parse_expr(0)
@@ -1246,10 +1269,10 @@ impl<'input> Parser<'input> {
         ast::Expr::StructCtor { body, types }
     }
 
-    fn parse_type(&mut self) -> TypeSym {
+    fn parse_type(&mut self) -> Option<TypeSym> {
         let t = self.next();
         if let Some(inner) = &t {
-            match inner {
+            Some(match inner {
                 Token {
                     kind: T::Ident(s),
                     span: _,
@@ -1287,9 +1310,9 @@ impl<'input> Parser<'input> {
                     INT.intern_type(&fntype)
                 }
                 _other => self.error("type", t),
-            }
+            })
         } else {
-            self.error("type", t)
+            None
         }
     }
 }
@@ -1311,6 +1334,8 @@ fn postfix_binding_power(op: &TokenKind) -> Option<(usize, ())> {
     match op {
         // "." for tuple/struct references.
         T::Period => Some((130, ())),
+        // "$" opening function call generic args
+        T::Dollar => Some((121, ())),
         // "(" opening function call args
         T::LParen => Some((120, ())),
         // ":" universal function call syntax
@@ -1608,6 +1633,7 @@ type blar = I8
                 name: INT.intern("y"),
             }),
             params: vec![Expr::int(1), Expr::int(2), Expr::int(3)],
+            generic_types: vec![],
         });
 
         test_expr_is("foo(0, bar(1 * 2), 3)", || Expr::Funcall {
@@ -1625,9 +1651,11 @@ type blar = I8
                         lhs: Box::new(Expr::int(1)),
                         rhs: Box::new(Expr::int(2)),
                     }],
+                    generic_types: vec![],
                 },
                 Expr::int(3),
             ],
+            generic_types: vec![],
         });
 
         test_expr_is("(1)", || Expr::int(1));
@@ -1724,12 +1752,14 @@ type blar = I8
                 name: INT.intern("x"),
             }),
             params: vec![],
+            generic_types: vec![],
         });
         test_expr_is("(x())", || Expr::Funcall {
             func: Box::new(Expr::Var {
                 name: INT.intern("x"),
             }),
             params: vec![],
+            generic_types: vec![],
         });
 
         test_expr_is("(1+2)*3", || Expr::BinOp {
@@ -1835,7 +1865,7 @@ type blar = I8
             "{Bool, Bool, I32}",
             "{Bool, {}, I32}",
         ][..];
-        test_parse_with(|p| p.parse_type(), &valid_args)
+        test_parse_with(|p| p.parse_type().unwrap(), &valid_args)
     }
 
     #[test]
