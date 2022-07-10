@@ -1,0 +1,16 @@
+-- Compile:
+--   status: success
+--
+-- Run:
+--   status: success
+--   stdout: 12
+
+/-
+fn foo(x: I64): I64 =
+    x + 3
+end
+
+fn main(): {} =
+    let x: I64 = foo(9)
+end
+-/
