@@ -267,6 +267,7 @@ dependencies = [
  "libloading",
  "logos",
  "once_cell",
+ "qbe",
  "tempfile",
 ]
 
@@ -511,6 +512,12 @@ checksum = "ba508cc11742c0dc5c1659771673afbab7a0efab23aa17e854cbab0837ed0b43"
 dependencies = [
  "unicode-xid",
 ]
+
+[[package]]
+name = "qbe"
+version = "2.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ed71945fb9a7d03a91e43ec860ff4c2bcc4d1b6b33ea51733de9230c3a71b394"
 
 [[package]]
 name = "quote"

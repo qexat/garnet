@@ -90,6 +90,7 @@ pub enum Expr {
     Funcall {
         func: Box<TypedExpr>,
         params: Vec<TypedExpr>,
+        generic_types: Vec<TypeSym>,
     },
     Break,
     Return {
@@ -280,12 +281,17 @@ fn lower_expr(expr: &ast::Expr) -> TypedExpr {
                 body: nbody,
             }
         }
-        E::Funcall { func, params } => {
+        E::Funcall {
+            func,
+            params,
+            generic_types,
+        } => {
             let nfunc = Box::new(lower_expr(func));
             let nparams = lower_exprs(params);
             Funcall {
                 func: nfunc,
                 params: nparams,
+                generic_types: generic_types.to_vec(),
             }
         }
         E::Break => Break,

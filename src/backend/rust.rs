@@ -115,7 +115,10 @@ fn compile_typename(td: &TypeDef) -> Cow<'static, str> {
         Enum { variants: _ } => {
             todo!("Enums probably should be lowered to numbers?")
         }
-        NamedType(_vsym) => todo!("Output typevar"),
+        NamedTypeVar(vsym) => {
+            let s = &*INT.fetch(*vsym);
+            mangle_name(s).into()
+        }
     }
 }
 
@@ -205,10 +208,16 @@ fn compile_decl(w: &mut impl Write, decl: &hir::Decl, tck: &Tck) -> io::Result<(
 }
 
 fn compile_fn_signature(sig: &ast::Signature) -> String {
+    let mut accm = String::from("");
     if sig.generics.len() > 0 {
-        todo!("Output generics to rust, or lower them");
+        accm += "<";
+        for generic in sig.generics.iter() {
+            accm += &mangle_name(&*INT.fetch(*generic));
+            accm += ", ";
+        }
+        accm += ">";
     }
-    let mut accm = String::from("(");
+    accm += "(";
     for (varsym, typesym) in sig.params.iter() {
         accm += &*INT.fetch(*varsym);
         accm += ": ";
@@ -330,7 +339,11 @@ fn compile_expr(expr: &hir::TypedExpr, tck: &Tck) -> String {
                 compile_exprs(body, ";\n", tck)
             )
         }
-        E::Funcall { func, params } => {
+        E::Funcall {
+            func,
+            params,
+            generic_types,
+        } => {
             // We have to store an intermediate value for the func, 'cause
             // Rust has problems with things like this:
             // fn f1() -> i32 { 1 }
@@ -377,7 +390,8 @@ fn compile_expr(expr: &hir::TypedExpr, tck: &Tck) -> String {
         E::StructRef { expr, elt } => {
             // We turn our structs into Rust tuples, so we need to
             // to turn our field names into indices
-            let tdef = &*INT.fetch_type(tck.get_solved_type(expr.id));
+            let tv = tck.get_typevar_for_expression(expr).unwrap();
+            let tdef = &*INT.fetch_type(tck.follow_typevar(tv).unwrap());
             if let TypeDef::Struct { fields } = tdef {
                 let mut nth = 9999_9999;
                 for (i, (nm, _ty)) in fields.iter().enumerate() {
