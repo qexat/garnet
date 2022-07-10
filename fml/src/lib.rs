@@ -92,7 +92,7 @@ use std::collections::HashMap;
 pub enum Type {
     Num,
     Bool,
-    Func(Box<Type>, Box<Type>),
+    Func(Vec<Type>, Box<Type>),
 }
 
 /// A identifier to uniquely refer to our type terms
@@ -111,7 +111,7 @@ pub enum TypeInfo {
     // This type term is definitely a bool
     Bool,
     // This type term is definitely a function
-    Func(TypeId, TypeId),
+    Func(Vec<TypeId>, TypeId),
 }
 
 #[derive(Default)]
@@ -158,7 +158,10 @@ impl Engine {
             // When unifying complex types, we must check their sub-types. This
             // can be trivially implemented for tuples, sum types, etc.
             (Func(a_i, a_o), Func(b_i, b_o)) => {
-                self.unify(a_i, b_i).and_then(|_| self.unify(a_o, b_o))
+                for (arg_a, arg_b) in a_i.iter().zip(b_i) {
+                    self.unify(*arg_a, arg_b)?;
+                }
+                self.unify(a_o, b_o)
             }
 
             // If no previous attempts to unify were successful, raise an error
@@ -171,17 +174,23 @@ impl Engine {
     /// type is.
     pub fn reconstruct(&self, id: TypeId) -> Result<Type, String> {
         use TypeInfo::*;
-        match self.vars[&id] {
+        match &self.vars[&id] {
             Unknown => Err(format!("Cannot infer")),
-            Ref(id) => self.reconstruct(id),
+            Ref(id) => self.reconstruct(*id),
             Num => Ok(Type::Num),
             Bool => Ok(Type::Bool),
-            Func(i, o) => Ok(Type::Func(
-                Box::new(self.reconstruct(i)?),
-                Box::new(self.reconstruct(o)?),
-            )),
+            Func(i, o) => {
+                let is: Result<Vec<Type>, String> =
+                    i.iter().copied().map(|arg| self.reconstruct(arg)).collect();
+                Ok(Type::Func(is?, Box::new(self.reconstruct(*o)?)))
+            }
         }
     }
+}
+
+#[derive(Default)]
+struct Symtbl {
+    symbols: Vec<HashMap<String, TypeId>>,
 }
 
 // # Example usage
@@ -189,19 +198,43 @@ impl Engine {
 // terms to each of your nodes with whatever information you have available. You
 // will also need to call `engine.unify(x, y)` when you know two nodes have the
 // same type, such as in the statement `x = y;`.
-//pub fn typecheck(ast: &ast::Ast) {
-pub fn typecheck() {
+pub fn typecheck(ast: &ast::Ast) {
+    let mut engine = Engine::default();
+    let mut symtbl = Symtbl::default();
+    symtbl.symbols.push(HashMap::new());
+    for decl in &ast.decls {
+        use ast::Decl::*;
+
+        match decl {
+            Function {
+                name,
+                signature,
+                body,
+            } => {
+                symtbl.symbols.push(HashMap::new());
+                for (paramname, paramtype) in &signature.params {}
+                let rettype = engine.insert(signature.rettype.clone());
+                let f = engine.insert(TypeInfo::Func(todo!(), rettype));
+                symtbl.symbols.pop();
+            }
+        }
+    }
+    for (name, id) in symtbl.symbols.last().unwrap() {
+        println!("fn {} type is {:?}", name, engine.reconstruct(*id));
+    }
+}
+pub fn typecheck2() {
     let mut engine = Engine::default();
 
     // A function with an unknown input
     let i = engine.insert(TypeInfo::Unknown);
     let o = engine.insert(TypeInfo::Num);
-    let f0 = engine.insert(TypeInfo::Func(i, o));
+    let f0 = engine.insert(TypeInfo::Func(vec![i, o.clone()], o));
 
     // A function with an unknown output
     let i = engine.insert(TypeInfo::Bool);
     let o = engine.insert(TypeInfo::Unknown);
-    let f1 = engine.insert(TypeInfo::Func(i, o));
+    let f1 = engine.insert(TypeInfo::Func(vec![i, o.clone()], o));
 
     // Unify them together...
     engine.unify(f0, f1).unwrap();
@@ -214,13 +247,10 @@ pub fn typecheck() {
 }
 
 pub fn compile(filename: &str, src: &str) -> Vec<u8> {
-    /*
-    let ast = {
-        let mut parser = parser::Parser::new(filename, src);
-        parser.parse()
-    };
-    */
-    typecheck();
+    typecheck2();
+    let mut parser = parser::Parser::new(filename, src);
+    let ast = parser.parse();
+    typecheck(&ast);
     //let res = format!("AST:\n{:#?}", ast);
     //res.as_bytes().to_owned()
     vec![]
