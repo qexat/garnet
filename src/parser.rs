@@ -574,15 +574,19 @@ impl<'input> Parser<'input> {
 
     fn parse_fn(&mut self, doc_comment: Vec<String>) -> ast::Decl {
         let name = self.expect_ident();
+        /*
         let type_vars = if self.try_expect(T::LBracket.discr()) {
             self.parse_generic_signature()
         } else {
             vec![]
         };
-        let signature = hir::Signature {
+        let signature = ast::Signature {
             generics: type_vars,
             ..self.parse_fn_signature()
         };
+        */
+        let mut signature = self.parse_fn_signature();
+        signature.generics = signature.generic_type_names();
         self.expect(T::Equals);
         let body = self.parse_exprs();
         self.expect(T::End);
@@ -639,6 +643,7 @@ impl<'input> Parser<'input> {
         }
     }
 
+    /*
     /// generic_signature = "[" [ident {"," ident} [","]] "]"
     ///
     /// Expects the first bracket to already be consumed
@@ -657,6 +662,7 @@ impl<'input> Parser<'input> {
         self.expect(T::RBracket);
         body
     }
+    */
 
     /*
     /// Helper to parse a delimited list of separated items, such as this pattern:
@@ -989,21 +995,23 @@ impl<'input> Parser<'input> {
                 }
                 lhs = match op_token {
                     T::LParen => {
-                        let params = self.parse_function_args();
+                        let (params, generic_types) = self.parse_function_args();
                         ast::Expr::Funcall {
                             func: Box::new(lhs),
                             params,
+                            generic_types,
                         }
                     }
                     T::Colon => {
                         self.expect(T::Colon);
                         let ident = self.expect_ident();
                         let ident_expr = ast::Expr::Var { name: ident };
-                        let mut params = self.parse_function_args();
+                        let (mut params, generic_types) = self.parse_function_args();
                         params.insert(0, lhs);
                         ast::Expr::Funcall {
                             func: Box::new(ident_expr),
                             params,
+                            generic_types,
                         }
                     }
                     T::Period => {
@@ -1076,20 +1084,30 @@ impl<'input> Parser<'input> {
         Some(lhs)
     }
 
-    fn parse_function_args(&mut self) -> Vec<ast::Expr> {
+    fn parse_function_args(&mut self) -> (Vec<ast::Expr>, Vec<TypeSym>) {
         let mut params = vec![];
+        let mut generics = vec![];
         self.expect(T::LParen);
-        // TODO: Refactor out this pattern somehow?
+        // TODO: Refactor out this optional-trailing-comma pattern somehow?
         // There's now three places it's used and it's only going to grow.
         while let Some(expr) = self.parse_expr(0) {
             params.push(expr);
+            // Look for generic decl's of the form
+            // foo(x type I32, y, z type Bar) ...
+            // TODO: This a kinda icky placeholder syntax, but it's
+            // all I can think of for now.
+            // It's basically the tuborfish: foo::<I32, Bar>(x, y, z)
+            if self.peek_is(T::Type.discr()) {
+                self.expect(T::Type);
+                generics.push(self.parse_type());
+            }
             if !self.peek_is(T::Comma.discr()) {
                 break;
             }
             self.expect(T::Comma);
         }
         self.expect(T::RParen);
-        params
+        (params, generics)
     }
 
     /// let = "let" ident ":" typename "=" expr
@@ -1573,12 +1591,7 @@ type blar = I8
 
     #[test]
     fn parse_fn_decls() {
-        let valid_args = vec![
-            "fn foo1(f: I32): I32 = f end",
-            "fn foo2(f: T): T = f end",
-            "fn foo3[T](f: T): T = f end",
-            "fn foo3[Q,R,S](f: T): T = f end",
-        ];
+        let valid_args = vec!["fn foo1(f: I32): I32 = f end", "fn foo2(f: @T): @T = f end"];
         test_parse_with(|p| p.parse_decl().unwrap(), &valid_args);
     }
 

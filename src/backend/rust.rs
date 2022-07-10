@@ -330,7 +330,11 @@ fn compile_expr(expr: &hir::TypedExpr, tck: &Tck) -> String {
                 compile_exprs(body, ";\n", tck)
             )
         }
-        E::Funcall { func, params } => {
+        E::Funcall {
+            func,
+            params,
+            generic_types,
+        } => {
             // We have to store an intermediate value for the func, 'cause
             // Rust has problems with things like this:
             // fn f1() -> i32 { 1 }

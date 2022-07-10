@@ -18,6 +18,6 @@ fn second(a: @T1, b: @T2): T2 =
 end
 
 fn main(): {} =
-    let x: I32 = foo(I32, 42I32);
+    let x: I32 = foo(I32, 42I32)
     __println(x)
 end

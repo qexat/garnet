@@ -157,6 +157,16 @@ impl Signature {
         };
         INT.intern_type(&t)
     }
+
+    pub fn generic_type_names(&self) -> Vec<VarSym> {
+        self.params
+            .iter()
+            .filter_map(|(_nm, ty)| match &*INT.fetch_type(*ty) {
+                TypeDef::NamedTypeVar(x) => Some(*x),
+                _ => None,
+            })
+            .collect()
+    }
 }
 
 /// Any expression.
@@ -202,6 +212,7 @@ pub enum Expr {
     Funcall {
         func: Box<Expr>,
         params: Vec<Expr>,
+        generic_types: Vec<TypeSym>,
     },
     Break,
     Return {
