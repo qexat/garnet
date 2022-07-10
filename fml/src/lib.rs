@@ -85,27 +85,29 @@ let example = apply t_map t_double
 pub mod ast;
 pub mod parser;
 
+use std::cell::RefCell;
+
 /// A complete-ish description of a type.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum TypeDef {
     Type(i32),
     TypeConstr(i32, Vec<TypeDef>),
-    TypeVar(Option<Box<TypeDef>>),
+    TypeVar(RefCell<Option<Box<TypeDef>>>),
 }
 
 fn not_equal(a: &TypeDef, b: &TypeDef) {
     panic!("Not equal: {:?} {:?}", a, b)
 }
 
-fn infinite_type(a: &Option<Box<TypeDef>>, b: &TypeDef) {
-    panic!("infinite type: {:?} {:?}", a, b)
+fn infinite_type(a: &RefCell<Option<Box<TypeDef>>>, b: &TypeDef) {
+    panic!("infinite type: {:?} {:?}", a.read(), b)
 }
 
 fn occurs(v_a: &Option<Box<TypeDef>>, thing: &TypeDef) -> bool {
     match thing {
         TypeDef::Type(_) => false,
         TypeDef::TypeConstr(_, ts_b) => ts_b.iter().any(|v| occurs(v_a, v)),
-        TypeDef::TypeVar(v_b) => match v_b {
+        TypeDef::TypeVar(v_b) => match v_b.read() {
             None => v_a == v_b,
             Some(t) => occurs(v_a, t),
         },
