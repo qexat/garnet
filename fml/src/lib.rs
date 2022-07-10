@@ -85,107 +85,137 @@ let example = apply t_map t_double
 pub mod ast;
 pub mod parser;
 
-/// A complete-ish description of a type.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum TypeDef {
-    Type(i32),
-    TypeConstr(i32, Vec<TypeDef>),
-    TypeVar(Option<Box<TypeDef>>),
+use std::collections::HashMap;
+
+/// A concrete type that has been fully inferred
+#[derive(Debug)]
+pub enum Type {
+    Num,
+    Bool,
+    List(Box<Type>),
+    Func(Box<Type>, Box<Type>),
 }
 
-fn not_equal(a: &TypeDef, b: &TypeDef) {
-    panic!("Not equal: {:?} {:?}", a, b)
+/// A identifier to uniquely refer to our type terms
+#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq)]
+pub struct TypeId(usize);
+
+/// Information about a type term
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
+pub enum TypeInfo {
+    // No information about the type of this type term
+    Unknown,
+    // This type term is the same as another type term
+    Ref(TypeId),
+    // This type term is definitely a number
+    Num,
+    // This type term is definitely a boolean
+    Bool,
+    // This type term is definitely a list
+    List(TypeId),
+    // This type term is definitely a function
+    Func(TypeId, TypeId),
 }
 
-fn infinite_type(a: &Option<Box<TypeDef>>, b: &TypeDef) {
-    panic!("infinite type: {:?} {:?}", a, b)
+#[derive(Default)]
+struct Engine {
+    id_counter: usize, // Used to generate unique IDs
+    vars: HashMap<TypeId, TypeInfo>,
 }
 
-fn occurs(v_a: &Option<Box<TypeDef>>, thing: &TypeDef) -> bool {
-    match thing {
-        TypeDef::Type(_) => false,
-        TypeDef::TypeConstr(_, ts_b) => ts_b.iter().any(|v| occurs(v_a, v)),
-        TypeDef::TypeVar(v_b) => match v_b {
-            None => v_a == v_b,
-            Some(t) => occurs(v_a, t),
-        },
+impl Engine {
+    /// Create a new type term with whatever we have about its type
+    pub fn insert(&mut self, info: TypeInfo) -> TypeId {
+        // Generate a new ID for our type term
+        self.id_counter += 1;
+        let id = TypeId(self.id_counter);
+        self.vars.insert(id, info);
+        id
+    }
+
+    /// Make the types of two type terms equivalent (or produce an error if
+    /// there is a conflict between them)
+    pub fn unify(&mut self, a: TypeId, b: TypeId) -> Result<(), String> {
+        use TypeInfo::*;
+        match (self.vars[&a].clone(), self.vars[&b].clone()) {
+            // Follow any references
+            (Ref(a), _) => self.unify(a, b),
+            (_, Ref(b)) => self.unify(a, b),
+
+            // When we don't know anything about either term, assume that
+            // they match and make the one we know nothing about reference the
+            // one we may know something about
+            (Unknown, _) => {
+                self.vars.insert(a, TypeInfo::Ref(b));
+                Ok(())
+            }
+            (_, Unknown) => {
+                self.vars.insert(b, TypeInfo::Ref(a));
+                Ok(())
+            }
+
+            // Primitives are trivial to unify
+            (Num, Num) => Ok(()),
+            (Bool, Bool) => Ok(()),
+
+            // When unifying complex types, we must check their sub-types. This
+            // can be trivially implemented for tuples, sum types, etc.
+            (List(a_item), List(b_item)) => self.unify(a_item, b_item),
+            (Func(a_i, a_o), Func(b_i, b_o)) => {
+                self.unify(a_i, b_i).and_then(|_| self.unify(a_o, b_o))
+            }
+
+            // If no previous attempts to unify were successful, raise an error
+            (a, b) => Err(format!("Conflict between {:?} and {:?}", a, b)),
+        }
+    }
+
+    /// Attempt to reconstruct a concrete type from the given type term ID. This
+    /// may fail if we don't yet have enough information to figure out what the
+    /// type is.
+    pub fn reconstruct(&self, id: TypeId) -> Result<Type, String> {
+        use TypeInfo::*;
+        match self.vars[&id] {
+            Unknown => Err(format!("Cannot infer")),
+            Ref(id) => self.reconstruct(id),
+            Num => Ok(Type::Num),
+            Bool => Ok(Type::Bool),
+            List(item) => Ok(Type::List(Box::new(self.reconstruct(item)?))),
+            Func(i, o) => Ok(Type::Func(
+                Box::new(self.reconstruct(i)?),
+                Box::new(self.reconstruct(o)?),
+            )),
+        }
     }
 }
 
-fn deref(t: &TypeDef) -> TypeDef {
-    match t {
-        TypeDef::TypeVar(Some(t2)) => deref(t2),
-        TypeDef::TypeVar(None) => t.clone(),
-        _ => t.clone(),
-    }
-}
-
-fn unify(a: &TypeDef, b: &TypeDef) {
-    let a = deref(a);
-    let b = deref(b);
-    use TypeDef::*;
-    match (&a, &b) {
-        (Type(t_a), Type(t_b)) if t_a != t_b => not_equal(&a, &b),
-        (TypeConstr(c_a, ts_a), TypeConstr(c_b, ts_b)) => {
-            if c_a != c_b {
-                not_equal(&a, &b)
-            } else {
-                for (t1, t2) in ts_a.iter().zip(ts_b.iter()) {
-                    unify(t1, t2)
-                }
-            }
-        }
-        (TypeVar(v_a), TypeVar(v_b)) => {
-            if v_a != v_b {
-                // v_a := Some(b)
-                // This makes borrowing sticky.
-                // See https://play.rust-lang.org/?version=stable&mode=debug&edition=2018&gist=174ca95a8b938168764846e97d5e9a2c
-                todo!("v_a := Some(b)")
-            }
-        }
-        (TypeVar(v_a), _) => {
-            if occurs(v_a, &b) {
-                infinite_type(v_a, &b)
-            } else {
-                todo!("v_a := Some(b)")
-            }
-        }
-        (_, TypeVar(v_b)) => unify(&b, &a),
-        (_, _) => not_equal(&a, &b),
-    }
-}
-
-fn apply1(f: &TypeDef, x: &TypeDef) -> TypeDef {
-    let a = todo!("TypeVar (ref None)");
-    let b = todo!("TypeVar (ref None)");
-    // Check that f is a function
-    unify(f, &TypeDef::TypeConstr(0, vec![a, b]));
-    // Unify x with the argument of f
-    unify(&a, x);
-    x.clone()
-}
-
+// # Example usage
+// In reality, the most common approach will be to walk your AST, assigning type
+// terms to each of your nodes with whatever information you have available. You
+// will also need to call `engine.unify(x, y)` when you know two nodes have the
+// same type, such as in the statement `x = y;`.
 //pub fn typecheck(ast: &ast::Ast) {
 pub fn typecheck() {
-    let fn_tycon = 0;
-    let list_tycon = 1;
-    let int_tycon = 2;
-    let t_double = TypeDef::TypeConstr(0, vec![TypeDef::Type(2), TypeDef::Type(2)]);
-    // forall a b. (a -> b) -> List a -> List b
-    let t_map = {
-        let a = todo!("TypeVar (ref None)");
-        let b = todo!("TypeVar (ref None)");
-        use TypeDef::TypeConstr as TC;
-        TC(
-            0,
-            vec![
-                TC(0, vec![a, b]),
-                TC(0, vec![TC(1, vec![a]), TC(1, vec![b])]),
-            ],
-        )
-    };
-    let example = apply1(&t_map, &t_double);
-    println!("Example is {:?}", example);
+    let mut engine = Engine::default();
+
+    // A function with an unknown input
+    let i = engine.insert(TypeInfo::Unknown);
+    let o = engine.insert(TypeInfo::Num);
+    let f0 = engine.insert(TypeInfo::Func(i, o));
+
+    // A function with an unknown output
+    let i = engine.insert(TypeInfo::Bool);
+    let o = engine.insert(TypeInfo::Unknown);
+    let f1 = engine.insert(TypeInfo::Func(i, o));
+
+    // Unify them together...
+    engine.unify(f0, f1).unwrap();
+
+    // A list of the aforementioned function
+    let list = engine.insert(TypeInfo::List(f1));
+
+    // ...and compute the resulting type
+    println!("Final type = {:?}", engine.reconstruct(list));
 }
 
 pub fn compile(filename: &str, src: &str) -> Vec<u8> {
