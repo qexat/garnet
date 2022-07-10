@@ -115,7 +115,10 @@ fn compile_typename(td: &TypeDef) -> Cow<'static, str> {
         Enum { variants: _ } => {
             todo!("Enums probably should be lowered to numbers?")
         }
-        NamedTypeVar(_vsym) => todo!("Output typevar"),
+        NamedTypeVar(vsym) => {
+            let s = &*INT.fetch(*vsym);
+            mangle_name(s).into()
+        }
     }
 }
 
@@ -205,10 +208,16 @@ fn compile_decl(w: &mut impl Write, decl: &hir::Decl, tck: &Tck) -> io::Result<(
 }
 
 fn compile_fn_signature(sig: &ast::Signature) -> String {
+    let mut accm = String::from("");
     if sig.generics.len() > 0 {
-        todo!("Output generics to rust, or lower them");
+        accm += "<";
+        for generic in sig.generics.iter() {
+            accm += &mangle_name(&*INT.fetch(*generic));
+            accm += ", ";
+        }
+        accm += ">";
     }
-    let mut accm = String::from("(");
+    accm += "(";
     for (varsym, typesym) in sig.params.iter() {
         accm += &*INT.fetch(*varsym);
         accm += ": ";

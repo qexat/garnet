@@ -757,15 +757,7 @@ pub fn try_solve_type(tck: &Tck, tv: TypeVar) -> Option<TypeSym> {
             generics,
             params: _,
             rettype: _,
-        } if generics.len() == 0 => Some(tsym),
-        TypeDef::Lambda {
-            generics,
-            params,
-            rettype,
-        } => {
-            dbg!(generics, params, rettype);
-            todo!("Reconstruct lambda with generics");
-        }
+        } => Some(tsym),
         TypeDef::Never => Some(tsym),
         TypeDef::NamedTypeVar(..) => Some(tsym),
         other => todo!("Solve {:?}", other),
@@ -816,9 +808,16 @@ fn try_unify(tck: &mut Tck, v1: TypeVar, v2: TypeVar) -> Result<(), TypeError> {
                 // I think?  Hmmmm...
                 (Never, _) => Ok(()),
                 (_, Never) => Ok(()),
+                // TODO: Hmmmm, is this right, or do we have
+                // to recurse and keep trying to unify?
                 (NamedTypeVar(nm), _thing) => {
                     let tvar = tck.scope.get_generic(*nm).expect("Unbound generic type");
                     tck.constraints.insert(tvar, t2);
+                    Ok(())
+                }
+                (_thing, NamedTypeVar(nm)) => {
+                    let tvar = tck.scope.get_generic(*nm).expect("Unbound generic type");
+                    tck.constraints.insert(tvar, t1);
                     Ok(())
                 }
                 (
@@ -835,7 +834,21 @@ fn try_unify(tck: &mut Tck, v1: TypeVar, v2: TypeVar) -> Result<(), TypeError> {
                 ) => {
                     assert!(params1.len() == params2.len());
                     assert!(generics1.len() == generics2.len());
-                    todo!("Unify lambda's")
+                    // Unify params
+                    for (p1, p2) in params1.iter().zip(params2.iter()) {
+                        let t1 = tck.new_typevar();
+                        tck.add_constraint(t1, Constraint::TypeSym(*p1));
+                        let t2 = tck.new_typevar();
+                        tck.add_constraint(t2, Constraint::TypeSym(*p2));
+                        try_unify(tck, t1, t2)?;
+                    }
+                    // Unify return types
+                    let r1 = tck.new_typevar();
+                    tck.add_constraint(r1, Constraint::TypeSym(*rettype1));
+                    let r2 = tck.new_typevar();
+                    tck.add_constraint(r2, Constraint::TypeSym(*rettype2));
+                    try_unify(tck, r1, r2)?;
+                    Ok(())
                 }
 
                 // If the types are actually literally equal then there's
@@ -1127,27 +1140,12 @@ fn check_expr(
         Expr::Funcall {
             func,
             params,
-            generic_types: _generic_types,
+            generic_types,
         } => {
             // What type do we think the `func` expression is?
             let func_constraint = infer_expr(tck, &*func, rettype)?;
             let func_typevar = tck.create_exprtype(&*func);
             tck.add_constraint(func_typevar, func_constraint);
-
-            /*
-            // Ok now, what type do we think the args actually are?
-            // We use this to build up a hypothetical signature for
-            // the function, and then unify it with the constraint above.
-            let hypothetical_params: Vec<_> = params
-                .iter()
-                .map(|p| infer_expr(tck, p, rettype))
-                .collect()?;
-            let hypothetical_sig = hir::Signature {
-                generics: vec![],
-                params: hypothetical_params,
-                rettype: expr_typevar,
-            };
-            */
 
             // Now, the function type may be anything, including not a function.
             // but, the thing is, for now our function types can *not*
@@ -1160,11 +1158,6 @@ fn check_expr(
             // on that generic (we might need to create typevars for all generics
             // first), and then... are we fine then???  No, because we need
             // to know something about the type from try_solve_type too.
-            //
-            // We won't worry about instantiation JUST yet.  We can do that just
-            // by recording what instantiations need to exist and then creating
-            // them later.
-
             let func_typesym = try_solve_type(tck, func_typevar).unwrap();
             let func_typedef = &*func_typesym.val();
             // And if it's actually a function...
@@ -1172,7 +1165,7 @@ fn check_expr(
                 TypeDef::Lambda {
                     params: param_types,
                     rettype: call_rettype,
-                    generics: _generics,
+                    generics,
                 } => {
                     // Ok, when we call a function with generic types,
                     // do we try to substitute those types for what we
@@ -1182,10 +1175,20 @@ fn check_expr(
                     //
                     // It has to be the first because all we may actually
                     // know about the generic is "it is this type var".
+                    //
+                    // Ok for now we don't infer shit, we just map
+                    // the declared generics to the function's l
 
                     // We go through the params we were given and check
                     // that they match the function's sig
                     assert_eq!(params.len(), param_types.len());
+                    assert_eq!(generics.len(), generic_types.len());
+                    for (g1, g2) in generics.iter().zip(generic_types) {
+                        let tv = tck.new_typevar();
+                        tck.scope.add_generic(*g1, tv);
+                        tck.add_constraint(tv, Constraint::TypeSym(*g2));
+                    }
+
                     for (p, t) in params.iter().zip(param_types) {
                         // (the 'rettype' here is the enclosing function's rettype,
                         // not the one we're calling!)
