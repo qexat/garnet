@@ -21,9 +21,9 @@ pub enum Literal {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Signature {
     /// Parameters
-    pub params: Vec<(String, TypeDef)>,
+    pub params: Vec<(String, TypeInfo)>,
     /// Return type
-    pub rettype: TypeDef,
+    pub rettype: TypeInfo,
 }
 
 /// Any expression.
@@ -38,7 +38,7 @@ pub enum Expr {
     },
     Let {
         varname: String,
-        typename: TypeDef,
+        typename: TypeInfo,
         init: Box<Expr>,
     },
     Lambda {

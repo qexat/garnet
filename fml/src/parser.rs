@@ -298,7 +298,7 @@ impl<'input> Parser<'input> {
     }
 
     /// Consume an identifier and return its interned symbol.
-    /// Note this returns a String, not a TypeDef...
+    /// Note this returns a String, not a TypeInfo...
     fn expect_ident(&mut self) -> String {
         match self.next() {
             Some(Token {
@@ -387,7 +387,7 @@ impl<'input> Parser<'input> {
 
     /// sig = ident ":" typename
     /// fn_args = "(" [sig {"," sig} [","]] ")"
-    fn parse_fn_args(&mut self) -> Vec<(String, TypeDef)> {
+    fn parse_fn_args(&mut self) -> Vec<(String, TypeInfo)> {
         let mut args = vec![];
         self.expect(T::LParen);
 
@@ -406,17 +406,17 @@ impl<'input> Parser<'input> {
         args
     }
 
-    fn parse_fn_type(&mut self) -> TypeDef {
+    fn parse_fn_type(&mut self) -> TypeInfo {
         // TODO: Parse generic stuffs?
         let mut params = self.parse_fn_type_args();
         self.expect(T::Colon);
         let rettype = self.parse_type();
         params.push(rettype);
-        // TODO: wtf should the 0 be?
-        TypeDef::TypeConstr(0, params)
+        todo!()
+        //TypeInfo::Func()
     }
 
-    fn parse_fn_type_args(&mut self) -> Vec<TypeDef> {
+    fn parse_fn_type_args(&mut self) -> Vec<TypeInfo> {
         let mut args = vec![];
         self.expect(T::LParen);
 
@@ -434,7 +434,7 @@ impl<'input> Parser<'input> {
     }
 
     /*
-    fn parse_tuple_type(&mut self) -> TypeDef {
+    fn parse_tuple_type(&mut self) -> TypeInfo {
         let mut body = vec![];
         while !self.peek_is(T::RBrace.discr()) {
             let t = self.parse_type();
@@ -445,7 +445,7 @@ impl<'input> Parser<'input> {
             }
         }
         self.expect(T::RBrace);
-        TypeDef::Tuple(body)
+        TypeInfo::Tuple(body)
     }
     */
 
@@ -598,7 +598,7 @@ impl<'input> Parser<'input> {
         ast::Expr::Lambda { signature, body }
     }
 
-    fn parse_type(&mut self) -> TypeDef {
+    fn parse_type(&mut self) -> TypeInfo {
         let t = self.next();
         match t {
             /*
@@ -606,7 +606,7 @@ impl<'input> Parser<'input> {
                 kind: T::Ident(s),
                 span: _,
             }) => {
-                if let Some(t) = TypeDef::get_primitive_type(s.as_ref()) {
+                if let Some(t) = TypeInfo::get_primitive_type(s.as_ref()) {
                     t.clone()
                 } else {
                     crate::INT.named_type(s)
