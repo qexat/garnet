@@ -601,18 +601,17 @@ impl<'input> Parser<'input> {
     fn parse_type(&mut self) -> TypeInfo {
         let t = self.next();
         match t {
-            /*
             Some(Token {
-                kind: T::Ident(s),
+                kind: T::Ident(ref s),
                 span: _,
             }) => {
-                if let Some(t) = TypeInfo::get_primitive_type(s.as_ref()) {
+                if let Some(t) = TypeInfo::get_primitive_type(s) {
                     t.clone()
                 } else {
-                    crate::INT.named_type(s)
+                    //crate::INT.named_type(s)
+                    self.error("Unknown type", t.clone());
                 }
             }
-            */
             /*
             Some(Token {
                 kind: T::LBrace, ..

@@ -114,6 +114,17 @@ pub enum TypeInfo {
     Func(Vec<TypeId>, TypeId),
 }
 
+impl TypeInfo {
+    fn get_primitive_type(s: &str) -> Option<TypeInfo> {
+        match s {
+            "I32" => Some(TypeInfo::Num),
+            "Bool" => Some(TypeInfo::Bool),
+            //"Never" => Some(TypeInfo::Never),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Default)]
 struct Engine {
     id_counter: usize, // Used to generate unique IDs
@@ -211,11 +222,18 @@ pub fn typecheck(ast: &ast::Ast) {
                 signature,
                 body,
             } => {
-                symtbl.symbols.push(HashMap::new());
-                for (paramname, paramtype) in &signature.params {}
+                let mut params = vec![];
+                for (_paramname, paramtype) in &signature.params {
+                    let p = engine.insert(paramtype.clone());
+                    params.push(p);
+                }
                 let rettype = engine.insert(signature.rettype.clone());
-                let f = engine.insert(TypeInfo::Func(todo!(), rettype));
-                symtbl.symbols.pop();
+                let f = engine.insert(TypeInfo::Func(params, rettype));
+                symtbl
+                    .symbols
+                    .last_mut()
+                    .unwrap()
+                    .insert(name.to_string(), f);
             }
         }
     }
