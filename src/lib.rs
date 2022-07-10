@@ -3,6 +3,7 @@
 
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
+use std::fmt;
 use std::sync::Arc;
 
 pub mod ast;
@@ -25,14 +26,14 @@ use once_cell::sync::Lazy;
 pub static INT: Lazy<Cx> = Lazy::new(Cx::new);
 
 /// The interned name of a type
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct TypeSym(pub usize);
 
-/*
-/// A synthesized type with a number attached to it.
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct TypeId(pub usize);
-*/
+impl fmt::Debug for TypeSym {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "TypeSym({}, {:?})", self.0, INT.fetch_type(*self))
+    }
+}
 
 /// Required for interner interface.
 impl From<usize> for TypeSym {
@@ -48,8 +49,18 @@ impl From<TypeSym> for usize {
     }
 }
 
+impl TypeSym {
+    /// Get the value represented by the interned symbol.
+    ///
+    /// Can't return a reference, annoyingly, as it
+    /// would result in "returning a value to a local"
+    fn val(&self) -> Arc<TypeDef> {
+        INT.fetch_type(*self)
+    }
+}
+
 /// The interned name of a variable/value
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct VarSym(pub usize);
 
 /// Required for interner interface.
@@ -63,6 +74,19 @@ impl From<usize> for VarSym {
 impl From<VarSym> for usize {
     fn from(i: VarSym) -> usize {
         i.0
+    }
+}
+
+impl fmt::Debug for VarSym {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "VarSym({}, {:?})", self.0, INT.fetch(*self))
+    }
+}
+
+impl VarSym {
+    /// Same as TypeSym::val()
+    fn val(&self) -> Arc<String> {
+        INT.fetch(*self)
     }
 }
 
@@ -83,7 +107,7 @@ pub type TypeConstraint = VarSym;
 
 /// A complete-ish description of a type.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum TypeDef {
+pub enum TypeDef<T = TypeSym> {
     /// Signed integer with the given number of bytes
     SInt(u8),
     /// An integer of unknown size, from an integer literal
@@ -91,23 +115,23 @@ pub enum TypeDef {
     /// Boolean, obv's
     Bool,
     /// Tuple.  The types inside it may or may not be fully known I guess
-    Tuple(Vec<TypeSym>),
+    Tuple(Vec<T>),
     /// Never is a real type, I guess!
     Never,
     /// The type of a lambda is its signature.
     Lambda {
         generics: Vec<TypeConstraint>,
-        params: Vec<TypeSym>,
-        rettype: TypeSym,
+        params: Vec<T>,
+        rettype: T,
     },
     /// A struct.
-    Struct { fields: BTreeMap<VarSym, TypeSym> },
+    Struct { fields: BTreeMap<VarSym, T> },
     Enum {
         /// TODO: For now the only size of an enum is i32.
         variants: Vec<(VarSym, i32)>,
     },
     /// These are type variables that are explicitly declared by the user.
-    NamedType(VarSym),
+    NamedTypeVar(VarSym),
 }
 
 impl TypeDef {
@@ -231,7 +255,7 @@ impl TypeDef {
                 res += "\n}\n";
                 Cow::Owned(res)
             }
-            TypeDef::NamedType(vsym) => Cow::Owned((&*INT.fetch(*vsym)).clone()),
+            TypeDef::NamedTypeVar(vsym) => Cow::Owned((&*INT.fetch(*vsym)).clone()),
         }
     }
 
@@ -320,7 +344,7 @@ impl Cx {
     /// Intern a new named type var matching the given string
     pub fn named_type(&self, s: impl AsRef<str>) -> TypeSym {
         let sym = self.intern(s);
-        self.types.intern(&TypeDef::NamedType(sym))
+        self.types.intern(&TypeDef::NamedTypeVar(sym))
     }
 
     /// Get the TypeDef for a type symbol
@@ -394,21 +418,24 @@ impl Cx {
 ///
 /// Parse -> lower to IR -> run transformation passes
 /// -> typecheck -> compile to wasm
-pub fn try_compile(filename: &str, src: &str) -> Result<Vec<u8>, typeck::TypeError> {
+pub fn try_compile(
+    filename: &str,
+    src: &str,
+    backend: backend::Backend,
+) -> Result<Vec<u8>, typeck::TypeError> {
     let ast = {
         let mut parser = parser::Parser::new(filename, src);
         parser.parse()
     };
     let hir = hir::lower(&ast);
     let hir = passes::run_passes(hir);
-    // TODO: Get rid of this clone, typechecking no longer returns a new AST.
-    let tck = typeck::typecheck(hir.clone())?;
-    Ok(backend::output(backend::Backend::Rust, &hir, &tck))
+    let tck = typeck::typecheck(&hir)?;
+    Ok(backend::output(backend, &hir, &tck))
 }
 
 /// For when we don't care about catching results
-pub fn compile(filename: &str, src: &str) -> Vec<u8> {
-    try_compile(filename, src).unwrap_or_else(|e| panic!("Type check error: {}", e))
+pub fn compile(filename: &str, src: &str, backend: backend::Backend) -> Vec<u8> {
+    try_compile(filename, src, backend).unwrap_or_else(|e| panic!("Type check error: {}", e))
 }
 
 #[cfg(test)]

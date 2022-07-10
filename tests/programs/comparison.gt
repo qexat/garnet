@@ -1,0 +1,48 @@
+-- Compile:
+--   status: success
+--
+-- Run:
+--   status: success
+--   stdout:
+--     1
+--     true
+--     true
+--     false
+--     true
+--     true
+--     2
+--     true
+--     true
+--     false
+--     true
+--     true
+--     3
+--     true
+--     false
+--     true
+--     false
+
+--- Comparisons and equality
+fn main(): {} =
+    -- The numbers break the test output into sections so it's easier to
+    -- see
+    __println(1)
+    __println_bool(true == true)
+    __println_bool(true /= false)
+    __println_bool(false == true)
+    __println_bool(false == false)
+    __println_bool(false /= true)
+
+    __println(2)
+    __println_bool(1 == 1)
+    __println_bool(1 /= 0)
+    __println_bool(0 == 1)
+    __println_bool(0 == 0)
+    __println_bool(0 /= 1)
+
+    __println(3)
+    __println_bool(0 < 1)
+    __println_bool(0 > 1)
+    __println_bool(0 <= 1)
+    __println_bool(0 >= 1)
+end

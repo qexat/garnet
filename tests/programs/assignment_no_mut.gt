@@ -1,5 +1,9 @@
 -- Compile:
 --   status: error
+--   stderr:
+--     ...
+--     ...Mutability mismatch in 'assignment'...
+--     ...
 
 fn main(): {} =
     let x: I32 = 10

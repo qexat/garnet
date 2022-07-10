@@ -71,12 +71,18 @@ fn lambda_lift_expr(expr: TypedExpr, output_funcs: &mut Vec<D>) -> TypedExpr {
         E::Return { retval } => E::Return {
             retval: Box::new(lambda_lift_expr(*retval, output_funcs)),
         },
-        E::Funcall { func, params } => {
+        E::Funcall {
+            func,
+            params,
+            generic_types,
+        } => {
             let new_func = Box::new(lambda_lift_expr(*func, output_funcs));
             let new_params = lambda_lift_exprs(params, output_funcs);
+            let new_generics = generic_types.to_vec();
             E::Funcall {
                 func: new_func,
                 params: new_params,
+                generic_types: new_generics,
             }
         }
         E::Lambda { signature, body } => {
