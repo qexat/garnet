@@ -28,11 +28,12 @@ fn main() -> std::io::Result<()> {
     //let opt = parse_args();
     let opt: Opt = argh::from_env();
 
+    let src = std::fs::read_to_string(&opt.file)?;
+    let _output = fml::compile(&opt.file.to_str().unwrap(), &src);
+    /*
     let mut rust_file;
     // Output to file
     {
-        let src = std::fs::read_to_string(&opt.file)?;
-        let output = fml::compile(&opt.file.to_str().unwrap(), &src);
         rust_file = opt.file.clone();
         rust_file.set_extension("rs");
         std::fs::write(&rust_file, &output)?;
@@ -73,5 +74,6 @@ fn main() -> std::io::Result<()> {
         std::fs::remove_file(&exe_file).unwrap();
         res.expect("Failed to run program");
     }
+    */
     Ok(())
 }

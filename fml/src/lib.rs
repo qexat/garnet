@@ -92,7 +92,6 @@ use std::collections::HashMap;
 pub enum Type {
     Num,
     Bool,
-    List(Box<Type>),
     Func(Box<Type>, Box<Type>),
 }
 
@@ -109,10 +108,8 @@ pub enum TypeInfo {
     Ref(TypeId),
     // This type term is definitely a number
     Num,
-    // This type term is definitely a boolean
+    // This type term is definitely a bool
     Bool,
-    // This type term is definitely a list
-    List(TypeId),
     // This type term is definitely a function
     Func(TypeId, TypeId),
 }
@@ -160,7 +157,6 @@ impl Engine {
 
             // When unifying complex types, we must check their sub-types. This
             // can be trivially implemented for tuples, sum types, etc.
-            (List(a_item), List(b_item)) => self.unify(a_item, b_item),
             (Func(a_i, a_o), Func(b_i, b_o)) => {
                 self.unify(a_i, b_i).and_then(|_| self.unify(a_o, b_o))
             }
@@ -180,7 +176,6 @@ impl Engine {
             Ref(id) => self.reconstruct(id),
             Num => Ok(Type::Num),
             Bool => Ok(Type::Bool),
-            List(item) => Ok(Type::List(Box::new(self.reconstruct(item)?))),
             Func(i, o) => Ok(Type::Func(
                 Box::new(self.reconstruct(i)?),
                 Box::new(self.reconstruct(o)?),
@@ -211,11 +206,11 @@ pub fn typecheck() {
     // Unify them together...
     engine.unify(f0, f1).unwrap();
 
-    // A list of the aforementioned function
-    let list = engine.insert(TypeInfo::List(f1));
+    // An instance of the aforementioned function
+    let thing = engine.insert(TypeInfo::Ref(f1));
 
     // ...and compute the resulting type
-    println!("Final type = {:?}", engine.reconstruct(list));
+    println!("Final type = {:?}", engine.reconstruct(thing));
 }
 
 pub fn compile(filename: &str, src: &str) -> Vec<u8> {
