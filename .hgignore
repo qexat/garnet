@@ -1,3 +1,4 @@
 ^target/
+^fml/target/
 tarpaulin-report.html
 tests/programs/.*\.rs

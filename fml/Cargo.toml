@@ -1,0 +1,15 @@
+[package]
+name = "fml"
+version = "0.1.0"
+authors = ["Simon Heath <icefox@dreamquest.io>"]
+edition = "2018"
+
+
+[[bin]]
+name = "fmlc"
+path = "src/main.rs"
+
+[dependencies]
+argh = "0.1"
+codespan-reporting = "0.11"
+logos = "0.12"
