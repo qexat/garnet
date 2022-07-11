@@ -26,6 +26,16 @@ pub struct Signature {
     pub rettype: TypeInfo,
 }
 
+/*
+/// An AST node wrapper that contains information
+/// common to all AST nodes.
+pub struct ExprNode {
+    node: Box<Expr>,
+    //typeinfo: Option<crate::TypeId>,
+    id: AstNodeId,
+}
+*/
+
 /// Any expression.
 /// So, basically anything not a top-level decl.
 #[derive(Debug, Clone, PartialEq)]
