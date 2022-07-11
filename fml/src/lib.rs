@@ -1,86 +1,4 @@
 //! Garnet compiler guts.
-//#![deny(missing_docs)]
-/*
- * type t =
-    Type of int
-  | Type_Constructor of int * t list
-  | Type_Variable of t option ref
-
-exception Not_Equal of t * t
-exception Infinite_Type of t option ref * t
-
-let rec occurs v_a = function
-  | Type _ -> false
-  | Type_Constructor (_, ts_b) -> List.exists (occurs v_a) ts_b
-  | Type_Variable v_b ->
-    match !v_b with
-    | None -> v_a == v_b
-    | Some t -> occurs v_a t
-
-let rec deref t =
-  match t with
-  | Type_Variable v_t ->
-    begin match !v_t with
-    | None -> t
-    | Some t2 -> deref t2
-    end
-  | _ -> t
-
-let rec unify a b =
-  let a = deref a in
-  let b = deref b in
-  match a, b with
-    | Type t_a, Type t_b ->
-      if t_a != t_b then
-        raise (Not_Equal (a, b))
-    | Type_Constructor (c_a, ts_a), Type_Constructor (c_b, ts_b) ->
-      if c_a != c_b then
-        raise (Not_Equal (a, b))
-      else
-        List.iter2 unify ts_a ts_b
-    | Type _, Type_Constructor _ -> raise (Not_Equal (a, b))
-    | Type_Constructor _, Type _ -> raise (Not_Equal (a, b))
-    | Type_Variable v_a, Type_Variable v_b ->
-      if not (v_a == v_b) then
-        v_a := Some b;
-    | Type_Variable v_a, _ ->
-      if occurs v_a b then
-        raise (Infinite_Type (v_a, b))
-      else
-        v_a := Some b
-    | _, Type_Variable v_b -> unify b a
-
-
-let fn_tycon = 0
-let list_tycon = 1
-let int_type = 2
-
-(* forall a b. (a -> b) -> List a -> List b *)
-let t_map =
-  let a = Type_Variable (ref None) in
-  let b = Type_Variable (ref None) in
-  Type_Constructor (0,
-   [Type_Constructor (0, [a; b]);
-    Type_Constructor (0,
-     [Type_Constructor (1, [a]);
-      Type_Constructor (1, [b])])])
-
-let t_double = Type_Constructor (0, [Type 2; Type 2])
-
-let apply f x =
-  let a = Type_Variable (ref None) in
-  let b = Type_Variable (ref None) in
-  (* Check that f is a function. *)
-  unify f (Type_Constructor (0, [a; b]));
-  (* Unify x with the argument of f. *)
-  unify a x;
-  (* Return the result type *)
-  x
-
-(* List Int -> List Int *)
-(* Type_Constructor (0, [Type 2; Type 2]) *)
-let example = apply t_map t_double
- */
 
 pub mod ast;
 pub mod parser;
@@ -125,13 +43,15 @@ impl TypeInfo {
     }
 }
 
+/// Type checking engine
 #[derive(Default)]
-struct Engine {
-    id_counter: usize, // Used to generate unique IDs
+struct Tck {
+    /// Used to generate unique IDs
+    id_counter: usize,
     vars: HashMap<TypeId, TypeInfo>,
 }
 
-impl Engine {
+impl Tck {
     /// Create a new type term with whatever we have about its type
     pub fn insert(&mut self, info: TypeInfo) -> TypeId {
         // Generate a new ID for our type term
@@ -199,9 +119,35 @@ impl Engine {
     }
 }
 
+/// Basic symbol table that maps names to type ID's
 #[derive(Default)]
 struct Symtbl {
     symbols: Vec<HashMap<String, TypeId>>,
+}
+
+fn infer_lit(lit: &ast::Literal) -> TypeInfo {
+    match lit {
+        ast::Literal::Integer(_) => TypeInfo::Num,
+    }
+}
+
+fn typecheck_expr(tck: &mut Tck, expr: &ast::Expr) {
+    use ast::Expr::*;
+    match expr {
+        Lit { val } => {
+            let lit_type = infer_lit(val);
+            let typeid = tck.insert(lit_type);
+            todo!("save typeid");
+        }
+        Var { name } => todo!(),
+        Let {
+            varname,
+            typename,
+            init,
+        } => todo!(),
+        Lambda { signature, body } => todo!(),
+        Funcall { func, params } => todo!(),
+    }
 }
 
 // # Example usage
@@ -210,7 +156,7 @@ struct Symtbl {
 // will also need to call `engine.unify(x, y)` when you know two nodes have the
 // same type, such as in the statement `x = y;`.
 pub fn typecheck(ast: &ast::Ast) {
-    let mut engine = Engine::default();
+    let mut tck = Tck::default();
     let mut symtbl = Symtbl::default();
     symtbl.symbols.push(HashMap::new());
     for decl in &ast.decls {
@@ -222,50 +168,59 @@ pub fn typecheck(ast: &ast::Ast) {
                 signature,
                 body,
             } => {
+                // Insert info about the function signature
                 let mut params = vec![];
                 for (_paramname, paramtype) in &signature.params {
-                    let p = engine.insert(paramtype.clone());
+                    let p = tck.insert(paramtype.clone());
                     params.push(p);
                 }
-                let rettype = engine.insert(signature.rettype.clone());
-                let f = engine.insert(TypeInfo::Func(params, rettype));
+                let rettype = tck.insert(signature.rettype.clone());
+                let f = tck.insert(TypeInfo::Func(params, rettype));
                 symtbl
                     .symbols
                     .last_mut()
                     .unwrap()
                     .insert(name.to_string(), f);
+
+                // Typecheck body
+                for expr in body {
+                    typecheck_expr(&mut tck, expr);
+                }
             }
         }
     }
+    // Print out toplevel symbols
     for (name, id) in symtbl.symbols.last().unwrap() {
-        println!("fn {} type is {:?}", name, engine.reconstruct(*id));
+        println!("fn {} type is {:?}", name, tck.reconstruct(*id));
     }
 }
+/*
 pub fn typecheck2() {
-    let mut engine = Engine::default();
+    let mut tck = Tck::default();
 
     // A function with an unknown input
-    let i = engine.insert(TypeInfo::Unknown);
-    let o = engine.insert(TypeInfo::Num);
-    let f0 = engine.insert(TypeInfo::Func(vec![i, o.clone()], o));
+    let i = tck.insert(TypeInfo::Unknown);
+    let o = tck.insert(TypeInfo::Num);
+    let f0 = tck.insert(TypeInfo::Func(vec![i, o.clone()], o));
 
     // A function with an unknown output
-    let i = engine.insert(TypeInfo::Bool);
-    let o = engine.insert(TypeInfo::Unknown);
-    let f1 = engine.insert(TypeInfo::Func(vec![i, o.clone()], o));
+    let i = tck.insert(TypeInfo::Bool);
+    let o = tck.insert(TypeInfo::Unknown);
+    let f1 = tck.insert(TypeInfo::Func(vec![i, o.clone()], o));
 
     // Unify them together...
-    engine.unify(f0, f1).unwrap();
+    tck.unify(f0, f1).unwrap();
 
     // An instance of the aforementioned function
-    let thing = engine.insert(TypeInfo::Ref(f1));
+    let thing = tck.insert(TypeInfo::Ref(f1));
 
     // ...and compute the resulting type
-    println!("Final type = {:?}", engine.reconstruct(thing));
+    println!("Final type = {:?}", tck.reconstruct(thing));
 }
+*/
 
 pub fn compile(filename: &str, src: &str) -> Vec<u8> {
-    typecheck2();
+    //typecheck2();
     let mut parser = parser::Parser::new(filename, src);
     let ast = parser.parse();
     typecheck(&ast);
