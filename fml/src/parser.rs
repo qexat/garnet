@@ -449,7 +449,7 @@ impl<'input> Parser<'input> {
     }
     */
 
-    fn parse_exprs(&mut self) -> Vec<ast::Expr> {
+    fn parse_exprs(&mut self) -> Vec<ast::ExprNode> {
         let mut exprs = vec![];
         let tok = self.peek();
         while let Some(e) = self.parse_expr(0) {
@@ -471,14 +471,14 @@ impl<'input> Parser<'input> {
     ///
     /// This departs from pure recursive descent and uses a Pratt
     /// parser to parse math expressions and such.
-    fn parse_expr(&mut self, min_bp: usize) -> Option<ast::Expr> {
+    fn parse_expr(&mut self, min_bp: usize) -> Option<ast::ExprNode> {
         let t = self.peek()?;
         let token = &t.kind;
         let mut lhs = match token {
-            T::Integer(_) => ast::Expr::int(self.expect_int()),
+            T::Integer(_) => ast::ExprNode::new(ast::Expr::int(self.expect_int())),
             T::Ident(_) => {
                 let ident = self.expect_ident();
-                ast::Expr::Var { name: ident }
+                ast::ExprNode::new(ast::Expr::Var { name: ident })
                 /*
                 if self.peek_is(TokenKind::LBrace.discr()) {
                     self.parse_struct_literal(ident)
@@ -511,10 +511,7 @@ impl<'input> Parser<'input> {
                 lhs = match op_token {
                     T::LParen => {
                         let params = self.parse_function_args();
-                        ast::Expr::Funcall {
-                            func: Box::new(lhs),
-                            params,
-                        }
+                        ast::ExprNode::new(ast::Expr::Funcall { func: lhs, params })
                     }
                     _ => return None,
                 };
@@ -554,7 +551,7 @@ impl<'input> Parser<'input> {
         Some(lhs)
     }
 
-    fn parse_function_args(&mut self) -> Vec<ast::Expr> {
+    fn parse_function_args(&mut self) -> Vec<ast::ExprNode> {
         let mut params = vec![];
         self.expect(T::LParen);
         // TODO: Refactor out this pattern somehow?
@@ -571,31 +568,30 @@ impl<'input> Parser<'input> {
     }
 
     /// let = "let" ident ":" typename "=" expr
-    fn parse_let(&mut self) -> ast::Expr {
+    fn parse_let(&mut self) -> ast::ExprNode {
         self.expect(T::Let);
         let varname = self.expect_ident();
         self.expect(T::Colon);
         let typename = self.parse_type();
         self.expect(T::Equals);
-        let init = Box::new(
-            self.parse_expr(0)
-                .expect("Expected expression after `let ... =`, did not get one"),
-        );
-        ast::Expr::Let {
+        let init = self
+            .parse_expr(0)
+            .expect("Expected expression after `let ... =`, did not get one");
+        ast::ExprNode::new(ast::Expr::Let {
             varname,
             typename,
             init,
-        }
+        })
     }
 
     /// lambda = "fn" "(" ...args... ")" [":" typename] = {exprs} "end"
-    fn parse_lambda(&mut self) -> ast::Expr {
+    fn parse_lambda(&mut self) -> ast::ExprNode {
         self.expect(T::Fn);
         let signature = self.parse_fn_signature();
         self.expect(T::Equals);
         let body = self.parse_exprs();
         self.expect(T::End);
-        ast::Expr::Lambda { signature, body }
+        ast::ExprNode::new(ast::Expr::Lambda { signature, body })
     }
 
     fn parse_type(&mut self) -> TypeInfo {

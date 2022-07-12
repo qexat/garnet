@@ -26,15 +26,26 @@ pub struct Signature {
     pub rettype: TypeInfo,
 }
 
-/*
+#[derive(Debug, Copy, Clone, PartialEq, Hash)]
+pub struct AstId(usize);
+
 /// An AST node wrapper that contains information
 /// common to all AST nodes.
+#[derive(Debug, Clone, PartialEq)]
 pub struct ExprNode {
-    node: Box<Expr>,
-    //typeinfo: Option<crate::TypeId>,
-    id: AstNodeId,
+    pub node: Box<Expr>,
+    pub id: AstId,
 }
-*/
+
+impl ExprNode {
+    pub fn new(expr: Expr) -> Self {
+        let new_id = AstId(0);
+        Self {
+            node: Box::new(expr),
+            id: new_id,
+        }
+    }
+}
 
 /// Any expression.
 /// So, basically anything not a top-level decl.
@@ -49,15 +60,15 @@ pub enum Expr {
     Let {
         varname: String,
         typename: TypeInfo,
-        init: Box<Expr>,
+        init: ExprNode,
     },
     Lambda {
         signature: Signature,
-        body: Vec<Expr>,
+        body: Vec<ExprNode>,
     },
     Funcall {
-        func: Box<Expr>,
-        params: Vec<Expr>,
+        func: ExprNode,
+        params: Vec<ExprNode>,
     },
 }
 
@@ -77,7 +88,7 @@ pub enum Decl {
     Function {
         name: String,
         signature: Signature,
-        body: Vec<Expr>,
+        body: Vec<ExprNode>,
     },
 }
 
