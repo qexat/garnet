@@ -49,6 +49,7 @@ struct Tck {
     /// Used to generate unique IDs
     id_counter: usize,
     vars: HashMap<TypeId, TypeInfo>,
+    types: HashMap<ast::AstId, TypeId>,
 }
 
 impl Tck {
@@ -131,22 +132,24 @@ fn infer_lit(lit: &ast::Literal) -> TypeInfo {
     }
 }
 
-fn typecheck_expr(tck: &mut Tck, expr: &ast::Expr) {
+fn typecheck_expr(tck: &mut Tck, expr: &ast::ExprNode) {
     use ast::Expr::*;
-    match expr {
+    match &*expr.node {
         Lit { val } => {
             let lit_type = infer_lit(val);
             let typeid = tck.insert(lit_type);
             todo!("save typeid");
         }
-        Var { name } => todo!(),
+        Var { name } => todo!("Lookup var"),
         Let {
             varname,
             typename,
             init,
-        } => todo!(),
-        Lambda { signature, body } => todo!(),
-        Funcall { func, params } => todo!(),
+        } => todo!("Declare var and check init type"),
+        Lambda { signature, body } => todo!("idk mang"),
+        Funcall { func, params } => {
+            todo!("typecheck func, check against params, something something return type")
+        }
     }
 }
 
