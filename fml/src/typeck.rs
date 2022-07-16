@@ -1,4 +1,6 @@
+use std::cell::RefCell;
 use std::collections::HashMap;
+use std::rc::Rc;
 
 use crate::*;
 
@@ -12,6 +14,15 @@ struct Tck {
 }
 
 impl Tck {
+    /// Save the type associated with the given expr
+    fn set_expr_type(&mut self, expr: &ast::ExprNode, ty: TypeId) {
+        self.types.insert(expr.id, ty);
+    }
+
+    fn get_expr_type(&mut self, expr: &ast::ExprNode) -> TypeId {
+        *self.types.get(&expr.id).unwrap()
+    }
+
     /// Create a new type term with whatever we have about its type
     pub fn insert(&mut self, info: TypeInfo) -> TypeId {
         // Generate a new ID for our type term
@@ -80,9 +91,65 @@ impl Tck {
 }
 
 /// Basic symbol table that maps names to type ID's
-#[derive(Default)]
+/// and manages scope.
+#[derive(Clone)]
 struct Symtbl {
-    symbols: Vec<HashMap<String, TypeId>>,
+    symbols: Rc<RefCell<Vec<HashMap<String, TypeId>>>>,
+}
+
+impl Default for Symtbl {
+    /// We start with an empty toplevel scope existing.
+    fn default() -> Self {
+        Self {
+            symbols: Rc::new(RefCell::new(vec![HashMap::new()])),
+        }
+    }
+}
+
+pub struct ScopeGuard {
+    scope: Symtbl,
+}
+
+impl Drop for ScopeGuard {
+    fn drop(&mut self) {
+        self.scope
+            .symbols
+            .borrow_mut()
+            .pop()
+            .expect("Scope stack underflow");
+    }
+}
+
+impl Symtbl {
+    fn push_scope(&self) -> ScopeGuard {
+        self.symbols.borrow_mut().push(HashMap::new());
+        ScopeGuard {
+            scope: self.clone(),
+        }
+    }
+
+    fn add_var(&self, var: impl AsRef<str>, ty: TypeId) {
+        self.symbols
+            .borrow_mut()
+            .last_mut()
+            .expect("Scope stack underflow")
+            .insert(var.as_ref().to_owned(), ty);
+    }
+
+    /// Checks whether the var exists in the currently alive scopes
+    fn get_var_binding(&self, var: impl AsRef<str>) -> Option<TypeId> {
+        for scope in self.symbols.borrow().iter().rev() {
+            let v = scope.get(var.as_ref());
+            if v.is_some() {
+                return v.cloned();
+            }
+        }
+        return None;
+    }
+
+    fn var_is_bound(&self, var: impl AsRef<str>) -> bool {
+        self.get_var_binding(var).is_some()
+    }
 }
 
 fn infer_lit(lit: &ast::Literal) -> TypeInfo {
@@ -91,20 +158,35 @@ fn infer_lit(lit: &ast::Literal) -> TypeInfo {
     }
 }
 
-fn typecheck_expr(tck: &mut Tck, expr: &ast::ExprNode) {
+fn typecheck_expr(tck: &mut Tck, symtbl: &mut Symtbl, expr: &ast::ExprNode) {
     use ast::Expr::*;
     match &*expr.node {
         Lit { val } => {
             let lit_type = infer_lit(val);
             let typeid = tck.insert(lit_type);
-            todo!("save typeid");
+            tck.set_expr_type(expr, typeid);
         }
-        Var { name } => todo!("Lookup var"),
+        Var { name } => {
+            let ty = symtbl.get_var_binding(name).expect("unbound var");
+            tck.set_expr_type(expr, ty);
+        }
         Let {
             varname,
             typename,
             init,
-        } => todo!("Declare var and check init type"),
+        } => {
+            typecheck_expr(tck, symtbl, init);
+            let init_expr_type = tck.get_expr_type(init);
+            let var_type = tck.insert(typename.clone());
+            tck.unify(init_expr_type, var_type).unwrap();
+
+            // TODO: Make this expr return unit
+            let this_expr_type = tck.insert(TypeInfo::Num);
+            tck.set_expr_type(expr, this_expr_type);
+
+            symtbl.add_var(varname, var_type);
+            todo!("panic")
+        }
         Lambda { signature, body } => todo!("idk mang"),
         Funcall { func, params } => {
             todo!("typecheck func, check against params, something something return type")
@@ -120,7 +202,6 @@ fn typecheck_expr(tck: &mut Tck, expr: &ast::ExprNode) {
 pub fn typecheck(ast: &ast::Ast) {
     let mut tck = Tck::default();
     let mut symtbl = Symtbl::default();
-    symtbl.symbols.push(HashMap::new());
     for decl in &ast.decls {
         use ast::Decl::*;
 
@@ -138,21 +219,24 @@ pub fn typecheck(ast: &ast::Ast) {
                 }
                 let rettype = tck.insert(signature.rettype.clone());
                 let f = tck.insert(TypeInfo::Func(params, rettype));
-                symtbl
-                    .symbols
-                    .last_mut()
-                    .unwrap()
-                    .insert(name.to_string(), f);
+                symtbl.add_var(name, f);
+
+                // Add params to function's scope
+                let _guard = symtbl.push_scope();
+                for (paramname, paramtype) in &signature.params {
+                    let p = tck.insert(paramtype.clone());
+                    symtbl.add_var(paramname, p);
+                }
 
                 // Typecheck body
                 for expr in body {
-                    typecheck_expr(&mut tck, expr);
+                    typecheck_expr(&mut tck, &mut symtbl, expr);
                 }
             }
         }
     }
     // Print out toplevel symbols
-    for (name, id) in symtbl.symbols.last().unwrap() {
+    for (name, id) in symtbl.symbols.borrow().last().unwrap() {
         println!("fn {} type is {:?}", name, tck.reconstruct(*id));
     }
 }
