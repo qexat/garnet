@@ -8,6 +8,8 @@
 //! Though code formatters have different constraints and priorities, if they have line wrapping
 //! and stuff at least.  So, it might not be a particularly great code formatter.
 
+use std::sync::Mutex;
+
 use crate::*;
 
 /// Literal value
@@ -26,8 +28,19 @@ pub struct Signature {
     pub rettype: TypeInfo,
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Hash)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct AstId(usize);
+
+impl AstId {
+    /// Creates a new globally unique AstId
+    fn new() -> AstId {
+        let mut val = AST_ID.lock().unwrap();
+        let new_val = *val + 1;
+        let new_id = AstId(*val);
+        *val = new_val;
+        new_id
+    }
+}
 
 /// An AST node wrapper that contains information
 /// common to all AST nodes.
@@ -37,12 +50,12 @@ pub struct ExprNode {
     pub id: AstId,
 }
 
-use once_cell;
-static AST_ID: once_cell::sync::Lazy<usize> = once_cell::sync::Lazy::new(|| 0);
+use once_cell::sync::Lazy;
+static AST_ID: Lazy<Mutex<usize>> = once_cell::sync::Lazy::new(|| Mutex::new(0));
 
 impl ExprNode {
     pub fn new(expr: Expr) -> Self {
-        let new_id = AstId(0);
+        let new_id = AstId::new();
         Self {
             node: Box::new(expr),
             id: new_id,

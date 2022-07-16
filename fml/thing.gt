@@ -5,6 +5,11 @@
 --   status: success
 --   stdout: 12
 
+fn bar(): Bool =
+    12
+end
+
+/-
 fn foo(x: I32): I32 =
     x
 end
@@ -13,3 +18,4 @@ fn main(): I32 =
     let x: I32 = foo(9)
     x
 end
+-/
