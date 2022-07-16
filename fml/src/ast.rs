@@ -37,6 +37,9 @@ pub struct ExprNode {
     pub id: AstId,
 }
 
+use once_cell;
+static AST_ID: once_cell::sync::Lazy<usize> = once_cell::sync::Lazy::new(|| 0);
+
 impl ExprNode {
     pub fn new(expr: Expr) -> Self {
         let new_id = AstId(0);
