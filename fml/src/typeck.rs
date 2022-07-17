@@ -167,7 +167,9 @@ fn typecheck_expr(tck: &mut Tck, symtbl: &mut Symtbl, expr: &ast::ExprNode) {
             tck.set_expr_type(expr, typeid);
         }
         Var { name } => {
-            let ty = symtbl.get_var_binding(name).expect("unbound var");
+            let ty = symtbl
+                .get_var_binding(name)
+                .unwrap_or_else(|| panic!("unbound var: {:?}", name));
             tck.set_expr_type(expr, ty);
         }
         Let {
@@ -232,6 +234,9 @@ pub fn typecheck(ast: &ast::Ast) {
                 for expr in body {
                     typecheck_expr(&mut tck, &mut symtbl, expr);
                 }
+                let last_expr = body.last().unwrap();
+                let last_expr_type = tck.get_expr_type(last_expr);
+                tck.unify(last_expr_type, rettype).unwrap();
             }
         }
     }
