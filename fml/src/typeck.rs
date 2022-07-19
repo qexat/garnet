@@ -60,6 +60,15 @@ impl Tck {
             // When unifying complex types, we must check their sub-types. This
             // can be trivially implemented for tuples, sum types, etc.
             (Func(a_i, a_o), Func(b_i, b_o)) => {
+                println!("func and func {:?} {:?}", a, b);
+                println!(
+                    "func and func {:?} {:?}",
+                    self.vars[&a].clone(),
+                    self.vars[&b].clone()
+                );
+                if a_i.len() != b_i.len() {
+                    return Err(String::from("Arg lists are not same length"));
+                }
                 for (arg_a, arg_b) in a_i.iter().zip(b_i) {
                     self.unify(*arg_a, arg_b)?;
                 }
@@ -182,16 +191,30 @@ fn typecheck_expr(tck: &mut Tck, symtbl: &mut Symtbl, expr: &ast::ExprNode) {
             let var_type = tck.insert(typename.clone());
             tck.unify(init_expr_type, var_type).unwrap();
 
-            // TODO: Make this expr return unit
-            let this_expr_type = tck.insert(TypeInfo::Num);
+            // TODO: Make this expr return unit instead of the
+            // type of `init`
+            let this_expr_type = init_expr_type;
             tck.set_expr_type(expr, this_expr_type);
 
             symtbl.add_var(varname, var_type);
-            todo!("panic")
         }
         Lambda { signature, body } => todo!("idk mang"),
         Funcall { func, params } => {
-            todo!("typecheck func, check against params, something something return type")
+            typecheck_expr(tck, symtbl, func);
+            let func_type = tck.get_expr_type(func);
+
+            let mut params_list = vec![];
+            for param in params {
+                typecheck_expr(tck, symtbl, param);
+                let param_type = tck.get_expr_type(param);
+                params_list.push(param_type);
+            }
+            let rettype_var = tck.insert(TypeInfo::Unknown);
+            let funcall_var = tck.insert(TypeInfo::Func(params_list, rettype_var));
+            println!("Unifying funcall");
+            tck.unify(func_type, funcall_var).unwrap();
+
+            tck.set_expr_type(expr, rettype_var);
         }
     }
 }
