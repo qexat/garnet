@@ -476,6 +476,12 @@ impl<'input> Parser<'input> {
         let token = &t.kind;
         let mut lhs = match token {
             T::Integer(_) => ast::ExprNode::new(ast::Expr::int(self.expect_int())),
+            T::Bool(b) => {
+                self.drop();
+                ast::ExprNode::new(ast::Expr::Lit {
+                    val: ast::Literal::Bool(*b),
+                })
+            }
             T::Ident(_) => {
                 let ident = self.expect_ident();
                 ast::ExprNode::new(ast::Expr::Var { name: ident })

@@ -154,6 +154,7 @@ impl Symtbl {
 fn infer_lit(lit: &ast::Literal) -> TypeInfo {
     match lit {
         ast::Literal::Integer(_) => TypeInfo::Num,
+        ast::Literal::Bool(_) => TypeInfo::Bool,
     }
 }
 
