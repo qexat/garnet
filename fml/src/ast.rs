@@ -17,6 +17,8 @@ use crate::*;
 pub enum Literal {
     /// An integer of some kind
     Integer(i32),
+    /// A boolean
+    Bool(bool),
 }
 
 /// A function type signature
