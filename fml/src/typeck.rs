@@ -60,12 +60,6 @@ impl Tck {
             // When unifying complex types, we must check their sub-types. This
             // can be trivially implemented for tuples, sum types, etc.
             (Func(a_i, a_o), Func(b_i, b_o)) => {
-                println!("func and func {:?} {:?}", a, b);
-                println!(
-                    "func and func {:?} {:?}",
-                    self.vars[&a].clone(),
-                    self.vars[&b].clone()
-                );
                 if a_i.len() != b_i.len() {
                     return Err(String::from("Arg lists are not same length"));
                 }
@@ -155,10 +149,6 @@ impl Symtbl {
         }
         return None;
     }
-
-    fn var_is_bound(&self, var: impl AsRef<str>) -> bool {
-        self.get_var_binding(var).is_some()
-    }
 }
 
 fn infer_lit(lit: &ast::Literal) -> TypeInfo {
@@ -167,29 +157,35 @@ fn infer_lit(lit: &ast::Literal) -> TypeInfo {
     }
 }
 
-fn typecheck_expr(tck: &mut Tck, symtbl: &mut Symtbl, expr: &ast::ExprNode) {
+fn typecheck_expr(
+    tck: &mut Tck,
+    symtbl: &mut Symtbl,
+    expr: &ast::ExprNode,
+) -> Result<TypeId, String> {
     use ast::Expr::*;
     match &*expr.node {
         Lit { val } => {
             let lit_type = infer_lit(val);
             let typeid = tck.insert(lit_type);
             tck.set_expr_type(expr, typeid);
+            Ok(typeid)
         }
         Var { name } => {
             let ty = symtbl
                 .get_var_binding(name)
                 .unwrap_or_else(|| panic!("unbound var: {:?}", name));
             tck.set_expr_type(expr, ty);
+            Ok(ty)
         }
         Let {
             varname,
             typename,
             init,
         } => {
-            typecheck_expr(tck, symtbl, init);
+            typecheck_expr(tck, symtbl, init)?;
             let init_expr_type = tck.get_expr_type(init);
             let var_type = tck.insert(typename.clone());
-            tck.unify(init_expr_type, var_type).unwrap();
+            tck.unify(init_expr_type, var_type)?;
 
             // TODO: Make this expr return unit instead of the
             // type of `init`
@@ -197,24 +193,27 @@ fn typecheck_expr(tck: &mut Tck, symtbl: &mut Symtbl, expr: &ast::ExprNode) {
             tck.set_expr_type(expr, this_expr_type);
 
             symtbl.add_var(varname, var_type);
+            Ok(var_type)
         }
         Lambda { signature, body } => todo!("idk mang"),
         Funcall { func, params } => {
-            typecheck_expr(tck, symtbl, func);
+            typecheck_expr(tck, symtbl, func)?;
             let func_type = tck.get_expr_type(func);
 
+            // Synthesize what we know about the function
+            // from the call.
             let mut params_list = vec![];
             for param in params {
-                typecheck_expr(tck, symtbl, param);
+                typecheck_expr(tck, symtbl, param)?;
                 let param_type = tck.get_expr_type(param);
                 params_list.push(param_type);
             }
             let rettype_var = tck.insert(TypeInfo::Unknown);
             let funcall_var = tck.insert(TypeInfo::Func(params_list, rettype_var));
-            println!("Unifying funcall");
-            tck.unify(func_type, funcall_var).unwrap();
+            tck.unify(func_type, funcall_var)?;
 
             tck.set_expr_type(expr, rettype_var);
+            Ok(rettype_var)
         }
     }
 }
@@ -255,11 +254,12 @@ pub fn typecheck(ast: &ast::Ast) {
 
                 // Typecheck body
                 for expr in body {
-                    typecheck_expr(&mut tck, &mut symtbl, expr);
+                    typecheck_expr(&mut tck, &mut symtbl, expr).expect("Typecheck failure");
                 }
-                let last_expr = body.last().unwrap();
+                let last_expr = body.last().expect("empty body, aieeee");
                 let last_expr_type = tck.get_expr_type(last_expr);
-                tck.unify(last_expr_type, rettype).unwrap();
+                tck.unify(last_expr_type, rettype)
+                    .expect("Unification of function body failed, aieeee");
             }
         }
     }
