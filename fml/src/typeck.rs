@@ -89,6 +89,9 @@ impl Tck {
                     i.iter().copied().map(|arg| self.reconstruct(arg)).collect();
                 Ok(Type::Func(is?, Box::new(self.reconstruct(*o)?)))
             }
+            NamedGeneric(_name) => {
+                todo!("Reconstruct named generic")
+            }
         }
     }
 }

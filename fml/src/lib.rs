@@ -29,6 +29,8 @@ pub enum TypeInfo {
     Bool,
     // This type term is definitely a function
     Func(Vec<TypeId>, TypeId),
+    // This is some generic type that has a name like @A
+    NamedGeneric(String),
 }
 
 impl TypeInfo {
