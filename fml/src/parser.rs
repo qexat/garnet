@@ -80,6 +80,8 @@ pub enum TokenKind {
     Semicolon,
     #[token("=")]
     Equals,
+    #[token("@")]
+    At,
 
     // We save comment strings so we can use this same
     // parser as a reformatter or such.
@@ -613,6 +615,10 @@ impl<'input> Parser<'input> {
                     //crate::INT.named_type(s)
                     self.error("Unknown type", t.clone());
                 }
+            }
+            Some(Token { kind: T::At, .. }) => {
+                let s = self.expect_ident();
+                TypeInfo::NamedGeneric(s)
             }
             /*
             Some(Token {

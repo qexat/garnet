@@ -30,6 +30,10 @@ fn invalid2(x: I32): Bool =
 end
 -/
 
+fn identity(i: @T): @T =
+    i
+end
+
 fn main(): I32 =
     let x: I32 = foo(12)
     let y: Bool = baz(true)
