@@ -1,16 +1,59 @@
-# Garnet
+# Garnet -- what if Rust was small?
 
 [![builds.sr.ht status](https://builds.sr.ht/~icefox/garnet.svg)](https://builds.sr.ht/~icefox/garnet?)
 
-An experiment in a systems programming language along the lines of Rust
-but more minimal.  Where Rust is a C++ that doesn't suck, it'd be nice
-for this to be a C that doesn't suck.  Currently though, it's mostly
-just ideas, though a functioning compiler is slowly gaining more
-features.
+# The Pitch
 
-Loosely based on <https://wiki.alopex.li/BetterThanC>, far more loosely
-based on <https://wiki.alopex.li/GarnetLanguage> which is an older set
-of concepts and has a different compiler entirely.
+Poeple keep talking about what a small Rust would look like, and how
+nice it would be, and whether or not Zig or Hare or whatever fits the
+bill.  So, I think it's time to start advertising, at least in a small
+way: I'm trying to make basically the language these people want, a
+language that asks "What would Rust look like if it were small?"  I call
+it [Garnet](https://hg.sr.ht/~icefox/garnet). I'm at the point where I
+am fairly sure my design is gonna do at least *something* vaguely
+useful, but I also think it's time to ask for interested parties to talk
+or help.
+
+Garnet strives for smallness by having three basic features: functions,
+types, and structs.  Somewhat like Zig, structs double as modules when
+evaluated at compile time. A lot like SML/OCaml, structs also double as
+your tool for defining interfaces/traits/typeclasses/some kind of way of
+reasoning like generics.  If you make sure your code can be evaluated at
+compile time, you can treat types mostly like normal values, and
+"instantiating a generic" becomes literally just a function that returns
+a function or struct.  Again, this is kinda similar to Zig, but I want
+to avoid the problem where you don't know whether the code will work
+before it's actually instantiated.  Again, this is quite similar to ML
+languages, but without an extra layer of awkwardness from having a
+separate module languages.  [It seems to work out in
+theory](https://people.mpi-sws.org/~rossberg/1ml/).
+
+I also want to solve various things that irk me about Rust, or at least
+make *different* design decisions and see what the result looks like.
+Compile times should be fast, writing/porting the compiler should be
+easy, ABI should be well-defined, and behavior of low-level code should
+be easy to reason about (even if it misses some optimization
+opportunities).  The language is intended for low level stuff more than
+applications, OS's and systems and embedded programming, so async/await
+is unnecessary.  Better ergonomics around borrowing would be nice too,
+though I'm not sure how to do that yet, I just hate that there's no way
+to abstract over ownership and so we have `Fn` and `FnMut` and `FnOnce`.
+However, trading some runtime refcounting/etc for better borrowing
+ergonomics as suggested in [Notes on a Smaller
+Rust](https://without.boats/blog/notes-on-a-smaller-rust/) and [Swift's
+work](https://github.com/apple/swift/blob/01c22b718cfc80a10feaefaf598aa1087f3766c8/docs/OwnershipManifesto.md)
+is not on the cards; I think there's a lot of potential for a language
+that does this sort of thing, but Garnet is not that language.
+
+Right now the project as a whole is rough around the edges 'cause I've
+spent a lot of time going in circles trying to learn how to write a type
+checker that works the way I want it to.  I'm still not done (if
+anything I feel like I've moved backwards), but I consider the language
+itself maybe like 75% decided on.  The main design hole right now is in
+fact lifetimes and borrowing; my original plan was to just implement
+lexical lifetimes a la Rust 1.0, then sit down and have a good hard
+think about that, but I frankly haven't gotten far enough to start
+working on that in earnest.
 
 # Assumptions
 
