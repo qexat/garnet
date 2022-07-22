@@ -9,7 +9,9 @@ use crate::*;
 struct Tck {
     /// Used to generate unique IDs
     id_counter: usize,
+    /// Binding from type vars to what we know about the type
     vars: HashMap<TypeId, TypeInfo>,
+    /// What we know about the type of each node in the AST.
     types: HashMap<ast::AstId, TypeId>,
 }
 
@@ -68,7 +70,16 @@ impl Tck {
                 }
                 self.unify(a_o, b_o)
             }
-
+            (NamedGeneric(s1), NamedGeneric(s2)) if s1 == s2 => Ok(()),
+            (NamedGeneric(s), other) => {
+                self.vars.insert(a, TypeInfo::Ref(b));
+                self.unify(a, b)
+            }
+            /*
+            (_, NamedGeneric(s)) => {
+                todo!("Named generics")
+            }
+            */
             // If no previous attempts to unify were successful, raise an error
             (a, b) => Err(format!("Conflict between {:?} and {:?}", a, b)),
         }
@@ -89,9 +100,7 @@ impl Tck {
                     i.iter().copied().map(|arg| self.reconstruct(arg)).collect();
                 Ok(Type::Func(is?, Box::new(self.reconstruct(*o)?)))
             }
-            NamedGeneric(_name) => {
-                todo!("Reconstruct named generic")
-            }
+            NamedGeneric(name) => Ok(Type::Generic(name.to_owned())),
         }
     }
 }
@@ -101,6 +110,9 @@ impl Tck {
 #[derive(Clone)]
 struct Symtbl {
     symbols: Rc<RefCell<Vec<HashMap<String, TypeId>>>>,
+
+    /// Function-scoped generics we may have
+    generic_vars: Rc<RefCell<Vec<HashMap<String, TypeId>>>>,
 }
 
 impl Default for Symtbl {
@@ -108,6 +120,7 @@ impl Default for Symtbl {
     fn default() -> Self {
         Self {
             symbols: Rc::new(RefCell::new(vec![HashMap::new()])),
+            generic_vars: Rc::new(RefCell::new(vec![HashMap::new()])),
         }
     }
 }
@@ -123,12 +136,18 @@ impl Drop for ScopeGuard {
             .borrow_mut()
             .pop()
             .expect("Scope stack underflow");
+        self.scope
+            .generic_vars
+            .borrow_mut()
+            .pop()
+            .expect("Generic scope stack underflow");
     }
 }
 
 impl Symtbl {
     fn push_scope(&self) -> ScopeGuard {
         self.symbols.borrow_mut().push(HashMap::new());
+        self.generic_vars.borrow_mut().push(HashMap::new());
         ScopeGuard {
             scope: self.clone(),
         }
@@ -151,6 +170,22 @@ impl Symtbl {
             }
         }
         return None;
+    }
+
+    fn lookup_generic(&self, name: &str) -> TypeId {
+        for scope in self.generic_vars.borrow().iter().rev() {
+            let v = scope.get(name);
+            return v.unwrap().clone();
+        }
+        panic!("No generic found, aieee");
+    }
+
+    fn add_generic(&mut self, name: &str, typeid: TypeId) {
+        self.generic_vars
+            .borrow_mut()
+            .last_mut()
+            .expect("Scope stack underflow")
+            .insert(name.to_owned(), typeid);
     }
 }
 
@@ -239,6 +274,19 @@ pub fn typecheck(ast: &ast::Ast) {
                 signature,
                 body,
             } => {
+                // Ok, for generic types as function inputs... we collect
+                // all the types that are generics, and save each of them
+                // in our scope.  We save them as... something, and when
+                // we unify them we should be able to follow references to
+                // them as normal?
+                //
+                // Things get a little weird when we define vs. call.
+                // When we call a function with generics we are providing
+                // types for it like they are function args.  So we bind
+                // them to a scope the same way we bind function args.
+                //
+                // To start with let's just worry about defining.
+
                 // Insert info about the function signature
                 let mut params = vec![];
                 for (_paramname, paramtype) in &signature.params {

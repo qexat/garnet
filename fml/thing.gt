@@ -34,8 +34,14 @@ fn identity(i: @T): @T =
     i
 end
 
+fn identity2(i: @X): @X =
+    identity(i)
+end
+
 fn main(): I32 =
     let x: I32 = foo(12)
     let y: Bool = baz(true)
+    let a: I32 = identity(1)
+    let b: Bool = identity2(true)
     x
 end
