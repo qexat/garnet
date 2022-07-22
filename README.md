@@ -86,7 +86,7 @@ Just to make sure people have some realistic expectations.
 Realistic language goals:
 
  * [✓] Technically Turing complete
- * [✓] Basic structs/tuples
+ * [✓] Basic structs/tuples (did a proof of concept, now rewriting it)
  * [⛭] Generics and specialization
  * [⛭] Full ML-y modules
  * [?] Move semantics, references and borrowing
