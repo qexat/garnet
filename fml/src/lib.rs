@@ -10,6 +10,7 @@ pub enum Type {
     Num,
     Bool,
     Func(Vec<Type>, Box<Type>),
+    Generic(String),
 }
 
 /// A identifier to uniquely refer to our type terms

@@ -289,7 +289,8 @@ impl<'input> Parser<'input> {
     /// Returns whether the next token in the stream is what is expected,
     /// and consume it if so.
     ///
-    /// I ended up seeing a lot of `if self.peek_is(thing) { self.expect(thing)
+    /// I ended up seeing a lot of `if self.peek_is(thing) { self.expect(thing)`
+    /// so maybe this helps.
     fn try_expect(&mut self, expected: Discr<TokenKind>) -> bool {
         if self.peek_is(expected) {
             self.drop();
