@@ -4,7 +4,7 @@
 
 # The Pitch
 
-Poeple keep talking about what a small Rust would look like, and how
+People keep talking about what a small Rust would look like, and how
 nice it would be, and whether or not Zig or Hare or whatever fits the
 bill.  So, I think it's time to start advertising, at least in a small
 way: I'm trying to make basically the language these people want, a
@@ -54,6 +54,61 @@ fact lifetimes and borrowing; my original plan was to just implement
 lexical lifetimes a la Rust 1.0, then sit down and have a good hard
 think about that, but I frankly haven't gotten far enough to start
 working on that in earnest.
+
+# Code example
+
+```rust
+fn fib(x: I32): I32 =
+    if x < 2 then x
+    else fib(x-1) + fib(x - 2)
+    end
+end
+
+-- {} is an empty tuple, "unit"
+fn main(): {} =
+    __println(fib(40))
+end
+```
+
+There’s a bunch of small programs in its test suite here: <https://hg.sr.ht/~icefox/garnet/browse/tests/programs?rev=12ee941c3da958f037ba0a9509d0ebc00c6c0465>
+
+And some slightly-more-interesting-but-often-still-hypothetical bits of programs here: <https://hg.sr.ht/~icefox/garnet/browse/gt?rev=12ee941c3da958f037ba0a9509d0ebc00c6c0465>
+
+# Current state
+
+Just to make sure people have some realistic expectations.
+
+ * [✓] = done
+ * [⛭] = WIP
+ * [?] = Active design concern, probably in flux
+ * [ ] = not started
+
+Realistic language goals:
+
+ * [✓] Technically Turing complete
+ * [✓] Basic structs/tuples
+ * [⛭] Generics and specialization
+ * [⛭] Full ML-y modules
+ * [?] Move semantics, references and borrowing
+ * [?] Arrays and slices
+ * [?] Stdlib of some kind
+ * [ ] Pattern matching
+ * [ ] Function properties (`const`, `pure`, `noalloc`, etc)
+ * [ ] Lots of little ergonomic things
+
+Giant scary tooling goals necessary for Real Use:
+
+ * [ ] Self-host
+ * [ ] Basic optimizing backend
+ * [ ] Backend support: C or Rust
+ * [ ] Debugger/profiler tooling
+ * [ ] Build/packaging system
+ * [ ] Language spec
+ * [ ] ABI spec
+ * [ ] Documentation generator
+ * [ ] Semver checker
+ * [ ] Backend support: Webassembly
+ * [ ] Really GOOD backend.  Not sure how to best achieve this.
 
 # Assumptions
 
