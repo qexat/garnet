@@ -86,7 +86,7 @@ Just to make sure people have some realistic expectations.
 Realistic language goals:
 
  * [✓] Technically Turing complete
- * [✓] Basic structs/tuples
+ * [✓] Basic structs/tuples (did a proof of concept, now rewriting it)
  * [⛭] Generics and specialization
  * [⛭] Full ML-y modules
  * [?] Move semantics, references and borrowing
@@ -98,17 +98,19 @@ Realistic language goals:
 
 Giant scary tooling goals necessary for Real Use:
 
+ * [⛭] Backend support: C or Rust
  * [ ] Self-host
  * [ ] Basic optimizing backend
- * [ ] Backend support: C or Rust
  * [ ] Debugger/profiler tooling
  * [ ] Build/packaging system
  * [ ] Language spec
  * [ ] ABI spec
  * [ ] Documentation generator
  * [ ] Semver checker
+ * [ ] GOOD backend.  Not sure how to best achieve this.  LLVM is slow,
+   QBE left a bad taste in my mouth but might be worth another look.
  * [ ] Backend support: Webassembly
- * [ ] Really GOOD backend.  Not sure how to best achieve this.
+ * [ ] Backend support: Actual CPU's
 
 # Assumptions
 
