@@ -20,17 +20,17 @@ pub struct TypeId(usize);
 /// Information about a type term
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub enum TypeInfo {
-    // No information about the type of this type term
+    /// No information about the type of this type term
     Unknown,
-    // This type term is the same as another type term
+    /// This type term is the same as another type term
     Ref(TypeId),
-    // This type term is definitely a number
+    /// This type term is definitely a number
     Num,
-    // This type term is definitely a bool
+    /// This type term is definitely a bool
     Bool,
-    // This type term is definitely a function
+    /// This type term is definitely a function
     Func(Vec<TypeId>, TypeId),
-    // This is some generic type that has a name like @A
+    /// This is some generic type that has a name like @A
     NamedGeneric(String),
 }
 
@@ -40,6 +40,13 @@ impl TypeInfo {
             "I32" => Some(TypeInfo::Num),
             "Bool" => Some(TypeInfo::Bool),
             //"Never" => Some(TypeInfo::Never),
+            _ => None,
+        }
+    }
+
+    fn generic_name(&self) -> Option<&str> {
+        match self {
+            TypeInfo::NamedGeneric(s) => Some(s),
             _ => None,
         }
     }

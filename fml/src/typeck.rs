@@ -236,8 +236,20 @@ fn typecheck_expr(
         }
         Lambda { signature, body } => todo!("idk mang"),
         Funcall { func, params } => {
+            // Oh, defined generics are "easy".
+            // Each time I call a function I create new type
+            // vars for its generic args.
+
             typecheck_expr(tck, symtbl, func)?;
             let func_type = tck.get_expr_type(func);
+            // We know this will work because we require full function signatures
+            let actual_func_type = tck.reconstruct(func_type)?;
+            match &actual_func_type {
+                Type::Func(args, rettype) => {
+                    println!("Calling function {:?} is {:?}", func, actual_func_type);
+                }
+                _ => panic!("Tried to call something not a function"),
+            }
 
             // Synthesize what we know about the function
             // from the call.
@@ -292,6 +304,9 @@ pub fn typecheck(ast: &ast::Ast) {
                 for (_paramname, paramtype) in &signature.params {
                     let p = tck.insert(paramtype.clone());
                     params.push(p);
+                    if let Some(name) = paramtype.generic_name() {
+                        symtbl.add_generic(name, p);
+                    }
                 }
                 let rettype = tck.insert(signature.rettype.clone());
                 let f = tck.insert(TypeInfo::Func(params, rettype));
