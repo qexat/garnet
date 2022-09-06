@@ -448,8 +448,6 @@ impl<'input> Parser<'input> {
         }
     }
 
-    fn peek_expect(&mut self, tok: TokenKind) -> bool {}
-
     /// Returns whether the next token in the stream is what is expected.
     ///
     /// Basically, we can't (easily) pass in a strongly-typed enum discriminant
