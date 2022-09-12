@@ -47,7 +47,7 @@ fn main(): {} =
 
     let aa: I32 = 2 + -1
     let ab: I32 = 2 +
-    -1
+    -aa
     __println(aa)
     __println(ab)
 end
