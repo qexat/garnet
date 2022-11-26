@@ -18,6 +18,10 @@ struct Tck {
 impl Tck {
     /// Save the type associated with the given expr
     fn set_expr_type(&mut self, expr: &ast::ExprNode, ty: TypeId) {
+        assert!(
+            self.types.get(&expr.id).is_none(),
+            "Redefining known type, not suuuuure if this is bad or not"
+        );
         self.types.insert(expr.id, ty);
     }
 
@@ -30,6 +34,7 @@ impl Tck {
         // Generate a new ID for our type term
         self.id_counter += 1;
         let id = TypeId(self.id_counter);
+        assert!(self.vars.get(&id).is_none(), "Can't happen");
         self.vars.insert(id, info);
         id
     }
@@ -71,7 +76,7 @@ impl Tck {
                 self.unify(a_o, b_o)
             }
             (NamedGeneric(s1), NamedGeneric(s2)) if s1 == s2 => Ok(()),
-            (NamedGeneric(s), other) => {
+            (NamedGeneric(_s), _other) => {
                 self.vars.insert(a, TypeInfo::Ref(b));
                 self.unify(a, b)
             }
@@ -95,18 +100,39 @@ impl Tck {
             Ref(id) => self.reconstruct(*id),
             Num => Ok(Type::Num),
             Bool => Ok(Type::Bool),
-            Func(i, o) => {
-                let is: Result<Vec<Type>, String> =
-                    i.iter().copied().map(|arg| self.reconstruct(arg)).collect();
-                Ok(Type::Func(is?, Box::new(self.reconstruct(*o)?)))
+            Func(args, rettype) => {
+                let real_args: Result<Vec<Type>, String> =
+                    args.into_iter().map(|arg| self.reconstruct(*arg)).collect();
+                Ok(Type::Func(
+                    real_args?,
+                    Box::new(self.reconstruct(*rettype)?),
+                ))
             }
             NamedGeneric(name) => Ok(Type::Generic(name.to_owned())),
         }
+    }
+
+    /// Kinda the opposite of reconstruction; takes a concrete type
+    /// and generates a new type with unknown's (type variables) for the generic types (type
+    /// parameters)
+    fn instantiate(&mut self, t: &Type) -> TypeId {
+        let typeinfo = match t {
+            Type::Num => TypeInfo::Num,
+            Type::Bool => TypeInfo::Bool,
+            Type::Generic(s) => TypeInfo::Ref(self.insert(TypeInfo::NamedGeneric(s.clone()))),
+            Type::Func(args, rettype) => {
+                let inst_args: Vec<_> = args.iter().map(|t| self.instantiate(t)).collect();
+                let inst_ret = self.instantiate(rettype);
+                TypeInfo::Func(inst_args, inst_ret)
+            }
+        };
+        self.insert(typeinfo)
     }
 }
 
 /// Basic symbol table that maps names to type ID's
 /// and manages scope.
+// Looks ugly, works well.
 #[derive(Clone)]
 struct Symtbl {
     symbols: Rc<RefCell<Vec<HashMap<String, TypeId>>>>,
@@ -234,18 +260,21 @@ fn typecheck_expr(
             symtbl.add_var(varname, var_type);
             Ok(var_type)
         }
-        Lambda { signature, body } => todo!("idk mang"),
+        Lambda {
+            signature: _,
+            body: _,
+        } => todo!("idk mang"),
         Funcall { func, params } => {
             // Oh, defined generics are "easy".
             // Each time I call a function I create new type
             // vars for its generic args.
 
-            typecheck_expr(tck, symtbl, func)?;
-            let func_type = tck.get_expr_type(func);
+            let func_type = typecheck_expr(tck, symtbl, func)?;
             // We know this will work because we require full function signatures
+            // on our functions.
             let actual_func_type = tck.reconstruct(func_type)?;
             match &actual_func_type {
-                Type::Func(args, rettype) => {
+                Type::Func(_args, _rettype) => {
                     println!("Calling function {:?} is {:?}", func, actual_func_type);
                 }
                 _ => panic!("Tried to call something not a function"),
@@ -259,9 +288,22 @@ fn typecheck_expr(
                 let param_type = tck.get_expr_type(param);
                 params_list.push(param_type);
             }
+            // We don't know what the expected return type of the function call
+            // is yet; we make a type var that will get resolved when the enclosing
+            // expression is.
             let rettype_var = tck.insert(TypeInfo::Unknown);
             let funcall_var = tck.insert(TypeInfo::Func(params_list, rettype_var));
-            tck.unify(func_type, funcall_var)?;
+
+            // Now I guess this is where we make a copy of the function
+            // with new generic types.
+            // Is this "instantiation"???
+            // Yes it is.  Differentiate "type parameters", which are the
+            // types a function takes as input (our `Generic` or `NamedGeneric`
+            // things I suppose), from "type variables" which are the TypeId
+            // we have to solve for.
+            let heck = tck.instantiate(&actual_func_type);
+            //tck.unify(func_type, funcall_var)?;
+            tck.unify(heck, funcall_var)?;
 
             tck.set_expr_type(expr, rettype_var);
             Ok(rettype_var)
@@ -335,27 +377,3 @@ pub fn typecheck(ast: &ast::Ast) {
         println!("fn {} type is {:?}", name, tck.reconstruct(*id));
     }
 }
-/*
-pub fn typecheck2() {
-    let mut tck = Tck::default();
-
-    // A function with an unknown input
-    let i = tck.insert(TypeInfo::Unknown);
-    let o = tck.insert(TypeInfo::Num);
-    let f0 = tck.insert(TypeInfo::Func(vec![i, o.clone()], o));
-
-    // A function with an unknown output
-    let i = tck.insert(TypeInfo::Bool);
-    let o = tck.insert(TypeInfo::Unknown);
-    let f1 = tck.insert(TypeInfo::Func(vec![i, o.clone()], o));
-
-    // Unify them together...
-    tck.unify(f0, f1).unwrap();
-
-    // An instance of the aforementioned function
-    let thing = tck.insert(TypeInfo::Ref(f1));
-
-    // ...and compute the resulting type
-    println!("Final type = {:?}", tck.reconstruct(thing));
-}
-*/
