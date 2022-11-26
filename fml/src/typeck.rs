@@ -77,14 +77,15 @@ impl Tck {
             }
             (NamedGeneric(s1), NamedGeneric(s2)) if s1 == s2 => Ok(()),
             (NamedGeneric(_s), _other) => {
+                // TODO: Make sure the name doesn't refer to
+                // itself, such as T = List<T>
                 self.vars.insert(a, TypeInfo::Ref(b));
                 self.unify(a, b)
             }
-            /*
-            (_, NamedGeneric(s)) => {
-                todo!("Named generics")
+            (_other, NamedGeneric(_s)) => {
+                self.vars.insert(b, TypeInfo::Ref(a));
+                self.unify(a, b)
             }
-            */
             // If no previous attempts to unify were successful, raise an error
             (a, b) => Err(format!("Conflict between {:?} and {:?}", a, b)),
         }
@@ -115,12 +116,15 @@ impl Tck {
     /// Kinda the opposite of reconstruction; takes a concrete type
     /// and generates a new type with unknown's (type variables) for the generic types (type
     /// parameters)
+    ///
+    /// The named_types is a *local* binding of generic type names to type variables.
+    /// We use this to make multiple mentions of the same type name, such as
+    /// `id :: T -> T`, all refer to the same type variable.
+    /// Feels Weird but it works.
     fn instantiate(&mut self, named_types: &mut HashMap<String, TypeId>, t: &Type) -> TypeId {
-        //let named_types: HashMap<String, TypeId> = &mut HashMap::new();
         let typeinfo = match t {
             Type::Num => TypeInfo::Num,
             Type::Bool => TypeInfo::Bool,
-            //Type::Generic(s) => TypeInfo::Ref(self.insert(TypeInfo::NamedGeneric(s.clone()))),
             Type::Generic(s) => {
                 if let Some(ty) = named_types.get(s) {
                     TypeInfo::Ref(*ty)
