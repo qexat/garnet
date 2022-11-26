@@ -14,7 +14,7 @@ pub enum Type {
 }
 
 /// A identifier to uniquely refer to our type terms
-#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct TypeId(usize);
 
 /// Information about a type term

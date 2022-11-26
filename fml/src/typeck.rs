@@ -115,14 +115,27 @@ impl Tck {
     /// Kinda the opposite of reconstruction; takes a concrete type
     /// and generates a new type with unknown's (type variables) for the generic types (type
     /// parameters)
-    fn instantiate(&mut self, t: &Type) -> TypeId {
+    fn instantiate(&mut self, named_types: &mut HashMap<String, TypeId>, t: &Type) -> TypeId {
+        //let named_types: HashMap<String, TypeId> = &mut HashMap::new();
         let typeinfo = match t {
             Type::Num => TypeInfo::Num,
             Type::Bool => TypeInfo::Bool,
-            Type::Generic(s) => TypeInfo::Ref(self.insert(TypeInfo::NamedGeneric(s.clone()))),
+            //Type::Generic(s) => TypeInfo::Ref(self.insert(TypeInfo::NamedGeneric(s.clone()))),
+            Type::Generic(s) => {
+                if let Some(ty) = named_types.get(s) {
+                    TypeInfo::Ref(*ty)
+                } else {
+                    let tid = self.insert(TypeInfo::Unknown);
+                    named_types.insert(s.clone(), tid);
+                    TypeInfo::Ref(tid)
+                }
+            }
             Type::Func(args, rettype) => {
-                let inst_args: Vec<_> = args.iter().map(|t| self.instantiate(t)).collect();
-                let inst_ret = self.instantiate(rettype);
+                let inst_args: Vec<_> = args
+                    .iter()
+                    .map(|t| self.instantiate(named_types, t))
+                    .collect();
+                let inst_ret = self.instantiate(named_types, rettype);
                 TypeInfo::Func(inst_args, inst_ret)
             }
         };
@@ -301,7 +314,8 @@ fn typecheck_expr(
             // types a function takes as input (our `Generic` or `NamedGeneric`
             // things I suppose), from "type variables" which are the TypeId
             // we have to solve for.
-            let heck = tck.instantiate(&actual_func_type);
+            let named_types = &mut HashMap::new();
+            let heck = tck.instantiate(named_types, &actual_func_type);
             //tck.unify(func_type, funcall_var)?;
             tck.unify(heck, funcall_var)?;
 
@@ -364,11 +378,19 @@ pub fn typecheck(ast: &ast::Ast) {
                 // Typecheck body
                 for expr in body {
                     typecheck_expr(&mut tck, &mut symtbl, expr).expect("Typecheck failure");
+                    // TODO here: unit type for expressions and such
                 }
                 let last_expr = body.last().expect("empty body, aieeee");
                 let last_expr_type = tck.get_expr_type(last_expr);
                 tck.unify(last_expr_type, rettype)
                     .expect("Unification of function body failed, aieeee");
+
+                println!("Typechecked {}, types are", name);
+                let mut vars_report: Vec<_> = tck.vars.iter().collect();
+                vars_report.sort_by(|(k1, _), (k2, _)| k1.cmp(k2));
+                for (k, v) in vars_report.iter() {
+                    print!("  ${} => {:?}\n", k.0, v);
+                }
             }
         }
     }

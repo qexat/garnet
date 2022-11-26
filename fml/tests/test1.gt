@@ -37,6 +37,6 @@ fn main(): I32 =
     let a: I32 = identity(1)
     let b: Bool = identity2(true)
     let c: Bool = identity(false)
-    let d: Bool = identity2(12)
+    let d: I32 = identity2(12)
     3
 end
