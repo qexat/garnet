@@ -31,6 +31,7 @@ pub enum TypeInfo {
     /// This type term is definitely a function
     Func(Vec<TypeId>, TypeId),
     /// This is some generic type that has a name like @A
+    /// AKA a type parameter.
     NamedGeneric(String),
 }
 
