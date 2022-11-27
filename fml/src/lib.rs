@@ -7,8 +7,7 @@ pub mod typeck;
 /// A concrete type that has been fully inferred
 #[derive(Debug)]
 pub enum Type {
-    Num,
-    Bool,
+    Named(String, Vec<Type>),
     Func(Vec<Type>, Box<Type>),
     Generic(String),
 }
@@ -24,10 +23,11 @@ pub enum TypeInfo {
     Unknown,
     /// This type term is the same as another type term
     Ref(TypeId),
-    /// This type term is definitely a number
-    Num,
-    /// This type term is definitely a bool
-    Bool,
+    /// N-ary type constructor.
+    /// It could be Int()
+    /// or List(Int)
+    /// or List(T)
+    Named(String, Vec<TypeId>),
     /// This type term is definitely a function
     Func(Vec<TypeId>, TypeId),
     /// This is some generic type that has a name like @A
@@ -38,8 +38,8 @@ pub enum TypeInfo {
 impl TypeInfo {
     fn get_primitive_type(s: &str) -> Option<TypeInfo> {
         match s {
-            "I32" => Some(TypeInfo::Num),
-            "Bool" => Some(TypeInfo::Bool),
+            "I32" => Some(TypeInfo::Named("I32".to_string(), vec![])),
+            "Bool" => Some(TypeInfo::Named("Bool".to_string(), vec![])),
             //"Never" => Some(TypeInfo::Never),
             _ => None,
         }

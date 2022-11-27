@@ -30,6 +30,12 @@ pub struct Signature {
     pub rettype: TypeInfo,
 }
 
+impl Signature {
+    fn _get_type_params(&self) -> Vec<String> {
+        todo!("Should return the names of all generic types...")
+    }
+}
+
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct AstId(usize);
 

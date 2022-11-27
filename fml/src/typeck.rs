@@ -60,9 +60,14 @@ impl Tck {
                 Ok(())
             }
 
-            // Primitives are trivial to unify
-            (Num, Num) => Ok(()),
-            (Bool, Bool) => Ok(()),
+            // For type constructors, if their names are the same we try
+            // to unify their args
+            (Named(n1, args1), Named(n2, args2)) if n1 == n2 && args1.len() == args2.len() => {
+                for (arg1, arg2) in args1.iter().zip(args2.iter()) {
+                    self.unify(*arg1, *arg2)?;
+                }
+                Ok(())
+            }
 
             // When unifying complex types, we must check their sub-types. This
             // can be trivially implemented for tuples, sum types, etc.
@@ -99,8 +104,11 @@ impl Tck {
         match &self.vars[&id] {
             Unknown => Err(format!("Cannot infer")),
             Ref(id) => self.reconstruct(*id),
-            Num => Ok(Type::Num),
-            Bool => Ok(Type::Bool),
+            Named(s, args) => {
+                let arg_types: Result<Vec<_>, _> =
+                    args.iter().map(|x| self.reconstruct(*x)).collect();
+                Ok(Type::Named(s.clone(), arg_types?))
+            }
             Func(args, rettype) => {
                 let real_args: Result<Vec<Type>, String> =
                     args.into_iter().map(|arg| self.reconstruct(*arg)).collect();
@@ -123,8 +131,7 @@ impl Tck {
     /// Feels Weird but it works.
     fn instantiate(&mut self, named_types: &mut HashMap<String, TypeId>, t: &Type) -> TypeId {
         let typeinfo = match t {
-            Type::Num => TypeInfo::Num,
-            Type::Bool => TypeInfo::Bool,
+            Type::Named(_s, _args) => todo!(),
             Type::Generic(s) => {
                 if let Some(ty) = named_types.get(s) {
                     TypeInfo::Ref(*ty)
@@ -234,8 +241,8 @@ impl Symtbl {
 
 fn infer_lit(lit: &ast::Literal) -> TypeInfo {
     match lit {
-        ast::Literal::Integer(_) => TypeInfo::Num,
-        ast::Literal::Bool(_) => TypeInfo::Bool,
+        ast::Literal::Integer(_) => TypeInfo::Named("I32".to_string(), vec![]),
+        ast::Literal::Bool(_) => TypeInfo::Named("Bool".to_string(), vec![]),
     }
 }
 
