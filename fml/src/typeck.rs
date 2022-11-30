@@ -80,14 +80,14 @@ impl Tck {
                 }
                 self.unify(a_o, b_o)
             }
-            (NamedGeneric(s1), NamedGeneric(s2)) if s1 == s2 => Ok(()),
-            (NamedGeneric(_s), _other) => {
+            (TypeParam(s1), TypeParam(s2)) if s1 == s2 => Ok(()),
+            (TypeParam(_s), _other) => {
                 // TODO: Make sure the name doesn't refer to
                 // itself, such as T = List<T>
                 self.vars.insert(a, TypeInfo::Ref(b));
                 self.unify(a, b)
             }
-            (_other, NamedGeneric(_s)) => {
+            (_other, TypeParam(_s)) => {
                 self.vars.insert(b, TypeInfo::Ref(a));
                 self.unify(a, b)
             }
@@ -117,7 +117,7 @@ impl Tck {
                     Box::new(self.reconstruct(*rettype)?),
                 ))
             }
-            NamedGeneric(name) => Ok(Type::Generic(name.to_owned())),
+            TypeParam(name) => Ok(Type::Generic(name.to_owned())),
         }
     }
 
@@ -125,28 +125,30 @@ impl Tck {
     /// and generates a new type with unknown's (type variables) for the generic types (type
     /// parameters)
     ///
-    /// The named_types is a *local* binding of generic type names to type variables.
+    /// The type_params is a *local* binding of known generic type names to type variables.
     /// We use this to make multiple mentions of the same type name, such as
     /// `id :: T -> T`, all refer to the same type variable.
     /// Feels Weird but it works.
-    fn instantiate(&mut self, named_types: &mut HashMap<String, TypeId>, t: &Type) -> TypeId {
+    //fn instantiate(&mut self, named_types: &mut HashMap<String, TypeId>, t: &Type) -> TypeId {
+    fn instantiate(&mut self, symtbl: &mut Symtbl, t: &Type) -> TypeId {
         let typeinfo = match t {
-            Type::Named(_s, _args) => todo!(),
+            Type::Named(s, args) => {
+                let args = args.iter().map(|t| self.instantiate(symtbl, t)).collect();
+                TypeInfo::Named(s.clone(), args)
+            }
             Type::Generic(s) => {
-                if let Some(ty) = named_types.get(s) {
-                    TypeInfo::Ref(*ty)
+                if let Some(ty) = symtbl.lookup_generic(s) {
+                    TypeInfo::Ref(ty)
                 } else {
                     let tid = self.insert(TypeInfo::Unknown);
-                    named_types.insert(s.clone(), tid);
+                    //type_params.insert(s.clone(), tid);
+                    symtbl.add_generic(s, tid);
                     TypeInfo::Ref(tid)
                 }
             }
             Type::Func(args, rettype) => {
-                let inst_args: Vec<_> = args
-                    .iter()
-                    .map(|t| self.instantiate(named_types, t))
-                    .collect();
-                let inst_ret = self.instantiate(named_types, rettype);
+                let inst_args: Vec<_> = args.iter().map(|t| self.instantiate(symtbl, t)).collect();
+                let inst_ret = self.instantiate(symtbl, rettype);
                 TypeInfo::Func(inst_args, inst_ret)
             }
         };
@@ -222,12 +224,13 @@ impl Symtbl {
         return None;
     }
 
-    fn lookup_generic(&self, name: &str) -> TypeId {
+    fn lookup_generic(&self, name: &str) -> Option<TypeId> {
         for scope in self.generic_vars.borrow().iter().rev() {
-            let v = scope.get(name);
-            return v.unwrap().clone();
+            if let Some(v) = scope.get(name) {
+                return Some(v.clone());
+            }
         }
-        panic!("No generic found, aieee");
+        return None;
     }
 
     fn add_generic(&mut self, name: &str, typeid: TypeId) {
@@ -322,13 +325,15 @@ fn typecheck_expr(
             // with new generic types.
             // Is this "instantiation"???
             // Yes it is.  Differentiate "type parameters", which are the
-            // types a function takes as input (our `Generic` or `NamedGeneric`
+            // types a function takes as input (our `Generic` or `TypeParam`
             // things I suppose), from "type variables" which are the TypeId
             // we have to solve for.
-            let named_types = &mut HashMap::new();
-            let heck = tck.instantiate(named_types, &actual_func_type);
+            {
+                //let _guard = symtbl.push_scope();
+                let heck = tck.instantiate(symtbl, &actual_func_type);
+                tck.unify(heck, funcall_var)?;
+            }
             //tck.unify(func_type, funcall_var)?;
-            tck.unify(heck, funcall_var)?;
 
             tck.set_expr_type(expr, rettype_var);
             Ok(rettype_var)
