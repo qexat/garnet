@@ -143,6 +143,10 @@ impl Tck {
     /// We use this to make multiple mentions of the same type name, such as
     /// `id :: T -> T`, all refer to the same type variable.
     /// Feels Weird but it works.
+    ///
+    /// This has to actually be an empty hashtable on the first instantitaion
+    /// instead of the symtbl, since the symtbl is full of type parameter names from the
+    /// enclosing function and those are what we explicitly want to get away from.
     fn instantiate(&mut self, named_types: &mut HashMap<String, TypeId>, t: &Type) -> TypeId {
         let typeinfo = match t {
             Type::Named(_s, _args) => todo!(),
