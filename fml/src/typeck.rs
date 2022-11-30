@@ -41,12 +41,12 @@ impl Tck {
 
     /// Make the types of two type terms equivalent (or produce an error if
     /// there is a conflict between them)
-    pub fn unify(&mut self, a: TypeId, b: TypeId) -> Result<(), String> {
+    pub fn unify(&mut self, symtbl: &Symtbl, a: TypeId, b: TypeId) -> Result<(), String> {
         use TypeInfo::*;
         match (self.vars[&a].clone(), self.vars[&b].clone()) {
             // Follow any references
-            (Ref(a), _) => self.unify(a, b),
-            (_, Ref(b)) => self.unify(a, b),
+            (Ref(a), _) => self.unify(symtbl, a, b),
+            (_, Ref(b)) => self.unify(symtbl, a, b),
 
             // When we don't know anything about either term, assume that
             // they match and make the one we know nothing about reference the
@@ -64,7 +64,7 @@ impl Tck {
             // to unify their args
             (Named(n1, args1), Named(n2, args2)) if n1 == n2 && args1.len() == args2.len() => {
                 for (arg1, arg2) in args1.iter().zip(args2.iter()) {
-                    self.unify(*arg1, *arg2)?;
+                    self.unify(symtbl, *arg1, *arg2)?;
                 }
                 Ok(())
             }
@@ -76,20 +76,34 @@ impl Tck {
                     return Err(String::from("Arg lists are not same length"));
                 }
                 for (arg_a, arg_b) in a_i.iter().zip(b_i) {
-                    self.unify(*arg_a, arg_b)?;
+                    self.unify(symtbl, *arg_a, arg_b)?;
                 }
-                self.unify(a_o, b_o)
+                self.unify(symtbl, a_o, b_o)
             }
             (TypeParam(s1), TypeParam(s2)) if s1 == s2 => Ok(()),
-            (TypeParam(_s), _other) => {
-                // TODO: Make sure the name doesn't refer to
-                // itself, such as T = List<T>
-                self.vars.insert(a, TypeInfo::Ref(b));
-                self.unify(a, b)
+            (TypeParam(s), _other) => {
+                // Do we know what this is?
+                if let Some(id) = symtbl.lookup_generic(&s) {
+                    self.vars.insert(id, TypeInfo::Ref(b));
+                    self.unify(symtbl, id, b)
+                } else {
+                    // it's unbound, so life is terrible?
+                    // TODO: Make sure the name doesn't refer to
+                    // itself, such as T = List<T>
+                    //self.vars.insert(a, TypeInfo::Ref(b));
+                    //self.unify(symtbl, a, b)
+                    panic!("We don't know what {} is", s);
+                }
             }
-            (_other, TypeParam(_s)) => {
-                self.vars.insert(b, TypeInfo::Ref(a));
-                self.unify(a, b)
+            (_other, TypeParam(s)) => {
+                if let Some(id) = symtbl.lookup_generic(&s) {
+                    self.vars.insert(id, TypeInfo::Ref(a));
+                    self.unify(symtbl, b, id)
+                } else {
+                    panic!("We don't know what {} is", s);
+                    //self.vars.insert(b, TypeInfo::Ref(a));
+                    //self.unify(symtbl, a, b)
+                }
             }
             // If no previous attempts to unify were successful, raise an error
             (a, b) => Err(format!("Conflict between {:?} and {:?}", a, b)),
@@ -125,30 +139,28 @@ impl Tck {
     /// and generates a new type with unknown's (type variables) for the generic types (type
     /// parameters)
     ///
-    /// The type_params is a *local* binding of known generic type names to type variables.
+    /// The named_types is a *local* binding of generic type names to type variables.
     /// We use this to make multiple mentions of the same type name, such as
     /// `id :: T -> T`, all refer to the same type variable.
     /// Feels Weird but it works.
-    //fn instantiate(&mut self, named_types: &mut HashMap<String, TypeId>, t: &Type) -> TypeId {
-    fn instantiate(&mut self, symtbl: &mut Symtbl, t: &Type) -> TypeId {
+    fn instantiate(&mut self, named_types: &mut HashMap<String, TypeId>, t: &Type) -> TypeId {
         let typeinfo = match t {
-            Type::Named(s, args) => {
-                let args = args.iter().map(|t| self.instantiate(symtbl, t)).collect();
-                TypeInfo::Named(s.clone(), args)
-            }
+            Type::Named(_s, _args) => todo!(),
             Type::Generic(s) => {
-                if let Some(ty) = symtbl.lookup_generic(s) {
-                    TypeInfo::Ref(ty)
+                if let Some(ty) = named_types.get(s) {
+                    TypeInfo::Ref(*ty)
                 } else {
                     let tid = self.insert(TypeInfo::Unknown);
-                    //type_params.insert(s.clone(), tid);
-                    symtbl.add_generic(s, tid);
+                    named_types.insert(s.clone(), tid);
                     TypeInfo::Ref(tid)
                 }
             }
             Type::Func(args, rettype) => {
-                let inst_args: Vec<_> = args.iter().map(|t| self.instantiate(symtbl, t)).collect();
-                let inst_ret = self.instantiate(symtbl, rettype);
+                let inst_args: Vec<_> = args
+                    .iter()
+                    .map(|t| self.instantiate(named_types, t))
+                    .collect();
+                let inst_ret = self.instantiate(named_types, rettype);
                 TypeInfo::Func(inst_args, inst_ret)
             }
         };
@@ -226,8 +238,8 @@ impl Symtbl {
 
     fn lookup_generic(&self, name: &str) -> Option<TypeId> {
         for scope in self.generic_vars.borrow().iter().rev() {
-            if let Some(v) = scope.get(name) {
-                return Some(v.clone());
+            if let Some(tid) = scope.get(name) {
+                return Some(*tid);
             }
         }
         return None;
@@ -277,7 +289,7 @@ fn typecheck_expr(
             typecheck_expr(tck, symtbl, init)?;
             let init_expr_type = tck.get_expr_type(init);
             let var_type = tck.insert(typename.clone());
-            tck.unify(init_expr_type, var_type)?;
+            tck.unify(symtbl, init_expr_type, var_type)?;
 
             // TODO: Make this expr return unit instead of the
             // type of `init`
@@ -303,6 +315,12 @@ fn typecheck_expr(
             match &actual_func_type {
                 Type::Func(_args, _rettype) => {
                     println!("Calling function {:?} is {:?}", func, actual_func_type);
+                    // So when we call a function we need to know what its
+                    // type params are.  Then we bind those type parameters
+                    // to things.
+                    //if let Some(name) = paramtype.generic_name() {
+                    //    symtbl.add_generic(name, p);
+                    //}
                 }
                 _ => panic!("Tried to call something not a function"),
             }
@@ -328,12 +346,9 @@ fn typecheck_expr(
             // types a function takes as input (our `Generic` or `TypeParam`
             // things I suppose), from "type variables" which are the TypeId
             // we have to solve for.
-            {
-                //let _guard = symtbl.push_scope();
-                let heck = tck.instantiate(symtbl, &actual_func_type);
-                tck.unify(heck, funcall_var)?;
-            }
-            //tck.unify(func_type, funcall_var)?;
+            let named_types = &mut HashMap::new();
+            let heck = tck.instantiate(named_types, &actual_func_type);
+            tck.unify(symtbl, heck, funcall_var)?;
 
             tck.set_expr_type(expr, rettype_var);
             Ok(rettype_var)
@@ -398,7 +413,7 @@ pub fn typecheck(ast: &ast::Ast) {
                 }
                 let last_expr = body.last().expect("empty body, aieeee");
                 let last_expr_type = tck.get_expr_type(last_expr);
-                tck.unify(last_expr_type, rettype)
+                tck.unify(&symtbl, last_expr_type, rettype)
                     .expect("Unification of function body failed, aieeee");
 
                 println!("Typechecked {}, types are", name);

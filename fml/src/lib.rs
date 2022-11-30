@@ -9,6 +9,7 @@ pub mod typeck;
 pub enum Type {
     Named(String, Vec<Type>),
     Func(Vec<Type>, Box<Type>),
+    /// A generic type parameter
     Generic(String),
 }
 
