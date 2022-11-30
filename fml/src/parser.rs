@@ -619,7 +619,7 @@ impl<'input> Parser<'input> {
             }
             Some(Token { kind: T::At, .. }) => {
                 let s = self.expect_ident();
-                TypeInfo::NamedGeneric(s)
+                TypeInfo::TypeParam(s)
             }
             /*
             Some(Token {

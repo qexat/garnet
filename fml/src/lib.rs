@@ -32,7 +32,7 @@ pub enum TypeInfo {
     Func(Vec<TypeId>, TypeId),
     /// This is some generic type that has a name like @A
     /// AKA a type parameter.
-    NamedGeneric(String),
+    TypeParam(String),
 }
 
 impl TypeInfo {
@@ -47,7 +47,7 @@ impl TypeInfo {
 
     fn generic_name(&self) -> Option<&str> {
         match self {
-            TypeInfo::NamedGeneric(s) => Some(s),
+            TypeInfo::TypeParam(s) => Some(s),
             _ => None,
         }
     }
