@@ -5,7 +5,7 @@ pub mod parser;
 pub mod typeck;
 
 /// A concrete type that has been fully inferred
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Type {
     Named(String, Vec<Type>),
     Func(Vec<Type>, Box<Type>),
@@ -34,6 +34,24 @@ pub enum TypeInfo {
     /// This is some generic type that has a name like @A
     /// AKA a type parameter.
     TypeParam(String),
+}
+
+impl Type {
+    fn get_primitive_type(s: &str) -> Option<Type> {
+        match s {
+            "I32" => Some(Type::Named("I32".to_string(), vec![])),
+            "Bool" => Some(Type::Named("Bool".to_string(), vec![])),
+            //"Never" => Some(TypeInfo::Never),
+            _ => None,
+        }
+    }
+
+    fn generic_name(&self) -> Option<&str> {
+        match self {
+            Type::Generic(s) => Some(s),
+            _ => None,
+        }
+    }
 }
 
 impl TypeInfo {
