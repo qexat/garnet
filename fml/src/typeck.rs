@@ -87,12 +87,12 @@ impl Tck {
             (TypeParam(s), _other) => {
                 // Do we know what this is?
                 if let Some(id) = symtbl.lookup_generic(&s) {
+                    // TODO: Make sure the name doesn't refer to
+                    // itself, such as T = List<T>
                     self.vars.insert(id, TypeInfo::Ref(b));
                     self.unify(symtbl, id, b)
                 } else {
                     // it's unbound, so life is terrible?
-                    // TODO: Make sure the name doesn't refer to
-                    // itself, such as T = List<T>
                     //self.vars.insert(a, TypeInfo::Ref(b));
                     //self.unify(symtbl, a, b)
                     panic!("We don't know what {} is", s);
@@ -165,8 +165,9 @@ impl Tck {
             }
             Type::Generic(s) => {
                 if let Some(ty) = named_types.get(s) {
-                    TypeInfo::TypeParam(s.clone())
+                    TypeInfo::Ref(*ty)
                 } else {
+                    //panic!("Unknown generic name {}", s);
                     let tid = self.insert(TypeInfo::Unknown);
                     named_types.insert(s.clone(), tid);
                     //TypeInfo::Ref(tid)
@@ -337,15 +338,19 @@ fn typecheck_expr(
             // We know this will work because we require full function signatures
             // on our functions.
             let actual_func_type = tck.reconstruct(func_type)?;
+            let named_types = &mut HashMap::new();
             match &actual_func_type {
-                Type::Func(_args, _rettype) => {
+                Type::Func(args, _rettype) => {
                     println!("Calling function {:?} is {:?}", func, actual_func_type);
                     // So when we call a function we need to know what its
                     // type params are.  Then we bind those type parameters
                     // to things.
-                    //if let Some(name) = paramtype.generic_name() {
-                    //    symtbl.add_generic(name, p);
-                    //}
+                    for arg in args {
+                        if let Some(name) = arg.generic_name() {
+                            let p = tck.instantiate(named_types, arg);
+                            named_types.insert(name.to_string(), p);
+                        }
+                    }
                 }
                 _ => panic!("Tried to call something not a function"),
             }
@@ -371,7 +376,6 @@ fn typecheck_expr(
             // types a function takes as input (our `Generic` or `TypeParam`
             // things I suppose), from "type variables" which are the TypeId
             // we have to solve for.
-            let named_types = &mut HashMap::new();
             let heck = tck.instantiate(named_types, &actual_func_type);
             tck.unify(symtbl, heck, funcall_var)?;
 
