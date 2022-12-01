@@ -73,7 +73,10 @@ impl Tck {
             // can be trivially implemented for tuples, sum types, etc.
             (Func(a_i, a_o), Func(b_i, b_o)) => {
                 if a_i.len() != b_i.len() {
-                    return Err(String::from("Arg lists are not same length"));
+                    return Err(format!(
+                        "Arg lists are not same length: {:?} != {:?}",
+                        a_i, b_i,
+                    ));
                 }
                 for (arg_a, arg_b) in a_i.iter().zip(b_i) {
                     self.unify(symtbl, *arg_a, arg_b)?;
@@ -115,9 +118,13 @@ impl Tck {
     /// type is.
     pub fn reconstruct(&self, id: TypeId) -> Result<Type, String> {
         use TypeInfo::*;
+        println!("Reconstructing {:?}", id);
         match &self.vars[&id] {
             Unknown => Err(format!("Cannot infer")),
-            Ref(id) => self.reconstruct(*id),
+            Ref(id) => {
+                println!("Following ref to {:?}", id);
+                self.reconstruct(*id)
+            }
             Named(s, args) => {
                 let arg_types: Result<Vec<_>, _> =
                     args.iter().map(|x| self.reconstruct(*x)).collect();
@@ -149,14 +156,22 @@ impl Tck {
     /// enclosing function and those are what we explicitly want to get away from.
     fn instantiate(&mut self, named_types: &mut HashMap<String, TypeId>, t: &Type) -> TypeId {
         let typeinfo = match t {
-            Type::Named(_s, _args) => todo!(),
+            Type::Named(s, args) => {
+                let inst_args: Vec<_> = args
+                    .iter()
+                    .map(|t| self.instantiate(named_types, t))
+                    .collect();
+                TypeInfo::Named(s.clone(), inst_args)
+            }
             Type::Generic(s) => {
                 if let Some(ty) = named_types.get(s) {
                     TypeInfo::Ref(*ty)
+                    //TypeInfo::TypeParam(s.clone())
                 } else {
                     let tid = self.insert(TypeInfo::Unknown);
                     named_types.insert(s.clone(), tid);
-                    TypeInfo::Ref(tid)
+                    //TypeInfo::Ref(tid)
+                    TypeInfo::TypeParam(s.clone())
                 }
             }
             Type::Func(args, rettype) => {
@@ -166,6 +181,10 @@ impl Tck {
                     .collect();
                 let inst_ret = self.instantiate(named_types, rettype);
                 TypeInfo::Func(inst_args, inst_ret)
+                /*
+                let inst_ret = self.insert(TypeInfo::Unknown);
+                TypeInfo::Func(vec![], inst_ret)
+                */
             }
         };
         self.insert(typeinfo)
@@ -292,7 +311,10 @@ fn typecheck_expr(
         } => {
             typecheck_expr(tck, symtbl, init)?;
             let init_expr_type = tck.get_expr_type(init);
-            let var_type = tck.insert(typename.clone());
+            //let var_type = tck.insert(typename.clone());
+            // TODO: This is a little loco but ok
+            let named_types = &mut HashMap::new();
+            let var_type = tck.instantiate(named_types, typename);
             tck.unify(symtbl, init_expr_type, var_type)?;
 
             // TODO: Make this expr return unit instead of the
@@ -391,34 +413,38 @@ pub fn typecheck(ast: &ast::Ast) {
                 // To start with let's just worry about defining.
 
                 // Insert info about the function signature
+                let named_types = &mut HashMap::new();
                 let mut params = vec![];
                 for (_paramname, paramtype) in &signature.params {
-                    let p = tck.insert(paramtype.clone());
+                    let p = tck.instantiate(named_types, paramtype);
                     params.push(p);
                     if let Some(name) = paramtype.generic_name() {
                         symtbl.add_generic(name, p);
                     }
                 }
-                let rettype = tck.insert(signature.rettype.clone());
+                let rettype = tck.instantiate(named_types, &signature.rettype);
                 let f = tck.insert(TypeInfo::Func(params, rettype));
                 symtbl.add_var(name, f);
 
                 // Add params to function's scope
                 let _guard = symtbl.push_scope();
                 for (paramname, paramtype) in &signature.params {
-                    let p = tck.insert(paramtype.clone());
+                    let p = tck.instantiate(named_types, paramtype);
                     symtbl.add_var(paramname, p);
                 }
 
+                println!("Params added");
                 // Typecheck body
                 for expr in body {
                     typecheck_expr(&mut tck, &mut symtbl, expr).expect("Typecheck failure");
                     // TODO here: unit type for expressions and such
                 }
+                println!("Body checked");
                 let last_expr = body.last().expect("empty body, aieeee");
                 let last_expr_type = tck.get_expr_type(last_expr);
                 tck.unify(&symtbl, last_expr_type, rettype)
                     .expect("Unification of function body failed, aieeee");
+                println!("Rettype checked");
 
                 println!("Typechecked {}, types are", name);
                 let mut vars_report: Vec<_> = tck.vars.iter().collect();

@@ -390,7 +390,7 @@ impl<'input> Parser<'input> {
 
     /// sig = ident ":" typename
     /// fn_args = "(" [sig {"," sig} [","]] ")"
-    fn parse_fn_args(&mut self) -> Vec<(String, TypeInfo)> {
+    fn parse_fn_args(&mut self) -> Vec<(String, Type)> {
         let mut args = vec![];
         self.expect(T::LParen);
 
@@ -409,7 +409,7 @@ impl<'input> Parser<'input> {
         args
     }
 
-    fn parse_fn_type(&mut self) -> TypeInfo {
+    fn parse_fn_type(&mut self) -> Type {
         // TODO: Parse generic stuffs?
         let mut params = self.parse_fn_type_args();
         self.expect(T::Colon);
@@ -419,7 +419,7 @@ impl<'input> Parser<'input> {
         //TypeInfo::Func()
     }
 
-    fn parse_fn_type_args(&mut self) -> Vec<TypeInfo> {
+    fn parse_fn_type_args(&mut self) -> Vec<Type> {
         let mut args = vec![];
         self.expect(T::LParen);
 
@@ -436,8 +436,7 @@ impl<'input> Parser<'input> {
         args
     }
 
-    /*
-    fn parse_tuple_type(&mut self) -> TypeInfo {
+    fn parse_tuple_type(&mut self) -> Type {
         let mut body = vec![];
         while !self.peek_is(T::RBrace.discr()) {
             let t = self.parse_type();
@@ -448,9 +447,8 @@ impl<'input> Parser<'input> {
             }
         }
         self.expect(T::RBrace);
-        TypeInfo::Tuple(body)
+        Type::Named("Tuple".to_string(), body)
     }
-    */
 
     fn parse_exprs(&mut self) -> Vec<ast::ExprNode> {
         let mut exprs = vec![];
@@ -603,14 +601,14 @@ impl<'input> Parser<'input> {
         ast::ExprNode::new(ast::Expr::Lambda { signature, body })
     }
 
-    fn parse_type(&mut self) -> TypeInfo {
+    fn parse_type(&mut self) -> Type {
         let t = self.next();
         match t {
             Some(Token {
                 kind: T::Ident(ref s),
                 span: _,
             }) => {
-                if let Some(t) = TypeInfo::get_primitive_type(s) {
+                if let Some(t) = Type::get_primitive_type(s) {
                     t.clone()
                 } else {
                     //crate::INT.named_type(s)
@@ -619,16 +617,14 @@ impl<'input> Parser<'input> {
             }
             Some(Token { kind: T::At, .. }) => {
                 let s = self.expect_ident();
-                TypeInfo::TypeParam(s)
+                Type::Generic(s)
             }
-            /*
             Some(Token {
                 kind: T::LBrace, ..
             }) => {
                 let tuptype = self.parse_tuple_type();
-                crate::INT.intern_type(&tuptype)
+                tuptype
             }
-            */
             Some(Token { kind: T::Fn, .. }) => {
                 let fntype = self.parse_fn_type();
                 fntype
