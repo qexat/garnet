@@ -165,8 +165,7 @@ impl Tck {
             }
             Type::Generic(s) => {
                 if let Some(ty) = named_types.get(s) {
-                    TypeInfo::Ref(*ty)
-                    //TypeInfo::TypeParam(s.clone())
+                    TypeInfo::TypeParam(s.clone())
                 } else {
                     let tid = self.insert(TypeInfo::Unknown);
                     named_types.insert(s.clone(), tid);
