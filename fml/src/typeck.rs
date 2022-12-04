@@ -265,6 +265,57 @@ fn infer_lit(lit: &ast::Literal) -> TypeInfo {
         ast::Literal::Bool(_) => TypeInfo::Named("Bool".to_string(), vec![]),
     }
 }
+fn typecheck_func_body(
+    name: Option<&str>,
+    tck: &mut Tck,
+    symtbl: &mut Symtbl,
+    signature: &ast::Signature,
+    body: &[ast::ExprNode],
+) -> Result<TypeId, String> {
+    // Insert info about the function signature
+    let mut params = vec![];
+    for (_paramname, paramtype) in &signature.params {
+        let p = tck.insert_known(paramtype);
+        params.push(p);
+    }
+    let rettype = tck.insert_known(&signature.rettype);
+    let f = tck.insert(TypeInfo::Func(params, rettype));
+    // If we have a name (ie, are not a lambda), bind the function's type to its name
+    // A gensym might make this easier/nicer someday, but this works for now.
+    //
+    // Note we do this *before* pushing the scope and checking its body,
+    // so this will add the function's name to the outer scope.
+    if let Some(n) = name {
+        symtbl.add_var(n, f);
+    }
+
+    // Add params to function's scope
+    let _guard = symtbl.push_scope();
+    for (paramname, paramtype) in &signature.params {
+        let p = tck.insert_known(paramtype);
+        symtbl.add_var(paramname, p);
+    }
+
+    // Typecheck body
+    for expr in body {
+        typecheck_expr(tck, symtbl, expr)?;
+        // TODO here: unit type for expressions and such
+    }
+    let last_expr = body.last().expect("empty body, aieeee");
+    let last_expr_type = tck.get_expr_type(last_expr);
+    tck.unify(&symtbl, last_expr_type, rettype)?;
+
+    println!(
+        "Typechecked function {}, types are",
+        name.unwrap_or("(lambda)")
+    );
+    let mut vars_report: Vec<_> = tck.vars.iter().collect();
+    vars_report.sort_by(|(k1, _), (k2, _)| k1.cmp(k2));
+    for (k, v) in vars_report.iter() {
+        print!("  ${} => {:?}\n", k.0, v);
+    }
+    Ok(f)
+}
 
 fn typecheck_expr(
     tck: &mut Tck,
@@ -305,39 +356,9 @@ fn typecheck_expr(
             Ok(var_type)
         }
         Lambda { signature, body } => {
-            let mut params = vec![];
-            for (_paramname, paramtype) in &signature.params {
-                let p = tck.insert_known(paramtype);
-                params.push(p);
-            }
-            let rettype = tck.insert_known(&signature.rettype);
-            let f = tck.insert(TypeInfo::Func(params, rettype));
-
-            // Add params to function's scope
-            let _guard = symtbl.push_scope();
-            for (paramname, paramtype) in &signature.params {
-                let p = tck.insert_known(paramtype);
-                symtbl.add_var(paramname, p);
-            }
-
-            // Typecheck body
-            for expr in body {
-                typecheck_expr(tck, symtbl, expr).expect("Typecheck failure");
-                // TODO here: unit type for expressions and such
-            }
-            let last_expr = body.last().expect("empty body, aieeee");
-            let last_expr_type = tck.get_expr_type(last_expr);
-            tck.unify(&symtbl, last_expr_type, rettype)
-                .expect("Unification of function body failed, aieeee");
-
-            println!("Typechecked lambda, types are");
-            let mut vars_report: Vec<_> = tck.vars.iter().collect();
-            vars_report.sort_by(|(k1, _), (k2, _)| k1.cmp(k2));
-            for (k, v) in vars_report.iter() {
-                print!("  ${} => {:?}\n", k.0, v);
-            }
-            tck.set_expr_type(expr, f);
-            Ok(f)
+            let t = typecheck_func_body(None, tck, symtbl, signature, body)?;
+            tck.set_expr_type(expr, t);
+            Ok(t)
         }
         TupleCtor { body } => {
             let body_types: Result<Vec<_>, _> = body
@@ -408,8 +429,8 @@ fn typecheck_expr(
 // will also need to call `engine.unify(x, y)` when you know two nodes have the
 // same type, such as in the statement `x = y;`.
 pub fn typecheck(ast: &ast::Ast) {
-    let mut tck = Tck::default();
-    let mut symtbl = Symtbl::default();
+    let tck = &mut Tck::default();
+    let symtbl = &mut Symtbl::default();
     for decl in &ast.decls {
         use ast::Decl::*;
 
@@ -419,53 +440,10 @@ pub fn typecheck(ast: &ast::Ast) {
                 signature,
                 body,
             } => {
-                // Ok, for generic types as function inputs... we collect
-                // all the types that are generics, and save each of them
-                // in our scope.  We save them as... something, and when
-                // we unify them we should be able to follow references to
-                // them as normal?
-                //
-                // Things get a little weird when we define vs. call.
-                // When we call a function with generics we are providing
-                // types for it like they are function args.  So we bind
-                // them to a scope the same way we bind function args.
-                //
-                // To start with let's just worry about defining.
-
-                // Insert info about the function signature
-                let mut params = vec![];
-                for (_paramname, paramtype) in &signature.params {
-                    let p = tck.insert_known(paramtype);
-                    params.push(p);
-                }
-                let rettype = tck.insert_known(&signature.rettype);
-                let f = tck.insert(TypeInfo::Func(params, rettype));
-                //tck.insert_func_sig(signature);
-                symtbl.add_var(name, f);
-
-                // Add params to function's scope
-                let _guard = symtbl.push_scope();
-                for (paramname, paramtype) in &signature.params {
-                    let p = tck.insert_known(paramtype);
-                    symtbl.add_var(paramname, p);
-                }
-
-                // Typecheck body
-                for expr in body {
-                    typecheck_expr(&mut tck, &mut symtbl, expr).expect("Typecheck failure");
-                    // TODO here: unit type for expressions and such
-                }
-                let last_expr = body.last().expect("empty body, aieeee");
-                let last_expr_type = tck.get_expr_type(last_expr);
-                tck.unify(&symtbl, last_expr_type, rettype)
-                    .expect("Unification of function body failed, aieeee");
-
-                println!("Typechecked {}, types are", name);
-                let mut vars_report: Vec<_> = tck.vars.iter().collect();
-                vars_report.sort_by(|(k1, _), (k2, _)| k1.cmp(k2));
-                for (k, v) in vars_report.iter() {
-                    print!("  ${} => {:?}\n", k.0, v);
-                }
+                let t = typecheck_func_body(Some(name), tck, symtbl, signature, body);
+                t.unwrap_or_else(|e| {
+                    panic!("Error while typechecking function {}:\n{:?}", name, e)
+                });
             }
             Struct { name: _, tys: _ } => todo!("struct decl"),
         }
