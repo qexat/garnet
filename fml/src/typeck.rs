@@ -168,8 +168,8 @@ impl Tck {
                     .iter()
                     .map(|t| self.instantiate(named_types, t))
                     .collect();
-                TypeInfo::Named(s.clone(), inst_args);
-                todo!("Double check this is correct")
+                TypeInfo::Named(s.clone(), inst_args)
+                //todo!("Double check this is correct")
             }
             Type::Generic(s) => {
                 // If we know this is is a particular generic, match wiht it
@@ -331,10 +331,44 @@ fn typecheck_expr(
             symtbl.add_var(varname, var_type);
             Ok(var_type)
         }
-        Lambda {
-            signature: _,
-            body: _,
-        } => todo!("idk mang"),
+        Lambda { signature, body } => {
+            let mut params = vec![];
+            for (_paramname, paramtype) in &signature.params {
+                let p = tck.insert_known(paramtype);
+                params.push(p);
+                if let Some(name) = paramtype.generic_name() {
+                    symtbl.add_generic(name, p);
+                }
+            }
+            let rettype = tck.insert_known(&signature.rettype);
+            let f = tck.insert(TypeInfo::Func(params, rettype));
+
+            // Add params to function's scope
+            let _guard = symtbl.push_scope();
+            for (paramname, paramtype) in &signature.params {
+                let p = tck.insert_known(paramtype);
+                symtbl.add_var(paramname, p);
+            }
+
+            // Typecheck body
+            for expr in body {
+                typecheck_expr(tck, symtbl, expr).expect("Typecheck failure");
+                // TODO here: unit type for expressions and such
+            }
+            let last_expr = body.last().expect("empty body, aieeee");
+            let last_expr_type = tck.get_expr_type(last_expr);
+            tck.unify(&symtbl, last_expr_type, rettype)
+                .expect("Unification of function body failed, aieeee");
+
+            println!("Typechecked lambda, types are");
+            let mut vars_report: Vec<_> = tck.vars.iter().collect();
+            vars_report.sort_by(|(k1, _), (k2, _)| k1.cmp(k2));
+            for (k, v) in vars_report.iter() {
+                print!("  ${} => {:?}\n", k.0, v);
+            }
+            tck.set_expr_type(expr, f);
+            Ok(f)
+        }
         TupleCtor { body } => {
             let body_types: Result<Vec<_>, _> = body
                 .iter()

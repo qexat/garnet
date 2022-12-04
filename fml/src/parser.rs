@@ -411,12 +411,10 @@ impl<'input> Parser<'input> {
 
     fn parse_fn_type(&mut self) -> Type {
         // TODO: Parse generic stuffs?
-        let mut params = self.parse_fn_type_args();
+        let params = self.parse_fn_type_args();
         self.expect(T::Colon);
         let rettype = self.parse_type();
-        params.push(rettype);
-        todo!()
-        //TypeInfo::Func()
+        Type::Func(params, Box::new(rettype))
     }
 
     fn parse_fn_type_args(&mut self) -> Vec<Type> {
