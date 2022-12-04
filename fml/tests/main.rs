@@ -75,3 +75,9 @@ fn test_lambda5() {
     let src = include_str!("test_lambda5.gt");
     let _output = fml::compile("test_lambda5.gt", src);
 }
+
+#[test]
+fn test_typedef1() {
+    let src = include_str!("test_typedef1.gt");
+    let _output = fml::compile("test_typedef1.gt", src);
+}

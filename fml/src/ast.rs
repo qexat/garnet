@@ -95,6 +95,10 @@ pub enum Expr {
     StructCtor {
         body: HashMap<String, ExprNode>,
     },
+    TypeCtor {
+        name: String,
+        body: ExprNode,
+    },
 }
 
 impl Expr {
@@ -119,6 +123,10 @@ pub enum Decl {
     Struct {
         name: String,
         tys: HashMap<String, Type>,
+    },
+    TypeDef {
+        name: String,
+        ty: Type,
     },
 }
 
