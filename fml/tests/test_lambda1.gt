@@ -1,0 +1,6 @@
+
+fn main(): I32 =
+    let f: fn(Bool): Bool = fn(val: Bool): Bool = val end
+    let a: Bool = f(true)
+    3
+end
