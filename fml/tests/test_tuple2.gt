@@ -1,0 +1,10 @@
+
+fn identity(i: @T): @T =
+    let y: @T = i
+    y
+end
+
+fn main(): I32 =
+    let a: {I32, Bool, I32} = identity({1, false, 3})
+    3
+end

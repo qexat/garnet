@@ -88,6 +88,9 @@ pub enum Expr {
         func: ExprNode,
         params: Vec<ExprNode>,
     },
+    TupleCtor {
+        body: Vec<ExprNode>,
+    },
 }
 
 impl Expr {

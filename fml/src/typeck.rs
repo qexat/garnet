@@ -335,6 +335,17 @@ fn typecheck_expr(
             signature: _,
             body: _,
         } => todo!("idk mang"),
+        TupleCtor { body } => {
+            let body_types: Result<Vec<_>, _> = body
+                .iter()
+                .map(|expr| typecheck_expr(tck, symtbl, expr))
+                .collect();
+            let body_types = body_types?;
+            let tuple_type = TypeInfo::Named("Tuple".to_string(), body_types);
+            let typeid = tck.insert(tuple_type);
+            tck.set_expr_type(expr, typeid);
+            Ok(typeid)
+        }
         Funcall { func, params } => {
             // Oh, defined generics are "easy".
             // Each time I call a function I create new type

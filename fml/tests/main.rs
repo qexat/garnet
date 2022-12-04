@@ -25,3 +25,22 @@ fn test_failure() {
     let src = include_str!("test_failure.gt");
     let _output = fml::compile("test_failure.gt", src);
 }
+
+#[test]
+fn test_tuple1() {
+    let src = include_str!("test_tuple1.gt");
+    let _output = fml::compile("test_tuple1.gt", src);
+}
+
+#[test]
+fn test_tuple2() {
+    let src = include_str!("test_tuple2.gt");
+    let _output = fml::compile("test_tuple2.gt", src);
+}
+
+#[test]
+#[should_panic]
+fn test_tuple3() {
+    let src = include_str!("test_tuple3.gt");
+    let _output = fml::compile("test_tuple3.gt", src);
+}
