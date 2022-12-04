@@ -46,6 +46,12 @@ fn test_tuple3() {
 }
 
 #[test]
+fn test_tuple4() {
+    let src = include_str!("test_tuple4.gt");
+    let _output = fml::compile("test_tuple4.gt", src);
+}
+
+#[test]
 fn test_lambda1() {
     let src = include_str!("test_lambda1.gt");
     let _output = fml::compile("test_lambda1.gt", src);
@@ -80,4 +86,10 @@ fn test_lambda5() {
 fn test_typedef1() {
     let src = include_str!("test_typedef1.gt");
     let _output = fml::compile("test_typedef1.gt", src);
+}
+
+#[test]
+fn test_typedef2() {
+    let src = include_str!("test_typedef2.gt");
+    let _output = fml::compile("test_typedef2.gt", src);
 }
