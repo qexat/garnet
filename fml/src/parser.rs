@@ -291,7 +291,7 @@ impl<'input> Parser<'input> {
     ///
     /// I ended up seeing a lot of `if self.peek_is(thing) { self.expect(thing)`
     /// so maybe this helps.
-    fn try_expect(&mut self, expected: Discr<TokenKind>) -> bool {
+    fn peek_expect(&mut self, expected: Discr<TokenKind>) -> bool {
         if self.peek_is(expected) {
             self.drop();
             true
@@ -400,7 +400,7 @@ impl<'input> Parser<'input> {
             let tname = self.parse_type();
             args.push((name, tname));
 
-            if self.try_expect(T::Comma.discr()) {
+            if self.peek_expect(T::Comma.discr()) {
             } else {
                 break;
             }
@@ -427,7 +427,7 @@ impl<'input> Parser<'input> {
             let tname = self.parse_type();
             args.push(tname);
 
-            if self.try_expect(T::Comma.discr()) {
+            if self.peek_expect(T::Comma.discr()) {
             } else {
                 break;
             }
@@ -436,28 +436,26 @@ impl<'input> Parser<'input> {
         args
     }
 
-    /*
-    fn parse_tuple_type(&mut self) -> TypeInfo {
+    fn parse_tuple_type(&mut self) -> Type {
         let mut body = vec![];
         while !self.peek_is(T::RBrace.discr()) {
             let t = self.parse_type();
             body.push(t);
-            if self.try_expect(T::Comma.discr()) {
+            if self.peek_expect(T::Comma.discr()) {
             } else {
                 break;
             }
         }
         self.expect(T::RBrace);
-        TypeInfo::Tuple(body)
+        Type::Named("Tuple".to_string(), body)
     }
-    */
 
     fn parse_exprs(&mut self) -> Vec<ast::ExprNode> {
         let mut exprs = vec![];
         let tok = self.peek();
         while let Some(e) = self.parse_expr(0) {
             // Hey and if we have a semicolon after an expr we can just eat it
-            self.try_expect(T::Semicolon.discr());
+            self.peek_expect(T::Semicolon.discr());
             exprs.push(e);
         }
         if exprs.is_empty() {
@@ -505,6 +503,8 @@ impl<'input> Parser<'input> {
                 self.expect(T::RParen);
                 lhs
             }
+            // Tuple literal
+            T::LBrace => self.parse_constructor(),
 
             // Something else not a valid expr
             _x => return None,
@@ -603,6 +603,22 @@ impl<'input> Parser<'input> {
         ast::ExprNode::new(ast::Expr::Lambda { signature, body })
     }
 
+    /// tuple constructor = "{" [expr {"," expr} [","] "}"
+    fn parse_constructor(&mut self) -> ast::ExprNode {
+        self.expect(T::LBrace);
+        let mut body = vec![];
+        while let Some(expr) = self.parse_expr(0) {
+            body.push(expr);
+
+            if self.peek_expect(T::Comma.discr()) {
+            } else {
+                break;
+            }
+        }
+        self.expect(T::RBrace);
+        ast::ExprNode::new(ast::Expr::TupleCtor { body })
+    }
+
     fn parse_type(&mut self) -> Type {
         let t = self.next();
         match t {
@@ -621,14 +637,12 @@ impl<'input> Parser<'input> {
                 let s = self.expect_ident();
                 Type::Generic(s)
             }
-            /*
             Some(Token {
                 kind: T::LBrace, ..
             }) => {
                 let tuptype = self.parse_tuple_type();
-                crate::INT.intern_type(&tuptype)
+                tuptype
             }
-            */
             Some(Token { kind: T::Fn, .. }) => {
                 let fntype = self.parse_fn_type();
                 fntype
