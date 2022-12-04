@@ -55,7 +55,7 @@ pub enum TypeInfo {
 }
 
 impl TypeInfo {
-    fn get_primitive_type(s: &str) -> Option<TypeInfo> {
+    fn _get_primitive_type(s: &str) -> Option<TypeInfo> {
         match s {
             "I32" => Some(TypeInfo::Named("I32".to_string(), vec![])),
             "Bool" => Some(TypeInfo::Named("Bool".to_string(), vec![])),
@@ -64,7 +64,7 @@ impl TypeInfo {
         }
     }
 
-    fn generic_name(&self) -> Option<&str> {
+    fn _generic_name(&self) -> Option<&str> {
         match self {
             TypeInfo::TypeParam(s) => Some(s),
             _ => None,

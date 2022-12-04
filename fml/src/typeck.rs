@@ -29,6 +29,25 @@ impl Tck {
         *self.types.get(&expr.id).unwrap()
     }
 
+    /// Check whether the type contains any references to the given
+    /// typeid.  Used for making sure we don't construct nonsense
+    /// things like `T = List<T>`.
+    ///
+    /// TODO: This is made redundant by the assertion at the beginning
+    /// of unify, I think?
+    fn _contains_type(&self, a: TypeId, b: TypeId) -> bool {
+        use TypeInfo::*;
+        match self.vars[&a] {
+            Unknown => false,
+            Ref(t) => b == t || self._contains_type(t, b),
+            Named(_, ref args) => args.iter().any(|arg| self._contains_type(*arg, b)),
+            Func(ref args, rettype) => {
+                b == rettype || args.iter().any(|arg| self._contains_type(*arg, b))
+            }
+            TypeParam(_) => false,
+        }
+    }
+
     /// Create a new type term with whatever we have about its type
     pub fn insert(&mut self, info: TypeInfo) -> TypeId {
         // Generate a new ID for our type term
@@ -60,7 +79,7 @@ impl Tck {
     /// Make the types of two type terms equivalent (or produce an error if
     /// there is a conflict between them)
     pub fn unify(&mut self, symtbl: &Symtbl, a: TypeId, b: TypeId) -> Result<(), String> {
-        assert_ne!(a, b, "Tried to unify a type with itself!  This means our typechecking state has been corrupted somehow?");
+        assert_ne!(a, b, "Tried to unify a type with itself!  This means our typechecking state has gotten invalid data into it somehow?");
         use TypeInfo::*;
         match (self.vars[&a].clone(), self.vars[&b].clone()) {
             // Follow any references
@@ -100,32 +119,6 @@ impl Tck {
                 self.unify(symtbl, a_o, b_o)
             }
             (TypeParam(s1), TypeParam(s2)) if s1 == s2 => Ok(()),
-            /*
-            (TypeParam(s), _other) => {
-                // Do we know what this is?
-                if let Some(id) = symtbl.lookup_generic(&s) {
-                    self.vars.insert(id, TypeInfo::Ref(b));
-                    self.unify(symtbl, id, b)
-                } else {
-                    // it's unbound, so life is terrible?
-                    // TODO: Make sure the name doesn't refer to
-                    // itself, such as T = List<T>
-                    //self.vars.insert(a, TypeInfo::Ref(b));
-                    //self.unify(symtbl, a, b)
-                    panic!("We don't know what {} is", s);
-                }
-            }
-            (_other, TypeParam(s)) => {
-                if let Some(id) = symtbl.lookup_generic(&s) {
-                    self.vars.insert(id, TypeInfo::Ref(a));
-                    self.unify(symtbl, b, id)
-                } else {
-                    panic!("We don't know what {} is", s);
-                    //self.vars.insert(b, TypeInfo::Ref(a));
-                    //self.unify(symtbl, a, b)
-                }
-            }
-            */
             // If no previous attempts to unify were successful, raise an error
             (a, b) => Err(format!("Conflict between {:?} and {:?}", a, b)),
         }
@@ -137,7 +130,7 @@ impl Tck {
     pub fn reconstruct(&self, id: TypeId) -> Result<Type, String> {
         use TypeInfo::*;
         match &self.vars[&id] {
-            Unknown => Err(format!("Cannot infer")),
+            Unknown => Err(format!("Cannot infer type for type ID {:?}", id)),
             Ref(id) => self.reconstruct(*id),
             Named(s, args) => {
                 let arg_types: Result<Vec<_>, _> =
@@ -170,11 +163,25 @@ impl Tck {
     /// enclosing function and those are what we explicitly want to get away from.
     fn instantiate(&mut self, named_types: &mut HashMap<String, TypeId>, t: &Type) -> TypeId {
         let typeinfo = match t {
-            Type::Named(_s, _args) => todo!(),
+            Type::Named(s, args) => {
+                let inst_args: Vec<_> = args
+                    .iter()
+                    .map(|t| self.instantiate(named_types, t))
+                    .collect();
+                TypeInfo::Named(s.clone(), inst_args);
+                todo!("Double check this is correct")
+            }
             Type::Generic(s) => {
+                // If we know this is is a particular generic, match wiht it
                 if let Some(ty) = named_types.get(s) {
                     TypeInfo::Ref(*ty)
                 } else {
+                    // Otherwise create a new instance of a typevar that
+                    // this generic matches
+                    // TODO: This might be done better by checking that the
+                    // generic type actually exists in the function's scope or such,
+                    // when naming an unknown generic name this gives "type mismatch"
+                    // rather than "unknown name".  Guess it works for now though.
                     let tid = self.insert(TypeInfo::Unknown);
                     named_types.insert(s.clone(), tid);
                     TypeInfo::Ref(tid)
@@ -261,7 +268,7 @@ impl Symtbl {
         return None;
     }
 
-    fn lookup_generic(&self, name: &str) -> Option<TypeId> {
+    fn _lookup_generic(&self, name: &str) -> Option<TypeId> {
         for scope in self.generic_vars.borrow().iter().rev() {
             if let Some(tid) = scope.get(name) {
                 return Some(*tid);
