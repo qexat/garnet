@@ -206,9 +206,6 @@ impl Tck {
 #[derive(Clone)]
 struct Symtbl {
     symbols: Rc<RefCell<Vec<HashMap<String, TypeId>>>>,
-
-    /// Function-scoped generics we may have
-    generic_vars: Rc<RefCell<Vec<HashMap<String, TypeId>>>>,
 }
 
 impl Default for Symtbl {
@@ -216,7 +213,6 @@ impl Default for Symtbl {
     fn default() -> Self {
         Self {
             symbols: Rc::new(RefCell::new(vec![HashMap::new()])),
-            generic_vars: Rc::new(RefCell::new(vec![HashMap::new()])),
         }
     }
 }
@@ -232,18 +228,12 @@ impl Drop for ScopeGuard {
             .borrow_mut()
             .pop()
             .expect("Scope stack underflow");
-        self.scope
-            .generic_vars
-            .borrow_mut()
-            .pop()
-            .expect("Generic scope stack underflow");
     }
 }
 
 impl Symtbl {
     fn push_scope(&self) -> ScopeGuard {
         self.symbols.borrow_mut().push(HashMap::new());
-        self.generic_vars.borrow_mut().push(HashMap::new());
         ScopeGuard {
             scope: self.clone(),
         }
@@ -266,23 +256,6 @@ impl Symtbl {
             }
         }
         return None;
-    }
-
-    fn _lookup_generic(&self, name: &str) -> Option<TypeId> {
-        for scope in self.generic_vars.borrow().iter().rev() {
-            if let Some(tid) = scope.get(name) {
-                return Some(*tid);
-            }
-        }
-        return None;
-    }
-
-    fn add_generic(&mut self, name: &str, typeid: TypeId) {
-        self.generic_vars
-            .borrow_mut()
-            .last_mut()
-            .expect("Scope stack underflow")
-            .insert(name.to_owned(), typeid);
     }
 }
 
@@ -336,9 +309,6 @@ fn typecheck_expr(
             for (_paramname, paramtype) in &signature.params {
                 let p = tck.insert_known(paramtype);
                 params.push(p);
-                if let Some(name) = paramtype.generic_name() {
-                    symtbl.add_generic(name, p);
-                }
             }
             let rettype = tck.insert_known(&signature.rettype);
             let f = tck.insert(TypeInfo::Func(params, rettype));
@@ -395,9 +365,6 @@ fn typecheck_expr(
                     // So when we call a function we need to know what its
                     // type params are.  Then we bind those type parameters
                     // to things.
-                    //if let Some(name) = paramtype.generic_name() {
-                    //    symtbl.add_generic(name, p);
-                    //}
                 }
                 _ => panic!("Tried to call something not a function"),
             }
@@ -430,6 +397,8 @@ fn typecheck_expr(
             tck.set_expr_type(expr, rettype_var);
             Ok(rettype_var)
         }
+
+        StructCtor { body: _ } => todo!("Struct ctor"),
     }
 }
 
@@ -468,12 +437,10 @@ pub fn typecheck(ast: &ast::Ast) {
                 for (_paramname, paramtype) in &signature.params {
                     let p = tck.insert_known(paramtype);
                     params.push(p);
-                    if let Some(name) = paramtype.generic_name() {
-                        symtbl.add_generic(name, p);
-                    }
                 }
                 let rettype = tck.insert_known(&signature.rettype);
                 let f = tck.insert(TypeInfo::Func(params, rettype));
+                //tck.insert_func_sig(signature);
                 symtbl.add_var(name, f);
 
                 // Add params to function's scope
@@ -500,6 +467,7 @@ pub fn typecheck(ast: &ast::Ast) {
                     print!("  ${} => {:?}\n", k.0, v);
                 }
             }
+            Struct { name: _, tys: _ } => todo!("struct decl"),
         }
     }
     // Print out toplevel symbols

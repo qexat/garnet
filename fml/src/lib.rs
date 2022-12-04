@@ -22,13 +22,6 @@ impl Type {
             _ => None,
         }
     }
-
-    fn generic_name(&self) -> Option<&str> {
-        match self {
-            Type::Generic(s) => Some(s),
-            _ => None,
-        }
-    }
 }
 
 /// A identifier to uniquely refer to our type terms

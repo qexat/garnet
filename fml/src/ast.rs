@@ -8,6 +8,7 @@
 //! Though code formatters have different constraints and priorities, if they have line wrapping
 //! and stuff at least.  So, it might not be a particularly great code formatter.
 
+use std::collections::HashMap;
 use std::sync::Mutex;
 
 use crate::*;
@@ -91,6 +92,9 @@ pub enum Expr {
     TupleCtor {
         body: Vec<ExprNode>,
     },
+    StructCtor {
+        body: HashMap<String, ExprNode>,
+    },
 }
 
 impl Expr {
@@ -110,6 +114,11 @@ pub enum Decl {
         name: String,
         signature: Signature,
         body: Vec<ExprNode>,
+    },
+
+    Struct {
+        name: String,
+        tys: HashMap<String, Type>,
     },
 }
 
