@@ -23,11 +23,11 @@ pub enum Literal {
 
 /// A function type signature
 #[derive(Debug, Clone, PartialEq)]
-pub struct Signature {
+pub struct Signature<T = Type> {
     /// Parameters
-    pub params: Vec<(String, TypeInfo)>,
+    pub params: Vec<(String, T)>,
     /// Return type
-    pub rettype: TypeInfo,
+    pub rettype: T,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
@@ -77,7 +77,7 @@ pub enum Expr {
     },
     Let {
         varname: String,
-        typename: TypeInfo,
+        typename: Type,
         init: ExprNode,
     },
     Lambda {

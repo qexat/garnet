@@ -5,12 +5,30 @@ pub mod parser;
 pub mod typeck;
 
 /// A concrete type that has been fully inferred
-#[derive(Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Type {
     Named(String, Vec<Type>),
     Func(Vec<Type>, Box<Type>),
     /// A generic type parameter
     Generic(String),
+}
+
+impl Type {
+    fn get_primitive_type(s: &str) -> Option<Type> {
+        match s {
+            "I32" => Some(Type::Named("I32".to_string(), vec![])),
+            "Bool" => Some(Type::Named("Bool".to_string(), vec![])),
+            //"Never" => Some(TypeInfo::Never),
+            _ => None,
+        }
+    }
+
+    fn generic_name(&self) -> Option<&str> {
+        match self {
+            Type::Generic(s) => Some(s),
+            _ => None,
+        }
+    }
 }
 
 /// A identifier to uniquely refer to our type terms

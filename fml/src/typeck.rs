@@ -39,9 +39,28 @@ impl Tck {
         id
     }
 
+    /// Create a new type term out of a known type, such as if we
+    /// declare a var's type.
+    pub fn insert_known(&mut self, t: &Type) -> TypeId {
+        let tinfo = match t {
+            Type::Named(s, args) => {
+                let new_args = args.iter().map(|t| self.insert_known(t)).collect();
+                TypeInfo::Named(s.clone(), new_args)
+            }
+            Type::Func(args, rettype) => {
+                let new_args = args.iter().map(|t| self.insert_known(t)).collect();
+                let new_rettype = self.insert_known(rettype);
+                TypeInfo::Func(new_args, new_rettype)
+            }
+            Type::Generic(s) => TypeInfo::TypeParam(s.to_string()),
+        };
+        self.insert(tinfo)
+    }
+
     /// Make the types of two type terms equivalent (or produce an error if
     /// there is a conflict between them)
     pub fn unify(&mut self, symtbl: &Symtbl, a: TypeId, b: TypeId) -> Result<(), String> {
+        assert_ne!(a, b, "Tried to unify a type with itself!  This means our typechecking state has been corrupted somehow?");
         use TypeInfo::*;
         match (self.vars[&a].clone(), self.vars[&b].clone()) {
             // Follow any references
@@ -81,6 +100,7 @@ impl Tck {
                 self.unify(symtbl, a_o, b_o)
             }
             (TypeParam(s1), TypeParam(s2)) if s1 == s2 => Ok(()),
+            /*
             (TypeParam(s), _other) => {
                 // Do we know what this is?
                 if let Some(id) = symtbl.lookup_generic(&s) {
@@ -105,6 +125,7 @@ impl Tck {
                     //self.unify(symtbl, a, b)
                 }
             }
+            */
             // If no previous attempts to unify were successful, raise an error
             (a, b) => Err(format!("Conflict between {:?} and {:?}", a, b)),
         }
@@ -292,7 +313,7 @@ fn typecheck_expr(
         } => {
             typecheck_expr(tck, symtbl, init)?;
             let init_expr_type = tck.get_expr_type(init);
-            let var_type = tck.insert(typename.clone());
+            let var_type = tck.insert_known(typename);
             tck.unify(symtbl, init_expr_type, var_type)?;
 
             // TODO: Make this expr return unit instead of the
@@ -393,20 +414,20 @@ pub fn typecheck(ast: &ast::Ast) {
                 // Insert info about the function signature
                 let mut params = vec![];
                 for (_paramname, paramtype) in &signature.params {
-                    let p = tck.insert(paramtype.clone());
+                    let p = tck.insert_known(paramtype);
                     params.push(p);
                     if let Some(name) = paramtype.generic_name() {
                         symtbl.add_generic(name, p);
                     }
                 }
-                let rettype = tck.insert(signature.rettype.clone());
+                let rettype = tck.insert_known(&signature.rettype);
                 let f = tck.insert(TypeInfo::Func(params, rettype));
                 symtbl.add_var(name, f);
 
                 // Add params to function's scope
                 let _guard = symtbl.push_scope();
                 for (paramname, paramtype) in &signature.params {
-                    let p = tck.insert(paramtype.clone());
+                    let p = tck.insert_known(paramtype);
                     symtbl.add_var(paramname, p);
                 }
 
