@@ -1,0 +1,13 @@
+
+type Foo = I32
+
+fn thing(i: I32): Foo =
+    $Foo(i)
+end
+
+
+fn main(): I32 =
+    let f1: Foo = $Foo(3)
+    let f2: Foo = thing(4)
+    3
+end
