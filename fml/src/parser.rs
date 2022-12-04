@@ -50,6 +50,8 @@ pub enum TokenKind {
     // Decl stuff
     #[token("fn")]
     Fn,
+    #[token("type")]
+    Type,
 
     // Keywords
     #[token("let")]
@@ -82,6 +84,8 @@ pub enum TokenKind {
     Equals,
     #[token("@")]
     At,
+    #[token("$")]
+    Dollar,
 
     // We save comment strings so we can use this same
     // parser as a reformatter or such.
@@ -360,9 +364,18 @@ impl<'input> Parser<'input> {
     fn parse_decl(&mut self) -> Option<ast::Decl> {
         match self.next() {
             Some(Token { kind: T::Fn, .. }) => Some(self.parse_fn()),
+            Some(Token { kind: T::Type, .. }) => Some(self.parse_typedef()),
             Some(other) => self.error("start of decl", Some(other)),
             None => None,
         }
+    }
+
+    /// typedef = "type" ident "=" type
+    fn parse_typedef(&mut self) -> ast::Decl {
+        let name = self.expect_ident();
+        self.expect(T::Equals);
+        let ty = self.parse_type();
+        ast::Decl::TypeDef { name, ty }
     }
 
     fn parse_fn(&mut self) -> ast::Decl {
@@ -503,6 +516,16 @@ impl<'input> Parser<'input> {
             }
             // Tuple literal
             T::LBrace => self.parse_constructor(),
+            // Nominal type literal
+            // $Foo(3)
+            T::Dollar => {
+                self.drop();
+                let name = self.expect_ident();
+                self.expect(T::LParen);
+                let body = self.parse_expr(0)?;
+                self.expect(T::RParen);
+                ast::ExprNode::new(ast::Expr::TypeCtor { name, body })
+            }
 
             // Something else not a valid expr
             _x => return None,
@@ -627,8 +650,7 @@ impl<'input> Parser<'input> {
                 if let Some(t) = Type::get_primitive_type(s) {
                     t.clone()
                 } else {
-                    //crate::INT.named_type(s)
-                    self.error("Unknown type", t.clone());
+                    Type::Named(s.clone(), vec![])
                 }
             }
             Some(Token { kind: T::At, .. }) => {

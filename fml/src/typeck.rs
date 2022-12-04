@@ -149,6 +149,14 @@ impl Tck {
         }
     }
 
+    fn print_types(&self) {
+        let mut vars_report: Vec<_> = self.vars.iter().collect();
+        vars_report.sort_by(|(k1, _), (k2, _)| k1.cmp(k2));
+        for (k, v) in vars_report.iter() {
+            print!("  ${} => {:?}\n", k.0, v);
+        }
+    }
+
     /// Kinda the opposite of reconstruction; takes a concrete type
     /// and generates a new type with unknown's (type variables) for the generic types (type
     /// parameters)
@@ -206,6 +214,7 @@ impl Tck {
 #[derive(Clone)]
 struct Symtbl {
     symbols: Rc<RefCell<Vec<HashMap<String, TypeId>>>>,
+    types: Rc<RefCell<Vec<HashMap<String, Type>>>>,
 }
 
 impl Default for Symtbl {
@@ -213,6 +222,7 @@ impl Default for Symtbl {
     fn default() -> Self {
         Self {
             symbols: Rc::new(RefCell::new(vec![HashMap::new()])),
+            types: Rc::new(RefCell::new(vec![HashMap::new()])),
         }
     }
 }
@@ -228,12 +238,18 @@ impl Drop for ScopeGuard {
             .borrow_mut()
             .pop()
             .expect("Scope stack underflow");
+        self.scope
+            .types
+            .borrow_mut()
+            .pop()
+            .expect("Scope stack underflow");
     }
 }
 
 impl Symtbl {
     fn push_scope(&self) -> ScopeGuard {
         self.symbols.borrow_mut().push(HashMap::new());
+        self.types.borrow_mut().push(HashMap::new());
         ScopeGuard {
             scope: self.clone(),
         }
@@ -251,6 +267,24 @@ impl Symtbl {
     fn get_var_binding(&self, var: impl AsRef<str>) -> Option<TypeId> {
         for scope in self.symbols.borrow().iter().rev() {
             let v = scope.get(var.as_ref());
+            if v.is_some() {
+                return v.cloned();
+            }
+        }
+        return None;
+    }
+
+    fn add_type(&self, name: impl AsRef<str>, ty: &Type) {
+        self.types
+            .borrow_mut()
+            .last_mut()
+            .expect("Scope stack underflow")
+            .insert(name.as_ref().to_owned(), ty.to_owned());
+    }
+
+    fn get_type(&self, ty: impl AsRef<str>) -> Option<Type> {
+        for scope in self.types.borrow().iter().rev() {
+            let v = scope.get(ty.as_ref());
             if v.is_some() {
                 return v.cloned();
             }
@@ -309,11 +343,7 @@ fn typecheck_func_body(
         "Typechecked function {}, types are",
         name.unwrap_or("(lambda)")
     );
-    let mut vars_report: Vec<_> = tck.vars.iter().collect();
-    vars_report.sort_by(|(k1, _), (k2, _)| k1.cmp(k2));
-    for (k, v) in vars_report.iter() {
-        print!("  ${} => {:?}\n", k.0, v);
-    }
+    tck.print_types();
     Ok(f)
 }
 
@@ -420,6 +450,20 @@ fn typecheck_expr(
         }
 
         StructCtor { body: _ } => todo!("Struct ctor"),
+        TypeCtor { name, body } => {
+            let named_type = symtbl.get_type(name).expect("Unknown type constructor");
+            println!("Got type named {}: is {:?}", name, named_type);
+            let tid = tck.insert_known(&named_type);
+            let body_type = typecheck_expr(tck, symtbl, body)?;
+            println!("Expected type is {:?}, body type is {:?}", tid, body_type);
+            tck.unify(symtbl, tid, body_type)?;
+            println!("Done unifying type ctor");
+            // The type the expression returns
+            // TODO: Generic params for type constructors
+            let constructed_type = tck.insert_known(&Type::Named(name.clone(), vec![]));
+            tck.set_expr_type(expr, constructed_type);
+            Ok(tid)
+        }
     }
 }
 
@@ -442,10 +486,12 @@ pub fn typecheck(ast: &ast::Ast) {
             } => {
                 let t = typecheck_func_body(Some(name), tck, symtbl, signature, body);
                 t.unwrap_or_else(|e| {
+                    tck.print_types();
                     panic!("Error while typechecking function {}:\n{:?}", name, e)
                 });
             }
             Struct { name: _, tys: _ } => todo!("struct decl"),
+            TypeDef { name, ty } => symtbl.add_type(name, ty),
         }
     }
     // Print out toplevel symbols
