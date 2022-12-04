@@ -15,8 +15,8 @@ fn test_thing2() {
 #[test]
 #[should_panic]
 fn test_unnamed_generic() {
-    let src = include_str!("test3.gt");
-    let _output = fml::compile("test3.gt", src);
+    let src = include_str!("test_unnamed_generic.gt");
+    let _output = fml::compile("test_unnamed_generic.gt", src);
 }
 
 #[test]
