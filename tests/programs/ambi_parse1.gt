@@ -5,11 +5,13 @@
 --   status: success
 --   stdout:
 --     1
+--     -2
+--     -3
+--     1
 --     1
 --     2
 --     1
---     -2
---     -3
+--     1
 
 -- Test tricky parse expressions
 
@@ -30,6 +32,10 @@ fn baz(): I32 =
 end
 
 fn main(): {} =
+    __println(foo())
+    __println(bar())
+    __println(baz())
+
     let x: I32 = 2 - 1
     let y: I32 = 2
     -1
@@ -38,7 +44,10 @@ fn main(): {} =
     __println(x)
     __println(y)
     __println(z)
-    __println(foo())
-    __println(bar())
-    __println(baz())
+
+    let aa: I32 = 2 + -1
+    let ab: I32 = 2 +
+    -aa
+    __println(aa)
+    __println(ab)
 end

@@ -8,16 +8,16 @@ use argh::FromArgs;
 #[derive(Debug, FromArgs)]
 struct Opt {
     /// save generated Rust code?
-    #[argh(switch, short = 's')]
-    save: bool,
+    //#[argh(switch, short = 's')]
+    //save: bool,
 
     /// run resulting program immediately, handy for unit tests.  Does not produce an executable.
-    #[argh(switch, short = 'r')]
-    run: bool,
+    //#[argh(switch, short = 'r')]
+    //run: bool,
 
     /// output file name
-    #[argh(option, short = 'o')]
-    out: Option<PathBuf>,
+    //#[argh(option, short = 'o')]
+    //out: Option<PathBuf>,
 
     /// input files
     #[argh(positional)]

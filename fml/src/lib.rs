@@ -5,41 +5,68 @@ pub mod parser;
 pub mod typeck;
 
 /// A concrete type that has been fully inferred
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Type {
-    Num,
-    Bool,
+    Named(String, Vec<Type>),
     Func(Vec<Type>, Box<Type>),
+    /// A generic type parameter
     Generic(String),
 }
 
 /// A identifier to uniquely refer to our type terms
-#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct TypeId(usize);
 
 /// Information about a type term
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub enum TypeInfo {
-    // No information about the type of this type term
+    /// No information about the type of this type term
     Unknown,
-    // This type term is the same as another type term
+    /// This type term is the same as another type term
     Ref(TypeId),
-    // This type term is definitely a number
-    Num,
-    // This type term is definitely a bool
-    Bool,
-    // This type term is definitely a function
+    /// N-ary type constructor.
+    /// It could be Int()
+    /// or List(Int)
+    /// or List(T)
+    Named(String, Vec<TypeId>),
+    /// This type term is definitely a function
     Func(Vec<TypeId>, TypeId),
-    // This is some generic type that has a name like @A
-    NamedGeneric(String),
+    /// This is some generic type that has a name like @A
+    /// AKA a type parameter.
+    TypeParam(String),
+}
+
+impl Type {
+    fn get_primitive_type(s: &str) -> Option<Type> {
+        match s {
+            "I32" => Some(Type::Named("I32".to_string(), vec![])),
+            "Bool" => Some(Type::Named("Bool".to_string(), vec![])),
+            //"Never" => Some(TypeInfo::Never),
+            _ => None,
+        }
+    }
+
+    fn generic_name(&self) -> Option<&str> {
+        match self {
+            Type::Generic(s) => Some(s),
+            _ => None,
+        }
+    }
 }
 
 impl TypeInfo {
     fn get_primitive_type(s: &str) -> Option<TypeInfo> {
         match s {
-            "I32" => Some(TypeInfo::Num),
-            "Bool" => Some(TypeInfo::Bool),
+            "I32" => Some(TypeInfo::Named("I32".to_string(), vec![])),
+            "Bool" => Some(TypeInfo::Named("Bool".to_string(), vec![])),
             //"Never" => Some(TypeInfo::Never),
+            _ => None,
+        }
+    }
+
+    fn generic_name(&self) -> Option<&str> {
+        match self {
+            TypeInfo::TypeParam(s) => Some(s),
             _ => None,
         }
     }
