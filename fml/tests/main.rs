@@ -99,3 +99,16 @@ fn test_struct1() {
     let src = include_str!("test_struct1.gt");
     let _output = fml::compile("test_struct1.gt", src);
 }
+
+#[test]
+fn test_struct2() {
+    let src = include_str!("test_struct2.gt");
+    let _output = fml::compile("test_struct2.gt", src);
+}
+
+#[test]
+#[should_panic]
+fn test_struct3() {
+    let src = include_str!("test_struct3.gt");
+    let _output = fml::compile("test_struct3.gt", src);
+}
