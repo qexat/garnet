@@ -626,8 +626,11 @@ impl<'input> Parser<'input> {
     fn parse_let(&mut self) -> ast::ExprNode {
         self.expect(T::Let);
         let varname = self.expect_ident();
-        self.expect(T::Colon);
-        let typename = self.parse_type();
+        let typename = if self.peek_expect(T::Colon.discr()) {
+            Some(self.parse_type())
+        } else {
+            None
+        };
         self.expect(T::Equals);
         let init = self
             .parse_expr(0)

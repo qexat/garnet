@@ -78,7 +78,7 @@ pub enum Expr {
     },
     Let {
         varname: String,
-        typename: Type,
+        typename: Option<Type>,
         init: ExprNode,
     },
     Lambda {
