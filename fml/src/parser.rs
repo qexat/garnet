@@ -512,7 +512,7 @@ impl<'input> Parser<'input> {
                 self.expect(T::RParen);
                 lhs
             }
-            // Tuple literal
+            // Tuple or struct literal
             T::LBrace => self.parse_constructor(),
             // Nominal type literal
             // $Foo(3)
@@ -624,9 +624,25 @@ impl<'input> Parser<'input> {
         ast::ExprNode::new(ast::Expr::Lambda { signature, body })
     }
 
-    /// tuple constructor = "{" [expr {"," expr} [","] "}"
+    /// If we see `.foo = bar` in our thing then it's a struct
     fn parse_constructor(&mut self) -> ast::ExprNode {
         self.expect(T::LBrace);
+        if self.peek_is(T::Period.discr()) {
+            self.parse_struct_literal()
+        } else {
+            self.parse_tuple_literal()
+        }
+    }
+
+    /// struct constructor = "{" "." ident "=" expr {"," ...} "}"
+    fn parse_struct_literal(&mut self) -> ast::ExprNode {
+        let body = self.parse_struct_lit_fields();
+        self.expect(T::RBrace);
+        ast::ExprNode::new(ast::Expr::StructCtor { body })
+    }
+
+    /// tuple constructor = "{" [expr {"," expr} [","] "}"
+    fn parse_tuple_literal(&mut self) -> ast::ExprNode {
         let mut body = vec![];
         while let Some(expr) = self.parse_expr(0) {
             body.push(expr);
@@ -640,27 +656,17 @@ impl<'input> Parser<'input> {
         ast::ExprNode::new(ast::Expr::TupleCtor { body })
     }
 
-    /// struct literal = "struct" "{" ... "}"
-    fn parse_struct_literal(&mut self) -> ast::ExprNode {
-        self.expect(T::Struct);
-        self.expect(T::LBrace);
-        let body = self.parse_struct_lit_fields();
-        self.expect(T::RBrace);
-        ast::ExprNode::new(ast::Expr::StructCtor { body })
-    }
-
     fn parse_struct_lit_fields(&mut self) -> HashMap<String, ast::ExprNode> {
         let mut fields = HashMap::new();
 
         loop {
-            match self.lex.peek() {
-                Some((T::Ident(_i), _span)) => {
-                    let name = self.expect_ident();
-                    self.expect(T::Equals);
-                    let vl = self.parse_expr(0).unwrap();
-                    fields.insert(name, vl);
-                }
-                _ => break,
+            if self.peek_expect(T::Period.discr()) {
+                let name = self.expect_ident();
+                self.expect(T::Equals);
+                let vl = self.parse_expr(0).unwrap();
+                fields.insert(name, vl);
+            } else {
+                break;
             }
 
             if self.peek_expect(T::Comma.discr()) {
