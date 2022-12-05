@@ -126,6 +126,20 @@ impl Tck {
                 }
                 self.unify(symtbl, a_o, b_o)
             }
+            (Struct(body1), Struct(body2)) => {
+                for (nm, t1) in body1.iter() {
+                    let t2 = body2[nm];
+                    self.unify(symtbl, *t1, t2)?;
+                }
+                // Now we just do it again the other way around
+                // which is a dumb but effective way of making sure
+                // struct2 doesn't have any fields that struct1 doesn't.
+                for (nm, t2) in body2.iter() {
+                    let t1 = body1[nm];
+                    self.unify(symtbl, t1, *t2)?;
+                }
+                Ok(())
+            }
             (TypeParam(s1), TypeParam(s2)) if s1 == s2 => Ok(()),
             // If no previous attempts to unify were successful, raise an error
             (a, b) => Err(format!("Conflict between {:?} and {:?}", a, b)),
@@ -186,7 +200,6 @@ impl Tck {
                     .map(|t| self.instantiate(named_types, t))
                     .collect();
                 TypeInfo::Named(s.clone(), inst_args)
-                //todo!("Double check this is correct")
             }
             Type::Generic(s) => {
                 // If we know this is is a particular generic, match wiht it
@@ -459,7 +472,23 @@ fn typecheck_expr(
             Ok(rettype_var)
         }
 
-        StructCtor { body: _ } => todo!("Struct ctor"),
+        StructCtor { body } => {
+            let body_types: Result<HashMap<_, _>, _> = body
+                .iter()
+                .map(|(name, expr)| {
+                    // ? in map doesn't work too well...
+                    match typecheck_expr(tck, symtbl, expr) {
+                        Ok(t) => Ok((name.to_string(), t)),
+                        Err(s) => Err(s),
+                    }
+                })
+                .collect();
+            let body_types = body_types?;
+            let struct_type = TypeInfo::Struct(body_types);
+            let typeid = tck.insert(struct_type);
+            tck.set_expr_type(expr, typeid);
+            Ok(typeid)
+        }
         TypeCtor { name, body } => {
             let named_type = symtbl.get_type(name).expect("Unknown type constructor");
             println!("Got type named {}: is {:?}", name, named_type);
