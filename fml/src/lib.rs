@@ -1,5 +1,7 @@
 //! Garnet compiler guts.
 
+use std::collections::HashMap;
+
 pub mod ast;
 pub mod parser;
 pub mod typeck;
@@ -9,6 +11,7 @@ pub mod typeck;
 pub enum Type {
     Named(String, Vec<Type>),
     Func(Vec<Type>, Box<Type>),
+    Struct(HashMap<String, Type>),
     /// A generic type parameter
     Generic(String),
 }
@@ -29,7 +32,7 @@ impl Type {
 pub struct TypeId(usize);
 
 /// Information about a type term
-#[derive(Clone, Debug, Hash, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum TypeInfo {
     /// No information about the type of this type term
     Unknown,
@@ -42,6 +45,8 @@ pub enum TypeInfo {
     Named(String, Vec<TypeId>),
     /// This type term is definitely a function
     Func(Vec<TypeId>, TypeId),
+    /// This is definitely some kind of struct
+    Struct(HashMap<String, TypeId>),
     /// This is some generic type that has a name like @A
     /// AKA a type parameter.
     TypeParam(String),

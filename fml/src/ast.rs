@@ -119,11 +119,6 @@ pub enum Decl {
         signature: Signature,
         body: Vec<ExprNode>,
     },
-
-    Struct {
-        name: String,
-        tys: HashMap<String, Type>,
-    },
     TypeDef {
         name: String,
         ty: Type,
