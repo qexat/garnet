@@ -93,3 +93,9 @@ fn test_typedef2() {
     let src = include_str!("test_typedef2.gt");
     let _output = fml::compile("test_typedef2.gt", src);
 }
+
+#[test]
+fn test_struct1() {
+    let src = include_str!("test_struct1.gt");
+    let _output = fml::compile("test_struct1.gt", src);
+}

@@ -58,6 +58,8 @@ pub enum TokenKind {
     Let,
     #[token("end")]
     End,
+    #[token("struct")]
+    Struct,
 
     // Punctuation
     #[token("(")]
@@ -497,14 +499,8 @@ impl<'input> Parser<'input> {
             T::Ident(_) => {
                 let ident = self.expect_ident();
                 ast::ExprNode::new(ast::Expr::Var { name: ident })
-                /*
-                if self.peek_is(TokenKind::LBrace.discr()) {
-                    self.parse_struct_literal(ident)
-                } else {
-                    ast::Expr::Var { name: ident }
-                }
-                */
             }
+            T::Struct => self.parse_struct_literal(),
             T::Let => self.parse_let(),
             T::Fn => self.parse_lambda(),
             // Parenthesized expr's
@@ -640,6 +636,37 @@ impl<'input> Parser<'input> {
         ast::ExprNode::new(ast::Expr::TupleCtor { body })
     }
 
+    /// struct literal = "struct" "{" ... "}"
+    fn parse_struct_literal(&mut self) -> ast::ExprNode {
+        self.expect(T::Struct);
+        self.expect(T::LBrace);
+        let body = self.parse_struct_lit_fields();
+        self.expect(T::RBrace);
+        ast::ExprNode::new(ast::Expr::StructCtor { body })
+    }
+
+    fn parse_struct_lit_fields(&mut self) -> HashMap<String, ast::ExprNode> {
+        let mut fields = HashMap::new();
+
+        loop {
+            match self.lex.peek() {
+                Some((T::Ident(_i), _span)) => {
+                    let name = self.expect_ident();
+                    self.expect(T::Equals);
+                    let vl = self.parse_expr(0).unwrap();
+                    fields.insert(name, vl);
+                }
+                _ => break,
+            }
+
+            if self.peek_expect(T::Comma.discr()) {
+            } else {
+                break;
+            }
+        }
+        fields
+    }
+
     fn parse_type(&mut self) -> Type {
         let t = self.next();
         match t {
@@ -667,8 +694,34 @@ impl<'input> Parser<'input> {
                 let fntype = self.parse_fn_type();
                 fntype
             }
+            Some(Token {
+                kind: T::Struct, ..
+            }) => self.parse_struct_type(),
             other => self.error("type", other),
         }
+    }
+
+    fn parse_struct_type(&mut self) -> Type {
+        let mut fields = HashMap::new();
+
+        loop {
+            match self.lex.peek() {
+                Some((T::Ident(_i), _span)) => {
+                    let name = self.expect_ident();
+                    self.expect(T::Colon);
+                    let vl = self.parse_type();
+                    fields.insert(name, vl);
+                }
+                _ => break,
+            }
+
+            if self.peek_expect(T::Comma.discr()) {
+            } else {
+                break;
+            }
+        }
+        self.expect(T::End);
+        Type::Struct(fields)
     }
 }
 

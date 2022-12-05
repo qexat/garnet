@@ -45,6 +45,7 @@ impl Tck {
                 b == rettype || args.iter().any(|arg| self._contains_type(*arg, b))
             }
             TypeParam(_) => false,
+            Struct(_) => todo!(),
         }
     }
 
@@ -72,6 +73,13 @@ impl Tck {
                 TypeInfo::Func(new_args, new_rettype)
             }
             Type::Generic(s) => TypeInfo::TypeParam(s.to_string()),
+            Type::Struct(body) => {
+                let new_body = body
+                    .iter()
+                    .map(|(nm, t)| (nm.clone(), self.insert_known(t)))
+                    .collect();
+                TypeInfo::Struct(new_body)
+            }
         };
         self.insert(tinfo)
     }
@@ -146,6 +154,7 @@ impl Tck {
                 ))
             }
             TypeParam(name) => Ok(Type::Generic(name.to_owned())),
+            Struct(_body) => todo!(),
         }
     }
 
@@ -203,6 +212,7 @@ impl Tck {
                 let inst_ret = self.instantiate(named_types, rettype);
                 TypeInfo::Func(inst_args, inst_ret)
             }
+            Type::Struct(_body) => todo!(),
         };
         self.insert(typeinfo)
     }
@@ -490,7 +500,6 @@ pub fn typecheck(ast: &ast::Ast) {
                     panic!("Error while typechecking function {}:\n{:?}", name, e)
                 });
             }
-            Struct { name: _, tys: _ } => todo!("struct decl"),
             TypeDef { name, ty } => symtbl.add_type(name, ty),
         }
     }
