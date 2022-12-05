@@ -138,3 +138,9 @@ fn test_struct5() {
     let src = include_str!("test_struct5.gt");
     let _output = fml::compile("test_struct5.gt", src);
 }
+
+#[test]
+fn test_let1() {
+    let src = include_str!("test_let1.gt");
+    let _output = fml::compile("test_let1.gt", src);
+}

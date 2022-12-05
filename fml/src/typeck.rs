@@ -214,6 +214,8 @@ impl Tck {
                     // rather than "unknown name".  Guess it works for now though.
                     //
                     // TODO: The scoping here is still bananas, figure it out
+                    // I think we need to get the generic names from the function call
+                    // and figure 'em out, rather than just casually adding 'em in here
                     let tid = self.insert(TypeInfo::Unknown);
                     named_types.insert(s.clone(), tid);
                     TypeInfo::Ref(tid)
@@ -405,7 +407,11 @@ fn typecheck_expr(
         } => {
             typecheck_expr(tck, symtbl, init)?;
             let init_expr_type = tck.get_expr_type(init);
-            let var_type = tck.insert_known(typename);
+            let var_type = if let Some(t) = typename {
+                tck.insert_known(t)
+            } else {
+                tck.insert(TypeInfo::Unknown)
+            };
             tck.unify(symtbl, init_expr_type, var_type)?;
 
             // TODO: Make this expr return unit instead of the
@@ -521,8 +527,6 @@ fn typecheck_expr(
             tck.unify(symtbl, tid, body_type)?;
             println!("Done unifying type ctor");
             // The type the expression returns
-            // TODO: Generic params for type constructors
-            //let constructed_type = tck.insert_known(&Type::Named(name.clone(), vec![]));
             let constructed_type =
                 tck.insert_known(&Type::Named(name.clone(), type_params.clone()));
             tck.set_expr_type(expr, constructed_type);
