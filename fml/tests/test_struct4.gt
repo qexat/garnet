@@ -13,7 +13,7 @@ fn main(): I32 =
     let f1: Foo(I32) = id($Foo(I32) struct {
         a = 3,
         b = false
-    }))
+    })
     --let f2: struct a: I32, b: Bool end = id(struct { a = 3, b = false })
     3
 end

@@ -529,7 +529,11 @@ pub fn typecheck(ast: &ast::Ast) {
                     panic!("Error while typechecking function {}:\n{:?}", name, e)
                 });
             }
-            TypeDef { name, ty } => symtbl.add_type(name, ty),
+            TypeDef {
+                name,
+                params: _,
+                ty,
+            } => symtbl.add_type(name, ty),
         }
     }
     // Print out toplevel symbols

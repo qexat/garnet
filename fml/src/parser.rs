@@ -375,9 +375,11 @@ impl<'input> Parser<'input> {
     /// typedef = "type" ident "=" type
     fn parse_typedef(&mut self) -> ast::Decl {
         let name = self.expect_ident();
+        let params = vec![];
+
         self.expect(T::Equals);
         let ty = self.parse_type();
-        ast::Decl::TypeDef { name, ty }
+        ast::Decl::TypeDef { name, params, ty }
     }
 
     fn parse_fn(&mut self) -> ast::Decl {
@@ -517,9 +519,11 @@ impl<'input> Parser<'input> {
             T::Dollar => {
                 self.drop();
                 let name = self.expect_ident();
-                self.expect(T::LParen);
+                // BUGGO TODO: This is potentially ambiguous 'cause we could have
+                // $Foo(Type) expr
+                // or we could have
+                // $Foo (expr)
                 let body = self.parse_expr(0)?;
-                self.expect(T::RParen);
                 ast::ExprNode::new(ast::Expr::TypeCtor { name, body })
             }
 
