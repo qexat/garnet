@@ -97,6 +97,7 @@ pub enum Expr {
     },
     TypeCtor {
         name: String,
+        type_params: Vec<Type>,
         body: ExprNode,
     },
 }

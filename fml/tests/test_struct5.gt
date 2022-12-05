@@ -1,6 +1,6 @@
 
 type Foo(@Thing) = struct
-    a: @Thing,
+    a: @Blarg,
     b: Bool
 end
 

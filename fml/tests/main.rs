@@ -125,3 +125,10 @@ fn test_struct4() {
     let src = include_str!("test_struct4.gt");
     let _output = fml::compile("test_struct4.gt", src);
 }
+
+#[test]
+#[should_panic]
+fn test_struct5() {
+    let src = include_str!("test_struct5.gt");
+    let _output = fml::compile("test_struct5.gt", src);
+}

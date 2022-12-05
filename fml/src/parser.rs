@@ -375,7 +375,18 @@ impl<'input> Parser<'input> {
     /// typedef = "type" ident "=" type
     fn parse_typedef(&mut self) -> ast::Decl {
         let name = self.expect_ident();
-        let params = vec![];
+        let mut params = vec![];
+        if self.peek_expect(T::LParen.discr()) {
+            while !self.peek_is(T::RParen.discr()) {
+                self.expect(T::At);
+                let name = self.expect_ident();
+                params.push(name);
+                if !self.peek_expect(T::Comma.discr()) {
+                    break;
+                }
+            }
+            self.expect(T::RParen);
+        }
 
         self.expect(T::Equals);
         let ty = self.parse_type();
@@ -428,13 +439,14 @@ impl<'input> Parser<'input> {
 
     fn parse_fn_type(&mut self) -> Type {
         // TODO: Parse generic stuffs?
-        let params = self.parse_fn_type_args();
+        let params = self.parse_type_list();
         self.expect(T::Colon);
         let rettype = self.parse_type();
         Type::Func(params, Box::new(rettype))
     }
 
-    fn parse_fn_type_args(&mut self) -> Vec<Type> {
+    /// type_list = "(" [type {"," type} [","] ")"
+    fn parse_type_list(&mut self) -> Vec<Type> {
         let mut args = vec![];
         self.expect(T::LParen);
 
@@ -523,8 +535,21 @@ impl<'input> Parser<'input> {
                 // $Foo(Type) expr
                 // or we could have
                 // $Foo (expr)
+                // So for now we just force it to be the first one
+                // But this is Actually Really Bad because it means that we can
+                // NOT follow a type constructor with a parenthesized expression,
+                // such as `$Foo (1 + 2) * 3`
+                let type_params = if self.peek_is(T::LParen.discr()) {
+                    self.parse_type_list()
+                } else {
+                    vec![]
+                };
                 let body = self.parse_expr(0)?;
-                ast::ExprNode::new(ast::Expr::TypeCtor { name, body })
+                ast::ExprNode::new(ast::Expr::TypeCtor {
+                    name,
+                    type_params,
+                    body,
+                })
             }
 
             // Something else not a valid expr
@@ -678,36 +703,30 @@ impl<'input> Parser<'input> {
     }
 
     fn parse_type(&mut self) -> Type {
-        let t = self.next();
-        match t {
-            Some(Token {
-                kind: T::Ident(ref s),
-                span: _,
-            }) => {
-                if let Some(t) = Type::get_primitive_type(s) {
-                    t.clone()
+        let t = self.next().unwrap_or_else(|| self.error("type", None));
+        match t.kind {
+            T::Ident(ref s) => {
+                let type_params = if self.peek_is(T::LParen.discr()) {
+                    self.parse_type_list()
                 } else {
-                    Type::Named(s.clone(), vec![])
-                }
+                    vec![]
+                };
+                Type::Named(s.clone(), type_params)
             }
-            Some(Token { kind: T::At, .. }) => {
+            T::At => {
                 let s = self.expect_ident();
                 Type::Generic(s)
             }
-            Some(Token {
-                kind: T::LBrace, ..
-            }) => {
+            T::LBrace => {
                 let tuptype = self.parse_tuple_type();
                 tuptype
             }
-            Some(Token { kind: T::Fn, .. }) => {
+            T::Fn => {
                 let fntype = self.parse_fn_type();
                 fntype
             }
-            Some(Token {
-                kind: T::Struct, ..
-            }) => self.parse_struct_type(),
-            other => self.error("type", other),
+            T::Struct => self.parse_struct_type(),
+            _ => self.error("type", Some(t)),
         }
     }
 
