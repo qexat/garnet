@@ -121,6 +121,7 @@ pub enum Decl {
     },
     TypeDef {
         name: String,
+        params: Vec<String>,
         ty: Type,
     },
 }
