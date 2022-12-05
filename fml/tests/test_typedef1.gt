@@ -2,7 +2,7 @@
 type Foo = I32
 
 fn thing(i: I32): Foo =
-    $Foo(i)
+    $Foo i
 end
 
 

@@ -17,7 +17,7 @@ pub enum Type {
 }
 
 impl Type {
-    fn get_primitive_type(s: &str) -> Option<Type> {
+    fn _get_primitive_type(s: &str) -> Option<Type> {
         match s {
             "I32" => Some(Type::Named("I32".to_string(), vec![])),
             "Bool" => Some(Type::Named("Bool".to_string(), vec![])),
@@ -26,8 +26,14 @@ impl Type {
         }
     }
 
-    fn get_generic_names(&self) -> HashSet<String> {
-        fn helper(t: &Type, accm: &mut HashSet<String>) {
+    /// TODO:
+    /// The ordering here is a little crazy 'cause we have to
+    /// match names with arg positions, so if we have type T(@Foo, @Bar)
+    /// and we instantiate it later with $T(I32, F(Bool)) then it has
+    /// to be semi sane.
+    /// ...or something.  Think about this more.
+    fn get_generic_names(&self) -> Vec<String> {
+        fn helper(t: &Type, accm: &mut Vec<String>) {
             match t {
                 Type::Named(_, ts) => {
                     for t in ts {
@@ -46,11 +52,11 @@ impl Type {
                     }
                 }
                 Type::Generic(s) => {
-                    accm.insert(s.clone());
+                    accm.push(s.clone());
                 }
             }
         }
-        let mut accm = HashSet::new();
+        let mut accm = vec![];
         helper(self, &mut accm);
         accm
     }

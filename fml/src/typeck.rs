@@ -212,6 +212,8 @@ impl Tck {
                     // generic type actually exists in the function's scope or such,
                     // when naming an unknown generic name this gives "type mismatch"
                     // rather than "unknown name".  Guess it works for now though.
+                    //
+                    // TODO: The scoping here is still bananas, figure it out
                     let tid = self.insert(TypeInfo::Unknown);
                     named_types.insert(s.clone(), tid);
                     TypeInfo::Ref(tid)
@@ -225,7 +227,13 @@ impl Tck {
                 let inst_ret = self.instantiate(named_types, rettype);
                 TypeInfo::Func(inst_args, inst_ret)
             }
-            Type::Struct(_body) => todo!(),
+            Type::Struct(body) => {
+                let inst_body = body
+                    .iter()
+                    .map(|(nm, ty)| (nm.clone(), self.instantiate(named_types, ty)))
+                    .collect();
+                TypeInfo::Struct(inst_body)
+            }
         };
         self.insert(typeinfo)
     }
@@ -489,17 +497,34 @@ fn typecheck_expr(
             tck.set_expr_type(expr, typeid);
             Ok(typeid)
         }
-        TypeCtor { name, body } => {
+        TypeCtor {
+            name,
+            type_params,
+            body,
+        } => {
             let named_type = symtbl.get_type(name).expect("Unknown type constructor");
             println!("Got type named {}: is {:?}", name, named_type);
-            let tid = tck.insert_known(&named_type);
+            // Ok if we have declared type params we gotta instantiate them
+            // to match the type's generics.
+            let type_param_names = named_type.get_generic_names();
+            assert_eq!(type_params.len(), type_param_names.len());
+            let mut type_mapping = HashMap::new();
+            for (name, ty) in type_param_names.iter().zip(type_params.iter()) {
+                let tid = tck.insert_known(ty);
+                type_mapping.insert(name.clone(), tid);
+            }
+            let tid = tck.instantiate(&mut type_mapping, &named_type);
+
+            //let tid = tck.insert_known(&named_type);
             let body_type = typecheck_expr(tck, symtbl, body)?;
             println!("Expected type is {:?}, body type is {:?}", tid, body_type);
             tck.unify(symtbl, tid, body_type)?;
             println!("Done unifying type ctor");
             // The type the expression returns
             // TODO: Generic params for type constructors
-            let constructed_type = tck.insert_known(&Type::Named(name.clone(), vec![]));
+            //let constructed_type = tck.insert_known(&Type::Named(name.clone(), vec![]));
+            let constructed_type =
+                tck.insert_known(&Type::Named(name.clone(), type_params.clone()));
             tck.set_expr_type(expr, constructed_type);
             Ok(tid)
         }
@@ -526,13 +551,13 @@ pub fn typecheck(ast: &ast::Ast) {
                 let t = typecheck_func_body(Some(name), tck, symtbl, signature, body);
                 t.unwrap_or_else(|e| {
                     tck.print_types();
-                    panic!("Error while typechecking function {}:\n{:?}", name, e)
+                    panic!("Error while typechecking function {}:\n{}", name, e)
                 });
             }
             TypeDef { name, params, ty } => {
                 // Make sure that there are no unbound generics in the typedef
                 // that aren't mentioned in the params.
-                let generic_names = ty.get_generic_names();
+                let generic_names: HashSet<String> = ty.get_generic_names().into_iter().collect();
                 let param_names: HashSet<String> = params.iter().cloned().collect();
                 let difference: Vec<_> = generic_names
                     .symmetric_difference(&param_names)

@@ -2,7 +2,7 @@
 type Foo = {I32, Bool}
 
 fn thing(i: I32): Foo =
-    $Foo({i, false})
+    $Foo {i, false}
 end
 
 
