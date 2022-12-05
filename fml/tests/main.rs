@@ -95,6 +95,7 @@ fn test_typedef2() {
 }
 
 #[test]
+#[should_panic]
 fn test_typedef3() {
     let src = include_str!("test_typedef3.gt");
     let _output = fml::compile("test_typedef3.gt", src);

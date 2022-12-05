@@ -529,11 +529,24 @@ pub fn typecheck(ast: &ast::Ast) {
                     panic!("Error while typechecking function {}:\n{:?}", name, e)
                 });
             }
-            TypeDef {
-                name,
-                params: _,
-                ty,
-            } => symtbl.add_type(name, ty),
+            TypeDef { name, params, ty } => {
+                // Make sure that there are no unbound generics in the typedef
+                // that aren't mentioned in the params.
+                let generic_names = ty.get_generic_names();
+                let param_names: HashSet<String> = params.iter().cloned().collect();
+                let difference: Vec<_> = generic_names
+                    .symmetric_difference(&param_names)
+                    // gramble gramble &String
+                    .map(|s| s.as_str())
+                    .collect();
+                if difference.len() != 0 {
+                    let differences = difference.join(", ");
+                    panic!("Error in typedef {}: Type params do not match generics mentioned in body.  Unmatched types: {}", name, differences);
+                }
+
+                // Remember that we know about a type with this name
+                symtbl.add_type(name, ty)
+            }
         }
     }
     // Print out toplevel symbols

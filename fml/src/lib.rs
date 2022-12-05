@@ -1,6 +1,6 @@
 //! Garnet compiler guts.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 pub mod ast;
 pub mod parser;
@@ -24,6 +24,35 @@ impl Type {
             //"Never" => Some(TypeInfo::Never),
             _ => None,
         }
+    }
+
+    fn get_generic_names(&self) -> HashSet<String> {
+        fn helper(t: &Type, accm: &mut HashSet<String>) {
+            match t {
+                Type::Named(_, ts) => {
+                    for t in ts {
+                        helper(t, accm);
+                    }
+                }
+                Type::Func(args, rettype) => {
+                    for t in args {
+                        helper(t, accm);
+                    }
+                    helper(rettype, accm)
+                }
+                Type::Struct(body) => {
+                    for (_, ty) in body {
+                        helper(ty, accm);
+                    }
+                }
+                Type::Generic(s) => {
+                    accm.insert(s.clone());
+                }
+            }
+        }
+        let mut accm = HashSet::new();
+        helper(self, &mut accm);
+        accm
     }
 }
 
