@@ -168,7 +168,16 @@ impl Tck {
                 ))
             }
             TypeParam(name) => Ok(Type::Generic(name.to_owned())),
-            Struct(_body) => todo!(),
+            Struct(body) => {
+                let real_body: Result<HashMap<_, _>, String> = body
+                    .iter()
+                    .map(|(nm, t)| {
+                        let new_t = self.reconstruct(*t)?;
+                        Ok((nm.clone(), new_t))
+                    })
+                    .collect();
+                Ok(Type::Struct(real_body?))
+            }
         }
     }
 
@@ -206,19 +215,7 @@ impl Tck {
                 if let Some(ty) = named_types.get(s) {
                     TypeInfo::Ref(*ty)
                 } else {
-                    // Otherwise create a new instance of a typevar that
-                    // this generic matches
-                    // TODO: This might be done better by checking that the
-                    // generic type actually exists in the function's scope or such,
-                    // when naming an unknown generic name this gives "type mismatch"
-                    // rather than "unknown name".  Guess it works for now though.
-                    //
-                    // TODO: The scoping here is still bananas, figure it out
-                    // I think we need to get the generic names from the function call
-                    // and figure 'em out, rather than just casually adding 'em in here
-                    let tid = self.insert(TypeInfo::Unknown);
-                    named_types.insert(s.clone(), tid);
-                    TypeInfo::Ref(tid)
+                    panic!("Referred to unknown generic named {}", s);
                 }
             }
             Type::Func(args, rettype) => {
@@ -407,6 +404,7 @@ fn typecheck_expr(
         } => {
             typecheck_expr(tck, symtbl, init)?;
             let init_expr_type = tck.get_expr_type(init);
+            // Does our let decl have a type attached to it?
             let var_type = if let Some(t) = typename {
                 tck.insert_known(t)
             } else {
@@ -426,6 +424,34 @@ fn typecheck_expr(
             let t = typecheck_func_body(None, tck, symtbl, signature, body)?;
             tck.set_expr_type(expr, t);
             Ok(t)
+        }
+        StructRef { e, name } => {
+            typecheck_expr(tck, symtbl, e)?;
+            let struct_type = tck.get_expr_type(e);
+            // TODO: Not sure this reconstruct does the Right Thing,
+            // especially where type params are involved,
+            // but it has the type signature we need.
+            //
+            // TODO: We really need an operator that "unwraps" a
+            // Named type to its contents, the opposite of a type
+            // constructor.
+            // I suspect when we have that we'll also need to
+            // instantiate the named type's generics, as we do
+            // with TypeCtor.
+            match tck.reconstruct(struct_type)? {
+                Type::Struct(body) => Ok(tck.insert_known(&body[name])),
+                Type::Named(s, args) => {
+                    let hopefully_a_struct = symtbl.get_type(s).unwrap();
+                    match hopefully_a_struct {
+                        Type::Struct(body) => Ok(tck.insert_known(&body[name])),
+                        other => Err(format!("Yeah I know this is wrong bite me")),
+                    }
+                }
+                other => Err(format!(
+                    "Tried to get field named {} but it is an {:?}, not a struct",
+                    name, other
+                )),
+            }
         }
         TupleCtor { body } => {
             let body_types: Result<Vec<_>, _> = body
@@ -469,7 +495,7 @@ fn typecheck_expr(
             // is yet; we make a type var that will get resolved when the enclosing
             // expression is.
             let rettype_var = tck.insert(TypeInfo::Unknown);
-            let funcall_var = tck.insert(TypeInfo::Func(params_list, rettype_var));
+            let funcall_var = tck.insert(TypeInfo::Func(params_list.clone(), rettype_var));
 
             // Now I guess this is where we make a copy of the function
             // with new generic types.
@@ -478,7 +504,15 @@ fn typecheck_expr(
             // types a function takes as input (our `Generic` or `TypeParam`
             // things I suppose), from "type variables" which are the TypeId
             // we have to solve for.
+            //
+            // So we go through the generics the function declares and create
+            // new type vars for each of them.
             let named_types = &mut HashMap::new();
+            let function_type_params = actual_func_type.get_generic_names();
+            for name in function_type_params.iter() {
+                let tid = tck.insert(TypeInfo::Unknown);
+                named_types.insert(name.clone(), tid);
+            }
             let heck = tck.instantiate(named_types, &actual_func_type);
             tck.unify(symtbl, heck, funcall_var)?;
 

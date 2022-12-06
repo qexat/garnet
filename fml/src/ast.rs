@@ -100,6 +100,10 @@ pub enum Expr {
         type_params: Vec<Type>,
         body: ExprNode,
     },
+    StructRef {
+        e: ExprNode,
+        name: String,
+    },
 }
 
 impl Expr {
