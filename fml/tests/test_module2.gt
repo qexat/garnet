@@ -13,6 +13,13 @@ end
 
 type DumbHashState = I32
 
+-- Ok now we have to imagine associated types so we can pass an
+-- implementation of a particular type to this...
+type Hash(@Self) = struct
+    hasher_impl: Hasher(@Self, I32),
+    hash: fn(@Self, Hasher_impl): Hasher_impl,
+end
+
 
 fn main(): I32 =
     let dumbhasher = $Hasher(DumbHashState, I32) {
@@ -22,5 +29,19 @@ fn main(): I32 =
     let hash_state = $DumbHashState 1
     let updated_state = dumbhasher.write(hash_state, 12)
     let hash = dumbhasher.finish(updated_state)
+
+    -- Try implementing our Hash "trait" for {I32, I32}
+    let hash_impl = $Hash({I32, I32}) {
+        .hasher_impl = dumbhasher,
+        .hash = fn(self: {I32, I32}, state: DumbHasher): DumbHasher =
+            -- Pretend we're destructuring the tuple here
+            let fst = 1
+            let snd = 2
+            let s0 = $DumbHashState 1
+            let s1 = state.write(s0, fst)
+            let s2 = state.write(s1, snd)
+            s2
+        end,
+    }
     3
 end
