@@ -144,3 +144,9 @@ fn test_let1() {
     let src = include_str!("test_let1.gt");
     let _output = fml::compile("test_let1.gt", src);
 }
+
+#[test]
+fn test_module1() {
+    let src = include_str!("test_module1.gt");
+    let _output = fml::compile("test_module1.gt", src);
+}

@@ -52,7 +52,13 @@ impl Type {
                     }
                 }
                 Type::Generic(s) => {
-                    accm.push(s.clone());
+                    // Deduplicating these things while maintaining ordering
+                    // is kinda screwy.
+                    // This works, it's just, yanno, also O(n^2)
+                    // Could use a set to check membership , but fuckit for now.
+                    if !accm.contains(s) {
+                        accm.push(s.clone());
+                    }
                 }
             }
         }

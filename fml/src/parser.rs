@@ -568,6 +568,14 @@ impl<'input> Parser<'input> {
                         let params = self.parse_function_args();
                         ast::ExprNode::new(ast::Expr::Funcall { func: lhs, params })
                     }
+                    T::Period => {
+                        self.expect(T::Period);
+                        let struct_field_name = self.expect_ident();
+                        ast::ExprNode::new(ast::Expr::StructRef {
+                            e: lhs,
+                            name: struct_field_name,
+                        })
+                    }
                     _ => return None,
                 };
                 continue;
@@ -762,6 +770,8 @@ fn postfix_binding_power(op: &TokenKind) -> Option<(usize, ())> {
     match op {
         // "(" opening function call args
         T::LParen => Some((120, ())),
+        // "." separating struct refs a la foo.bar
+        T::Period => Some((110, ())),
         _x => None,
     }
 }
