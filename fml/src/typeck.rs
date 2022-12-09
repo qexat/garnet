@@ -612,7 +612,7 @@ pub fn typecheck(ast: &ast::Ast) {
                 // Remember that we know about a type with this name
                 symtbl.add_type(name, ty)
             }
-            ConstDef { name, ty, init } => {
+            ConstDef { name, init } => {
                 // The init expression is typechecked in its own
                 // scope, since it may theoretically be a `let` or
                 // something that introduces new names inside it.
@@ -621,14 +621,12 @@ pub fn typecheck(ast: &ast::Ast) {
                     let t = typecheck_expr(tck, symtbl, init).unwrap();
                     t
                 };
-                let decl_type = tck.insert_known(ty);
-                tck.unify(&symtbl, decl_type, init_type).unwrap();
-                symtbl.add_var(name, decl_type);
+                symtbl.add_var(name, init_type);
             }
         }
     }
     // Print out toplevel symbols
     for (name, id) in symtbl.symbols.borrow().last().unwrap() {
-        println!("fn {} type is {:?}", name, tck.reconstruct(*id));
+        println!("value {} type is {:?}", name, tck.reconstruct(*id));
     }
 }

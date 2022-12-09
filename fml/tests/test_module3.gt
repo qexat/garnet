@@ -9,8 +9,10 @@ end
 -- don't have specialization and we don't attach these names to
 -- types in any way.
 --
--- To ponder: What if we did one or the other?
-const IntEq: Eq(I32) = $Eq(I32) {
+-- To ponder: What if we did attach names to types, or had
+-- specialization?  The latter evokes the Instance Problem, the former
+-- I suppose is a way around it.
+const IntEq = $Eq(I32) {
     .eq = fn(lhs: I32, rhs: I32): Bool =
         true
     end,
@@ -19,6 +21,37 @@ const IntEq: Eq(I32) = $Eq(I32) {
     end,
 }
 
-fn main(): I32 =
-    3
+type Ord(@Self) = struct
+    eq: Eq(@Self),
+    cmp: fn(@Self, @Self): I32,
 end
+
+/- Works in my head, dammit!
+Doesn't typecheck yet though.
+const IntOrd = $Ord(I32) {
+    .eq = IntEq,
+    .cmp = fn(lhs: I32, rhs: I32): I32 =
+        0
+    end,
+}
+-/
+
+type From(@Self, @In) = struct
+    from: fn(@In): @Self
+end
+
+const BoolFromInt = $From(Bool, I32) {
+    .from = fn(i: I32): Bool = false end
+}
+
+type Into(@Self, @Out) = struct
+    from: From(@Out, @Self),
+    into: fn(@Self): @Out,
+end
+
+const IntIntoBool = $Into(I32, Bool) {
+    .from = BoolFromInt,
+    .into = fn(self: I32): Bool =
+        from.from(self)
+    end
+}

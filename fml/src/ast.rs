@@ -131,7 +131,7 @@ pub enum Decl {
     },
     ConstDef {
         name: String,
-        ty: Type,
+        // ty: Type,
         init: ExprNode,
     },
 }
