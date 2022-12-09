@@ -367,7 +367,7 @@ fn typecheck_func_body(
     }
     let last_expr = body.last().expect("empty body, aieeee");
     let last_expr_type = tck.get_expr_type(last_expr);
-    tck.unify(&symtbl, last_expr_type, rettype)?;
+    tck.unify(symtbl, last_expr_type, rettype)?;
 
     println!(
         "Typechecked function {}, types are",
@@ -438,13 +438,15 @@ fn typecheck_expr(
             // I suspect when we have that we'll also need to
             // instantiate the named type's generics, as we do
             // with TypeCtor.
+            // But right now, we just make a hack that lets you reach
+            // inside $ types that are structs by doing thing.name
             match tck.reconstruct(struct_type)? {
                 Type::Struct(body) => Ok(tck.insert_known(&body[name])),
-                Type::Named(s, args) => {
+                Type::Named(s, _args) => {
                     let hopefully_a_struct = symtbl.get_type(s).unwrap();
                     match hopefully_a_struct {
                         Type::Struct(body) => Ok(tck.insert_known(&body[name])),
-                        other => Err(format!("Yeah I know this is wrong bite me")),
+                        _other => Err(format!("Yeah I know this is wrong bite me")),
                     }
                 }
                 other => Err(format!(
@@ -609,6 +611,19 @@ pub fn typecheck(ast: &ast::Ast) {
 
                 // Remember that we know about a type with this name
                 symtbl.add_type(name, ty)
+            }
+            ConstDef { name, ty, init } => {
+                // The init expression is typechecked in its own
+                // scope, since it may theoretically be a `let` or
+                // something that introduces new names inside it.
+                let init_type = {
+                    let _guard = symtbl.push_scope();
+                    let t = typecheck_expr(tck, symtbl, init).unwrap();
+                    t
+                };
+                let decl_type = tck.insert_known(ty);
+                tck.unify(&symtbl, decl_type, init_type).unwrap();
+                symtbl.add_var(name, decl_type);
             }
         }
     }

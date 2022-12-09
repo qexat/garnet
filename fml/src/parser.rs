@@ -60,6 +60,8 @@ pub enum TokenKind {
     End,
     #[token("struct")]
     Struct,
+    #[token("const")]
+    Const,
 
     // Punctuation
     #[token("(")]
@@ -367,6 +369,7 @@ impl<'input> Parser<'input> {
         match self.next() {
             Some(Token { kind: T::Fn, .. }) => Some(self.parse_fn()),
             Some(Token { kind: T::Type, .. }) => Some(self.parse_typedef()),
+            Some(Token { kind: T::Const, .. }) => Some(self.parse_const()),
             Some(other) => self.error("start of decl", Some(other)),
             None => None,
         }
@@ -391,6 +394,17 @@ impl<'input> Parser<'input> {
         self.expect(T::Equals);
         let ty = self.parse_type();
         ast::Decl::TypeDef { name, params, ty }
+    }
+
+    fn parse_const(&mut self) -> ast::Decl {
+        let name = self.expect_ident();
+        self.expect(T::Colon);
+        let ty = self.parse_type();
+        self.expect(T::Equals);
+        let init = self
+            .parse_expr(0)
+            .expect("Expected expression after `let ... =`, did not get one");
+        ast::Decl::ConstDef { name, ty, init }
     }
 
     fn parse_fn(&mut self) -> ast::Decl {
