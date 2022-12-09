@@ -398,13 +398,11 @@ impl<'input> Parser<'input> {
 
     fn parse_const(&mut self) -> ast::Decl {
         let name = self.expect_ident();
-        self.expect(T::Colon);
-        let ty = self.parse_type();
         self.expect(T::Equals);
         let init = self
             .parse_expr(0)
             .expect("Expected expression after `let ... =`, did not get one");
-        ast::Decl::ConstDef { name, ty, init }
+        ast::Decl::ConstDef { name, init }
     }
 
     fn parse_fn(&mut self) -> ast::Decl {
