@@ -1,0 +1,24 @@
+-- Fine let's try something simpler.
+
+type Eq(@Self) = struct
+    eq: fn(@Self, @Self): Bool,
+    neq: fn(@Self, @Self): Bool,
+end
+
+-- The name here has to be something other than Eq(I32) 'cause we
+-- don't have specialization and we don't attach these names to
+-- types in any way.
+--
+-- To ponder: What if we did one or the other?
+const IntEq: Eq(I32) = $Eq(I32) {
+    .eq = fn(lhs: I32, rhs: I32): Bool =
+        true
+    end,
+    .neq = fn(lhs: I32, rhs: I32): Bool =
+        false
+    end,
+}
+
+fn main(): I32 =
+    3
+end

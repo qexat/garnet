@@ -129,6 +129,11 @@ pub enum Decl {
         params: Vec<String>,
         ty: Type,
     },
+    ConstDef {
+        name: String,
+        ty: Type,
+        init: ExprNode,
+    },
 }
 
 /// A compilable chunk of AST.
