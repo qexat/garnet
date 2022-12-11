@@ -109,6 +109,26 @@ fn sum2(l: List2(I32)): I32 =
     total
 end
 
+-- To implement Eq for List we need to make a functor-y thingy.
+-- Note this has to capture eq_impl in a closure.  Fun!
+fn make_list_comparer_thingy(eq_impl: Eq(@T)): Eq(List(@T)) =
+    $Eq(List(@T)) {
+        .eq = fn(lhs: List(@T), rhs: List(@T)): Bool =
+            if List.len(lhs) != List.len(rhs) then false
+            else
+                for i in range(List.len(lhs)) do
+                    let thing1 = List.idx(lhs, i)
+                    let thing2 = List.idx(rhs, i)
+                    if not eq_impl.eq(thing1, thing2) then
+                        return false
+                    end
+                end
+            end
+            return true
+        end
+    }
+end
+
 /- Ok, so there's a few problems with this:
  1) You can't add impl's to a particular type that aren't built in to
  it.  Nobody can impl their own trait and add it to the List2 type.
@@ -159,3 +179,6 @@ fn generic_sum(
 end
 
 -- Ok now this reveals another problem!  *calling this function is insane*.
+--
+-- The answer to this might be modular implicits, so let's dig into that
+-- next!
