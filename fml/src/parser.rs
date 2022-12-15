@@ -401,7 +401,7 @@ impl<'input> Parser<'input> {
         self.expect(T::Equals);
         let init = self
             .parse_expr(0)
-            .expect("Expected expression after `let ... =`, did not get one");
+            .expect("Expected expression after `const ... =`, did not get one");
         ast::Decl::ConstDef { name, init }
     }
 
