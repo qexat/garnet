@@ -2,7 +2,6 @@
 
 type Eq(@Self) = struct
     eq: fn(@Self, @Self): Bool,
-    neq: fn(@Self, @Self): Bool,
 end
 
 -- The name here has to be something other than Eq(I32) 'cause we
@@ -16,169 +15,70 @@ const IntEq = $Eq(I32) {
     .eq = fn(lhs: I32, rhs: I32): Bool =
         true
     end,
-    .neq = fn(lhs: I32, rhs: I32): Bool =
-        false
-    end,
 }
 
 type Ord(@Self) = struct
-    eq: Eq(@Self),
     cmp: fn(@Self, @Self): I32,
 end
 
-/- Works in my head, dammit!
-Doesn't typecheck yet though.
 const IntOrd = $Ord(I32) {
-    .eq = IntEq,
     .cmp = fn(lhs: I32, rhs: I32): I32 =
         0
     end,
 }
--/
+
 
 type From(@Self, @In) = struct
     from: fn(@In): @Self
 end
 
-const BoolFromInt = $From(Bool, I32) {
+-- TODO: The type params are the wrong way around here.
+-- Fix this first before worrying about anything else!
+const BoolFromInt = $From(I32, Bool) {
     .from = fn(i: I32): Bool = false end
 }
 
-type Into(@Self, @Out) = struct
-    from: From(@Out, @Self),
-    into: fn(@Self): @Out,
+type List(@T) = struct
+    dummy_data: @T,
 end
 
-const IntIntoBool = $Into(I32, Bool) {
-    .from = BoolFromInt,
-    .into = fn(self: I32): Bool =
-        from.from(self)
-    end
-}
 
--- Let's pretend we index everything with an I32
 type Idx(@Self, @Output) = struct
     idx: fn(@Self): @Output,
 end
 
-type List(@T) = struct
-    dummy: @T,
-    -- TODO: Warning, recursive sort of typedef here, possibly dangerous.
-    -- Or at least begging a little for a Self type.
-    len: fn(List(@T)): I32,
+type Len(@Self) = struct
+    len: fn(@Self): I32,
 end
 
-const ListIdx = $Idx(List(@T), @T) = struct
-    .idx = fn(self: List(@T), i: I32): @T =
-        self.dummy
-    end
+const ListLen = $Len(List(@T)) {
+    .len = fn(self: List(@T)): I32 = 0 end
+}
+
+fn module_len(impl: Len(@T), l: @T): I32 =
+    let total: I32 = 0
+    impl.len(l)
 end
 
--- Then actually doing something with it...
--- Note this syntax doesn't actually exist yet in
--- this proof of concept
-fn sum(l: List(I32)): I32 =
-    let mut total: I32 = 0
-    -- blah blah iterator blah blah; we're just experimenting with semantics
-    -- for this.  What does it look like to actually USE this def'n of
-    -- Idx?
-    for i in range(0, List.len(l)) do
-        total += ListIdx.idx(l, i)
-        -- notably NOT:
-        total += l.idx(i)
-        -- And also not:
-        total += List.idx(l, i)
-    end
-    total
+-- Specialize it just to make sure everything fits together...
+fn list_len(l: List(@T)): I32 =
+    module_len(ListLen, l)
 end
 
--- Now what if instead we just made the trait/module
--- impl's be part of the struct?
-type List2(@T) = struct
-    dummy: @T,
-    len: fn(List2(@T)): I32,
-    index_impl: Idx(List2(@T), @T),
+/-
+These don't typecheck yet.
+const ListIdx = $Idx(List(@T), @T) {
+    .idx = fn(self: List(@T), i: I32): @T = self.dummy_data end
+}
+
+const IntListIdx = $Idx(List(I32), I32) {
+    .idx = fn(self: List(I32), i: I32): I32 = self.dummy_data end
+}
+
+
+fn sum(l: List(@T)): I32 =
+    let total: I32 = 0
+    ListIdx.idx(l, 3)
 end
-
--- So then our sum function would look like this:
-fn sum2(l: List2(I32)): I32 =
-    let mut total: I32 = 0
-    for i in range(0, List.len(l)) do
-        total += List2.index_impl.idx(i)
-    end
-    total
-end
-
--- To implement Eq for List we need to make a functor-y thingy.
--- Note this has to capture eq_impl in a closure.  Fun!
-fn make_list_comparer_thingy(eq_impl: Eq(@T)): Eq(List(@T)) =
-    $Eq(List(@T)) {
-        .eq = fn(lhs: List(@T), rhs: List(@T)): Bool =
-            if List.len(lhs) != List.len(rhs) then false
-            else
-                for i in range(List.len(lhs)) do
-                    let thing1 = List.idx(lhs, i)
-                    let thing2 = List.idx(rhs, i)
-                    if not eq_impl.eq(thing1, thing2) then
-                        return false
-                    end
-                end
-            end
-            return true
-        end
-    }
-end
-
-/- Ok, so there's a few problems with this:
- 1) You can't add impl's to a particular type that aren't built in to
- it.  Nobody can impl their own trait and add it to the List2 type.
- They CAN impl their own trait and *not* add it to the List2 type,
- call it ListExt or whatever.  So this is purely a matter of namespace
- resolution, but it is also
- 2) You have to know what the impl is called to be able to call it, not
- just what the type is.  And you even have to know what the type is
- as well!  So writing a generic function for this sort of thing gets
- a little weird.
-
- Lastly, it makes the representation of List2 more uncertain.  Can you
- replace those methods in it, or not?  You really don't want to copy
- 'em all around at runtime with each List2 type!  So do you need a
- comptime or const annotation or something attached to them to make sure
- that those methods are inlined properly, otherwise you may end up with
- a List2(T) with the same T but multiple different layouts in memory.
- In a higher level language this would be invisible, but in a language
- where I want to be able to make decisions about a type's layout then
- you can't just hide those function pointers.
 -/
 
--- So what does it look like if we want to get *more generic*?
-type Add(@T) = struct
-    add: fn(@T, @T): @T
-end
-
-type Len(@T) = struct
-    len: fn(@T): I32
-end
-
-type Default(@T) = struct
-    default: fn(): @T
-end
-
-fn generic_sum(
-    container: @C,
-    idx_impl: Idx(@C, @Out),
-    add_impl: Add(@Out),
-    len_impl: Len(@C),
-    default_impl: Default(@Out)
-): @Out =
-    let mut total: @Out = default_impl.default()
-    for i in range(0, len_impl.len(container)) do
-        total = sum_impl.add(total, idx_impl.idx(l, i))
-    end
-    total
-end
-
--- Ok now this reveals another problem!  *calling this function is insane*.
---
--- The answer to this might be modular implicits, so let's dig into that
--- next!

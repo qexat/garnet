@@ -26,7 +26,12 @@ impl Tck {
     }
 
     fn get_expr_type(&mut self, expr: &ast::ExprNode) -> TypeId {
-        *self.types.get(&expr.id).unwrap()
+        *self.types.get(&expr.id).unwrap_or_else(|| {
+            panic!(
+                "Could not get type of expr with ID {:?}!\nExpr was {:?}",
+                expr.id, expr
+            )
+        })
     }
 
     /// Check whether the type contains any references to the given
@@ -428,6 +433,7 @@ fn typecheck_expr(
         StructRef { e, name } => {
             typecheck_expr(tck, symtbl, e)?;
             let struct_type = tck.get_expr_type(e);
+            tck.set_expr_type(expr, struct_type);
             // TODO: Not sure this reconstruct does the Right Thing,
             // especially where type params are involved,
             // but it has the type signature we need.
