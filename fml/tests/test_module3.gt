@@ -34,7 +34,7 @@ end
 
 -- TODO: The type params are the wrong way around here.
 -- Fix this first before worrying about anything else!
-const BoolFromInt = $From(I32, Bool) {
+const BoolFromInt = $From(Bool, I32) {
     .from = fn(i: I32): Bool = false end
 }
 

@@ -773,7 +773,7 @@ impl<'input> Parser<'input> {
             }
         }
         self.expect(T::End);
-        Type::Struct(fields)
+        Type::Struct(fields, vec![])
     }
 }
 
