@@ -78,7 +78,7 @@ impl Tck {
                 TypeInfo::Func(new_args, new_rettype)
             }
             Type::Generic(s) => TypeInfo::TypeParam(s.to_string()),
-            Type::Struct(body) => {
+            Type::Struct(body, _names) => {
                 let new_body = body
                     .iter()
                     .map(|(nm, t)| (nm.clone(), self.insert_known(t)))
@@ -181,7 +181,8 @@ impl Tck {
                         Ok((nm.clone(), new_t))
                     })
                     .collect();
-                Ok(Type::Struct(real_body?))
+                let params = vec![];
+                Ok(Type::Struct(real_body?, params))
             }
         }
     }
@@ -231,7 +232,7 @@ impl Tck {
                 let inst_ret = self.instantiate(named_types, rettype);
                 TypeInfo::Func(inst_args, inst_ret)
             }
-            Type::Struct(body) => {
+            Type::Struct(body, _names) => {
                 let inst_body = body
                     .iter()
                     .map(|(nm, ty)| (nm.clone(), self.instantiate(named_types, ty)))
@@ -243,21 +244,25 @@ impl Tck {
     }
 }
 
+#[derive(Clone, Default)]
+struct ScopeFrame {
+    symbols: HashMap<String, TypeId>,
+    types: HashMap<String, Type>,
+}
+
 /// Basic symbol table that maps names to type ID's
 /// and manages scope.
 // Looks ugly, works well.
 #[derive(Clone)]
 struct Symtbl {
-    symbols: Rc<RefCell<Vec<HashMap<String, TypeId>>>>,
-    types: Rc<RefCell<Vec<HashMap<String, Type>>>>,
+    frames: Rc<RefCell<Vec<ScopeFrame>>>,
 }
 
 impl Default for Symtbl {
     /// We start with an empty toplevel scope existing.
     fn default() -> Self {
         Self {
-            symbols: Rc::new(RefCell::new(vec![HashMap::new()])),
-            types: Rc::new(RefCell::new(vec![HashMap::new()])),
+            frames: Rc::new(RefCell::new(vec![ScopeFrame::default()])),
         }
     }
 }
@@ -269,12 +274,7 @@ pub struct ScopeGuard {
 impl Drop for ScopeGuard {
     fn drop(&mut self) {
         self.scope
-            .symbols
-            .borrow_mut()
-            .pop()
-            .expect("Scope stack underflow");
-        self.scope
-            .types
+            .frames
             .borrow_mut()
             .pop()
             .expect("Scope stack underflow");
@@ -283,25 +283,25 @@ impl Drop for ScopeGuard {
 
 impl Symtbl {
     fn push_scope(&self) -> ScopeGuard {
-        self.symbols.borrow_mut().push(HashMap::new());
-        self.types.borrow_mut().push(HashMap::new());
+        self.frames.borrow_mut().push(ScopeFrame::default());
         ScopeGuard {
             scope: self.clone(),
         }
     }
 
     fn add_var(&self, var: impl AsRef<str>, ty: TypeId) {
-        self.symbols
+        self.frames
             .borrow_mut()
             .last_mut()
             .expect("Scope stack underflow")
+            .symbols
             .insert(var.as_ref().to_owned(), ty);
     }
 
     /// Checks whether the var exists in the currently alive scopes
     fn get_var_binding(&self, var: impl AsRef<str>) -> Option<TypeId> {
-        for scope in self.symbols.borrow().iter().rev() {
-            let v = scope.get(var.as_ref());
+        for scope in self.frames.borrow().iter().rev() {
+            let v = scope.symbols.get(var.as_ref());
             if v.is_some() {
                 return v.cloned();
             }
@@ -310,16 +310,17 @@ impl Symtbl {
     }
 
     fn add_type(&self, name: impl AsRef<str>, ty: &Type) {
-        self.types
+        self.frames
             .borrow_mut()
             .last_mut()
             .expect("Scope stack underflow")
+            .types
             .insert(name.as_ref().to_owned(), ty.to_owned());
     }
 
     fn get_type(&self, ty: impl AsRef<str>) -> Option<Type> {
-        for scope in self.types.borrow().iter().rev() {
-            let v = scope.get(ty.as_ref());
+        for scope in self.frames.borrow().iter().rev() {
+            let v = scope.types.get(ty.as_ref());
             if v.is_some() {
                 return v.cloned();
             }
@@ -447,11 +448,11 @@ fn typecheck_expr(
             // But right now, we just make a hack that lets you reach
             // inside $ types that are structs by doing thing.name
             match tck.reconstruct(struct_type)? {
-                Type::Struct(body) => Ok(tck.insert_known(&body[name])),
+                Type::Struct(body, _names) => Ok(tck.insert_known(&body[name])),
                 Type::Named(s, _args) => {
                     let hopefully_a_struct = symtbl.get_type(s).unwrap();
                     match hopefully_a_struct {
-                        Type::Struct(body) => Ok(tck.insert_known(&body[name])),
+                        Type::Struct(body, _names) => Ok(tck.insert_known(&body[name])),
                         _other => Err(format!("Yeah I know this is wrong bite me")),
                     }
                 }
@@ -555,6 +556,8 @@ fn typecheck_expr(
             // Ok if we have declared type params we gotta instantiate them
             // to match the type's generics.
             let type_param_names = named_type.get_generic_names();
+            println!("Type param names for {} are {:?}", name, type_param_names);
+            println!("Type paramss for {} are {:?}", name, type_params);
             assert_eq!(type_params.len(), type_param_names.len());
             let mut type_mapping = HashMap::new();
             for (name, ty) in type_param_names.iter().zip(type_params.iter()) {
@@ -601,6 +604,9 @@ pub fn typecheck(ast: &ast::Ast) {
                 });
             }
             TypeDef { name, params, ty } => {
+                // TODO: Ok we need to somehow record the order of the type
+                // params and keep it somewhere 'case it means we
+
                 // Make sure that there are no unbound generics in the typedef
                 // that aren't mentioned in the params.
                 let generic_names: HashSet<String> = ty.get_generic_names().into_iter().collect();
@@ -632,7 +638,7 @@ pub fn typecheck(ast: &ast::Ast) {
         }
     }
     // Print out toplevel symbols
-    for (name, id) in symtbl.symbols.borrow().last().unwrap() {
+    for (name, id) in &symtbl.frames.borrow().last().unwrap().symbols {
         println!("value {} type is {:?}", name, tck.reconstruct(*id));
     }
 }

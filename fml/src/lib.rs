@@ -11,7 +11,9 @@ pub mod typeck;
 pub enum Type {
     Named(String, Vec<Type>),
     Func(Vec<Type>, Box<Type>),
-    Struct(HashMap<String, Type>),
+    /// The vec is the name of any generic type bindings in there
+    /// 'cause we need to keep track of those apparently.
+    Struct(HashMap<String, Type>, Vec<Type>),
     /// A generic type parameter
     Generic(String),
 }
@@ -46,8 +48,16 @@ impl Type {
                     }
                     helper(rettype, accm)
                 }
-                Type::Struct(body) => {
+                Type::Struct(body, generics) => {
                     for (_, ty) in body {
+                        helper(ty, accm);
+                    }
+                    // TODO more: This makes me a little uneasy
+                    // 'cause I thiiiink the whole point of the names on
+                    // the struct is to list *all* the generic names in it...
+                    // but we could have nested definitions
+                    // like Foo(@T) ( Bar(@G) ( {@T, @G} ) )
+                    for ty in generics {
                         helper(ty, accm);
                     }
                 }
