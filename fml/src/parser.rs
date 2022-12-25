@@ -773,7 +773,16 @@ impl<'input> Parser<'input> {
             }
         }
         self.expect(T::End);
-        Type::Struct(fields, vec![])
+        // Pull any @Foo types out of the structure's
+        // declared types
+        let generic_names: Vec<_> = fields
+            .iter()
+            .map(|(_nm, ty)| ty)
+            .filter(|ty| matches!(ty, Type::Generic(_)))
+            .cloned()
+            .collect();
+        //let inferred_generics = Type::Struct(fields.clone(), vec![]).get_generic_args();
+        Type::Struct(fields, generic_names)
     }
 }
 

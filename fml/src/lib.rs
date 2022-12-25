@@ -34,7 +34,56 @@ impl Type {
     /// and we instantiate it later with $T(I32, F(Bool)) then it has
     /// to be semi sane.
     /// ...or something.  Think about this more.
-    fn get_generic_names(&self) -> Vec<String> {
+    fn get_generic_args(&self) -> Vec<Type> {
+        fn helper(t: &Type, accm: &mut Vec<Type>) {
+            match t {
+                Type::Named(_, ts) => {
+                    accm.extend(ts.clone());
+                    for t in ts {
+                        helper(t, accm);
+                    }
+                }
+                Type::Func(args, rettype) => {
+                    for t in args {
+                        helper(t, accm);
+                    }
+                    helper(rettype, accm)
+                }
+                Type::Struct(_body, ts) => {
+                    /*
+                    for (_, ty) in body {
+                        helper(ty, accm);
+                    }
+                    */
+                    // TODO more: This makes me a little uneasy
+                    // 'cause I thiiiink the whole point of the names on
+                    // the struct is to list *all* the generic names in it...
+                    // but we could have nested definitions
+                    // like Foo(@T) ( Bar(@G) ( {@T, @G} ) )
+                    accm.extend(ts.clone());
+                    for t in ts {
+                        helper(t, accm);
+                    }
+                }
+                Type::Generic(s) => {
+                    // Deduplicating these things while maintaining ordering
+                    // is kinda screwy.
+                    // This works, it's just, yanno, also O(n^2)
+                    // Could use a set to check membership , but fuckit for now.
+                    if !accm.contains(t) {
+                        //accm.push(s.clone());
+                        panic!("Unknown generic: {}", s);
+                    }
+                }
+            }
+        }
+        let mut accm = vec![];
+        helper(self, &mut accm);
+        accm
+    }
+
+    /// Search through the type and return any generic types in it.
+    fn collect_generic_names(&self) -> Vec<String> {
         fn helper(t: &Type, accm: &mut Vec<String>) {
             match t {
                 Type::Named(_, ts) => {
@@ -68,6 +117,44 @@ impl Type {
                     // Could use a set to check membership , but fuckit for now.
                     if !accm.contains(s) {
                         accm.push(s.clone());
+                    }
+                }
+            }
+        }
+        let mut accm = vec![];
+        helper(self, &mut accm);
+        accm
+    }
+
+    /// Returns the type parameters *specified by the toplevel type*.
+    /// Does *not* recurse to all types below it!
+    /// ...except for function args apparently.
+    fn get_type_params(&self) -> Vec<String> {
+        fn helper(t: &Type, accm: &mut Vec<String>) {
+            match t {
+                Type::Named(_, generics) => {
+                    for g in generics {
+                        helper(g, accm);
+                    }
+                }
+                Type::Func(args, rettype) => {
+                    for t in args {
+                        helper(t, accm);
+                    }
+                    helper(rettype, accm)
+                }
+                Type::Struct(_body, generics) => {
+                    for g in generics {
+                        helper(g, accm);
+                    }
+                }
+                Type::Generic(s) => {
+                    // Deduplicating these things while maintaining ordering
+                    // is kinda screwy.
+                    // This works, it's just, yanno, also O(n^2)
+                    // Could use a set to check membership , but fuckit for now.
+                    if !accm.contains(s) {
+                        accm.push(s.clone())
                     }
                 }
             }
