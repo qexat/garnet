@@ -16,15 +16,16 @@ struct Tck {
 }
 
 impl Tck {
-    /// Save the type associated with the given expr
+    /// Save the type variable associated with the given expr
     fn set_expr_type(&mut self, expr: &ast::ExprNode, ty: TypeId) {
         assert!(
             self.types.get(&expr.id).is_none(),
-            "Redefining known type, not suuuuure if this is bad or not"
+            "Redefining known type, not suuuuure if this is bad or not.  Probably is though, since we should always be changing the meaning of an expr's associated type variable instead."
         );
         self.types.insert(expr.id, ty);
     }
 
+    /// Panics if the expression's type is not set.
     fn get_expr_type(&mut self, expr: &ast::ExprNode) -> TypeId {
         *self.types.get(&expr.id).unwrap_or_else(|| {
             panic!(
@@ -67,6 +68,7 @@ impl Tck {
     /// Create a new type term out of a known type, such as if we
     /// declare a var's type.
     pub fn insert_known(&mut self, t: &Type) -> TypeId {
+        // Recursively insert all subtypes.
         let tinfo = match t {
             Type::Named(s, args) => {
                 let new_args = args.iter().map(|t| self.insert_known(t)).collect();
@@ -92,7 +94,7 @@ impl Tck {
     /// Make the types of two type terms equivalent (or produce an error if
     /// there is a conflict between them)
     pub fn unify(&mut self, symtbl: &Symtbl, a: TypeId, b: TypeId) -> Result<(), String> {
-        assert_ne!(a, b, "Tried to unify a type with itself!  This means our typechecking state has gotten invalid data into it somehow?");
+        //assert_ne!(a, b, "Tried to unify a type with itself!  This means our typechecking state has gotten invalid data into it somehow?");
         use TypeInfo::*;
         match (self.vars[&a].clone(), self.vars[&b].clone()) {
             // Follow any references
@@ -145,6 +147,7 @@ impl Tck {
                 }
                 Ok(())
             }
+            // For declared type parameters like @T they match if their names match.
             (TypeParam(s1), TypeParam(s2)) if s1 == s2 => Ok(()),
             // If no previous attempts to unify were successful, raise an error
             (a, b) => Err(format!("Conflict between {:?} and {:?}", a, b)),
@@ -207,40 +210,70 @@ impl Tck {
     /// This has to actually be an empty hashtable on the first instantitaion
     /// instead of the symtbl, since the symtbl is full of type parameter names from the
     /// enclosing function and those are what we explicitly want to get away from.
-    fn instantiate(&mut self, named_types: &mut HashMap<String, TypeId>, t: &Type) -> TypeId {
-        let typeinfo = match t {
-            Type::Named(s, args) => {
-                let inst_args: Vec<_> = args
-                    .iter()
-                    .map(|t| self.instantiate(named_types, t))
-                    .collect();
-                TypeInfo::Named(s.clone(), inst_args)
-            }
-            Type::Generic(s) => {
-                // If we know this is is a particular generic, match wiht it
-                if let Some(ty) = named_types.get(s) {
-                    TypeInfo::Ref(*ty)
-                } else {
-                    panic!("Referred to unknown generic named {}", s);
+    fn instantiate(&mut self, t: &Type) -> TypeId {
+        fn helper(tck: &mut Tck, named_types: &mut HashMap<String, TypeId>, t: &Type) -> TypeId {
+            let typeinfo = match t {
+                Type::Named(s, args) => {
+                    let inst_args: Vec<_> =
+                        args.iter().map(|t| helper(tck, named_types, t)).collect();
+                    TypeInfo::Named(s.clone(), inst_args)
                 }
-            }
-            Type::Func(args, rettype) => {
-                let inst_args: Vec<_> = args
-                    .iter()
-                    .map(|t| self.instantiate(named_types, t))
-                    .collect();
-                let inst_ret = self.instantiate(named_types, rettype);
-                TypeInfo::Func(inst_args, inst_ret)
-            }
-            Type::Struct(body, _names) => {
-                let inst_body = body
-                    .iter()
-                    .map(|(nm, ty)| (nm.clone(), self.instantiate(named_types, ty)))
-                    .collect();
-                TypeInfo::Struct(inst_body)
-            }
-        };
-        self.insert(typeinfo)
+                Type::Generic(s) => {
+                    // If we know this is is a particular generic, match wiht it
+                    if let Some(ty) = named_types.get(s) {
+                        TypeInfo::Ref(*ty)
+                    } else {
+                        panic!("Referred to unknown generic named {}", s);
+                    }
+                }
+                Type::Func(args, rettype) => {
+                    let inst_args: Vec<_> =
+                        args.iter().map(|t| helper(tck, named_types, t)).collect();
+                    let inst_ret = helper(tck, named_types, rettype);
+                    TypeInfo::Func(inst_args, inst_ret)
+                }
+                Type::Struct(body, _names) => {
+                    let inst_body = body
+                        .iter()
+                        .map(|(nm, ty)| (nm.clone(), helper(tck, named_types, ty)))
+                        .collect();
+                    TypeInfo::Struct(inst_body)
+                }
+            };
+            tck.insert(typeinfo)
+        }
+        // We have to pluck any unknowns out of the toplevel type and create
+        // new type vars for them.
+        // We don't worry about binding those vars or such, that is what unification
+        // will do later.
+        let named_types = &mut t
+            .get_type_params()
+            .into_iter()
+            .map(|t| (t, self.insert(TypeInfo::Unknown)))
+            .collect();
+        // TODO: Sort out strings vs types
+        /*
+         * GLARBLE BARBLE
+        let named_types: &mut HashMap<String, TypeId> = &mut t
+            .get_generic_args()
+            .iter()
+            .map(|name| (name.clone(), self.insert(TypeInfo::Unknown)))
+            .collect();
+        let function_type_params = actual_func_type.get_generic_names();
+        for name in function_type_params.iter() {
+            let tid = tck.insert(TypeInfo::Unknown);
+            named_types.insert(name.clone(), tid);
+        }
+         */
+
+        /*
+        let mut type_mapping = HashMap::new();
+        for (name, ty) in type_param_names.iter().zip(type_params.iter()) {
+            let tid = tck.insert_known(ty);
+            type_mapping.insert(name.clone(), tid);
+        }
+        */
+        helper(self, named_types, t)
     }
 }
 
@@ -477,6 +510,7 @@ fn typecheck_expr(
             // Oh, defined generics are "easy".
             // Each time I call a function I create new type
             // vars for its generic args.
+            // Apparently that is the "instantiation".
 
             let func_type = typecheck_expr(tck, symtbl, func)?;
             // We know this will work because we require full function signatures
@@ -516,13 +550,7 @@ fn typecheck_expr(
             //
             // So we go through the generics the function declares and create
             // new type vars for each of them.
-            let named_types = &mut HashMap::new();
-            let function_type_params = actual_func_type.get_generic_names();
-            for name in function_type_params.iter() {
-                let tid = tck.insert(TypeInfo::Unknown);
-                named_types.insert(name.clone(), tid);
-            }
-            let heck = tck.instantiate(named_types, &actual_func_type);
+            let heck = tck.instantiate(&actual_func_type);
             tck.unify(symtbl, heck, funcall_var)?;
 
             tck.set_expr_type(expr, rettype_var);
@@ -555,16 +583,12 @@ fn typecheck_expr(
             println!("Got type named {}: is {:?}", name, named_type);
             // Ok if we have declared type params we gotta instantiate them
             // to match the type's generics.
-            let type_param_names = named_type.get_generic_names();
+            //let type_param_names = named_type.get_generic_args();
+            let type_param_names = named_type.get_type_params();
             println!("Type param names for {} are {:?}", name, type_param_names);
             println!("Type paramss for {} are {:?}", name, type_params);
             assert_eq!(type_params.len(), type_param_names.len());
-            let mut type_mapping = HashMap::new();
-            for (name, ty) in type_param_names.iter().zip(type_params.iter()) {
-                let tid = tck.insert_known(ty);
-                type_mapping.insert(name.clone(), tid);
-            }
-            let tid = tck.instantiate(&mut type_mapping, &named_type);
+            let tid = tck.instantiate(&named_type);
 
             //let tid = tck.insert_known(&named_type);
             let body_type = typecheck_expr(tck, symtbl, body)?;
@@ -609,7 +633,8 @@ pub fn typecheck(ast: &ast::Ast) {
 
                 // Make sure that there are no unbound generics in the typedef
                 // that aren't mentioned in the params.
-                let generic_names: HashSet<String> = ty.get_generic_names().into_iter().collect();
+                let generic_names: HashSet<String> =
+                    ty.collect_generic_names().into_iter().collect();
                 let param_names: HashSet<String> = params.iter().cloned().collect();
                 let difference: Vec<_> = generic_names
                     .symmetric_difference(&param_names)
