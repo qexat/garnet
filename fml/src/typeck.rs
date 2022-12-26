@@ -38,9 +38,6 @@ impl Tck {
     /// Check whether the type contains any references to the given
     /// typeid.  Used for making sure we don't construct nonsense
     /// things like `T = List<T>`.
-    ///
-    /// TODO: This is made redundant by the assertion at the beginning
-    /// of unify, I think?
     fn _contains_type(&self, a: TypeId, b: TypeId) -> bool {
         use TypeInfo::*;
         match self.vars[&a] {
@@ -94,7 +91,14 @@ impl Tck {
     /// Make the types of two type terms equivalent (or produce an error if
     /// there is a conflict between them)
     pub fn unify(&mut self, symtbl: &Symtbl, a: TypeId, b: TypeId) -> Result<(), String> {
-        //assert_ne!(a, b, "Tried to unify a type with itself!  This means our typechecking state has gotten invalid data into it somehow?");
+        // If a == b then it's a little weird but shoooooould be fine
+        // as long as we don't get any mutual recursion or self-recursion
+        // involved
+        // Per MBones:
+        // Yes it makes sense. The unifier is tasked with solving literally whatever equations you throw at it, and this is an important edge case to check for (to avoid accidentally making cyclic datastructures). (The correct action from the unifier is to succeed with no updates, since it's already equal to itself)
+        if a == b {
+            return Ok(());
+        }
         use TypeInfo::*;
         match (self.vars[&a].clone(), self.vars[&b].clone()) {
             // Follow any references
