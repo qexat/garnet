@@ -775,13 +775,17 @@ impl<'input> Parser<'input> {
         self.expect(T::End);
         // Pull any @Foo types out of the structure's
         // declared types
+        // To do this we have to recurse down into any
+        // complex types THOSE may define (such as functions)
+        // and pull out those types too.
+        //
+        // This feels kinda jank but appears to work
         let generic_names: Vec<_> = fields
             .iter()
-            .map(|(_nm, ty)| ty)
-            .filter(|ty| matches!(ty, Type::Generic(_)))
-            .cloned()
+            .map(|(_nm, ty)| ty.get_type_params())
+            .flatten()
+            .map(|ty| Type::Generic(ty))
             .collect();
-        //let inferred_generics = Type::Struct(fields.clone(), vec![]).get_generic_args();
         Type::Struct(fields, generic_names)
     }
 }
