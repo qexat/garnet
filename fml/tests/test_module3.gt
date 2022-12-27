@@ -65,12 +65,12 @@ fn list_len(l: List(@T)): I32 =
     module_len(ListLen, l)
 end
 
-/-
-These don't typecheck yet.
 const ListIdx = $Idx(List(@T), @T) {
     .idx = fn(self: List(@T), i: I32): @T = self.dummy_data end
 }
 
+/-
+These don't typecheck yet.
 const IntListIdx = $Idx(List(I32), I32) {
     .idx = fn(self: List(I32), i: I32): I32 = self.dummy_data end
 }
