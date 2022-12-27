@@ -575,6 +575,7 @@ fn typecheck_expr(
                     }
                 })
                 .collect();
+            println!("Typechecking struct ctor: {:?}", body_types);
             let body_types = body_types?;
             let struct_type = TypeInfo::Struct(body_types);
             let typeid = tck.insert(struct_type);
@@ -596,6 +597,7 @@ fn typecheck_expr(
             println!("Type paramss for {} are {:?}", name, type_params);
             assert_eq!(type_params.len(), type_param_names.len());
             let tid = tck.instantiate(&named_type);
+            println!("Instantiated {} into {:?}", name, tid);
 
             //let tid = tck.insert_known(&named_type);
             let body_type = typecheck_expr(tck, symtbl, body)?;
