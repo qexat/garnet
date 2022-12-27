@@ -88,9 +88,35 @@ impl Tck {
         self.insert(tinfo)
     }
 
+    pub fn get_struct_field_type(
+        &mut self,
+        symtbl: &Symtbl,
+        struct_type: TypeId,
+        field_name: &str,
+    ) -> Option<TypeId> {
+        use TypeInfo::*;
+        match &self.vars[&struct_type] {
+            Unknown => None,
+            Ref(t) => self.get_struct_field_type(symtbl, *t, field_name),
+            Named(nm, args) => {
+                let t = symtbl.get_type(nm)?;
+                // TODO: This instantiation feels overly permissive...
+                let inst_struct = self.instantiate(&t);
+                self.unify(symtbl, inst_struct, struct_type);
+                self.get_struct_field_type(symtbl, inst_struct, field_name)
+            },
+            Func(_args, _rettype) => None,
+            TypeParam(_) => todo!("What SHOULD I do here anyway?  I'd think all the types would be instantiated by now..."),
+            Struct(body) => {
+                body.get(field_name).cloned()
+            }
+        }
+    }
+
     /// Make the types of two type terms equivalent (or produce an error if
     /// there is a conflict between them)
     pub fn unify(&mut self, symtbl: &Symtbl, a: TypeId, b: TypeId) -> Result<(), String> {
+        println!("> Unifying {:?} with {:?}", self.vars[&a], self.vars[&b]);
         // If a == b then it's a little weird but shoooooould be fine
         // as long as we don't get any mutual recursion or self-recursion
         // involved
@@ -258,28 +284,6 @@ impl Tck {
             .into_iter()
             .map(|t| (t, self.insert(TypeInfo::Unknown)))
             .collect();
-        // TODO: Sort out strings vs types
-        /*
-         * GLARBLE BARBLE
-        let named_types: &mut HashMap<String, TypeId> = &mut t
-            .get_generic_args()
-            .iter()
-            .map(|name| (name.clone(), self.insert(TypeInfo::Unknown)))
-            .collect();
-        let function_type_params = actual_func_type.get_generic_names();
-        for name in function_type_params.iter() {
-            let tid = tck.insert(TypeInfo::Unknown);
-            named_types.insert(name.clone(), tid);
-        }
-         */
-
-        /*
-        let mut type_mapping = HashMap::new();
-        for (name, ty) in type_param_names.iter().zip(type_params.iter()) {
-            let tid = tck.insert_known(ty);
-            type_mapping.insert(name.clone(), tid);
-        }
-        */
         helper(self, named_types, t)
     }
 }
@@ -378,10 +382,14 @@ fn infer_lit(lit: &ast::Literal) -> TypeInfo {
 fn typecheck_func_body(
     name: Option<&str>,
     tck: &mut Tck,
-    symtbl: &mut Symtbl,
+    symtbl: &Symtbl,
     signature: &ast::Signature,
     body: &[ast::ExprNode],
 ) -> Result<TypeId, String> {
+    println!(
+        "Typechecking function {:?} with signature {:?}",
+        name, signature
+    );
     // Insert info about the function signature
     let mut params = vec![];
     for (_paramname, paramtype) in &signature.params {
@@ -389,6 +397,10 @@ fn typecheck_func_body(
         params.push(p);
     }
     let rettype = tck.insert_known(&signature.rettype);
+    println!(
+        "signature is: {:?}",
+        TypeInfo::Func(params.clone(), rettype.clone())
+    );
     let f = tck.insert(TypeInfo::Func(params, rettype));
     // If we have a name (ie, are not a lambda), bind the function's type to its name
     // A gensym might make this easier/nicer someday, but this works for now.
@@ -413,7 +425,16 @@ fn typecheck_func_body(
     }
     let last_expr = body.last().expect("empty body, aieeee");
     let last_expr_type = tck.get_expr_type(last_expr);
+    println!(
+        "Unifying last expr...?  Is type {:?}, we want {:?}",
+        last_expr_type, rettype
+    );
     tck.unify(symtbl, last_expr_type, rettype)?;
+
+    for expr in body {
+        let t = tck.get_expr_type(expr);
+        tck.reconstruct(t).unwrap();
+    }
 
     println!(
         "Typechecked function {}, types are",
@@ -423,11 +444,7 @@ fn typecheck_func_body(
     Ok(f)
 }
 
-fn typecheck_expr(
-    tck: &mut Tck,
-    symtbl: &mut Symtbl,
-    expr: &ast::ExprNode,
-) -> Result<TypeId, String> {
+fn typecheck_expr(tck: &mut Tck, symtbl: &Symtbl, expr: &ast::ExprNode) -> Result<TypeId, String> {
     use ast::Expr::*;
     match &*expr.node {
         Lit { val } => {
@@ -474,7 +491,17 @@ fn typecheck_expr(
         StructRef { e, name } => {
             typecheck_expr(tck, symtbl, e)?;
             let struct_type = tck.get_expr_type(e);
-            tck.set_expr_type(expr, struct_type);
+            println!(
+                "Heckin struct ref...  Type of {:?}.{:?} is {:?}",
+                e, name, struct_type
+            );
+            // struct_type is the type of the struct... but the
+            // type of this structref expr is the type of the *field in the struct*.
+            let struct_field_type = tck
+                .get_struct_field_type(symtbl, struct_type, name)
+                .unwrap_or_else(|| panic!("Struct has no known type for field {}", name));
+            tck.set_expr_type(expr, struct_field_type);
+
             // TODO: Not sure this reconstruct does the Right Thing,
             // especially where type params are involved,
             // but it has the type signature we need.
@@ -569,6 +596,7 @@ fn typecheck_expr(
                 .iter()
                 .map(|(name, expr)| {
                     // ? in map doesn't work too well...
+                    println!("Checking field {} expr {:?}", name, expr);
                     match typecheck_expr(tck, symtbl, expr) {
                         Ok(t) => Ok((name.to_string(), t)),
                         Err(s) => Err(s),
@@ -597,7 +625,7 @@ fn typecheck_expr(
             println!("Type paramss for {} are {:?}", name, type_params);
             assert_eq!(type_params.len(), type_param_names.len());
             let tid = tck.instantiate(&named_type);
-            println!("Instantiated {} into {:?}", name, tid);
+            println!("Instantiated {:?} into {:?}", named_type, tid);
 
             //let tid = tck.insert_known(&named_type);
             let body_type = typecheck_expr(tck, symtbl, body)?;

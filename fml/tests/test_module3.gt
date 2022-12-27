@@ -66,28 +66,32 @@ fn list_len(l: List(@T)): I32 =
 end
 
 const ListIdx = $Idx(List(@T), @T) {
-    .idx = fn(self: @T, i: I32): List(@T) =
-        $List(@T) { .dummy_data = self }
-    end
-    --.idx = fn(self: List(@T), i: I32): @T = self.dummy_data end
+    .idx = fn(self: List(@T), i: I32): @T = self.dummy_data end
 }
-const IntListIdx = $Idx(List(I32), I32) {
-    .idx = fn(self: I32, i: I32): List(I32) =
-        $List(I32) { .dummy_data = 12 }
-    end
-    --.idx = fn(self: List(@T), i: I32): @T = self.dummy_data end
-}
-
-/-
-These don't typecheck yet.
 const IntListIdx = $Idx(List(I32), I32) {
     .idx = fn(self: List(I32), i: I32): I32 = self.dummy_data end
 }
 
 
 fn sum(l: List(@T)): I32 =
-    let total: I32 = 0
-    ListIdx.idx(l, 3)
+    let total: I32 = 3
+    ListIdx.idx(l, total)
 end
--/
 
+-- TODO: For some reason this works, even though Foo
+-- is a bad type and Bar doesn't match it.
+const BadIntListIdx = $Idx(List(I32), Foo) {
+    .idx = fn(self: List(I32), i: I32): Bar = self.dummy_data end
+}
+
+const TerribleIntListIdx = $Idx(List(I32), I32) {
+    .idx = fn(self: I32, i: I32): List(I32) =
+        $List(I32) { .dummy_data = 3 }
+    end
+}
+
+fn bad_sum(l: List(@T)): I32 =
+    let total: I32 = 3
+    -- TODO: This also works.
+    ListIdx.idx(true, total)
+end
