@@ -44,7 +44,7 @@ end
 
 
 type Idx(@Self, @Output) = struct
-    idx: fn(@Self): @Output,
+    idx: fn(@Self, I32): @Output,
 end
 
 type Len(@Self) = struct
@@ -66,7 +66,16 @@ fn list_len(l: List(@T)): I32 =
 end
 
 const ListIdx = $Idx(List(@T), @T) {
-    .idx = fn(self: List(@T), i: I32): @T = self.dummy_data end
+    .idx = fn(self: @T, i: I32): List(@T) =
+        $List(@T) { .dummy_data = self }
+    end
+    --.idx = fn(self: List(@T), i: I32): @T = self.dummy_data end
+}
+const IntListIdx = $Idx(List(I32), I32) {
+    .idx = fn(self: I32, i: I32): List(I32) =
+        $List(I32) { .dummy_data = 12 }
+    end
+    --.idx = fn(self: List(@T), i: I32): @T = self.dummy_data end
 }
 
 /-
