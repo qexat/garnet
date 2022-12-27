@@ -154,7 +154,10 @@ impl Tck {
             // For declared type parameters like @T they match if their names match.
             (TypeParam(s1), TypeParam(s2)) if s1 == s2 => Ok(()),
             // If no previous attempts to unify were successful, raise an error
-            (a, b) => Err(format!("Conflict between {:?} and {:?}", a, b)),
+            (a, b) => {
+                self.print_types();
+                Err(format!("Conflict between {:?} and {:?}", a, b))
+            }
         }
     }
 
@@ -603,7 +606,7 @@ fn typecheck_expr(
             let constructed_type =
                 tck.insert_known(&Type::Named(name.clone(), type_params.clone()));
             tck.set_expr_type(expr, constructed_type);
-            Ok(tid)
+            Ok(constructed_type)
         }
     }
 }
@@ -627,6 +630,7 @@ pub fn typecheck(ast: &ast::Ast) {
             } => {
                 let t = typecheck_func_body(Some(name), tck, symtbl, signature, body);
                 t.unwrap_or_else(|e| {
+                    println!("Error, type context is:");
                     tck.print_types();
                     panic!("Error while typechecking function {}:\n{}", name, e)
                 });
@@ -662,6 +666,7 @@ pub fn typecheck(ast: &ast::Ast) {
                     let t = typecheck_expr(tck, symtbl, init).unwrap();
                     t
                 };
+                println!("Typechecked const {}, type is {:?}", name, init_type);
                 symtbl.add_var(name, init_type);
             }
         }

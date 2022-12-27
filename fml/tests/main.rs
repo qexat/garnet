@@ -151,7 +151,8 @@ fn test_module1() {
     let _output = fml::compile("test_module1.gt", src);
 }
 
-/*
+/* This test is complex and maybe incorrect anyway
+ * leave it out for now.
 #[test]
 fn test_module2() {
     let src = include_str!("test_module2.gt");
