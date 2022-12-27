@@ -161,6 +161,7 @@ impl Type {
         }
         let mut accm = vec![];
         helper(self, &mut accm);
+        println!("Found type params for {:?}: {:?}", self, accm);
         accm
     }
 }
