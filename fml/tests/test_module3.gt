@@ -77,21 +77,3 @@ fn sum(l: List(@T)): I32 =
     let total: I32 = 3
     ListIdx.idx(l, total)
 end
-
--- TODO: For some reason this works, even though Foo
--- is a bad type and Bar doesn't match it.
-const BadIntListIdx = $Idx(List(I32), Foo) {
-    .idx = fn(self: List(I32), i: I32): Bar = self.dummy_data end
-}
-
-const TerribleIntListIdx = $Idx(List(I32), I32) {
-    .idx = fn(self: I32, i: I32): List(I32) =
-        $List(I32) { .dummy_data = 3 }
-    end
-}
-
-fn bad_sum(l: List(@T)): I32 =
-    let total: I32 = 3
-    -- TODO: This also works.
-    ListIdx.idx(true, total)
-end
