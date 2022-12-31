@@ -171,3 +171,21 @@ fn test_module4() {
     let src = include_str!("test_module4.gt");
     let _output = fml::compile("test_module4.gt", src);
 }
+
+#[test]
+fn test_unnamed_failure1() {
+    let src = include_str!("test_unnamed_failure1.gt");
+    let _output = fml::compile("test_unnamed_failure1.gt", src);
+}
+
+#[test]
+fn test_unnamed_failure2() {
+    let src = include_str!("test_unnamed_failure2.gt");
+    let _output = fml::compile("test_unnamed_failure2.gt", src);
+}
+
+#[test]
+fn test_unnamed_failure3() {
+    let src = include_str!("test_unnamed_failure3.gt");
+    let _output = fml::compile("test_unnamed_failure3.gt", src);
+}

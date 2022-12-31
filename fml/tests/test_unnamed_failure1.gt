@@ -1,0 +1,7 @@
+type List(@T) = struct
+    dummy_data: @T,
+end
+
+fn should_fail(): Bar =
+    $List 3
+end

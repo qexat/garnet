@@ -1,0 +1,28 @@
+type Idx(@Self, @Output) = struct
+    idx: fn(@Self, I32): @Output,
+end
+
+type List(@T) = struct
+    dummy_data: @T,
+end
+
+
+-- This correctly fails
+-- But maybe not in the right spot
+const BadIntListIdx = $Idx(List(I32), Foo) {
+    .idx = fn(self: List(I32), i: I32): Bar = true end
+}
+
+-- This incorrectly succeeds
+const BadIntListIdx2 = $Idx(List(I32), Foo) {
+    .idx = fn(self: List(I32), i: I32): Foo = self.dummy_data end
+}
+
+-- This correctly fails
+const BadIntListIdx3 = $Idx(List(I32), Foo) {
+    .idx = fn(self: List(I32), i: I32): Foo = 3 end
+}
+
+const ListIdx = $Idx(List(@T), @T) {
+    .idx = fn(self: List(@T), i: I32): @T = self.dummy_data end
+}
