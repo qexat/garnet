@@ -13,14 +13,17 @@ const BadIntListIdx = $Idx(List(I32), Foo) {
     .idx = fn(self: List(I32), i: I32): Bar = self.dummy_data end
 }
 
+-- What if we mistype the interface for Idx(List(_) _)?
+-- Oops
 const TerribleIntListIdx = $Idx(List(I32), I32) {
     .idx = fn(self: I32, i: I32): List(I32) =
         $List(I32) { .dummy_data = 3 }
     end
 }
 
+-- What if we use it with an invalid type arg?
+-- Oops.
 fn bad_sum(l: List(@T)): I32 =
     let total: I32 = 3
-    -- TODO: This also works.
     BadIntListIdx.idx(true, total)
 end
