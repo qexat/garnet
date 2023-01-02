@@ -88,6 +88,24 @@ impl Tck {
         self.insert(tinfo)
     }
 
+    pub fn get_struct_field_type_heck(
+        &mut self,
+        struct_type: Type,
+        field_name: &str,
+    ) -> Option<Type> {
+        use Type::*;
+        match struct_type {
+            Named(_nm, _args) => {
+                None
+            },
+            Func(_args, _rettype) => None,
+            Generic(_) => todo!("What SHOULD I do here anyway?  I'd think all the types would be instantiated by now..."),
+            Struct(body, _args) => {
+                body.get(field_name).cloned()
+            }
+        }
+    }
+
     pub fn get_struct_field_type(
         &mut self,
         symtbl: &Symtbl,
@@ -99,11 +117,18 @@ impl Tck {
             Unknown => None,
             Ref(t) => self.get_struct_field_type(symtbl, *t, field_name),
             Named(nm, _args) => {
+                /*
+                // If the type is a Named type, we look it up and recurse.
+                // This basically
                 let t = symtbl.get_type(nm)?;
                 // TODO: This instantiation feels overly permissive...
                 let inst_struct = self.instantiate(&t);
                 self.unify(symtbl, inst_struct, struct_type).expect("should not fail?");
                 self.get_struct_field_type(symtbl, inst_struct, field_name)
+                */
+                let t = symtbl.get_type(nm)?;
+                let resolved_typ = self.get_struct_field_type_heck(t, field_name)?;
+                Some(self.insert_known(&resolved_typ))
             },
             Func(_args, _rettype) => None,
             TypeParam(_) => todo!("What SHOULD I do here anyway?  I'd think all the types would be instantiated by now..."),
@@ -492,7 +517,7 @@ fn typecheck_expr(tck: &mut Tck, symtbl: &Symtbl, expr: &ast::ExprNode) -> Resul
             typecheck_expr(tck, symtbl, e)?;
             let struct_type = tck.get_expr_type(e);
             println!(
-                "Heckin struct ref...  Type of {:?}.{:?} is {:?}",
+                "Heckin struct ref...  Type of {:?}.{} is {:?}",
                 e, name, struct_type
             );
             // struct_type is the type of the struct... but the
