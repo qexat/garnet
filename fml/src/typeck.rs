@@ -117,7 +117,6 @@ impl Tck {
             Unknown => None,
             Ref(t) => self.get_struct_field_type(symtbl, *t, field_name),
             Named(nm, _args) => {
-                /*
                 // If the type is a Named type, we look it up and recurse.
                 // This basically
                 let t = symtbl.get_type(nm)?;
@@ -125,10 +124,11 @@ impl Tck {
                 let inst_struct = self.instantiate(&t);
                 self.unify(symtbl, inst_struct, struct_type).expect("should not fail?");
                 self.get_struct_field_type(symtbl, inst_struct, field_name)
-                */
+                /*
                 let t = symtbl.get_type(nm)?;
                 let resolved_typ = self.get_struct_field_type_heck(t, field_name)?;
                 Some(self.insert_known(&resolved_typ))
+                */
             },
             Func(_args, _rettype) => None,
             TypeParam(_) => todo!("What SHOULD I do here anyway?  I'd think all the types would be instantiated by now..."),
@@ -170,13 +170,24 @@ impl Tck {
 
             // For type constructors, if their names are the same we try
             // to unify their args
-            (Named(n1, args1), Named(n2, args2)) if n1 == n2 && args1.len() == args2.len() => {
-                for (arg1, arg2) in args1.iter().zip(args2.iter()) {
-                    self.unify(symtbl, *arg1, *arg2)?;
+            (Named(n1, args1), Named(n2, args2)) => {
+                if n1 == n2 && args1.len() == args2.len() {
+                    for (arg1, arg2) in args1.iter().zip(args2.iter()) {
+                        self.unify(symtbl, *arg1, *arg2)?;
+                    }
+                    Ok(())
+                } else {
+                    panic!("Mismatch between generics {} and {}", n1, n2)
                 }
-                Ok(())
             }
-
+            (Named(nm, _args), _other) => {
+                // If we have a named type we don't know about we look it up
+                let real_t = symtbl.get_type(nm).unwrap();
+                let inst = self.instantiate(&real_t);
+                self.unify(symtbl, inst, b)
+            }
+            // Just switch the arg order and try again
+            (_other, Named(_nm, _args)) => self.unify(symtbl, b, a),
             // When unifying complex types, we must check their sub-types. This
             // can be trivially implemented for tuples, sum types, etc.
             (Func(a_i, a_o), Func(b_i, b_o)) => {
@@ -427,6 +438,7 @@ fn typecheck_func_body(
         TypeInfo::Func(params.clone(), rettype.clone())
     );
     let f = tck.insert(TypeInfo::Func(params, rettype));
+
     // If we have a name (ie, are not a lambda), bind the function's type to its name
     // A gensym might make this easier/nicer someday, but this works for now.
     //

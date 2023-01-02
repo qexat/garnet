@@ -32,8 +32,6 @@ type From(@Self, @In) = struct
     from: fn(@In): @Self
 end
 
--- TODO: The type params are the wrong way around here.
--- Fix this first before worrying about anything else!
 const BoolFromInt = $From(Bool, I32) {
     .from = fn(i: I32): Bool = false end
 }
@@ -68,12 +66,15 @@ end
 const ListIdx = $Idx(List(@T), @T) {
     .idx = fn(self: List(@T), i: I32): @T = self.dummy_data end
 }
+
+-- Generalized thingy...
+fn idx(l: List(@T)): I32 =
+    let total: I32 = 3
+    ListIdx.idx(l, total)
+end
+
+-- Can we make another instance for a more specialized type?
 const IntListIdx = $Idx(List(I32), I32) {
     .idx = fn(self: List(I32), i: I32): I32 = self.dummy_data end
 }
 
-
-fn sum(l: List(@T)): I32 =
-    let total: I32 = 3
-    ListIdx.idx(l, total)
-end
