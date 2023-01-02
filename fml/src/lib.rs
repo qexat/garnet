@@ -6,9 +6,16 @@ pub mod ast;
 pub mod parser;
 pub mod typeck;
 
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum PrimType {
+    I32,
+    Bool,
+}
+
 /// A concrete type that has been fully inferred
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Type {
+    Primitive(PrimType),
     Named(String, Vec<Type>),
     Func(Vec<Type>, Box<Type>),
     /// The vec is the name of any generic type bindings in there
@@ -37,6 +44,7 @@ impl Type {
     fn get_generic_args(&self) -> Vec<Type> {
         fn helper(t: &Type, accm: &mut Vec<Type>) {
             match t {
+                Type::Primitive(_) => (),
                 Type::Named(_, ts) => {
                     accm.extend(ts.clone());
                     for t in ts {
@@ -86,6 +94,7 @@ impl Type {
     fn collect_generic_names(&self) -> Vec<String> {
         fn helper(t: &Type, accm: &mut Vec<String>) {
             match t {
+                Type::Primitive(_) => (),
                 Type::Named(_, ts) => {
                     for t in ts {
                         helper(t, accm);
@@ -132,6 +141,7 @@ impl Type {
     fn get_type_params(&self) -> Vec<String> {
         fn helper(t: &Type, accm: &mut Vec<String>) {
             match t {
+                Type::Primitive(_) => (),
                 Type::Named(_, generics) => {
                     for g in generics {
                         helper(g, accm);
