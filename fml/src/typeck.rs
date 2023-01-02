@@ -67,6 +67,7 @@ impl Tck {
     pub fn insert_known(&mut self, t: &Type) -> TypeId {
         // Recursively insert all subtypes.
         let tinfo = match t {
+            Type::Primitive(_) => todo!(),
             Type::Named(s, args) => {
                 let new_args = args.iter().map(|t| self.insert_known(t)).collect();
                 TypeInfo::Named(s.clone(), new_args)
@@ -88,6 +89,7 @@ impl Tck {
         self.insert(tinfo)
     }
 
+    /*
     pub fn get_struct_field_type_heck(
         &mut self,
         struct_type: Type,
@@ -95,6 +97,7 @@ impl Tck {
     ) -> Option<Type> {
         use Type::*;
         match struct_type {
+            Primitive(_) => todo!(),
             Named(_nm, _args) => {
                 None
             },
@@ -105,6 +108,7 @@ impl Tck {
             }
         }
     }
+    */
 
     pub fn get_struct_field_type(
         &mut self,
@@ -282,6 +286,7 @@ impl Tck {
     fn instantiate(&mut self, t: &Type) -> TypeId {
         fn helper(tck: &mut Tck, named_types: &mut HashMap<String, TypeId>, t: &Type) -> TypeId {
             let typeinfo = match t {
+                Type::Primitive(_) => todo!(),
                 Type::Named(s, args) => {
                     let inst_args: Vec<_> =
                         args.iter().map(|t| helper(tck, named_types, t)).collect();
