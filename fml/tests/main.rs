@@ -167,9 +167,16 @@ fn test_module3() {
 }
 
 #[test]
+#[should_panic]
 fn test_module4() {
     let src = include_str!("test_module4.gt");
     let _output = fml::compile("test_module4.gt", src);
+}
+
+#[test]
+fn test_module_specialization1() {
+    let src = include_str!("test_module_specialization1.gt");
+    let _output = fml::compile("test_module_specialization1.gt", src);
 }
 
 #[test]

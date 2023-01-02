@@ -31,6 +31,14 @@ pub struct Signature<T = Type> {
     pub rettype: T,
 }
 
+impl Signature {
+    /// Turn the function signature into a Lambda
+    pub fn as_type(&self) -> Type {
+        let paramtypes = self.params.iter().map(|(_nm, ty)| ty.clone()).collect();
+        Type::Func(paramtypes, Box::new(self.rettype.clone()))
+    }
+}
+
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct AstId(usize);
 
