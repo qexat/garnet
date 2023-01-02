@@ -1,8 +1,14 @@
+type Idx(@Self, @Output) = struct
+    idx: fn(@Self, I32): @Output,
+end
+
 type List(@T) = struct
     dummy_data: @T,
 end
 
-fn should_fail(): Bar =
-    $List(I32) { .dummy_data = 3 }
-end
+
+-- This correctly fails
+const BadIntListIdx = $Idx(List(I32), Foo) {
+    .idx = fn(self: List(I32), i: I32): Foo = true end
+}
 
