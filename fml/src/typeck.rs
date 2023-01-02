@@ -98,11 +98,11 @@ impl Tck {
         match &self.vars[&struct_type] {
             Unknown => None,
             Ref(t) => self.get_struct_field_type(symtbl, *t, field_name),
-            Named(nm, args) => {
+            Named(nm, _args) => {
                 let t = symtbl.get_type(nm)?;
                 // TODO: This instantiation feels overly permissive...
                 let inst_struct = self.instantiate(&t);
-                self.unify(symtbl, inst_struct, struct_type);
+                self.unify(symtbl, inst_struct, struct_type).expect("should not fail?");
                 self.get_struct_field_type(symtbl, inst_struct, field_name)
             },
             Func(_args, _rettype) => None,
@@ -621,9 +621,14 @@ fn typecheck_expr(tck: &mut Tck, symtbl: &Symtbl, expr: &ast::ExprNode) -> Resul
             // to match the type's generics.
             //let type_param_names = named_type.get_generic_args();
             let type_param_names = named_type.get_type_params();
-            println!("Type param names for {} are {:?}", name, type_param_names);
-            println!("Type paramss for {} are {:?}", name, type_params);
-            assert_eq!(type_params.len(), type_param_names.len());
+            assert_eq!(
+                type_params.len(),
+                type_param_names.len(),
+                "Type '{}' expected params {:?} but got params {:?}",
+                name,
+                type_param_names,
+                type_params
+            );
             let tid = tck.instantiate(&named_type);
             println!("Instantiated {:?} into {:?}", named_type, tid);
 

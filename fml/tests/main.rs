@@ -173,12 +173,14 @@ fn test_module4() {
 }
 
 #[test]
+#[should_panic]
 fn test_unnamed_failure1() {
     let src = include_str!("test_unnamed_failure1.gt");
     let _output = fml::compile("test_unnamed_failure1.gt", src);
 }
 
 #[test]
+#[should_panic]
 fn test_unnamed_failure2() {
     let src = include_str!("test_unnamed_failure2.gt");
     let _output = fml::compile("test_unnamed_failure2.gt", src);
