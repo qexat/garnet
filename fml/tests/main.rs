@@ -13,6 +13,18 @@ fn test_thing2() {
 }
 
 #[test]
+fn test_forever1() {
+    let src = include_str!("test_forever1.gt");
+    let _output = fml::compile("test_forever1.gt", src);
+}
+
+#[test]
+fn test_forever2() {
+    let src = include_str!("test_forever2.gt");
+    let _output = fml::compile("test_forever2.gt", src);
+}
+
+#[test]
 #[should_panic]
 fn test_unnamed_generic() {
     let src = include_str!("test_unnamed_generic.gt");
@@ -137,6 +149,13 @@ fn test_struct4() {
 fn test_struct5() {
     let src = include_str!("test_struct5.gt");
     let _output = fml::compile("test_struct5.gt", src);
+}
+
+#[test]
+#[should_panic]
+fn test_struct6() {
+    let src = include_str!("test_struct6.gt");
+    let _output = fml::compile("test_struct6.gt", src);
 }
 
 #[test]

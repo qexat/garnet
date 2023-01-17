@@ -117,22 +117,33 @@ impl Tck {
         field_name: &str,
     ) -> Option<TypeId> {
         use TypeInfo::*;
-        match &self.vars[&struct_type] {
+        match self.vars[&struct_type].clone() {
             Unknown => None,
-            Ref(t) => self.get_struct_field_type(symtbl, *t, field_name),
+            Ref(t) => self.get_struct_field_type(symtbl, t, field_name),
             Named(nm, _args) => {
                 // If the type is a Named type, we look it up and recurse.
-                // This basically
-                let t = symtbl.get_type(nm)?;
-                // TODO: This instantiation feels overly permissive...
+                // This basically the "unwrap named type to inner"
+                // operation we don't actually have.
+                // It will "unwrap" any number of Named types, which
+                // for now I guess is fine?
+                let t = symtbl.get_type(&nm).expect("Named type is not a struct!");
+                // t is a concrete Type, not a TypeInfo that may have
+                // unknowns, so we instantiate it to sub out any of its
+                // type params with new unknowns.
                 let inst_struct = self.instantiate(&t);
-                self.unify(symtbl, inst_struct, struct_type).expect("should not fail?");
+
+                // Now we need to unify the new struct type we've just instantiated
+                // with the one we have
+                // This feels *fucking weird* and more than a little hacky,
+                // but seems to work.
+                // inst_struct is a TypeId pointing to a TypeInfo::Struct
+                // so we have to conjure forth a `Named` type wrapping it
+                // which somehow manages to not recurse infinitely
+                // but which I'm also not convinced does anything.
+                let named_inst_struct = TypeInfo::Named(nm.clone(), _args.clone());
+                let augh = self.insert(named_inst_struct);
+                self.unify(symtbl, augh, struct_type).expect("should not fail?");
                 self.get_struct_field_type(symtbl, inst_struct, field_name)
-                /*
-                let t = symtbl.get_type(nm)?;
-                let resolved_typ = self.get_struct_field_type_heck(t, field_name)?;
-                Some(self.insert_known(&resolved_typ))
-                */
             },
             Func(_args, _rettype) => None,
             TypeParam(_) => todo!("What SHOULD I do here anyway?  I'd think all the types would be instantiated by now..."),
@@ -181,9 +192,13 @@ impl Tck {
                     }
                     Ok(())
                 } else {
-                    panic!("Mismatch between generics {} and {}", n1, n2)
+                    panic!(
+                        "Mismatch between types {}({:?}) and {}({:?})",
+                        n1, args1, n2, args2
+                    )
                 }
             }
+            /* TODO NEXT: Ok this turned out to be a terrible idea because I'm an idiot, try again.
             (Named(nm, _args), _other) => {
                 // If we have a named type we don't know about we look it up
                 let real_t = symtbl.get_type(nm).unwrap();
@@ -192,6 +207,7 @@ impl Tck {
             }
             // Just switch the arg order and try again
             (_other, Named(_nm, _args)) => self.unify(symtbl, b, a),
+            */
             // When unifying complex types, we must check their sub-types. This
             // can be trivially implemented for tuples, sum types, etc.
             (Func(a_i, a_o), Func(b_i, b_o)) => {
@@ -218,6 +234,8 @@ impl Tck {
                 Ok(())
             }
             // For declared type parameters like @T they match if their names match.
+            // TODO: And if they have been declared?  Not sure we can ever get to
+            // here if that's the case.
             (TypeParam(s1), TypeParam(s2)) if s1 == s2 => Ok(()),
             // If no previous attempts to unify were successful, raise an error
             (a, b) => {
@@ -533,15 +551,16 @@ fn typecheck_expr(tck: &mut Tck, symtbl: &Symtbl, expr: &ast::ExprNode) -> Resul
         StructRef { e, name } => {
             typecheck_expr(tck, symtbl, e)?;
             let struct_type = tck.get_expr_type(e);
-            println!(
-                "Heckin struct ref...  Type of {:?}.{} is {:?}",
-                e, name, struct_type
-            );
+            println!("Heckin struct...  Type of {:?} is {:?}", e, struct_type);
             // struct_type is the type of the struct... but the
             // type of this structref expr is the type of the *field in the struct*.
             let struct_field_type = tck
                 .get_struct_field_type(symtbl, struct_type, name)
                 .unwrap_or_else(|| panic!("Struct has no known type for field {}", name));
+            println!(
+                "Heckin struct ref...  Type of {:?}.{} is {:?}",
+                e, name, struct_field_type
+            );
             tck.set_expr_type(expr, struct_field_type);
 
             // TODO: Not sure this reconstruct does the Right Thing,
