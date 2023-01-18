@@ -705,7 +705,9 @@ fn typecheck_expr(tck: &mut Tck, symtbl: &Symtbl, expr: &ast::ExprNode) -> Resul
                 match well_heck.clone() {
                     TypeInfo::Named(nm, params) => {
                         println!("Unwrapping type {}{:?}", nm, params);
-                        let t = symtbl.get_type(&nm).expect("Named type is not a struct!");
+                        let t = symtbl
+                            .get_type(&nm)
+                            .expect("Named type doesn't name anything?!!");
                         println!("Inner type is {:?}", t);
                         // t is a concrete Type, not a TypeInfo that may have
                         // unknowns, so we instantiate it to sub out any of its
