@@ -130,7 +130,7 @@ impl Tck {
                 // t is a concrete Type, not a TypeInfo that may have
                 // unknowns, so we instantiate it to sub out any of its
                 // type params with new unknowns.
-                let inst_struct = self.instantiate(&t);
+                let inst_struct = self.instantiate(&t, None);
 
                 // Now we need to unify the new struct type we've just instantiated
                 // with the one we have
@@ -302,7 +302,7 @@ impl Tck {
     /// This has to actually be an empty hashtable on the first instantitaion
     /// instead of the symtbl, since the symtbl is full of type parameter names from the
     /// enclosing function and those are what we explicitly want to get away from.
-    fn instantiate(&mut self, t: &Type) -> TypeId {
+    fn instantiate(&mut self, t: &Type, known_types: Option<HashMap<String, TypeId>>) -> TypeId {
         fn helper(tck: &mut Tck, named_types: &mut HashMap<String, TypeId>, t: &Type) -> TypeId {
             let typeinfo = match t {
                 Type::Primitive(_) => todo!(),
@@ -339,12 +339,26 @@ impl Tck {
         // new type vars for them.
         // We don't worry about binding those vars or such, that is what unification
         // will do later.
+        // We do have to take any of those unknowns that are actually
+        // known and preserve that knowledge though.
+        let known_types = &mut known_types.unwrap_or_else(Default::default);
+        let type_params = t.get_type_params();
+        // Probably a cleaner way to do this but oh well.
+        // We to through the type params, and if any of them
+        // are unknown we put a new TypeInfo::Unknown in for them.
+        for param in type_params {
+            known_types
+                .entry(param)
+                .or_insert_with(|| self.insert(TypeInfo::Unknown));
+        }
+        /*
         let named_types = &mut t
             .get_type_params()
             .into_iter()
             .map(|t| (t, self.insert(TypeInfo::Unknown)))
             .collect();
-        helper(self, named_types, t)
+        */
+        helper(self, known_types, t)
     }
 }
 
@@ -646,7 +660,7 @@ fn typecheck_expr(tck: &mut Tck, symtbl: &Symtbl, expr: &ast::ExprNode) -> Resul
             //
             // So we go through the generics the function declares and create
             // new type vars for each of them.
-            let heck = tck.instantiate(&actual_func_type);
+            let heck = tck.instantiate(&actual_func_type, None);
             tck.unify(symtbl, heck, funcall_var)?;
 
             tck.set_expr_type(expr, rettype_var);
@@ -691,7 +705,7 @@ fn typecheck_expr(tck: &mut Tck, symtbl: &Symtbl, expr: &ast::ExprNode) -> Resul
                 type_param_names,
                 type_params
             );
-            let tid = tck.instantiate(&named_type);
+            let tid = tck.instantiate(&named_type, None);
             println!("Instantiated {:?} into {:?}", named_type, tid);
 
             //let tid = tck.insert_known(&named_type);
@@ -721,11 +735,18 @@ fn typecheck_expr(tck: &mut Tck, symtbl: &Symtbl, expr: &ast::ExprNode) -> Resul
                         // t is a concrete Type, not a TypeInfo that may have
                         // unknowns, so we instantiate it to sub out any of its
                         // type params with new unknowns.
-                        let inst_t = tck.instantiate(&t);
+                        //
                         // But then we have to bind those type params to
                         // what we *know* about the type already...
-                        let heckin_hecker = tck.insert(well_heck);
-                        tck.unify(symtbl, inst_t, heckin_hecker)?;
+                        let type_param_names = t.collect_generic_names();
+                        let known_type_params = type_param_names
+                            .iter()
+                            .cloned()
+                            .zip(params.iter().cloned())
+                            .collect();
+                        let inst_t = tck.instantiate(&t, Some(known_type_params));
+                        //let heckin_hecker = tck.insert(well_heck);
+                        //tck.unify(symtbl, inst_t, heckin_hecker)?;
                         tck.set_expr_type(expr, inst_t);
                         return Ok(inst_t);
 
