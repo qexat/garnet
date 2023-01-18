@@ -713,7 +713,7 @@ fn typecheck_expr(tck: &mut Tck, symtbl: &Symtbl, expr: &ast::ExprNode) -> Resul
                 // apparently, which is already a Smell but let's see
                 // where this takes us.
                 let well_heck = tck.vars[&body_type].clone();
-                match well_heck {
+                match well_heck.clone() {
                     TypeInfo::Named(nm, params) => {
                         println!("Unwrapping type {}{:?}", nm, params);
                         let t = symtbl.get_type(&nm).expect("Named type is not a struct!");
@@ -722,6 +722,10 @@ fn typecheck_expr(tck: &mut Tck, symtbl: &Symtbl, expr: &ast::ExprNode) -> Resul
                         // unknowns, so we instantiate it to sub out any of its
                         // type params with new unknowns.
                         let inst_t = tck.instantiate(&t);
+                        // But then we have to bind those type params to
+                        // what we *know* about the type already...
+                        let heckin_hecker = tck.insert(well_heck);
+                        tck.unify(symtbl, inst_t, heckin_hecker)?;
                         tck.set_expr_type(expr, inst_t);
                         return Ok(inst_t);
 

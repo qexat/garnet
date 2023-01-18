@@ -126,6 +126,26 @@ fn test_typedef5() {
 }
 
 #[test]
+#[should_panic]
+fn test_typedef5_failure() {
+    let src = include_str!("test_typedef5_failure.gt");
+    let _output = fml::compile("test_typedef5_failure.gt", src);
+}
+
+#[test]
+fn test_typedef6() {
+    let src = include_str!("test_typedef6.gt");
+    let _output = fml::compile("test_typedef6.gt", src);
+}
+
+#[test]
+#[should_panic]
+fn test_typedef7() {
+    let src = include_str!("test_typedef7.gt");
+    let _output = fml::compile("test_typedef7.gt", src);
+}
+
+#[test]
 fn test_struct1() {
     let src = include_str!("test_struct1.gt");
     let _output = fml::compile("test_struct1.gt", src);
