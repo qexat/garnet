@@ -55,7 +55,7 @@ const ListLen = $Len(List(@T)) {
 
 fn module_len(impl: Len(@T), l: @T): I32 =
     let total: I32 = 0
-    impl.len(l)
+    impl$.len(l)
 end
 
 -- Specialize it just to make sure everything fits together...
@@ -64,17 +64,17 @@ fn list_len(l: List(@T)): I32 =
 end
 
 const ListIdx = $Idx(List(@T), @T) {
-    .idx = fn(self: List(@T), i: I32): @T = self.dummy_data end
+    .idx = fn(self: List(@T), i: I32): @T = self$.dummy_data end
 }
 
 -- Generalized thingy...
-fn idx(l: List(@T)): I32 =
+fn idx(l: List(@T)): @T =
     let total: I32 = 3
-    ListIdx.idx(l, total)
+    ListIdx$.idx(l, total)
 end
 
 -- Can we make another instance for a more specialized type?
 const IntListIdx = $Idx(List(I32), I32) {
-    .idx = fn(self: List(I32), i: I32): I32 = self.dummy_data end
+    .idx = fn(self: List(I32), i: I32): I32 = self$.dummy_data end
 }
 

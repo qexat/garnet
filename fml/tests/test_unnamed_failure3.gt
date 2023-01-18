@@ -7,19 +7,7 @@ type List(@T) = struct
 end
 
 
-
--- This incorrectly succeeds
-const BadIntListIdx2 = $Idx(List(I32), Foo) {
-    .idx = fn(self: List(I32), i: I32): Foo = self.dummy_data end
-}
-
-/-
 -- This correctly fails
-const BadIntListIdx3 = $Idx(List(I32), Foo) {
-    .idx = fn(self: List(I32), i: I32): Foo = 3 end
+const BadIntListIdx2 = $Idx(List(I32), Foo) {
+    .idx = fn(self: List(I32), i: I32): Foo = self$.dummy_data end
 }
-
-const ListIdx = $Idx(List(@T), @T) {
-    .idx = fn(self: List(@T), i: I32): @T = self.dummy_data end
-}
--/
