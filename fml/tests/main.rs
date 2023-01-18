@@ -192,6 +192,12 @@ fn test_struct6() {
 }
 
 #[test]
+fn test_struct7() {
+    let src = include_str!("test_struct7.gt");
+    let _output = fml::compile("test_struct7.gt", src);
+}
+
+#[test]
 fn test_let1() {
     let src = include_str!("test_let1.gt");
     let _output = fml::compile("test_let1.gt", src);
