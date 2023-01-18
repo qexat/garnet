@@ -588,6 +588,10 @@ impl<'input> Parser<'input> {
                             name: struct_field_name,
                         })
                     }
+                    T::Dollar => {
+                        self.expect(T::Dollar);
+                        ast::ExprNode::new(ast::Expr::TypeUnwrap { e: lhs })
+                    }
                     _ => return None,
                 };
                 continue;
@@ -793,6 +797,8 @@ impl<'input> Parser<'input> {
 /// Specifies binding power of postfix operators.
 fn postfix_binding_power(op: &TokenKind) -> Option<(usize, ())> {
     match op {
+        // "$" is our "type unwrap" operator, which is weird but ok
+        T::Dollar => Some((130, ())),
         // "(" opening function call args
         T::LParen => Some((120, ())),
         // "." separating struct refs a la foo.bar

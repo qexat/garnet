@@ -142,6 +142,7 @@ impl Tck {
                 // but which I'm also not convinced does anything.
                 let named_inst_struct = TypeInfo::Named(nm.clone(), _args.clone());
                 let augh = self.insert(named_inst_struct);
+                println!("Augh: {:?}", augh);
                 self.unify(symtbl, augh, struct_type).expect("should not fail?");
                 self.get_struct_field_type(symtbl, inst_struct, field_name)
             },
@@ -703,6 +704,50 @@ fn typecheck_expr(tck: &mut Tck, symtbl: &Symtbl, expr: &ast::ExprNode) -> Resul
                 tck.insert_known(&Type::Named(name.clone(), type_params.clone()));
             tck.set_expr_type(expr, constructed_type);
             Ok(constructed_type)
+        }
+        TypeUnwrap { e } => {
+            let mut body_type = typecheck_expr(tck, symtbl, e)?;
+            loop {
+                // I guess we follow TypeInfo references the stupid way?
+                // We don't have a convenient place to recurse for this,
+                // apparently, which is already a Smell but let's see
+                // where this takes us.
+                let well_heck = tck.vars[&body_type].clone();
+                match well_heck {
+                    TypeInfo::Named(nm, params) => {
+                        println!("Unwrapping type {}{:?}", nm, params);
+                        let t = symtbl.get_type(&nm).expect("Named type is not a struct!");
+                        println!("Inner type is {:?}", t);
+                        // t is a concrete Type, not a TypeInfo that may have
+                        // unknowns, so we instantiate it to sub out any of its
+                        // type params with new unknowns.
+                        let inst_t = tck.instantiate(&t);
+                        tck.set_expr_type(expr, inst_t);
+                        return Ok(inst_t);
+
+                        /*
+                        // Now we need to unify the new struct type we've just instantiated
+                        // with the one we have
+                        // This feels *fucking weird* and more than a little hacky,
+                        // but seems to work.
+                        // inst_struct is a TypeId pointing to a TypeInfo::Struct
+                        // so we have to conjure forth a `Named` type wrapping it
+                        // which somehow manages to not recurse infinitely
+                        // but which I'm also not convinced does anything.
+                        let named_inst_struct = TypeInfo::Named(nm.clone(), _args.clone());
+                        let augh = self.insert(named_inst_struct);
+                        println!("Augh: {:?}", augh);
+                        self.unify(symtbl, augh, struct_type).expect("should not fail?");
+                        todo!()
+                        */
+                    }
+                    TypeInfo::Ref(other) => {
+                        body_type = other;
+                        // and loop to try again
+                    }
+                    other => panic!("Cannot unwrap non-named type {:?}", other),
+                }
+            }
         }
     }
 }

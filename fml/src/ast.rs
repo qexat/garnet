@@ -108,6 +108,10 @@ pub enum Expr {
         type_params: Vec<Type>,
         body: ExprNode,
     },
+    // Opposite of TypeCtor
+    TypeUnwrap {
+        e: ExprNode,
+    },
     StructRef {
         e: ExprNode,
         name: String,
