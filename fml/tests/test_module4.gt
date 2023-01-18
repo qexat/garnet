@@ -7,7 +7,7 @@ type List(@T) = struct
 end
 
 fn foo(self: List(I32), i: I32): Bar =
-  self.dummy_data
+  self$.dummy_data
 end
 
 

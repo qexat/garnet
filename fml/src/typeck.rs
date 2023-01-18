@@ -120,32 +120,7 @@ impl Tck {
         match self.vars[&struct_type].clone() {
             Unknown => None,
             Ref(t) => self.get_struct_field_type(symtbl, t, field_name),
-            Named(nm, _args) => {
-                // If the type is a Named type, we look it up and recurse.
-                // This basically the "unwrap named type to inner"
-                // operation we don't actually have.
-                // It will "unwrap" any number of Named types, which
-                // for now I guess is fine?
-                let t = symtbl.get_type(&nm).expect("Named type is not a struct!");
-                // t is a concrete Type, not a TypeInfo that may have
-                // unknowns, so we instantiate it to sub out any of its
-                // type params with new unknowns.
-                let inst_struct = self.instantiate(&t, None);
-
-                // Now we need to unify the new struct type we've just instantiated
-                // with the one we have
-                // This feels *fucking weird* and more than a little hacky,
-                // but seems to work.
-                // inst_struct is a TypeId pointing to a TypeInfo::Struct
-                // so we have to conjure forth a `Named` type wrapping it
-                // which somehow manages to not recurse infinitely
-                // but which I'm also not convinced does anything.
-                let named_inst_struct = TypeInfo::Named(nm.clone(), _args.clone());
-                let augh = self.insert(named_inst_struct);
-                println!("Augh: {:?}", augh);
-                self.unify(symtbl, augh, struct_type).expect("should not fail?");
-                self.get_struct_field_type(symtbl, inst_struct, field_name)
-            },
+            Named(_nm, _args) => None,
             Func(_args, _rettype) => None,
             TypeParam(_) => todo!("What SHOULD I do here anyway?  I'd think all the types would be instantiated by now..."),
             Struct(body) => {
