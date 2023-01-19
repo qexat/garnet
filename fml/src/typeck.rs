@@ -89,42 +89,27 @@ impl Tck {
         self.insert(tinfo)
     }
 
-    /*
-    pub fn get_struct_field_type_heck(
-        &mut self,
-        struct_type: Type,
-        field_name: &str,
-    ) -> Option<Type> {
-        use Type::*;
-        match struct_type {
-            Primitive(_) => todo!(),
-            Named(_nm, _args) => {
-                None
-            },
-            Func(_args, _rettype) => None,
-            Generic(_) => todo!("What SHOULD I do here anyway?  I'd think all the types would be instantiated by now..."),
-            Struct(body, _args) => {
-                body.get(field_name).cloned()
-            }
-        }
-    }
-    */
-
+    /// Panics on invalid field name or not a struct type
     pub fn get_struct_field_type(
         &mut self,
         symtbl: &Symtbl,
         struct_type: TypeId,
         field_name: &str,
-    ) -> Option<TypeId> {
+    ) -> TypeId {
         use TypeInfo::*;
         match self.vars[&struct_type].clone() {
-            Unknown => None,
             Ref(t) => self.get_struct_field_type(symtbl, t, field_name),
-            Named(_nm, _args) => None,
-            Func(_args, _rettype) => None,
-            TypeParam(_) => todo!("What SHOULD I do here anyway?  I'd think all the types would be instantiated by now..."),
-            Struct(body) => {
-                body.get(field_name).cloned()
+            Struct(body) => body.get(field_name).cloned().unwrap_or_else(|| {
+                panic!(
+                    "Struct has no field {}, valid fields are: {:#?}",
+                    field_name, body
+                )
+            }),
+            other => {
+                panic!(
+                    "Tried to get struct field {} from non-struct type {:?}",
+                    field_name, other
+                )
             }
         }
     }
@@ -544,9 +529,7 @@ fn typecheck_expr(tck: &mut Tck, symtbl: &Symtbl, expr: &ast::ExprNode) -> Resul
             println!("Heckin struct...  Type of {:?} is {:?}", e, struct_type);
             // struct_type is the type of the struct... but the
             // type of this structref expr is the type of the *field in the struct*.
-            let struct_field_type = tck
-                .get_struct_field_type(symtbl, struct_type, name)
-                .unwrap_or_else(|| panic!("Struct has no known type for field {}", name));
+            let struct_field_type = tck.get_struct_field_type(symtbl, struct_type, name);
             println!(
                 "Heckin struct ref...  Type of {:?}.{} is {:?}",
                 e, name, struct_field_type

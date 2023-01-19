@@ -232,6 +232,12 @@ fn test_module4() {
 }
 
 #[test]
+fn test_module5() {
+    let src = include_str!("test_module5.gt");
+    let _output = fml::compile("test_module5.gt", src);
+}
+
+#[test]
 fn test_module_specialization1() {
     let src = include_str!("test_module_specialization1.gt");
     let _output = fml::compile("test_module_specialization1.gt", src);
