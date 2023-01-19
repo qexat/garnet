@@ -1,0 +1,17 @@
+-- Check:
+--   status: error
+
+type Idx(@Self, @Output) = struct
+    idx: fn(@Self, I32): @Output,
+end
+
+type List(@T) = struct
+    dummy_data: @T,
+end
+
+
+-- This correctly fails
+const BadIntListIdx = $Idx(List(I32), Foo) {
+    .idx = fn(self: List(I32), i: I32): Foo = true end
+}
+
