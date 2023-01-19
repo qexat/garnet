@@ -1,0 +1,19 @@
+-- Check:
+--   status: success
+
+-- Dummy type
+type String = I32
+
+type Show(@Self) = struct
+    show: fn(@Self): String
+end
+
+const IntShow = $Show(I32) {
+    .show = fn(x: I32): String = $String 0 end
+}
+
+fn show(show: Show(@T), val: @T): String =
+  show$.show(val)
+end
+
+

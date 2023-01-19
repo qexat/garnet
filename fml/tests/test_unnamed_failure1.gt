@@ -1,7 +1,0 @@
-type List(@T) = struct
-    dummy_data: @T,
-end
-
-fn should_fail(): Bar =
-    $List(I32) { .dummy_data = 3 }
-end

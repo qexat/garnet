@@ -1,7 +1,0 @@
-type List(@T) = struct
-    dummy_data: @T,
-end
-
-fn foo(self: List(I32), i: I32): Bar =
-  self.dummy_data
-end

@@ -1,0 +1,8 @@
+-- Check:
+--   status: success
+
+type Foo = I32
+
+fn main(): I32 =
+  let x: I32 = ($Foo 3)$
+end

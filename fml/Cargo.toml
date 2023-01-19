@@ -9,8 +9,16 @@ edition = "2018"
 name = "fmlc"
 path = "src/main.rs"
 
+[[test]]
+name = "endtoend"
+path = "tests/main.rs"
+harness = false
+
+
 [dependencies]
 argh = "0.1"
 codespan-reporting = "0.11"
 logos = "0.12"
 once_cell = "1"
+lang_tester = "0.7"
+
