@@ -35,23 +35,6 @@ impl Tck {
         })
     }
 
-    /// Check whether the type contains any references to the given
-    /// typeid.  Used for making sure we don't construct nonsense
-    /// things like `T = List<T>`.
-    fn _contains_type(&self, a: TypeId, b: TypeId) -> bool {
-        use TypeInfo::*;
-        match self.vars[&a] {
-            Unknown => false,
-            Ref(t) => b == t || self._contains_type(t, b),
-            Named(_, ref args) => args.iter().any(|arg| self._contains_type(*arg, b)),
-            Func(ref args, rettype) => {
-                b == rettype || args.iter().any(|arg| self._contains_type(*arg, b))
-            }
-            TypeParam(_) => false,
-            Struct(_) => todo!(),
-        }
-    }
-
     /// Create a new type term with whatever we have about its type
     pub fn insert(&mut self, info: TypeInfo) -> TypeId {
         // Generate a new ID for our type term
@@ -67,7 +50,7 @@ impl Tck {
     pub fn insert_known(&mut self, t: &Type) -> TypeId {
         // Recursively insert all subtypes.
         let tinfo = match t {
-            Type::Primitive(_) => todo!(),
+            //Type::Primitive(_) => todo!(),
             Type::Named(s, args) => {
                 let new_args = args.iter().map(|t| self.insert_known(t)).collect();
                 TypeInfo::Named(s.clone(), new_args)
@@ -159,16 +142,6 @@ impl Tck {
                     )
                 }
             }
-            /* TODO NEXT: Ok this turned out to be a terrible idea because I'm an idiot, try again.
-            (Named(nm, _args), _other) => {
-                // If we have a named type we don't know about we look it up
-                let real_t = symtbl.get_type(nm).unwrap();
-                let inst = self.instantiate(&real_t);
-                self.unify(symtbl, inst, b)
-            }
-            // Just switch the arg order and try again
-            (_other, Named(_nm, _args)) => self.unify(symtbl, b, a),
-            */
             // When unifying complex types, we must check their sub-types. This
             // can be trivially implemented for tuples, sum types, etc.
             (Func(a_i, a_o), Func(b_i, b_o)) => {
@@ -265,7 +238,7 @@ impl Tck {
     fn instantiate(&mut self, t: &Type, known_types: Option<HashMap<String, TypeId>>) -> TypeId {
         fn helper(tck: &mut Tck, named_types: &mut HashMap<String, TypeId>, t: &Type) -> TypeId {
             let typeinfo = match t {
-                Type::Primitive(_) => todo!(),
+                //Type::Primitive(_) => todo!(),
                 Type::Named(s, args) => {
                     let inst_args: Vec<_> =
                         args.iter().map(|t| helper(tck, named_types, t)).collect();
@@ -311,13 +284,6 @@ impl Tck {
                 .entry(param)
                 .or_insert_with(|| self.insert(TypeInfo::Unknown));
         }
-        /*
-        let named_types = &mut t
-            .get_type_params()
-            .into_iter()
-            .map(|t| (t, self.insert(TypeInfo::Unknown)))
-            .collect();
-        */
         helper(self, known_types, t)
     }
 }
@@ -330,7 +296,7 @@ struct ScopeFrame {
 
 /// Basic symbol table that maps names to type ID's
 /// and manages scope.
-// Looks ugly, works well.
+/// Looks ugly, works well.
 #[derive(Clone)]
 struct Symtbl {
     frames: Rc<RefCell<Vec<ScopeFrame>>>,
@@ -536,18 +502,6 @@ fn typecheck_expr(tck: &mut Tck, symtbl: &Symtbl, expr: &ast::ExprNode) -> Resul
             );
             tck.set_expr_type(expr, struct_field_type);
 
-            // TODO: Not sure this reconstruct does the Right Thing,
-            // especially where type params are involved,
-            // but it has the type signature we need.
-            //
-            // TODO: We really need an operator that "unwraps" a
-            // Named type to its contents, the opposite of a type
-            // constructor.
-            // I suspect when we have that we'll also need to
-            // instantiate the named type's generics, as we do
-            // with TypeCtor.
-            // But right now, we just make a hack that lets you reach
-            // inside $ types that are structs by doing thing.name
             match tck.reconstruct(struct_type)? {
                 Type::Struct(body, _names) => Ok(tck.insert_known(&body[name])),
                 Type::Named(s, _args) => {
@@ -709,22 +663,6 @@ fn typecheck_expr(tck: &mut Tck, symtbl: &Symtbl, expr: &ast::ExprNode) -> Resul
                         //tck.unify(symtbl, inst_t, heckin_hecker)?;
                         tck.set_expr_type(expr, inst_t);
                         return Ok(inst_t);
-
-                        /*
-                        // Now we need to unify the new struct type we've just instantiated
-                        // with the one we have
-                        // This feels *fucking weird* and more than a little hacky,
-                        // but seems to work.
-                        // inst_struct is a TypeId pointing to a TypeInfo::Struct
-                        // so we have to conjure forth a `Named` type wrapping it
-                        // which somehow manages to not recurse infinitely
-                        // but which I'm also not convinced does anything.
-                        let named_inst_struct = TypeInfo::Named(nm.clone(), _args.clone());
-                        let augh = self.insert(named_inst_struct);
-                        println!("Augh: {:?}", augh);
-                        self.unify(symtbl, augh, struct_type).expect("should not fail?");
-                        todo!()
-                        */
                     }
                     TypeInfo::Ref(other) => {
                         body_type = other;
@@ -737,11 +675,11 @@ fn typecheck_expr(tck: &mut Tck, symtbl: &Symtbl, expr: &ast::ExprNode) -> Resul
     }
 }
 
-// # Example usage
-// In reality, the most common approach will be to walk your AST, assigning type
-// terms to each of your nodes with whatever information you have available. You
-// will also need to call `engine.unify(x, y)` when you know two nodes have the
-// same type, such as in the statement `x = y;`.
+/// From example code:
+/// "In reality, the most common approach will be to walk your AST, assigning type
+/// terms to each of your nodes with whatever information you have available. You
+/// will also need to call `engine.unify(x, y)` when you know two nodes have the
+/// same type, such as in the statement `x = y;`."
 pub fn typecheck(ast: &ast::Ast) {
     let tck = &mut Tck::default();
     let symtbl = &mut Symtbl::default();
@@ -762,9 +700,6 @@ pub fn typecheck(ast: &ast::Ast) {
                 });
             }
             TypeDef { name, params, ty } => {
-                // TODO: Ok we need to somehow record the order of the type
-                // params and keep it somewhere 'case it means we
-
                 // Make sure that there are no unbound generics in the typedef
                 // that aren't mentioned in the params.
                 let generic_names: HashSet<String> =

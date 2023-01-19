@@ -6,16 +6,18 @@ pub mod ast;
 pub mod parser;
 pub mod typeck;
 
+/*
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum PrimType {
     I32,
     Bool,
 }
+*/
 
 /// A concrete type that has been fully inferred
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Type {
-    Primitive(PrimType),
+    //Primitive(PrimType),
     Named(String, Vec<Type>),
     Func(Vec<Type>, Box<Type>),
     /// The vec is the name of any generic type bindings in there
@@ -26,75 +28,11 @@ pub enum Type {
 }
 
 impl Type {
-    fn _get_primitive_type(s: &str) -> Option<Type> {
-        match s {
-            "I32" => Some(Type::Named("I32".to_string(), vec![])),
-            "Bool" => Some(Type::Named("Bool".to_string(), vec![])),
-            //"Never" => Some(TypeInfo::Never),
-            _ => None,
-        }
-    }
-
-    /// TODO:
-    /// The ordering here is a little crazy 'cause we have to
-    /// match names with arg positions, so if we have type T(@Foo, @Bar)
-    /// and we instantiate it later with $T(I32, F(Bool)) then it has
-    /// to be semi sane.
-    /// ...or something.  Think about this more.
-    fn get_generic_args(&self) -> Vec<Type> {
-        fn helper(t: &Type, accm: &mut Vec<Type>) {
-            match t {
-                Type::Primitive(_) => (),
-                Type::Named(_, ts) => {
-                    accm.extend(ts.clone());
-                    for t in ts {
-                        helper(t, accm);
-                    }
-                }
-                Type::Func(args, rettype) => {
-                    for t in args {
-                        helper(t, accm);
-                    }
-                    helper(rettype, accm)
-                }
-                Type::Struct(_body, ts) => {
-                    /*
-                    for (_, ty) in body {
-                        helper(ty, accm);
-                    }
-                    */
-                    // TODO more: This makes me a little uneasy
-                    // 'cause I thiiiink the whole point of the names on
-                    // the struct is to list *all* the generic names in it...
-                    // but we could have nested definitions
-                    // like Foo(@T) ( Bar(@G) ( {@T, @G} ) )
-                    accm.extend(ts.clone());
-                    for t in ts {
-                        helper(t, accm);
-                    }
-                }
-                Type::Generic(s) => {
-                    // Deduplicating these things while maintaining ordering
-                    // is kinda screwy.
-                    // This works, it's just, yanno, also O(n^2)
-                    // Could use a set to check membership , but fuckit for now.
-                    if !accm.contains(t) {
-                        //accm.push(s.clone());
-                        panic!("Unknown generic: {}", s);
-                    }
-                }
-            }
-        }
-        let mut accm = vec![];
-        helper(self, &mut accm);
-        accm
-    }
-
     /// Search through the type and return any generic types in it.
     fn collect_generic_names(&self) -> Vec<String> {
         fn helper(t: &Type, accm: &mut Vec<String>) {
             match t {
-                Type::Primitive(_) => (),
+                //Type::Primitive(_) => (),
                 Type::Named(_, ts) => {
                     for t in ts {
                         helper(t, accm);
@@ -110,7 +48,7 @@ impl Type {
                     for (_, ty) in body {
                         helper(ty, accm);
                     }
-                    // TODO more: This makes me a little uneasy
+                    // This makes me a little uneasy
                     // 'cause I thiiiink the whole point of the names on
                     // the struct is to list *all* the generic names in it...
                     // but we could have nested definitions
@@ -141,7 +79,7 @@ impl Type {
     fn get_type_params(&self) -> Vec<String> {
         fn helper(t: &Type, accm: &mut Vec<String>) {
             match t {
-                Type::Primitive(_) => (),
+                //Type::Primitive(_) => (),
                 Type::Named(_, generics) => {
                     for g in generics {
                         helper(g, accm);
@@ -201,30 +139,9 @@ pub enum TypeInfo {
     TypeParam(String),
 }
 
-impl TypeInfo {
-    fn _get_primitive_type(s: &str) -> Option<TypeInfo> {
-        match s {
-            "I32" => Some(TypeInfo::Named("I32".to_string(), vec![])),
-            "Bool" => Some(TypeInfo::Named("Bool".to_string(), vec![])),
-            //"Never" => Some(TypeInfo::Never),
-            _ => None,
-        }
-    }
-
-    fn _generic_name(&self) -> Option<&str> {
-        match self {
-            TypeInfo::TypeParam(s) => Some(s),
-            _ => None,
-        }
-    }
-}
-
 pub fn compile(filename: &str, src: &str) -> Vec<u8> {
-    //typecheck2();
     let mut parser = parser::Parser::new(filename, src);
     let ast = parser.parse();
     typeck::typecheck(&ast);
-    //let res = format!("AST:\n{:#?}", ast);
-    //res.as_bytes().to_owned()
     vec![]
 }

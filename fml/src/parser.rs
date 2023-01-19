@@ -450,7 +450,6 @@ impl<'input> Parser<'input> {
     }
 
     fn parse_fn_type(&mut self) -> Type {
-        // TODO: Parse generic stuffs?
         let params = self.parse_type_list();
         self.expect(T::Colon);
         let rettype = self.parse_type();
@@ -633,8 +632,6 @@ impl<'input> Parser<'input> {
     fn parse_function_args(&mut self) -> Vec<ast::ExprNode> {
         let mut params = vec![];
         self.expect(T::LParen);
-        // TODO: Refactor out this pattern somehow?
-        // There's now three places it's used and it's only going to grow.
         while let Some(expr) = self.parse_expr(0) {
             params.push(expr);
             if !self.peek_is(T::Comma.discr()) {
