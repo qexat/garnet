@@ -2,7 +2,7 @@
 --   status: error
 
 type Idx(@Self, @Output) = struct
-    idx: fn(@Self, I32): @Output,
+    idx: fn(@Self, I32) @Output,
 end
 
 type List(@T) = struct
@@ -12,5 +12,5 @@ end
 
 -- This correctly fails
 const BadIntListIdx2 = $Idx(List(I32), Foo) {
-    .idx = fn(self: List(I32), i: I32): Foo = self$.dummy_data end
+    .idx = fn(self List(I32), i I32) Foo = self$.dummy_data end
 }

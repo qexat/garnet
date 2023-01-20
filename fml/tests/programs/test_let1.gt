@@ -7,12 +7,12 @@ type Foo(@Thing) = struct
     b: Bool
 end
 
-fn id(x: @T): @T =
+fn id(x @T) @T =
     x
 end
 
 
-fn main(): I32 =
+fn main() I32 =
     let f1 = id($Foo(I32) {
         .a = 3,
         .b = false

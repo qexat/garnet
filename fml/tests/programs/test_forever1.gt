@@ -4,10 +4,10 @@
 -- Who doesn't like infinite recursion?
 -- Actually I'm not sure what this should do.
 -- ...According to OCaml and Rust, the *type checking* is fine.
-fn zoom(i: @T): @T =
+fn zoom(i @T) @T =
     zoom(i)
 end
 
-fn main(): I32 =
+fn main() I32 =
     3
 end

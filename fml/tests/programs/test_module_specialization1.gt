@@ -8,11 +8,11 @@ end
 
 
 type Idx(@Self, @Output) = struct
-    idx: fn(@Self, I32): @Output,
+    idx: fn(@Self, I32) @Output,
 end
 
 -- Can we make an instance for a specialization of List(T)?
 const IntListIdx = $Idx(List(I32), I32) {
-    .idx = fn(self: List(I32), i: I32): I32 = self$.dummy_data end
+    .idx = fn(self List(I32), i I32) I32 = self$.dummy_data end
 }
 
