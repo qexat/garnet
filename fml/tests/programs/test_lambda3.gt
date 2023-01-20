@@ -2,13 +2,13 @@
 --   status: success
 
 
-fn apply(f: fn(@T): @T, arg: @T): @T =
+fn apply(f fn(@T) @T, arg @T) @T =
     f(arg)
 end
 
 
-fn main(): I32 =
-    let f: fn(Bool): Bool = fn(val: Bool): Bool = val end
-    let a: Bool = apply(f, true)
+fn main() I32 =
+    let f fn(Bool) Bool = fn(val Bool) Bool = val end
+    let a Bool = apply(f, true)
     3
 end

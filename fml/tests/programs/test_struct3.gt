@@ -7,7 +7,7 @@ type Foo = struct
     b: Bool
 end
 
-fn thing(i: I32): Foo =
+fn thing(i I32) Foo =
     $Foo {
         .a = i,
         .b = false,
@@ -15,10 +15,10 @@ fn thing(i: I32): Foo =
 end
 
 
-fn main(): I32 =
-    let f1: Foo = $Foo {
+fn main() I32 =
+    let f1 Foo = $Foo {
         .a = 3,
     }
-    let f2: Foo = thing(4)
+    let f2 Foo = thing(4)
     3
 end

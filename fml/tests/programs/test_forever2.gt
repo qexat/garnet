@@ -3,10 +3,10 @@
 
 
 -- ...Seems legit I guess?
-fn zoom(i: I32): I32 =
+fn zoom(i I32) I32 =
     zoom(i)
 end
 
-fn main(): I32 =
+fn main() I32 =
     3
 end

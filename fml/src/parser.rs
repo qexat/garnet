@@ -423,7 +423,6 @@ impl<'input> Parser<'input> {
     /// signature = fn_args [":" typename]
     fn parse_fn_signature(&mut self) -> ast::Signature {
         let params = self.parse_fn_args();
-        self.expect(T::Colon);
         let rettype = self.parse_type();
         ast::Signature { params, rettype }
     }
@@ -436,7 +435,6 @@ impl<'input> Parser<'input> {
 
         while let Some((T::Ident(_i), _span)) = self.lex.peek() {
             let name = self.expect_ident();
-            self.expect(T::Colon);
             let tname = self.parse_type();
             args.push((name, tname));
 
@@ -451,7 +449,6 @@ impl<'input> Parser<'input> {
 
     fn parse_fn_type(&mut self) -> Type {
         let params = self.parse_type_list();
-        self.expect(T::Colon);
         let rettype = self.parse_type();
         Type::Func(params, Box::new(rettype))
     }
@@ -647,12 +644,13 @@ impl<'input> Parser<'input> {
     fn parse_let(&mut self) -> ast::ExprNode {
         self.expect(T::Let);
         let varname = self.expect_ident();
-        let typename = if self.peek_expect(T::Colon.discr()) {
-            Some(self.parse_type())
-        } else {
+        let typename = if self.peek_expect(T::Equals.discr()) {
             None
+        } else {
+            let t = Some(self.parse_type());
+            self.expect(T::Equals);
+            t
         };
-        self.expect(T::Equals);
         let init = self
             .parse_expr(0)
             .expect("Expected expression after `let ... =`, did not get one");

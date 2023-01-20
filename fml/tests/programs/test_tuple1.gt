@@ -2,7 +2,7 @@
 --   status: success
 
 
-fn main(): I32 =
-    let a: {I32, Bool} = {3, false}
+fn main() I32 =
+    let a {I32, Bool} = {3, false}
     3
 end
