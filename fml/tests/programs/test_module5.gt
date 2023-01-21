@@ -1,0 +1,48 @@
+-- Check:
+--   status: error
+
+
+/- From modular implicits paper:
+module type Monad = sig
+  type + 'a t
+  val return : 'a -> 'a t
+  val bind : 'a t -> ( 'a -> 'b t ) -> 'b t
+end
+
+let return { M : Monad } x = M . return x
+
+let (>>=) { M : Monad } m k = M . bind m k
+
+let map { M : Monad } ( m : 'a M . t ) f =
+  m >>= fun x -> return ( f x )
+
+let join { M : Monad } ( m : 'a M . t M . t ) =
+  m >>= fun x -> x
+
+let unless { M : Monad } p ( m : unit M . t ) =
+  if p then return () else m
+
+implicit module Monad_option = struct
+  type 'a t = 'a option
+  let return x = Some x
+  let bind m k =
+    match m with
+    | None -> None
+    | Some x -> k x
+end
+
+implicit module Monad_list = struct
+  type 'a t = 'a list
+  let return x = [ x ]
+  let bind m k = List . concat ( List . map k m )
+end
+-/
+
+-- The bad news is, we don't seem to be able to implement real monads
+-- The good news is, we don't seem to be able to implement real monads
+-- I think if we had associated types?
+type Monad(@A, @M) = struct
+   return: fn(@A) @M(@A),
+   bind: fn(@M(@A), fn(@A) @M(@B)) @M(@B)
+end
+
