@@ -62,6 +62,8 @@ pub enum TokenKind {
     Struct,
     #[token("const")]
     Const,
+    #[token("enum")]
+    Enum,
 
     // Punctuation
     #[token("(")]
@@ -748,6 +750,7 @@ impl<'input> Parser<'input> {
                 fntype
             }
             T::Struct => self.parse_struct_type(),
+            T::Enum => self.parse_enum_type(),
             _ => self.error("type", Some(t)),
         }
     }
@@ -786,6 +789,22 @@ impl<'input> Parser<'input> {
             .map(|ty| Type::Generic(ty))
             .collect();
         Type::Struct(fields, generic_names)
+    }
+
+    /// isomorphic with parse_type_list()
+    fn parse_enum_type(&mut self) -> Type {
+        let mut fields = vec![];
+        while !self.peek_is(T::End.discr()) {
+            let field = self.expect_ident();
+            fields.push(field);
+
+            if self.peek_expect(T::Comma.discr()) {
+            } else {
+                break;
+            }
+        }
+        self.expect(T::End);
+        Type::Enum(fields)
     }
 }
 
