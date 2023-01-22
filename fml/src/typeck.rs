@@ -380,6 +380,7 @@ fn infer_lit(lit: &ast::Literal) -> TypeInfo {
     match lit {
         ast::Literal::Integer(_) => TypeInfo::Named("I32".to_string(), vec![]),
         ast::Literal::Bool(_) => TypeInfo::Named("Bool".to_string(), vec![]),
+        ast::Literal::EnumLit(nm, _) => TypeInfo::Named(nm.to_string(), vec![]),
     }
 }
 fn typecheck_func_body(

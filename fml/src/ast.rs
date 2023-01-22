@@ -20,6 +20,10 @@ pub enum Literal {
     Integer(i32),
     /// A boolean
     Bool(bool),
+    /// This is kinda weird 'cause we can't parse it,
+    /// but we can lower our enums to it.
+    /// First string is the enum name, second is the value.
+    EnumLit(String, String),
 }
 
 /// A function type signature
@@ -154,4 +158,54 @@ pub enum Decl {
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Ast {
     pub decls: Vec<Decl>,
+}
+
+/// To implement enum values we just juggle enum decl's
+/// to create a new const def too.
+impl Ast {
+    pub fn lower(self) -> Self {
+        let mut out = vec![];
+        for decl in self.decls.into_iter() {
+            use Decl::*;
+            match &decl {
+                Function { .. } => out.push(decl),
+                ConstDef { .. } => out.push(decl),
+                TypeDef {
+                    name,
+                    ty,
+                    params: _params, // Can never be anything for an enum I think
+                } => {
+                    out.push(decl.clone());
+                    // For `type Foo = enum Foo, Bar, Baz end`
+                    // synthesize
+                    // const Foo = $Foo {
+                    //     .Foo =
+                    // }
+                    match ty {
+                        Type::Enum(ts) => {
+                            let struct_body: HashMap<_, _> = ts
+                                .iter()
+                                .map(|s| {
+                                    (
+                                        s.clone(),
+                                        ExprNode::new(Expr::Lit {
+                                            val: Literal::EnumLit(name.clone(), s.clone()),
+                                        }),
+                                    )
+                                })
+                                .collect();
+                            let init_val = ExprNode::new(Expr::StructCtor { body: struct_body });
+                            let new_constdef = ConstDef {
+                                name: name.clone(),
+                                init: init_val,
+                            };
+                            out.push(new_constdef);
+                        }
+                        _other => (),
+                    }
+                }
+            }
+        }
+        Ast { decls: out }
+    }
 }

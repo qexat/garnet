@@ -148,6 +148,7 @@ pub enum TypeInfo {
 pub fn compile(filename: &str, src: &str) -> Vec<u8> {
     let mut parser = parser::Parser::new(filename, src);
     let ast = parser.parse();
-    typeck::typecheck(&ast);
+    let ast2 = ast.lower();
+    typeck::typecheck(&ast2);
     vec![]
 }
