@@ -3,7 +3,7 @@
 
 
 type Foo = enum
-    X, Y, Z
+    X, Y, Z,
 end
 
 fn thing(i Foo) Foo =
@@ -12,5 +12,7 @@ end
 
 
 fn main() I32 =
+    let x Foo = Foo.X
+    let y = thing(Foo.Y)
     3
 end
