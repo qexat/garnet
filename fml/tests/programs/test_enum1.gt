@@ -1,0 +1,16 @@
+-- Check:
+--   status: success
+
+
+type Foo = enum
+    X, Y, Z
+end
+
+fn thing(i Foo) Foo =
+    i
+end
+
+
+fn main() I32 =
+    3
+end

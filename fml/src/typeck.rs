@@ -51,6 +51,7 @@ impl Tck {
         // Recursively insert all subtypes.
         let tinfo = match t {
             //Type::Primitive(_) => todo!(),
+            Type::Enum(vals) => TypeInfo::Enum(vals.clone()),
             Type::Named(s, args) => {
                 let new_args = args.iter().map(|t| self.insert_known(t)).collect();
                 TypeInfo::Named(s.clone(), new_args)
@@ -187,6 +188,7 @@ impl Tck {
         match &self.vars[&id] {
             Unknown => Err(format!("Cannot infer type for type ID {:?}", id)),
             Ref(id) => self.reconstruct(*id),
+            Enum(ts) => Ok(Type::Enum(ts.clone())),
             Named(s, args) => {
                 let arg_types: Result<Vec<_>, _> =
                     args.iter().map(|x| self.reconstruct(*x)).collect();
@@ -239,6 +241,7 @@ impl Tck {
         fn helper(tck: &mut Tck, named_types: &mut HashMap<String, TypeId>, t: &Type) -> TypeId {
             let typeinfo = match t {
                 //Type::Primitive(_) => todo!(),
+                Type::Enum(vals) => TypeInfo::Enum(vals.clone()),
                 Type::Named(s, args) => {
                     let inst_args: Vec<_> =
                         args.iter().map(|t| helper(tck, named_types, t)).collect();

@@ -18,6 +18,9 @@ pub enum PrimType {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Type {
     //Primitive(PrimType),
+    /// A C-like enum.
+    /// For now we pretend there's no underlying values.
+    Enum(Vec<String>),
     Named(String, Vec<Type>),
     Func(Vec<Type>, Box<Type>),
     /// The vec is the name of any generic type bindings in there
@@ -33,6 +36,7 @@ impl Type {
         fn helper(t: &Type, accm: &mut Vec<String>) {
             match t {
                 //Type::Primitive(_) => (),
+                Type::Enum(_ts) => (),
                 Type::Named(_, ts) => {
                     for t in ts {
                         helper(t, accm);
@@ -80,6 +84,7 @@ impl Type {
         fn helper(t: &Type, accm: &mut Vec<String>) {
             match t {
                 //Type::Primitive(_) => (),
+                Type::Enum(_ts) => (),
                 Type::Named(_, generics) => {
                     for g in generics {
                         helper(g, accm);
@@ -125,6 +130,7 @@ pub enum TypeInfo {
     Unknown,
     /// This type term is the same as another type term
     Ref(TypeId),
+    Enum(Vec<String>),
     /// N-ary type constructor.
     /// It could be Int()
     /// or List(Int)
