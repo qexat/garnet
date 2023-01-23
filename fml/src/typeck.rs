@@ -62,6 +62,7 @@ impl Tck {
                 TypeInfo::Func(new_args, new_rettype)
             }
             Type::Generic(s) => TypeInfo::TypeParam(s.to_string()),
+            // TODO: Generics?
             Type::Struct(body, _names) => {
                 let new_body = body
                     .iter()
@@ -69,6 +70,7 @@ impl Tck {
                     .collect();
                 TypeInfo::Struct(new_body)
             }
+            // TODO: Generics?
             Type::Sum(body, _names) => {
                 let new_body = body
                     .iter()
@@ -169,6 +171,18 @@ impl Tck {
                 // Now we just do it again the other way around
                 // which is a dumb but effective way of making sure
                 // struct2 doesn't have any fields that struct1 doesn't.
+                for (nm, t2) in body2.iter() {
+                    let t1 = body1[nm];
+                    self.unify(symtbl, t1, *t2)?;
+                }
+                Ok(())
+            }
+            (Sum(body1), Sum(body2)) => {
+                // Same as struct types
+                for (nm, t1) in body1.iter() {
+                    let t2 = body2[nm];
+                    self.unify(symtbl, *t1, t2)?;
+                }
                 for (nm, t2) in body2.iter() {
                     let t1 = body1[nm];
                     self.unify(symtbl, t1, *t2)?;
@@ -699,6 +713,44 @@ fn typecheck_expr(tck: &mut Tck, symtbl: &Symtbl, expr: &ast::ExprNode) -> Resul
                     }
                     other => panic!("Cannot unwrap non-named type {:?}", other),
                 }
+            }
+        }
+        SumCtor {
+            name,
+            variant,
+            body,
+        } => {
+            let named_type = symtbl.get_type(name).expect("Unknown sum type constructor");
+            /*
+            let body_type = typecheck_expr(tck, symtbl, body)?;
+            let well_heck = tck.vars[&body_type].clone();
+            match well_heck.clone() {
+                Type::Sum(sum_body, _generics) => {
+                    todo!()
+                }
+            */
+
+            // This might be wrong, we can probably do it the other way around
+            // like we do with TypeUnwrap: start by checking the inner expr type and make
+            // sure it matches what we expect.  Generics might require that.
+            //
+            // TODO: Generics
+            match named_type.clone() {
+                Type::Sum(sum_body, _generics) => {
+                    let variant_type = &sum_body[variant];
+                    let variant_typeid = tck.insert_known(variant_type);
+                    let body_type = typecheck_expr(tck, symtbl, body)?;
+                    tck.unify(symtbl, variant_typeid, body_type)?;
+
+                    // The expr is the type we expect, our return type is the
+                    // sum type we conjure up
+                    // TODO: Might be easier to have our compiler generate
+                    // the TypeCtor for it?
+                    let rettype = tck.insert_known(&Type::Named(name.clone(), vec![]));
+                    tck.set_expr_type(expr, rettype);
+                    Ok(rettype)
+                }
+                _ => unreachable!("This code is compiler generated, should never happen!"),
             }
         }
     }
