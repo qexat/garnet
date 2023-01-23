@@ -64,6 +64,8 @@ pub enum TokenKind {
     Const,
     #[token("enum")]
     Enum,
+    #[token("sum")]
+    Sum,
 
     // Punctuation
     #[token("(")]
@@ -751,10 +753,12 @@ impl<'input> Parser<'input> {
             }
             T::Struct => self.parse_struct_type(),
             T::Enum => self.parse_enum_type(),
+            T::Sum => self.parse_sum_type(),
             _ => self.error("type", Some(t)),
         }
     }
 
+    /// isomorphic-ish with parse_type_list()
     fn parse_struct_type(&mut self) -> Type {
         let mut fields = HashMap::new();
 
@@ -805,6 +809,31 @@ impl<'input> Parser<'input> {
         }
         self.expect(T::End);
         Type::Enum(fields)
+    }
+
+    /// isomorphic-ish with parse_type_list()
+    fn parse_sum_type(&mut self) -> Type {
+        let mut fields = HashMap::new();
+        while !self.peek_is(T::End.discr()) {
+            let field = self.expect_ident();
+            let ty = self.parse_type();
+            fields.insert(field, ty);
+
+            if self.peek_expect(T::Comma.discr()) {
+            } else {
+                break;
+            }
+        }
+        self.expect(T::End);
+        // Pull any @Foo types out of the structure's
+        // declared types, again just like parse_struct_type above.
+        let generic_names: Vec<_> = fields
+            .iter()
+            .map(|(_nm, ty)| ty.get_type_params())
+            .flatten()
+            .map(|ty| Type::Generic(ty))
+            .collect();
+        Type::Sum(fields, generic_names)
     }
 }
 

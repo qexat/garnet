@@ -116,6 +116,14 @@ pub enum Expr {
     TypeUnwrap {
         e: ExprNode,
     },
+    // Create a new sum type.
+    // Like EnumLit, this is generated for you by the
+    // compiler.
+    SumCtor {
+        name: String,
+        variant: String,
+        body: ExprNode,
+    },
     StructRef {
         e: ExprNode,
         name: String,
@@ -176,12 +184,14 @@ impl Ast {
                     params: _params, // Can never be anything for an enum I think
                 } => {
                     out.push(decl.clone());
-                    // For `type Foo = enum Foo, Bar, Baz end`
-                    // synthesize
-                    // const Foo = $Foo {
-                    //     .Foo =
-                    // }
                     match ty {
+                        // For `type Foo = enum Foo, Bar, Baz end`
+                        // synthesize
+                        // const Foo = {
+                        //     .Foo = <magic unprintable thing>
+                        //     .Bar = <magic unprintable thing>
+                        //     .Baz = <magic unprintable thing>
+                        // }
                         Type::Enum(ts) => {
                             let struct_body: HashMap<_, _> = ts
                                 .iter()
@@ -190,6 +200,44 @@ impl Ast {
                                         val: Literal::EnumLit(name.clone(), s.clone()),
                                     });
                                     (s.clone(), e)
+                                })
+                                .collect();
+                            let init_val = ExprNode::new(Expr::StructCtor { body: struct_body });
+                            let new_constdef = ConstDef {
+                                name: name.clone(),
+                                init: init_val,
+                            };
+                            out.push(new_constdef);
+                        }
+                        // For `type Foo = sum X {}, Y Thing end`
+                        // synthesize
+                        // const Foo = {
+                        //     .X = fn({}) Foo = <magic unprintable thing> end
+                        //     .Y = fn(Thing) Foo = <magic unprintable thing> end
+                        // }
+                        //
+                        // Maybe also something like this???
+                        // type X = {}
+                        // type Y = Thing
+                        // TODO: What do we do with the generics...
+                        Type::Sum(body, _generics) => {
+                            let struct_body: HashMap<_, _> = body
+                                .iter()
+                                .map(|(variant_name, variant_type)| {
+                                    let signature = ast::Signature {
+                                        params: vec![("x".into(), variant_type.clone())],
+                                        rettype: Type::Named(name.clone(), vec![]),
+                                    };
+                                    // Just return the value passed to it wrapped
+                                    // in a constructor of some kind...?
+                                    let body = vec![ExprNode::new(Expr::SumCtor {
+                                        name: name.into(),
+                                        variant: variant_name.into(),
+                                        body: ExprNode::new(Expr::Var { name: "x".into() }),
+                                    })];
+                                    let e = ExprNode::new(Expr::Lambda { signature, body });
+                                    //println!("{} is {:#?}", variant_name, e);
+                                    (variant_name.clone(), e)
                                 })
                                 .collect();
                             let init_val = ExprNode::new(Expr::StructCtor { body: struct_body });
