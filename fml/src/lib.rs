@@ -19,13 +19,22 @@ pub enum PrimType {
 pub enum Type {
     //Primitive(PrimType),
     /// A C-like enum.
-    /// For now we pretend there's no underlying values.
+    /// For now we pretend there's no underlying values attached to
+    /// the name.
+    ///
+    /// ... I seem to have ended up with anonymous enums somehow.
+    /// Not sure how I feel about this.
     Enum(Vec<String>),
     Named(String, Vec<Type>),
     Func(Vec<Type>, Box<Type>),
     /// The vec is the name of any generic type bindings in there
     /// 'cause we need to keep track of those apparently.
     Struct(HashMap<String, Type>, Vec<Type>),
+    /// Sum type.
+    /// I guess this is ok?
+    ///
+    /// Like structs, contains a list of generic bindings.
+    Sum(HashMap<String, Type>, Vec<Type>),
     /// A generic type parameter
     Generic(String),
 }
@@ -57,6 +66,15 @@ impl Type {
                     // the struct is to list *all* the generic names in it...
                     // but we could have nested definitions
                     // like Foo(@T) ( Bar(@G) ( {@T, @G} ) )
+                    for ty in generics {
+                        helper(ty, accm);
+                    }
+                }
+                // Just like structs
+                Type::Sum(body, generics) => {
+                    for (_, ty) in body {
+                        helper(ty, accm);
+                    }
                     for ty in generics {
                         helper(ty, accm);
                     }
@@ -101,6 +119,11 @@ impl Type {
                         helper(g, accm);
                     }
                 }
+                Type::Sum(_body, generics) => {
+                    for g in generics {
+                        helper(g, accm);
+                    }
+                }
                 Type::Generic(s) => {
                     // Deduplicating these things while maintaining ordering
                     // is kinda screwy.
@@ -140,6 +163,8 @@ pub enum TypeInfo {
     Func(Vec<TypeId>, TypeId),
     /// This is definitely some kind of struct
     Struct(HashMap<String, TypeId>),
+    /// Definitely a sum type
+    Sum(HashMap<String, TypeId>),
     /// This is some generic type that has a name like @A
     /// AKA a type parameter.
     TypeParam(String),
