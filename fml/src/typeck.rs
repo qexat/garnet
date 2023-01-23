@@ -69,6 +69,13 @@ impl Tck {
                     .collect();
                 TypeInfo::Struct(new_body)
             }
+            Type::Sum(body, _names) => {
+                let new_body = body
+                    .iter()
+                    .map(|(nm, t)| (nm.clone(), self.insert_known(t)))
+                    .collect();
+                TypeInfo::Sum(new_body)
+            }
         };
         self.insert(tinfo)
     }
@@ -214,6 +221,17 @@ impl Tck {
                 let params = vec![];
                 Ok(Type::Struct(real_body?, params))
             }
+            Sum(body) => {
+                let real_body: Result<HashMap<_, _>, String> = body
+                    .iter()
+                    .map(|(nm, t)| {
+                        let new_t = self.reconstruct(*t)?;
+                        Ok((nm.clone(), new_t))
+                    })
+                    .collect();
+                let params = vec![];
+                Ok(Type::Sum(real_body?, params))
+            }
         }
     }
 
@@ -267,6 +285,13 @@ impl Tck {
                         .map(|(nm, ty)| (nm.clone(), helper(tck, named_types, ty)))
                         .collect();
                     TypeInfo::Struct(inst_body)
+                }
+                Type::Sum(body, _names) => {
+                    let inst_body = body
+                        .iter()
+                        .map(|(nm, ty)| (nm.clone(), helper(tck, named_types, ty)))
+                        .collect();
+                    TypeInfo::Sum(inst_body)
                 }
             };
             tck.insert(typeinfo)

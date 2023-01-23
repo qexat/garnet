@@ -186,12 +186,10 @@ impl Ast {
                             let struct_body: HashMap<_, _> = ts
                                 .iter()
                                 .map(|s| {
-                                    (
-                                        s.clone(),
-                                        ExprNode::new(Expr::Lit {
-                                            val: Literal::EnumLit(name.clone(), s.clone()),
-                                        }),
-                                    )
+                                    let e = ExprNode::new(Expr::Lit {
+                                        val: Literal::EnumLit(name.clone(), s.clone()),
+                                    });
+                                    (s.clone(), e)
                                 })
                                 .collect();
                             let init_val = ExprNode::new(Expr::StructCtor { body: struct_body });
