@@ -14,30 +14,30 @@ end
 -- To ponder: What if we did attach names to types, or had
 -- specialization?  The latter evokes the Instance Problem, the former
 -- I suppose is a way around it.
-const IntEq = Eq({
+const IntEq = Eq {
     .eq = fn(lhs I32, rhs I32) Bool =
         true
     end,
-})
+}
 
 type Ord(@Self) = struct
     cmp: fn(@Self, @Self) I32,
 end
 
-const IntOrd = Ord({
+const IntOrd = Ord {
     .cmp = fn(lhs I32, rhs I32) I32 =
         0
     end,
-})
+}
 
 
 type From(@Self, @In) = struct
     from: fn(@In) @Self
 end
 
-const BoolFromInt = From({
+const BoolFromInt = From {
     .from = fn(i I32) Bool = false end
-})
+}
 
 type List(@T) = struct
     dummy_data: @T,
@@ -52,9 +52,9 @@ type Len(@Self) = struct
     len: fn(@Self) I32,
 end
 
-const ListLen = Len({
+const ListLen = Len {
     .len = fn(self List(@T)) I32 = 0 end
-})
+}
 
 fn module_len(impl Len(@T), l @T) I32 =
     let total I32 = 0
@@ -66,9 +66,9 @@ fn list_len(l List(@T)) I32 =
     module_len(ListLen, l)
 end
 
-const ListIdx = Idx({
+const ListIdx = Idx {
     .idx = fn(self List(@T), i I32) @T = self$.dummy_data end
-})
+}
 
 -- Generalized thingy...
 fn idx(l List(@T)) @T =
@@ -77,7 +77,7 @@ fn idx(l List(@T)) @T =
 end
 
 -- Can we make another instance for a more specialized type?
-const IntListIdx = Idx({
+const IntListIdx = Idx {
     .idx = fn(self List(I32), i I32) I32 = self$.dummy_data end
-})
+}
 

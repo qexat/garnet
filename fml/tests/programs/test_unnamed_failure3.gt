@@ -11,6 +11,6 @@ end
 
 
 -- This correctly fails
-const BadIntListIdx2 = Idx({
+const BadIntListIdx2 = Idx {
     .idx = fn(self List(I32), i I32) Foo = self$.dummy_data end
-})
+}

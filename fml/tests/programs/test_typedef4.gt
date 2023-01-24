@@ -5,7 +5,7 @@
 type Foo(@A) = {I32, @A}
 
 fn thing(i I32, x @A) Foo(@A) =
-    Foo({i, x})
+    Foo{i, x}
 end
 
 fn thing2(i I32, x @A) {I32, @A} =
