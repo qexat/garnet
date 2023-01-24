@@ -520,10 +520,10 @@ fn typecheck_expr(tck: &mut Tck, symtbl: &Symtbl, expr: &ast::ExprNode) -> Resul
             };
             tck.unify(symtbl, init_expr_type, var_type)?;
 
-            // TODO: Make this expr return unit instead of the
-            // type of `init`
-            let this_expr_type = init_expr_type;
-            tck.set_expr_type(expr, this_expr_type);
+            // A `let` expr returns unit, not the type of `init`
+            let unit_type = tck.insert(TypeInfo::Named("Tuple".to_owned(), vec![]));
+            //let this_expr_type = init_expr_type;
+            tck.set_expr_type(expr, unit_type);
 
             symtbl.add_var(varname, var_type);
             Ok(var_type)
