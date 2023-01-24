@@ -8,8 +8,9 @@
 //! Though code formatters have different constraints and priorities, if they have line wrapping
 //! and stuff at least.  So, it might not be a particularly great code formatter.
 
-use std::collections::HashMap;
 use std::sync::Mutex;
+
+use fnv::FnvHashMap;
 
 use crate::*;
 
@@ -105,7 +106,7 @@ pub enum Expr {
         body: Vec<ExprNode>,
     },
     StructCtor {
-        body: HashMap<String, ExprNode>,
+        body: FnvHashMap<String, ExprNode>,
     },
     // Opposite of TypeCtor
     TypeUnwrap {
@@ -184,7 +185,7 @@ impl Ast {
             //     .Baz = <magic unprintable thing>
             // }
             Type::Enum(ts) => {
-                let struct_body: HashMap<_, _> = ts
+                let struct_body: FnvHashMap<_, _> = ts
                     .iter()
                     .map(|s| {
                         let e = ExprNode::new(Expr::Lit {
@@ -212,7 +213,7 @@ impl Ast {
             // type Y = Thing
             // TODO: What do we do with the generics...
             Type::Sum(body, _generics) => {
-                let struct_body: HashMap<_, _> = body
+                let struct_body: FnvHashMap<_, _> = body
                     .iter()
                     .map(|(variant_name, variant_type)| {
                         let signature = ast::Signature {
