@@ -4,7 +4,7 @@
 type Foo(@T) = {I32, @T}
 
 fn thing(i I32, x Bool) Foo(Bool) =
-    Foo({i, x})
+    Foo{i, x}
 end
 
 fn main() I32 =

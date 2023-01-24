@@ -4,7 +4,7 @@
 type Foo = {I32, Bool}
 
 fn thing(i I32, x Bool) Foo =
-    Foo({i, x})
+    Foo{i, x}
 end
 
 type Bar = I32

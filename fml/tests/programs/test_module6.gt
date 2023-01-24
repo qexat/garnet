@@ -17,7 +17,7 @@ type Cell(@K, @V) = struct
 end
 
 fn make_cell_map(k @K, v @V) Map(Cell(@K, @V), @K, @V) =
-    let module = Map({
+    let module = Map {
         -- I guess we pretend this always succeeds,
         -- since I don't really feel like implementing if's
         .get = fn(t Cell(@K, @V), key @K) @V =
@@ -25,10 +25,10 @@ fn make_cell_map(k @K, v @V) Map(Cell(@K, @V), @K, @V) =
         end,
         -- Just create a new cell with the given key and val
         .set = fn(t Cell(@K, @V), key @K, val @V) Cell(@K, @V) =
-            Cell({
+            Cell {
                 .key = key,
                 .val = val,
-            })
+            }
         end
-    })
+    }
 end

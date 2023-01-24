@@ -7,6 +7,6 @@ fn thing(i {@T1, @T2}) {@T1, @T2} =
 end
 
 fn main() I32 =
-    let a {I32, Bool} = thing({1, false})
+    let a {I32, Bool} = thing{1, false}
     3
 end

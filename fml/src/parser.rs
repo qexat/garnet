@@ -555,6 +555,16 @@ impl<'input> Parser<'input> {
                         let params = self.parse_function_args();
                         ast::ExprNode::new(ast::Expr::Funcall { func: lhs, params })
                     }
+                    // If we see `foo {bar}`
+                    // then parse it as `foo({bar})`
+                    // Thanks Lua!!!
+                    T::LBrace => {
+                        let params = self.parse_constructor();
+                        ast::ExprNode::new(ast::Expr::Funcall {
+                            func: lhs,
+                            params: vec![params],
+                        })
+                    }
                     T::Period => {
                         self.expect(T::Period);
                         let struct_field_name = self.expect_ident();
@@ -819,6 +829,8 @@ fn postfix_binding_power(op: &TokenKind) -> Option<(usize, ())> {
         T::Dollar => Some((130, ())),
         // "(" opening function call args
         T::LParen => Some((120, ())),
+        // "{" opening function call for single struct arg
+        T::LBrace => Some((119, ())),
         // "." separating struct refs a la foo.bar
         T::Period => Some((110, ())),
         _x => None,

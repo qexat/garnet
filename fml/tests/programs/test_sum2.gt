@@ -7,7 +7,7 @@ type Option(@T) = sum
 end
 
 fn main() I32 =
-    let x = Option.None({})
+    let x = Option.None {}
     let y = Option.Some(12)
     3
 end

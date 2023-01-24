@@ -12,7 +12,7 @@ type Idx(@Self, @Output) = struct
 end
 
 -- Can we make an instance for a specialization of List(T)?
-const IntListIdx = Idx({
+const IntListIdx = Idx {
     .idx = fn(self List(I32), i I32) I32 = self$.dummy_data end
-})
+}
 
