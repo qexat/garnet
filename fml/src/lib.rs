@@ -1,6 +1,6 @@
 //! Garnet compiler guts.
 
-use std::collections::{HashMap, HashSet};
+use fnv::FnvHashMap;
 
 pub mod ast;
 pub mod parser;
@@ -29,12 +29,12 @@ pub enum Type {
     Func(Vec<Type>, Box<Type>),
     /// The vec is the name of any generic type bindings in there
     /// 'cause we need to keep track of those apparently.
-    Struct(HashMap<String, Type>, Vec<Type>),
+    Struct(FnvHashMap<String, Type>, Vec<Type>),
     /// Sum type.
     /// I guess this is ok?
     ///
     /// Like structs, contains a list of generic bindings.
-    Sum(HashMap<String, Type>, Vec<Type>),
+    Sum(FnvHashMap<String, Type>, Vec<Type>),
     /// A generic type parameter
     Generic(String),
 }
@@ -162,9 +162,9 @@ pub enum TypeInfo {
     /// This type term is definitely a function
     Func(Vec<TypeId>, TypeId),
     /// This is definitely some kind of struct
-    Struct(HashMap<String, TypeId>),
+    Struct(FnvHashMap<String, TypeId>),
     /// Definitely a sum type
-    Sum(HashMap<String, TypeId>),
+    Sum(FnvHashMap<String, TypeId>),
     /// This is some generic type that has a name like @A
     /// AKA a type parameter.
     TypeParam(String),

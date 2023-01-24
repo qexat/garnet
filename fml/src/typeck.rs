@@ -1,6 +1,7 @@
 use std::cell::RefCell;
-use std::collections::HashMap;
 use std::rc::Rc;
+
+use fnv::{FnvHashMap, FnvHashSet};
 
 use crate::*;
 
@@ -10,9 +11,9 @@ struct Tck {
     /// Used to generate unique IDs
     id_counter: usize,
     /// Binding from type vars to what we know about the type
-    vars: HashMap<TypeId, TypeInfo>,
+    vars: FnvHashMap<TypeId, TypeInfo>,
     /// What we know about the type of each node in the AST.
-    types: HashMap<ast::AstId, TypeId>,
+    types: FnvHashMap<ast::AstId, TypeId>,
 }
 
 impl Tck {
@@ -225,7 +226,7 @@ impl Tck {
             }
             TypeParam(name) => Ok(Type::Generic(name.to_owned())),
             Struct(body) => {
-                let real_body: Result<HashMap<_, _>, String> = body
+                let real_body: Result<FnvHashMap<_, _>, String> = body
                     .iter()
                     .map(|(nm, t)| {
                         let new_t = self.reconstruct(*t)?;
@@ -236,7 +237,7 @@ impl Tck {
                 Ok(Type::Struct(real_body?, params))
             }
             Sum(body) => {
-                let real_body: Result<HashMap<_, _>, String> = body
+                let real_body: Result<FnvHashMap<_, _>, String> = body
                     .iter()
                     .map(|(nm, t)| {
                         let new_t = self.reconstruct(*t)?;
@@ -269,8 +270,8 @@ impl Tck {
     /// This has to actually be an empty hashtable on the first instantitaion
     /// instead of the symtbl, since the symtbl is full of type parameter names from the
     /// enclosing function and those are what we explicitly want to get away from.
-    fn instantiate(&mut self, t: &Type, known_types: Option<HashMap<String, TypeId>>) -> TypeId {
-        fn helper(tck: &mut Tck, named_types: &mut HashMap<String, TypeId>, t: &Type) -> TypeId {
+    fn instantiate(&mut self, t: &Type, known_types: Option<FnvHashMap<String, TypeId>>) -> TypeId {
+        fn helper(tck: &mut Tck, named_types: &mut FnvHashMap<String, TypeId>, t: &Type) -> TypeId {
             let typeinfo = match t {
                 //Type::Primitive(_) => todo!(),
                 Type::Enum(vals) => TypeInfo::Enum(vals.clone()),
@@ -332,8 +333,8 @@ impl Tck {
 
 #[derive(Clone, Default)]
 struct ScopeFrame {
-    symbols: HashMap<String, TypeId>,
-    types: HashMap<String, Type>,
+    symbols: FnvHashMap<String, TypeId>,
+    types: FnvHashMap<String, Type>,
 }
 
 /// Basic symbol table that maps names to type ID's
@@ -623,7 +624,7 @@ fn typecheck_expr(tck: &mut Tck, symtbl: &Symtbl, expr: &ast::ExprNode) -> Resul
         }
 
         StructCtor { body } => {
-            let body_types: Result<HashMap<_, _>, _> = body
+            let body_types: Result<FnvHashMap<_, _>, _> = body
                 .iter()
                 .map(|(name, expr)| {
                     // ? in map doesn't work too well...
@@ -783,9 +784,9 @@ pub fn typecheck(ast: &ast::Ast) {
             TypeDef { name, params, ty } => {
                 // Make sure that there are no unbound generics in the typedef
                 // that aren't mentioned in the params.
-                let generic_names: HashSet<String> =
+                let generic_names: FnvHashSet<String> =
                     ty.collect_generic_names().into_iter().collect();
-                let param_names: HashSet<String> = params.iter().cloned().collect();
+                let param_names: FnvHashSet<String> = params.iter().cloned().collect();
                 let difference: Vec<_> = generic_names
                     .symmetric_difference(&param_names)
                     // gramble gramble &String

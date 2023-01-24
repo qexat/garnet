@@ -3,6 +3,7 @@ use std::ops::Range;
 
 use codespan_reporting as cs;
 use codespan_reporting::diagnostic::{Diagnostic, Label};
+use fnv::FnvHashMap;
 use logos::{Lexer, Logos};
 
 use crate::ast;
@@ -692,8 +693,8 @@ impl<'input> Parser<'input> {
         ast::ExprNode::new(ast::Expr::TupleCtor { body })
     }
 
-    fn parse_struct_lit_fields(&mut self) -> HashMap<String, ast::ExprNode> {
-        let mut fields = HashMap::new();
+    fn parse_struct_lit_fields(&mut self) -> FnvHashMap<String, ast::ExprNode> {
+        let mut fields = FnvHashMap::default();
 
         loop {
             if self.peek_expect(T::Period.discr()) {
@@ -745,7 +746,7 @@ impl<'input> Parser<'input> {
 
     /// isomorphic-ish with parse_type_list()
     fn parse_struct_type(&mut self) -> Type {
-        let mut fields = HashMap::new();
+        let mut fields = FnvHashMap::default();
 
         loop {
             match self.lex.peek() {
@@ -798,7 +799,7 @@ impl<'input> Parser<'input> {
 
     /// isomorphic-ish with parse_type_list()
     fn parse_sum_type(&mut self) -> Type {
-        let mut fields = HashMap::new();
+        let mut fields = FnvHashMap::default();
         while !self.peek_is(T::End.discr()) {
             let field = self.expect_ident();
             let ty = self.parse_type();
