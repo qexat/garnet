@@ -538,31 +538,6 @@ impl<'input> Parser<'input> {
             }
             // Tuple or struct literal
             T::LBrace => self.parse_constructor(),
-            // Nominal type literal
-            // $Foo(3)
-            T::Dollar => {
-                self.drop();
-                let name = self.expect_ident();
-                // BUGGO TODO: This is potentially ambiguous 'cause we could have
-                // $Foo(Type) expr
-                // or we could have
-                // $Foo (expr)
-                // So for now we just force it to be the first one
-                // But this is Actually Really Bad because it means that we can
-                // NOT follow a type constructor with a parenthesized expression,
-                // such as `$Foo (1 + 2) * 3`
-                let type_params = if self.peek_is(T::LParen.discr()) {
-                    self.parse_type_list()
-                } else {
-                    vec![]
-                };
-                let body = self.parse_expr(0)?;
-                ast::ExprNode::new(ast::Expr::TypeCtor {
-                    name,
-                    type_params,
-                    body,
-                })
-            }
 
             // Something else not a valid expr
             _x => return None,
