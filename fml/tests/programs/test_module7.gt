@@ -21,13 +21,13 @@ type Cell(@V) = struct
 end
 
 fn make_cell_functor(f fn(@A) @B) Functor(Cell(@A), Cell(@B)) =
-    $Functor(Cell(@A), Cell(@B)) {
+    Functor({
         .map = fn(cell Cell(@A)) Cell(@B) =
-            $Cell(@B) {
+            Cell({
                 .val = f(cell$.val)
-            }
+            })
         end
-    }
+    })
 end
 
 fn f(i Bool) I32 =
@@ -35,9 +35,9 @@ fn f(i Bool) I32 =
 end
 
 fn main() I32 =
-    let test_cell = $Cell(Bool) {
+    let test_cell = Cell({
         .val = true
-    }
+    })
     let thing = make_cell_functor(f)
     let test_result Cell(I32) = thing$.map(test_cell)
     0

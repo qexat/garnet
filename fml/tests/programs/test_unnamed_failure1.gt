@@ -6,5 +6,5 @@ type List(@T) = struct
 end
 
 fn should_fail() Bar =
-    $List(I32) { .dummy_data = 3 }
+    List({ .dummy_data = 3 })
 end

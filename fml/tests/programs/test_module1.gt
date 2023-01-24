@@ -18,11 +18,11 @@ type DumbHashState = I32
 
 
 fn main() I32 =
-    let dumbhasher Hasher(DumbHashState, I32) = $Hasher(DumbHashState, I32) {
-        .write = fn(s DumbHashState, i I32) DumbHashState = $DumbHashState i end,
+    let dumbhasher Hasher(DumbHashState, I32) = Hasher( {
+        .write = fn(s DumbHashState, i I32) DumbHashState = DumbHashState(i) end,
         .finish = fn(s DumbHashState) I32 = 3 end
-    }
-    let hash_state = $DumbHashState 1
+    })
+    let hash_state = DumbHashState(1)
     let updated_state = dumbhasher$.write(hash_state, 12)
     let hash = dumbhasher$.finish(updated_state)
     hash
