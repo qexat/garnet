@@ -31,4 +31,5 @@ fn make_cell_map(k @K, v @V) Map(Cell(@K, @V), @K, @V) =
             }
         end
     }
+    module
 end
