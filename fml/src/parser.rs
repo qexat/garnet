@@ -539,6 +539,8 @@ impl<'input> Parser<'input> {
             }
             // Tuple or struct literal
             T::LBrace => self.parse_constructor(),
+            // Array literal
+            T::LBracket => self.parse_array_constructor(),
 
             // Something else not a valid expr
             _x => return None,
@@ -661,6 +663,22 @@ impl<'input> Parser<'input> {
         ast::ExprNode::new(ast::Expr::Lambda { signature, body })
     }
 
+    /// struct constructor = "{" "." ident "=" expr {"," ...} "}"
+    fn parse_array_constructor(&mut self) -> ast::ExprNode {
+        self.expect(T::LBracket);
+        let mut body = vec![];
+        while let Some(expr) = self.parse_expr(0) {
+            body.push(expr);
+
+            if self.peek_expect(T::Comma.discr()) {
+            } else {
+                break;
+            }
+        }
+        self.expect(T::RBracket);
+        ast::ExprNode::new(ast::Expr::ArrayCtor { body })
+    }
+
     /// If we see `.foo = bar` in our thing then it's a struct
     fn parse_constructor(&mut self) -> ast::ExprNode {
         self.expect(T::LBrace);
@@ -716,7 +734,7 @@ impl<'input> Parser<'input> {
 
     fn parse_type(&mut self) -> Type {
         let t = self.next().unwrap_or_else(|| self.error("type", None));
-        match t.kind {
+        let mut ty = match t.kind {
             T::Ident(ref s) => {
                 let type_params = if self.peek_is(T::LParen.discr()) {
                     self.parse_type_list()
@@ -740,8 +758,19 @@ impl<'input> Parser<'input> {
             T::Struct => self.parse_struct_type(),
             T::Enum => self.parse_enum_type(),
             T::Sum => self.parse_sum_type(),
+            // Apparently all our types are prefix, which is weird.
+            // Fix this someday.
             _ => self.error("type", Some(t)),
+        };
+        // Array?  (Or other postfix shit, this be gettin whack)
+        while self.peek_is(T::LBracket.discr()) {
+            self.expect(T::LBracket);
+            let len = self.expect_int();
+            assert!(len >= 0);
+            self.expect(T::RBracket);
+            ty = Type::Array(Box::new(ty), len as usize);
         }
+        ty
     }
 
     /// isomorphic-ish with parse_type_list()
@@ -824,6 +853,10 @@ impl<'input> Parser<'input> {
 }
 
 /// Specifies binding power of postfix operators.
+///
+/// No idea if the precedences for these are sensible,
+/// I think they only actually relate with infix operators,
+/// not each other.
 fn postfix_binding_power(op: &TokenKind) -> Option<(usize, ())> {
     match op {
         // "$" is our "type unwrap" operator, which is weird but ok
@@ -834,6 +867,8 @@ fn postfix_binding_power(op: &TokenKind) -> Option<(usize, ())> {
         T::LBrace => Some((119, ())),
         // "." separating struct refs a la foo.bar
         T::Period => Some((110, ())),
+        // "[" opening array dereference
+        T::LBracket => Some((100, ())),
         _x => None,
     }
 }

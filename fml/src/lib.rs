@@ -35,6 +35,8 @@ pub enum Type {
     ///
     /// Like structs, contains a list of generic bindings.
     Sum(FnvHashMap<String, Type>, Vec<Type>),
+    /// Arrays are just a type and a number.
+    Array(Box<Type>, usize),
     /// A generic type parameter
     Generic(String),
 }
@@ -78,6 +80,9 @@ impl Type {
                     for ty in generics {
                         helper(ty, accm);
                     }
+                }
+                Type::Array(ty, _size) => {
+                    helper(ty, accm);
                 }
                 Type::Generic(s) => {
                     // Deduplicating these things while maintaining ordering
@@ -124,6 +129,9 @@ impl Type {
                         helper(g, accm);
                     }
                 }
+                Type::Array(ty, _size) => {
+                    helper(ty, accm);
+                }
                 Type::Generic(s) => {
                     // Deduplicating these things while maintaining ordering
                     // is kinda screwy.
@@ -165,6 +173,7 @@ pub enum TypeInfo {
     Struct(FnvHashMap<String, TypeId>),
     /// Definitely a sum type
     Sum(FnvHashMap<String, TypeId>),
+    Array(TypeId, usize),
     /// This is some generic type that has a name like @A
     /// AKA a type parameter.
     TypeParam(String),

@@ -63,6 +63,10 @@ impl Tck {
                 TypeInfo::Func(new_args, new_rettype)
             }
             Type::Generic(s) => TypeInfo::TypeParam(s.to_string()),
+            Type::Array(ty, len) => {
+                let new_body = self.insert_known(&ty);
+                TypeInfo::Array(new_body, *len)
+            }
             // TODO: Generics?
             Type::Struct(body, _names) => {
                 let new_body = body
@@ -190,6 +194,9 @@ impl Tck {
                 }
                 Ok(())
             }
+            (Array(body1, len1), Array(body2, len2)) if len1 == len2 => {
+                self.unify(symtbl, body1, body2)
+            }
             // For declared type parameters like @T they match if their names match.
             // TODO: And if they have been declared?  Not sure we can ever get to
             // here if that's the case.
@@ -233,8 +240,13 @@ impl Tck {
                         Ok((nm.clone(), new_t))
                     })
                     .collect();
+                // TODO: The empty params here feels suspicious, verify.
                 let params = vec![];
                 Ok(Type::Struct(real_body?, params))
+            }
+            Array(ty, len) => {
+                let real_body = self.reconstruct(*ty)?;
+                Ok(Type::Array(Box::new(real_body), *len))
             }
             Sum(body) => {
                 let real_body: Result<FnvHashMap<_, _>, String> = body
@@ -300,6 +312,10 @@ impl Tck {
                         .map(|(nm, ty)| (nm.clone(), helper(tck, named_types, ty)))
                         .collect();
                     TypeInfo::Struct(inst_body)
+                }
+                Type::Array(ty, len) => {
+                    let inst_ty = helper(tck, named_types, &*ty);
+                    TypeInfo::Array(inst_ty, *len)
                 }
                 Type::Sum(body, _names) => {
                     let inst_body = body
@@ -522,7 +538,6 @@ fn typecheck_expr(tck: &mut Tck, symtbl: &Symtbl, expr: &ast::ExprNode) -> Resul
 
             // A `let` expr returns unit, not the type of `init`
             let unit_type = tck.insert(TypeInfo::Named("Tuple".to_owned(), vec![]));
-            //let this_expr_type = init_expr_type;
             tck.set_expr_type(expr, unit_type);
 
             symtbl.add_var(varname, var_type);
@@ -754,6 +769,21 @@ fn typecheck_expr(tck: &mut Tck, symtbl: &Symtbl, expr: &ast::ExprNode) -> Resul
                 _ => unreachable!("This code is compiler generated, should never happen!"),
             }
         }
+        ArrayCtor { body } => {
+            let len = body.len();
+            // So if the body has len 0 we can't know what type it is.
+            // So we create a new unknown and then try unifying it with
+            // all the expressions in the body.
+            let body_type = tck.insert(TypeInfo::Unknown);
+            for expr in body {
+                let expr_type = typecheck_expr(tck, symtbl, expr)?;
+                tck.unify(symtbl, body_type, expr_type)?;
+            }
+            let arr_type = tck.insert(TypeInfo::Array(body_type, len));
+            tck.set_expr_type(expr, arr_type);
+            Ok(arr_type)
+        }
+        ArrayRef { e, idx } => todo!(),
     }
 }
 
