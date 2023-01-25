@@ -1,0 +1,7 @@
+-- Check:
+--   status: error
+
+fn main() I32 =
+    let a I32[5] = [1, 2, 3, 4]
+    3
+end

@@ -108,9 +108,8 @@ pub enum Expr {
     StructCtor {
         body: FnvHashMap<String, ExprNode>,
     },
-    // Opposite of TypeCtor
-    TypeUnwrap {
-        e: ExprNode,
+    ArrayCtor {
+        body: Vec<ExprNode>,
     },
     // Create a new sum type.
     // Like EnumLit, this is generated for you by the
@@ -127,9 +126,17 @@ pub enum Expr {
         type_params: Vec<Type>,
         body: ExprNode,
     },
+    // Opposite of TypeCtor
+    TypeUnwrap {
+        e: ExprNode,
+    },
     StructRef {
         e: ExprNode,
         name: String,
+    },
+    ArrayRef {
+        e: ExprNode,
+        idx: ExprNode,
     },
 }
 
