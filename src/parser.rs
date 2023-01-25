@@ -479,7 +479,7 @@ impl<'input> Parser<'input> {
     }
 
     /// Consume an identifier and return its interned symbol.
-    /// Note this returns a VarSym, not a TypeSym...
+    /// Note this returns a VarSym, not a Type...
     fn expect_ident(&mut self) -> VarSym {
         match self.next() {
             Some(Token {
@@ -588,7 +588,6 @@ impl<'input> Parser<'input> {
         };
         */
         let mut signature = self.parse_fn_signature();
-        signature.generics = signature.generic_type_names();
         self.expect(T::Equals);
         let body = self.parse_exprs();
         self.expect(T::End);
@@ -631,18 +630,14 @@ impl<'input> Parser<'input> {
     /// signature = fn_args [":" typename]
     fn parse_fn_signature(&mut self) -> ast::Signature {
         // TODO: parse generics
-        let generics = vec![];
+        //let generics = vec![];
         let params = self.parse_fn_args();
         let rettype = if self.peek_expect(T::Colon.discr()) {
             self.parse_type().unwrap()
         } else {
-            INT.unit()
+            Type::unit()
         };
-        ast::Signature {
-            generics,
-            params,
-            rettype,
-        }
+        ast::Signature { params, rettype }
     }
 
     /*
@@ -703,7 +698,7 @@ impl<'input> Parser<'input> {
 
     /// sig = ident ":" typename
     /// fn_args = "(" [sig {"," sig} [","]] ")"
-    fn parse_fn_args(&mut self) -> Vec<(VarSym, TypeSym)> {
+    fn parse_fn_args(&mut self) -> Vec<(VarSym, Type)> {
         let mut args = vec![];
         self.expect(T::LParen);
 
@@ -722,23 +717,19 @@ impl<'input> Parser<'input> {
         args
     }
 
-    fn parse_fn_type(&mut self) -> TypeDef {
+    fn parse_fn_type(&mut self) -> Type {
         // TODO: Parse generic stuffs?
-        let generics = vec![];
+        //let generics = vec![];
         let params = self.parse_fn_type_args();
         let rettype = if self.peek_expect(T::Colon.discr()) {
             self.parse_type().unwrap()
         } else {
-            INT.unit()
+            Type::unit()
         };
-        TypeDef::Lambda {
-            generics,
-            params,
-            rettype,
-        }
+        Type::Func(params, Box::new(rettype))
     }
 
-    fn parse_fn_type_args(&mut self) -> Vec<TypeSym> {
+    fn parse_fn_type_args(&mut self) -> Vec<Type> {
         let mut args = vec![];
         self.expect(T::LParen);
 
@@ -755,7 +746,7 @@ impl<'input> Parser<'input> {
         args
     }
 
-    fn parse_struct_fields(&mut self) -> (BTreeMap<VarSym, TypeSym>, BTreeSet<VarSym>) {
+    fn parse_struct_fields(&mut self) -> (BTreeMap<VarSym, Type>, BTreeSet<VarSym>) {
         let mut fields = BTreeMap::new();
         let typefields = BTreeSet::new();
 
@@ -791,7 +782,7 @@ impl<'input> Parser<'input> {
         (fields, typefields)
     }
 
-    fn parse_struct_lit_fields(&mut self) -> (Vec<(VarSym, ast::Expr)>, BTreeMap<VarSym, TypeSym>) {
+    fn parse_struct_lit_fields(&mut self) -> (Vec<(VarSym, ast::Expr)>, BTreeMap<VarSym, Type>) {
         let typefields = BTreeMap::new();
         let mut fields = vec![];
 
@@ -873,7 +864,7 @@ impl<'input> Parser<'input> {
         variants
     }
 
-    fn parse_tuple_type(&mut self) -> TypeDef {
+    fn parse_tuple_type(&mut self) -> Type {
         let mut body = vec![];
         while !self.peek_is(T::RBrace.discr()) {
             let t = self.parse_type().unwrap();
@@ -884,21 +875,21 @@ impl<'input> Parser<'input> {
             }
         }
         self.expect(T::RBrace);
-        TypeDef::Tuple(body)
+        Type::tuple(body)
     }
 
-    fn parse_struct_type(&mut self) -> TypeDef {
+    fn parse_struct_type(&mut self) -> Type {
         self.expect(T::LBrace);
         let (fields, _typefields) = self.parse_struct_fields();
         self.expect(T::RBrace);
-        TypeDef::Struct { fields }
+        Type::Struct(fields, vec![])
     }
 
-    fn parse_enum_type(&mut self) -> TypeDef {
+    fn parse_enum_type(&mut self) -> Type {
         self.expect(T::LBrace);
         let variants = self.parse_enum_fields();
         self.expect(T::RBrace);
-        TypeDef::Enum { variants }
+        Type::Enum(variants)
     }
 
     fn parse_exprs(&mut self) -> Vec<ast::Expr> {
@@ -1094,7 +1085,7 @@ impl<'input> Parser<'input> {
         Some(lhs)
     }
 
-    fn parse_function_args(&mut self) -> (Vec<ast::Expr>, Vec<TypeSym>) {
+    fn parse_function_args(&mut self) -> (Vec<ast::Expr>, Vec<Type>) {
         let mut params = vec![];
         let mut generics = vec![];
         // Look for generic decl's of the form
@@ -1268,7 +1259,7 @@ impl<'input> Parser<'input> {
         ast::Expr::StructCtor { body, types }
     }
 
-    fn parse_type(&mut self) -> Option<TypeSym> {
+    fn parse_type(&mut self) -> Option<Type> {
         let t = self.next();
         if let Some(inner) = &t {
             Some(match inner {
@@ -1276,37 +1267,37 @@ impl<'input> Parser<'input> {
                     kind: T::Ident(s),
                     span: _,
                 } => {
-                    if let Some(t) = TypeDef::get_primitive_type(s.as_ref()) {
-                        INT.intern_type(&t)
+                    if let Some(t) = Type::get_primitive_type(s.as_ref()) {
+                        t
                     } else {
                         // TODO: This miiiiight not be the same as parameter
                         // type variables, as below.
-                        INT.named_type(s)
+                        Type::named(s)
                     }
                 }
                 Token {
                     kind: T::TypeIdent(s),
                     span: _,
-                } => INT.named_type(s),
+                } => Type::named(s),
                 Token {
                     kind: T::LBrace, ..
                 } => {
                     let tuptype = self.parse_tuple_type();
-                    INT.intern_type(&tuptype)
+                    tuptype
                 }
                 Token { kind: T::Fn, .. } => {
                     let fntype = self.parse_fn_type();
-                    INT.intern_type(&fntype)
+                    fntype
                 }
                 Token {
                     kind: T::Struct, ..
                 } => {
                     let fntype = self.parse_struct_type();
-                    INT.intern_type(&fntype)
+                    fntype
                 }
                 Token { kind: T::Enum, .. } => {
                     let fntype = self.parse_enum_type();
-                    INT.intern_type(&fntype)
+                    fntype
                 }
                 _other => self.error("type", t),
             })
@@ -1374,7 +1365,7 @@ fn infix_binding_power(op: &TokenKind) -> Option<(usize, usize)> {
 mod tests {
     use crate::ast::{self, Expr};
     use crate::parser::*;
-    use crate::{TypeDef, INT};
+    use crate::{Type, INT};
 
     /// Take a list of strings and try parsing them with the given function.
     /// Is ok iff the parsing succeeds, does no checking that the produced
@@ -1416,7 +1407,7 @@ mod tests {
     fn test_const() {
         test_decl_is("const foo: I32 = -9", || ast::Decl::Const {
             name: INT.intern("foo"),
-            typename: INT.intern_type(&TypeDef::SInt(4)),
+            typename: Type::i32(),
             init: Expr::UniOp {
                 op: ast::UOp::Neg,
                 rhs: Box::new(Expr::int(9)),
@@ -1428,12 +1419,11 @@ mod tests {
     #[test]
     fn test_fn() {
         test_decl_is("fn foo(x: I32): I32 = 9 end", || {
-            let i32_t = INT.intern_type(&TypeDef::SInt(4));
+            let i32_t = Type::i32();
             ast::Decl::Function {
                 name: INT.intern("foo"),
                 signature: ast::Signature {
-                    generics: vec![],
-                    params: vec![(INT.intern("x"), i32_t)],
+                    params: vec![(INT.intern("x"), i32_t.clone())],
                     rettype: i32_t,
                 },
                 body: vec![Expr::int(9)],
@@ -1446,7 +1436,7 @@ mod tests {
     fn test_typedef() {
         test_decl_is("type bop = I32", || ast::Decl::TypeDef {
             name: INT.intern("bop"),
-            typedecl: INT.intern_type(&TypeDef::SInt(4)),
+            typedecl: Type::i32(),
             doc_comment: vec![],
         });
     }
@@ -1465,10 +1455,10 @@ type blar = I8
         let barsym = INT.intern("bar");
         let bazsym = INT.intern("baz");
         let blarsym = INT.intern("blar");
-        let i32_t = INT.i32();
-        let i8_t = INT.i8();
-        let bool_t = INT.bool();
-        let unit_t = INT.unit();
+        let i32_t = Type::i32();
+        let i8_t = Type::i8();
+        let bool_t = Type::bool();
+        let unit_t = Type::unit();
         let d = p.parse();
         assert_eq!(
             d,

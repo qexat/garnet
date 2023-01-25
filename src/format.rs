@@ -40,7 +40,7 @@ fn unparse_decl(d: &Decl, out: &mut dyn io::Write) -> io::Result<()> {
                 write!(out, "--- {}", line)?;
             }
             let name = INT.fetch(*name);
-            let tname = INT.fetch_type(*typename).get_name();
+            let tname = typename.get_name();
             write!(out, "const {}: {} = ", name, tname)?;
             unparse_expr(init, 0, out)?;
             writeln!(out)
@@ -50,6 +50,7 @@ fn unparse_decl(d: &Decl, out: &mut dyn io::Write) -> io::Result<()> {
 }
 
 fn unparse_sig(sig: &Signature, out: &mut dyn io::Write) -> io::Result<()> {
+    /*
     if sig.generics.len() > 0 {
         write!(out, "[")?;
         for name in &sig.generics {
@@ -58,15 +59,16 @@ fn unparse_sig(sig: &Signature, out: &mut dyn io::Write) -> io::Result<()> {
         }
         write!(out, "]")?;
     }
+    */
 
     write!(out, "(")?;
     for (name, typename) in sig.params.iter() {
         let name = INT.fetch(*name);
-        let tname = INT.fetch_type(*typename).get_name();
+        let tname = typename.get_name();
         write!(out, "{}: {}", name, tname)?;
     }
     write!(out, "): ")?;
-    let rettype = INT.fetch_type(sig.rettype).get_name();
+    let rettype = sig.rettype.get_name();
     write!(out, "{}", rettype)
 }
 
@@ -146,7 +148,7 @@ fn unparse_expr(e: &Expr, indent: usize, out: &mut dyn io::Write) -> io::Result<
                 write!(out, "mut ")?;
             }
             write!(out, "{} ", name)?;
-            let tname = INT.fetch_type(*typename).get_name();
+            let tname = typename.get_name();
             write!(out, ": {} ", tname)?;
             write!(out, "= ")?;
 
@@ -217,7 +219,7 @@ fn unparse_expr(e: &Expr, indent: usize, out: &mut dyn io::Write) -> io::Result<
         E::StructCtor { body, types } => {
             writeln!(out, "struct {{")?;
             for (nm, ty) in types {
-                let tname = INT.fetch_type(*ty).get_name();
+                let tname = ty.get_name();
                 write!(out, "type {} = {}", INT.fetch(*nm), tname)?;
                 writeln!(out, ",")?;
             }

@@ -53,12 +53,12 @@ pub enum BOp {
 
 impl BOp {
     /// Returns the type that the bin op operates on.
-    pub fn input_type(&self) -> TypeSym {
+    pub fn input_type(&self) -> Type {
         use BOp::*;
         match self {
-            And | Or | Xor => INT.bool(),
+            And | Or | Xor => Type::bool(),
             // TODO: This is wrong for Eq and Neq 'cause they can accept anything...
-            _ => INT.iunknown(),
+            _ => Type::iunknown(),
         }
     }
 
@@ -67,19 +67,18 @@ impl BOp {
     /// Needs to know what the type of the expression given to it is,
     /// but also assumes that the LHS and RHS have the same input type.
     /// Ensuring that is left as an exercise to the user.
-    pub fn output_type(&self, input_type: TypeSym) -> TypeSym {
+    pub fn output_type(&self, input_type: Type) -> Type {
         use BOp::*;
         match self {
             Add | Sub | Mul | Div | Mod => {
-                let def = INT.fetch_type(input_type);
-                if def.is_integer() {
+                if input_type.is_integer() {
                     input_type
                 } else {
                     unimplemented!("hmmmm, typechecking should probably never allow this");
                 }
             }
-            Eq | Neq | Gt | Lt | Gte | Lte => INT.bool(),
-            And | Or | Xor => INT.bool(),
+            Eq | Neq | Gt | Lt | Gte | Lte => Type::bool(),
+            And | Or | Xor => Type::bool(),
         }
     }
 }
@@ -97,29 +96,28 @@ pub enum UOp {
 impl UOp {
     /// Returns the type that the unary op operates on.
     /// Currently, only numbers.
-    pub fn input_type(&self) -> TypeSym {
+    pub fn input_type(&self) -> Type {
         use UOp::*;
         match self {
-            Neg => INT.iunknown(),
-            Not => INT.bool(),
+            Neg => Type::iunknown(),
+            Not => Type::bool(),
             Ref => todo!(),
             Deref => todo!(),
         }
     }
 
     /// What the resultant type of the uop is
-    pub fn output_type(&self, input_type: TypeSym) -> TypeSym {
+    pub fn output_type(&self, input_type: Type) -> Type {
         use UOp::*;
         match self {
             Neg => {
-                let def = INT.fetch_type(input_type);
-                if def.is_integer() {
+                if input_type.is_integer() {
                     input_type
                 } else {
                     unimplemented!("hmmmm, typechecking should probably never allow this");
                 }
             }
-            Not => INT.bool(),
+            Not => Type::bool(),
             Ref => todo!(),
             Deref => todo!(),
         }
@@ -139,30 +137,24 @@ pub struct IfCase {
 /// A function type signature
 #[derive(Debug, Clone, PartialEq)]
 pub struct Signature {
-    pub generics: Vec<TypeConstraint>,
     /// Parameters
-    pub params: Vec<(VarSym, TypeSym)>,
+    pub params: Vec<(VarSym, Type)>,
     /// Return type
-    pub rettype: TypeSym,
+    pub rettype: Type,
 }
 
 impl Signature {
     /// Returns a lambda typedef representing the signature
-    pub fn to_type(&self) -> TypeSym {
-        let params = self.params.iter().map(|(_v, t)| *t).collect();
-        let t = TypeDef::Lambda {
-            generics: self.generics.clone(),
-            params,
-            rettype: self.rettype,
-        };
-        INT.intern_type(&t)
+    pub fn to_type(&self) -> Type {
+        let paramtypes = self.params.iter().map(|(_nm, ty)| ty.clone()).collect();
+        Type::Func(paramtypes, Box::new(self.rettype.clone()))
     }
 
-    pub fn generic_type_names(&self) -> Vec<VarSym> {
+    pub fn generic_type_names(&self) -> Vec<String> {
         self.params
             .iter()
-            .filter_map(|(_nm, ty)| match &*INT.fetch_type(*ty) {
-                TypeDef::NamedTypeVar(x) => Some(*x),
+            .filter_map(|(_nm, ty)| match ty {
+                Type::Generic(x) => Some(x.clone()),
                 _ => None,
             })
             .collect()
@@ -194,7 +186,7 @@ pub enum Expr {
     },
     Let {
         varname: VarSym,
-        typename: TypeSym,
+        typename: Type,
         init: Box<Expr>,
         mutable: bool,
     },
@@ -212,7 +204,7 @@ pub enum Expr {
     Funcall {
         func: Box<Expr>,
         params: Vec<Expr>,
-        generic_types: Vec<TypeSym>,
+        generic_types: Vec<Type>,
     },
     Break,
     Return {
@@ -223,7 +215,7 @@ pub enum Expr {
         body: Vec<Expr>,
     },
     StructCtor {
-        types: BTreeMap<VarSym, TypeSym>,
+        types: BTreeMap<VarSym, Type>,
         body: Vec<(VarSym, Expr)>,
     },
     /// Tuple element reference
@@ -295,13 +287,13 @@ pub enum Decl {
     },
     Const {
         name: VarSym,
-        typename: TypeSym,
+        typename: Type,
         init: Expr,
         doc_comment: Vec<String>,
     },
     TypeDef {
         name: VarSym,
-        typedecl: TypeSym,
+        typedecl: Type,
         doc_comment: Vec<String>,
     },
 }
