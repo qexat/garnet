@@ -138,7 +138,7 @@ pub struct IfCase {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Signature {
     /// Parameters
-    pub params: Vec<(VarSym, Type)>,
+    pub params: Vec<(Sym, Type)>,
     /// Return type
     pub rettype: Type,
 }
@@ -170,7 +170,7 @@ pub enum Expr {
         val: Literal,
     },
     Var {
-        name: VarSym,
+        name: Sym,
     },
     BinOp {
         op: BOp,
@@ -185,7 +185,7 @@ pub enum Expr {
         body: Vec<Expr>,
     },
     Let {
-        varname: VarSym,
+        varname: Sym,
         typename: Type,
         init: Box<Expr>,
         mutable: bool,
@@ -215,8 +215,8 @@ pub enum Expr {
         body: Vec<Expr>,
     },
     StructCtor {
-        types: BTreeMap<VarSym, Type>,
-        body: Vec<(VarSym, Expr)>,
+        types: BTreeMap<Sym, Type>,
+        body: Vec<(Sym, Expr)>,
     },
     /// Tuple element reference
     TupleRef {
@@ -226,7 +226,7 @@ pub enum Expr {
     /// Struct element reference
     StructRef {
         expr: Box<Expr>,
-        elt: VarSym,
+        elt: Sym,
     },
     /// Separate from a BinOp because its typechecking rules are different.
     Assign {
@@ -271,7 +271,7 @@ impl Expr {
     /// Shortcuts for making vars
     pub fn var(name: &str) -> Expr {
         Expr::Var {
-            name: INT.intern(name),
+            name: Sym::new(name),
         }
     }
 }
@@ -280,19 +280,19 @@ impl Expr {
 #[derive(Debug, Clone, PartialEq)]
 pub enum Decl {
     Function {
-        name: VarSym,
+        name: Sym,
         signature: Signature,
         body: Vec<Expr>,
         doc_comment: Vec<String>,
     },
     Const {
-        name: VarSym,
+        name: Sym,
         typename: Type,
         init: Expr,
         doc_comment: Vec<String>,
     },
     TypeDef {
-        name: VarSym,
+        name: Sym,
         typedecl: Type,
         doc_comment: Vec<String>,
     },

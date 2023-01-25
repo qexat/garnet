@@ -22,29 +22,38 @@ use once_cell::sync::Lazy;
 /// The interner.  It's the ONLY part we have to actually
 /// carry around anywhere, so I'm experimenting with making
 /// it a global.  Seems to work pretty okay.
-pub static INT: Lazy<Cx> = Lazy::new(Cx::new);
+static INT: Lazy<Cx> = Lazy::new(Cx::new);
+
+/// A primitive type.  All primitives are basically atomic
+/// and can't contain other types, so.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum PrimType {
+    SInt(u8),
+    UnknownInt,
+    Bool,
+}
 
 /// A concrete type that has been fully inferred
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Type {
-    //Primitive(PrimType),
+    Prim(PrimType),
     /// A C-like enum.
     /// For now we pretend there's no underlying values attached to
     /// the name.
     ///
     /// ... I seem to have ended up with anonymous enums somehow.
     /// Not sure how I feel about this.
-    Enum(Vec<(VarSym, i32)>),
+    Enum(Vec<(Sym, i32)>),
     Named(String, Vec<Type>),
     Func(Vec<Type>, Box<Type>),
     /// The vec is the name of any generic type bindings in there
     /// 'cause we need to keep track of those apparently.
-    Struct(BTreeMap<VarSym, Type>, Vec<Type>),
+    Struct(BTreeMap<Sym, Type>, Vec<Type>),
     /// Sum type.
     /// I guess this is ok?
     ///
     /// Like structs, contains a list of generic bindings.
-    Sum(BTreeMap<VarSym, Type>, Vec<Type>),
+    Sum(BTreeMap<Sym, Type>, Vec<Type>),
     /// Arrays are just a type and a number.
     Array(Box<Type>, usize),
     /// A generic type parameter
@@ -56,7 +65,7 @@ impl Type {
     fn collect_generic_names(&self) -> Vec<String> {
         fn helper(t: &Type, accm: &mut Vec<String>) {
             match t {
-                //Type::Primitive(_) => (),
+                Type::Prim(_) => (),
                 Type::Enum(_ts) => (),
                 Type::Named(_, ts) => {
                     for t in ts {
@@ -116,7 +125,7 @@ impl Type {
     fn get_type_params(&self) -> Vec<String> {
         fn helper(t: &Type, accm: &mut Vec<String>) {
             match t {
-                //Type::Primitive(_) => (),
+                Type::Prim(_) => (),
                 Type::Enum(_ts) => (),
                 Type::Named(_, generics) => {
                     for g in generics {
@@ -161,49 +170,42 @@ impl Type {
 
     /// Shortcut for getting the type for an unknown int
     pub fn iunknown() -> Self {
-        todo!()
-        //Self::UnknownInt
+        Self::Prim(PrimType::UnknownInt)
     }
 
     /// Shortcut for getting the type symbol for an int of a particular size
     pub fn isize(size: u8) -> Self {
-        todo!()
-        //Self::SInt(size)
+        Self::Prim(PrimType::SInt(size))
     }
 
     /// Shortcut for getting the type symbol for I128
     pub fn i128() -> Self {
-        todo!()
-        //Self::SInt(16)
+        Self::isize(16)
     }
 
     /// Shortcut for getting the type symbol for I64
     pub fn i64() -> Self {
-        todo!()
-        //Self::SInt(8)
+        Self::isize(8)
     }
 
     /// Shortcut for getting the type symbol for I32
     pub fn i32() -> Self {
-        todo!()
-        //Self::SInt(4)
+        Self::isize(4)
     }
 
     /// Shortcut for getting the type symbol for I16
     pub fn i16() -> Self {
-        //Self::SInt(2)
-        todo!()
+        Self::isize(2)
     }
 
     /// Shortcut for getting the type symbol for I8
     pub fn i8() -> Self {
-        todo!()
-        //Self::SInt(1)
+        Self::isize(1)
     }
 
     /// Shortcut for getting the type symbol for Bool
     pub fn bool() -> Self {
-        Self::Named("Bool".to_string(), vec![])
+        Self::Prim(PrimType::Bool)
     }
 
     /// Shortcut for getting the type symbol for Unit
@@ -213,8 +215,7 @@ impl Type {
 
     /// Shortcut for getting the type symbol for Never
     pub fn never() -> Self {
-        todo!()
-        //Self::Never
+        Self::Named("Never".to_string(), vec![])
     }
 
     pub fn tuple(args: Vec<Self>) -> Self {
@@ -227,7 +228,8 @@ impl Type {
 
     pub fn is_integer(&self) -> bool {
         match self {
-            Self::Named(nm, _) if nm == "I32" => true,
+            Self::Prim(PrimType::SInt(_)) => true,
+            Self::Prim(PrimType::UnknownInt) => true,
             _ => false,
         }
     }
@@ -242,19 +244,16 @@ impl Type {
     /// types take more parsing to turn from strings to `TypeDef`'s
     /// and are handled in `parser::parse_type()`.
     pub fn get_primitive_type(s: &str) -> Option<Type> {
-        todo!()
-        /*
         match s {
-            "I8" => Some(TypeDef::SInt(1)),
-            "I16" => Some(TypeDef::SInt(2)),
-            "I32" => Some(TypeDef::SInt(4)),
-            "I64" => Some(TypeDef::SInt(8)),
-            "I128" => Some(TypeDef::SInt(16)),
-            "Bool" => Some(TypeDef::Bool),
-            "Never" => Some(TypeDef::Never),
+            "I8" => Some(Type::i8()),
+            "I16" => Some(Type::i16()),
+            "I32" => Some(Type::i32()),
+            "I64" => Some(Type::i64()),
+            "I128" => Some(Type::i128()),
+            "Bool" => Some(Type::bool()),
+            "Never" => Some(Type::never()),
             _ => None,
         }
-            */
     }
 
     /// Get a string for the name of the given type.
@@ -271,7 +270,7 @@ impl Type {
                     .collect::<Vec<_>>();
                 p_strs.join(", ")
             };
-            let join_vars_with_commas = |lst: &BTreeMap<VarSym, TypeSym>| {
+            let join_vars_with_commas = |lst: &BTreeMap<Sym, TypeSym>| {
                 let p_strs = lst
                     .iter()
                     .map(|(pname, ptype)| {
@@ -399,33 +398,36 @@ impl TypeSym {
 }
 */
 
-/// The interned name of a variable/value
+/// An interned string of some kind, any kind.
 #[derive(Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct VarSym(pub usize);
+pub struct Sym(pub usize);
 
 /// Required for interner interface.
-impl From<usize> for VarSym {
-    fn from(i: usize) -> VarSym {
-        VarSym(i)
+impl From<usize> for Sym {
+    fn from(i: usize) -> Sym {
+        Sym(i)
     }
 }
 
 /// Required for interner interface.
-impl From<VarSym> for usize {
-    fn from(i: VarSym) -> usize {
+impl From<Sym> for usize {
+    fn from(i: Sym) -> usize {
         i.0
     }
 }
 
-impl fmt::Debug for VarSym {
+impl fmt::Debug for Sym {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "VarSym({}, {:?})", self.0, INT.fetch(*self))
+        write!(f, "Sym({}, {:?})", self.0, INT.fetch(*self))
     }
 }
 
-impl VarSym {
-    /// Same as TypeSym::val()
-    fn val(&self) -> Arc<String> {
+impl Sym {
+    pub fn new(s: impl AsRef<str>) -> Self {
+        INT.intern(s)
+    }
+    /// Get the underlying string
+    pub fn val(&self) -> Arc<String> {
         INT.fetch(*self)
     }
 }
@@ -434,10 +436,10 @@ impl VarSym {
 /// `foo.bar.bop`
 pub struct Path {
     /// The last part of the path, must always exist.
-    pub name: VarSym,
+    pub name: Sym,
     /// The rest of the (possibly empty) path.
     /// TODO: Whether this must be absolute or could be relative is currently undefined.
-    pub path: Vec<VarSym>,
+    pub path: Vec<Sym>,
 }
 
 /*
@@ -461,13 +463,13 @@ pub enum TypeDef<T = TypeSym> {
         rettype: T,
     },
     /// A struct.
-    Struct { fields: BTreeMap<VarSym, T> },
+    Struct { fields: BTreeMap<Sym, T> },
     Enum {
         /// TODO: For now the only size of an enum is i32.
-        variants: Vec<(VarSym, i32)>,
+        variants: Vec<(Sym, i32)>,
     },
     /// These are type variables that are explicitly declared by the user.
-    NamedTypeVar(VarSym),
+    NamedTypeVar(Sym),
 }
 
 impl TypeDef {
@@ -505,7 +507,7 @@ impl TypeDef {
                 .collect::<Vec<_>>();
             p_strs.join(", ")
         };
-        let join_vars_with_commas = |lst: &BTreeMap<VarSym, TypeSym>| {
+        let join_vars_with_commas = |lst: &BTreeMap<Sym, TypeSym>| {
             let p_strs = lst
                 .iter()
                 .map(|(pname, ptype)| {
@@ -615,7 +617,7 @@ impl TypeDef {
 
     /// Returns the field type if this is a struct, None
     /// if this type is not a struct or does not have that field.
-    pub fn struct_field(&self, field: VarSym) -> Option<TypeSym> {
+    pub fn struct_field(&self, field: Sym) -> Option<TypeSym> {
         match self {
             TypeDef::Struct { fields } => fields.get(&field).copied(),
             _ => None,
@@ -648,7 +650,7 @@ impl TypeDef {
 #[derive(Debug)]
 pub struct Cx {
     /// Interned var names
-    syms: intern::Interner<VarSym, String>,
+    syms: intern::Interner<Sym, String>,
     //files: cs::files::SimpleFiles<String, String>,
 }
 
@@ -661,12 +663,12 @@ impl Cx {
     }
 
     /// Intern the symbol.
-    pub fn intern(&self, s: impl AsRef<str>) -> VarSym {
+    fn intern(&self, s: impl AsRef<str>) -> Sym {
         self.syms.intern(&s.as_ref().to_owned())
     }
 
     /// Get the string for a variable symbol
-    pub fn fetch(&self, s: VarSym) -> Arc<String> {
+    fn fetch(&self, s: Sym) -> Arc<String> {
         self.syms.fetch(s)
     }
 
@@ -726,7 +728,7 @@ impl Cx {
     /// Useful for some optimziations and intermediate names and such.
     ///
     /// Starts with a `!` which currently cannot appear in any identifier.
-    pub fn gensym(&self, s: &str) -> VarSym {
+    pub fn gensym(&self, s: &str) -> Sym {
         let sym = format!("!{}_{}", s, self.syms.count());
         self.intern(sym)
     }
