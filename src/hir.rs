@@ -54,11 +54,11 @@ pub enum Expr {
         val: Literal,
     },
     EnumLit {
-        val: VarSym,
+        val: Sym,
         ty: Type,
     },
     Var {
-        name: VarSym,
+        name: Sym,
     },
     BinOp {
         op: BOp,
@@ -73,7 +73,7 @@ pub enum Expr {
         body: Vec<ExprNode>,
     },
     Let {
-        varname: VarSym,
+        varname: Sym,
         typename: Type,
         init: Box<ExprNode>,
         mutable: bool,
@@ -98,11 +98,11 @@ pub enum Expr {
         retval: Box<ExprNode>,
     },
     StructCtor {
-        body: Vec<(VarSym, ExprNode)>,
+        body: Vec<(Sym, ExprNode)>,
     },
     StructRef {
         expr: Box<ExprNode>,
-        elt: VarSym,
+        elt: Sym,
     },
     Assign {
         lhs: Box<ExprNode>,
@@ -142,17 +142,17 @@ impl Expr {
 #[derive(Debug, Clone, PartialEq)]
 pub enum Decl {
     Function {
-        name: VarSym,
+        name: Sym,
         signature: Signature,
         body: Vec<ExprNode>,
     },
     Const {
-        name: VarSym,
+        name: Sym,
         typename: Type,
         init: ExprNode,
     },
     TypeDef {
-        name: VarSym,
+        name: Sym,
         typedecl: Type,
     },
     /// Our first compiler intrinsic!  \o/
@@ -163,7 +163,7 @@ pub enum Decl {
     /// a function by hand, so here we are.  In all other ways
     /// though we treat it exactly like a function though.
     Constructor {
-        name: VarSym,
+        name: Sym,
         signature: Signature,
     },
 }
@@ -304,7 +304,7 @@ fn lower_expr(expr: &ast::Expr) -> ExprNode {
             let body_pairs = body
                 .into_iter()
                 .enumerate()
-                .map(|(i, vl)| (INT.intern(format!("_{}", i)), lower_expr(vl)))
+                .map(|(i, vl)| (Sym::new(format!("_{}", i)), lower_expr(vl)))
                 .collect();
             Expr::StructCtor { body: body_pairs }
         }
@@ -321,7 +321,7 @@ fn lower_expr(expr: &ast::Expr) -> ExprNode {
         // Turn tuple.0 into struct._0
         E::TupleRef { expr, elt } => Expr::StructRef {
             expr: Box::new(lower_expr(expr)),
-            elt: INT.intern(format!("_{}", elt)),
+            elt: Sym::new(format!("_{}", elt)),
         },
         E::StructRef { expr, elt } => Expr::StructRef {
             expr: Box::new(lower_expr(expr)),
@@ -390,8 +390,8 @@ fn lower_decl(accm: &mut Vec<Decl>, decl: &ast::Decl) {
                 name: *name,
                 typedecl: *typedecl,
             });
-            let paramname = INT.intern("input");
-            let rtype = INT.intern_type(&TypeDef::Named(*name));
+            let paramname = Sym::new("input");
+            let rtype = Sym::new_type(&TypeDef::Named(*name));
             accm.push(Decl::Constructor {
                 name: *name,
                 signature: hir::Signature {
@@ -409,7 +409,7 @@ fn lower_decl(accm: &mut Vec<Decl>, decl: &ast::Decl) {
                     let mut constructor_fields = vec![];
                     for (var, _val) in variants {
                         //struct_fields.insert(*var, *typedecl);
-                        let named_type = INT.intern_type(&TypeDef::Named(*name));
+                        let named_type = Sym::new_type(&TypeDef::Named(*name));
                         struct_fields.insert(*var, named_type);
                         let e = Expr::EnumLit {
                             ty: named_type,
@@ -435,8 +435,8 @@ fn lower_decl(accm: &mut Vec<Decl>, decl: &ast::Decl) {
                     };
                     let t = f(&e);
                     accm.push(Decl::Const {
-                        name: INT.intern(struct_name),
-                        typename: INT.intern_type(&struct_type),
+                        name: Sym::new(struct_name),
+                        typename: Sym::new_type(&struct_type),
                         init: ExprNode {
                             e,
                             t,

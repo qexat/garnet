@@ -20,7 +20,7 @@ fn unparse_decl(d: &Decl, out: &mut dyn io::Write) -> io::Result<()> {
                 // No writeln, doc comment strings already end in \n
                 write!(out, "--- {}", line)?;
             }
-            let name = INT.fetch(*name);
+            let name = name.val();
             write!(out, "fn {}", name)?;
             unparse_sig(signature, out)?;
             writeln!(out, " =")?;
@@ -39,7 +39,7 @@ fn unparse_decl(d: &Decl, out: &mut dyn io::Write) -> io::Result<()> {
             for line in doc_comment.iter() {
                 write!(out, "--- {}", line)?;
             }
-            let name = INT.fetch(*name);
+            let name = name.val();
             let tname = typename.get_name();
             write!(out, "const {}: {} = ", name, tname)?;
             unparse_expr(init, 0, out)?;
@@ -54,7 +54,7 @@ fn unparse_sig(sig: &Signature, out: &mut dyn io::Write) -> io::Result<()> {
     if sig.generics.len() > 0 {
         write!(out, "[")?;
         for name in &sig.generics {
-            let name = INT.fetch(*name);
+            let name = *name.val();
             write!(out, "{}, ", name)?;
         }
         write!(out, "]")?;
@@ -63,7 +63,7 @@ fn unparse_sig(sig: &Signature, out: &mut dyn io::Write) -> io::Result<()> {
 
     write!(out, "(")?;
     for (name, typename) in sig.params.iter() {
-        let name = INT.fetch(*name);
+        let name = name.val();
         let tname = typename.get_name();
         write!(out, "{}: {}", name, tname)?;
     }
@@ -93,7 +93,7 @@ fn unparse_expr(e: &Expr, indent: usize, out: &mut dyn io::Write) -> io::Result<
             Literal::Bool(b) => write!(out, "{}", b),
         },
         E::Var { name } => {
-            let name = INT.fetch(*name);
+            let name = name.val();
             write!(out, "{}", name)
         }
         E::UniOp { op, rhs } => {
@@ -142,7 +142,7 @@ fn unparse_expr(e: &Expr, indent: usize, out: &mut dyn io::Write) -> io::Result<
             init,
             mutable,
         } => {
-            let name = INT.fetch(*varname);
+            let name = varname.val();
             write!(out, "let ")?;
             if *mutable {
                 write!(out, "mut ")?;
@@ -220,11 +220,11 @@ fn unparse_expr(e: &Expr, indent: usize, out: &mut dyn io::Write) -> io::Result<
             writeln!(out, "struct {{")?;
             for (nm, ty) in types {
                 let tname = ty.get_name();
-                write!(out, "type {} = {}", INT.fetch(*nm), tname)?;
+                write!(out, "type {} = {}", nm.val(), tname)?;
                 writeln!(out, ",")?;
             }
             for (nm, expr) in body {
-                write!(out, "{} = ", INT.fetch(*nm))?;
+                write!(out, "{} = ", nm.val())?;
                 unparse_expr(expr, 0, out)?;
                 writeln!(out, ",")?;
             }
@@ -236,7 +236,7 @@ fn unparse_expr(e: &Expr, indent: usize, out: &mut dyn io::Write) -> io::Result<
         }
         E::StructRef { expr, elt } => {
             unparse_expr(&*expr, indent, out)?;
-            write!(out, ".{}", INT.fetch(*elt))
+            write!(out, ".{}", elt.val())
         }
         E::Ref { expr } => {
             unparse_expr(&*expr, indent, out)?;

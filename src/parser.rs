@@ -479,12 +479,12 @@ impl<'input> Parser<'input> {
     }
 
     /// Consume an identifier and return its interned symbol.
-    /// Note this returns a VarSym, not a Type...
-    fn expect_ident(&mut self) -> VarSym {
+    /// Note this returns a Sym, not a Type...
+    fn expect_ident(&mut self) -> Sym {
         match self.next() {
             Some(Token {
                 kind: T::Ident(s), ..
-            }) => INT.intern(s),
+            }) => Sym::new(s),
             Some(Token { kind, span }) => {
                 let msg = format!("Parse error: got token {:?}.  Expected identifier.", kind,);
                 let diag = Diagnostic::error()
@@ -646,7 +646,7 @@ impl<'input> Parser<'input> {
     /// Expects the first bracket to already be consumed
     ///
     /// Returns a vec of type var names
-    fn parse_generic_signature(&mut self) -> Vec<VarSym> {
+    fn parse_generic_signature(&mut self) -> Vec<Sym> {
         let mut body = vec![];
         while !self.peek_is(T::RBracket.discr()) {
             let t = self.expect_ident();
@@ -698,7 +698,7 @@ impl<'input> Parser<'input> {
 
     /// sig = ident ":" typename
     /// fn_args = "(" [sig {"," sig} [","]] ")"
-    fn parse_fn_args(&mut self) -> Vec<(VarSym, Type)> {
+    fn parse_fn_args(&mut self) -> Vec<(Sym, Type)> {
         let mut args = vec![];
         self.expect(T::LParen);
 
@@ -746,7 +746,7 @@ impl<'input> Parser<'input> {
         args
     }
 
-    fn parse_struct_fields(&mut self) -> (BTreeMap<VarSym, Type>, BTreeSet<VarSym>) {
+    fn parse_struct_fields(&mut self) -> (BTreeMap<Sym, Type>, BTreeSet<Sym>) {
         let mut fields = BTreeMap::new();
         let typefields = BTreeSet::new();
 
@@ -782,7 +782,7 @@ impl<'input> Parser<'input> {
         (fields, typefields)
     }
 
-    fn parse_struct_lit_fields(&mut self) -> (Vec<(VarSym, ast::Expr)>, BTreeMap<VarSym, Type>) {
+    fn parse_struct_lit_fields(&mut self) -> (Vec<(Sym, ast::Expr)>, BTreeMap<Sym, Type>) {
         let typefields = BTreeMap::new();
         let mut fields = vec![];
 
@@ -820,7 +820,7 @@ impl<'input> Parser<'input> {
         (fields, typefields)
     }
 
-    fn parse_enum_fields(&mut self) -> Vec<(VarSym, i32)> {
+    fn parse_enum_fields(&mut self) -> Vec<(Sym, i32)> {
         let mut current_val = 0;
         let mut variants = vec![];
 
@@ -1023,7 +1023,7 @@ impl<'input> Parser<'input> {
                         match tok.as_ref().map(|t| &t.kind) {
                             Some(T::Ident(i)) => ast::Expr::StructRef {
                                 expr: Box::new(lhs),
-                                elt: INT.intern(i),
+                                elt: Sym::new(i),
                             },
                             // Following Rust, we do not allow numbers
                             // with suffixes as tuple indices.
@@ -1406,7 +1406,7 @@ mod tests {
     #[test]
     fn test_const() {
         test_decl_is("const foo: I32 = -9", || ast::Decl::Const {
-            name: INT.intern("foo"),
+            name: Sym::new("foo"),
             typename: Type::i32(),
             init: Expr::UniOp {
                 op: ast::UOp::Neg,
@@ -1421,9 +1421,9 @@ mod tests {
         test_decl_is("fn foo(x: I32): I32 = 9 end", || {
             let i32_t = Type::i32();
             ast::Decl::Function {
-                name: INT.intern("foo"),
+                name: Sym::new("foo"),
                 signature: ast::Signature {
-                    params: vec![(INT.intern("x"), i32_t.clone())],
+                    params: vec![(Sym::new("x"), i32_t.clone())],
                     rettype: i32_t,
                 },
                 body: vec![Expr::int(9)],
@@ -1435,7 +1435,7 @@ mod tests {
     #[test]
     fn test_typedef() {
         test_decl_is("type bop = I32", || ast::Decl::TypeDef {
-            name: INT.intern("bop"),
+            name: Sym::new("bop"),
             typedecl: Type::i32(),
             doc_comment: vec![],
         });
@@ -1451,10 +1451,10 @@ const baz: {} = {}
 type blar = I8
 "#;
         let p = &mut Parser::new("unittest", s);
-        let foosym = INT.intern("foo");
-        let barsym = INT.intern("bar");
-        let bazsym = INT.intern("baz");
-        let blarsym = INT.intern("blar");
+        let foosym = Sym::new("foo");
+        let barsym = Sym::new("bar");
+        let bazsym = Sym::new("baz");
+        let blarsym = Sym::new("blar");
         let i32_t = Type::i32();
         let i8_t = Type::i8();
         let bool_t = Type::bool();
@@ -1619,7 +1619,7 @@ type blar = I8
     fn parse_funcall() {
         test_expr_is("y(1, 2, 3)", || Expr::Funcall {
             func: Box::new(Expr::Var {
-                name: INT.intern("y"),
+                name: Sym::new("y"),
             }),
             params: vec![Expr::int(1), Expr::int(2), Expr::int(3)],
             generic_types: vec![],
@@ -1627,13 +1627,13 @@ type blar = I8
 
         test_expr_is("foo(0, bar(1 * 2), 3)", || Expr::Funcall {
             func: Box::new(Expr::Var {
-                name: INT.intern("foo"),
+                name: Sym::new("foo"),
             }),
             params: vec![
                 Expr::int(0),
                 Expr::Funcall {
                     func: Box::new(Expr::Var {
-                        name: INT.intern("bar"),
+                        name: Sym::new("bar"),
                     }),
                     params: vec![Expr::BinOp {
                         op: ast::BOp::Mul,
@@ -1738,14 +1738,14 @@ type blar = I8
 
         test_expr_is("x()", || Expr::Funcall {
             func: Box::new(Expr::Var {
-                name: INT.intern("x"),
+                name: Sym::new("x"),
             }),
             params: vec![],
             generic_types: vec![],
         });
         test_expr_is("(x())", || Expr::Funcall {
             func: Box::new(Expr::Var {
-                name: INT.intern("x"),
+                name: Sym::new("x"),
             }),
             params: vec![],
             generic_types: vec![],

@@ -10,12 +10,12 @@ use std::rc::Rc;
 use crate::*;
 
 use crate::hir::{self, Expr};
-use crate::{Type, VarSym, INT};
+use crate::{Sym, Type};
 
 #[derive(Debug, Clone)]
 pub enum TypeError {
-    UnknownVar(VarSym),
-    AlreadyDefined(VarSym),
+    UnknownVar(Sym),
+    AlreadyDefined(Sym),
     TypeMismatch {
         expr_name: Cow<'static, str>,
         got: Type,
@@ -28,10 +28,10 @@ pub enum TypeError {
         expr_name: Cow<'static, str>,
     },
     /*
-    UnknownType(VarSym),
+    UnknownType(Sym),
     InvalidReturn,
     Return {
-        fname: VarSym,
+        fname: Sym,
         got: Type,
         expected: Type,
     },
@@ -47,7 +47,7 @@ pub enum TypeError {
         expected: Type,
     },
     LetType {
-        name: VarSym,
+        name: Sym,
         got: Type,
         expected: Type,
     },
@@ -69,16 +69,16 @@ pub enum TypeError {
         got: Type,
     },
     StructRef {
-        fieldname: VarSym,
+        fieldname: Sym,
         got: Type,
     },
     StructField {
-        expected: Vec<VarSym>,
-        got: Vec<VarSym>,
+        expected: Vec<Sym>,
+        got: Vec<Sym>,
     },
     EnumVariant {
-        expected: Vec<VarSym>,
-        got: VarSym,
+        expected: Vec<Sym>,
+        got: Sym,
     },
     */
 }
