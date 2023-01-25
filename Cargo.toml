@@ -25,16 +25,15 @@ harness = false
 [dependencies]
 argh = "0.1"
 codespan-reporting = "0.11"
-im = "15"
-logos = "0.12"
 once_cell = "1"
-qbe = "2"
+logos = "0.12"
+
 
 [dev-dependencies]
 # Use wasmtime to evaluate results of end-to-end tests.
 #wasmtime = "0.16"
 #wasmprinter = "0.2"
 tempfile = "3"
-libloading = "0.7"
+#libloading = "0.7"
 lang_tester = "0.7"
 criterion = "0.3"
