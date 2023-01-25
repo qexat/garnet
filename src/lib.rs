@@ -13,7 +13,6 @@ pub mod hir;
 pub mod intern;
 pub mod parser;
 pub mod passes;
-//pub mod typechonk;
 pub mod typeck;
 
 #[cfg(test)]
@@ -25,6 +24,346 @@ use once_cell::sync::Lazy;
 /// it a global.  Seems to work pretty okay.
 pub static INT: Lazy<Cx> = Lazy::new(Cx::new);
 
+/// A concrete type that has been fully inferred
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Type {
+    //Primitive(PrimType),
+    /// A C-like enum.
+    /// For now we pretend there's no underlying values attached to
+    /// the name.
+    ///
+    /// ... I seem to have ended up with anonymous enums somehow.
+    /// Not sure how I feel about this.
+    Enum(Vec<(VarSym, i32)>),
+    Named(String, Vec<Type>),
+    Func(Vec<Type>, Box<Type>),
+    /// The vec is the name of any generic type bindings in there
+    /// 'cause we need to keep track of those apparently.
+    Struct(BTreeMap<VarSym, Type>, Vec<Type>),
+    /// Sum type.
+    /// I guess this is ok?
+    ///
+    /// Like structs, contains a list of generic bindings.
+    Sum(BTreeMap<VarSym, Type>, Vec<Type>),
+    /// Arrays are just a type and a number.
+    Array(Box<Type>, usize),
+    /// A generic type parameter
+    Generic(String),
+}
+
+impl Type {
+    /// Search through the type and return any generic types in it.
+    fn collect_generic_names(&self) -> Vec<String> {
+        fn helper(t: &Type, accm: &mut Vec<String>) {
+            match t {
+                //Type::Primitive(_) => (),
+                Type::Enum(_ts) => (),
+                Type::Named(_, ts) => {
+                    for t in ts {
+                        helper(t, accm);
+                    }
+                }
+                Type::Func(args, rettype) => {
+                    for t in args {
+                        helper(t, accm);
+                    }
+                    helper(rettype, accm)
+                }
+                Type::Struct(body, generics) => {
+                    for (_, ty) in body {
+                        helper(ty, accm);
+                    }
+                    // This makes me a little uneasy
+                    // 'cause I thiiiink the whole point of the names on
+                    // the struct is to list *all* the generic names in it...
+                    // but we could have nested definitions
+                    // like Foo(@T) ( Bar(@G) ( {@T, @G} ) )
+                    for ty in generics {
+                        helper(ty, accm);
+                    }
+                }
+                // Just like structs
+                Type::Sum(body, generics) => {
+                    for (_, ty) in body {
+                        helper(ty, accm);
+                    }
+                    for ty in generics {
+                        helper(ty, accm);
+                    }
+                }
+                Type::Array(ty, _size) => {
+                    helper(ty, accm);
+                }
+                Type::Generic(s) => {
+                    // Deduplicating these things while maintaining ordering
+                    // is kinda screwy.
+                    // This works, it's just, yanno, also O(n^2)
+                    // Could use a set to check membership , but fuckit for now.
+                    if !accm.contains(s) {
+                        accm.push(s.clone());
+                    }
+                }
+            }
+        }
+        let mut accm = vec![];
+        helper(self, &mut accm);
+        accm
+    }
+
+    /// Returns the type parameters *specified by the toplevel type*.
+    /// Does *not* recurse to all types below it!
+    /// ...except for function args apparently.
+    fn get_type_params(&self) -> Vec<String> {
+        fn helper(t: &Type, accm: &mut Vec<String>) {
+            match t {
+                //Type::Primitive(_) => (),
+                Type::Enum(_ts) => (),
+                Type::Named(_, generics) => {
+                    for g in generics {
+                        helper(g, accm);
+                    }
+                }
+                Type::Func(args, rettype) => {
+                    for t in args {
+                        helper(t, accm);
+                    }
+                    helper(rettype, accm)
+                }
+                Type::Struct(_body, generics) => {
+                    for g in generics {
+                        helper(g, accm);
+                    }
+                }
+                Type::Sum(_body, generics) => {
+                    for g in generics {
+                        helper(g, accm);
+                    }
+                }
+                Type::Array(ty, _size) => {
+                    helper(ty, accm);
+                }
+                Type::Generic(s) => {
+                    // Deduplicating these things while maintaining ordering
+                    // is kinda screwy.
+                    // This works, it's just, yanno, also O(n^2)
+                    // Could use a set to check membership , but fuckit for now.
+                    if !accm.contains(s) {
+                        accm.push(s.clone())
+                    }
+                }
+            }
+        }
+        let mut accm = vec![];
+        helper(self, &mut accm);
+        println!("Found type params for {:?}: {:?}", self, accm);
+        accm
+    }
+
+    /// Shortcut for getting the type for an unknown int
+    pub fn iunknown() -> Self {
+        todo!()
+        //Self::UnknownInt
+    }
+
+    /// Shortcut for getting the type symbol for an int of a particular size
+    pub fn isize(size: u8) -> Self {
+        todo!()
+        //Self::SInt(size)
+    }
+
+    /// Shortcut for getting the type symbol for I128
+    pub fn i128() -> Self {
+        todo!()
+        //Self::SInt(16)
+    }
+
+    /// Shortcut for getting the type symbol for I64
+    pub fn i64() -> Self {
+        todo!()
+        //Self::SInt(8)
+    }
+
+    /// Shortcut for getting the type symbol for I32
+    pub fn i32() -> Self {
+        todo!()
+        //Self::SInt(4)
+    }
+
+    /// Shortcut for getting the type symbol for I16
+    pub fn i16() -> Self {
+        //Self::SInt(2)
+        todo!()
+    }
+
+    /// Shortcut for getting the type symbol for I8
+    pub fn i8() -> Self {
+        todo!()
+        //Self::SInt(1)
+    }
+
+    /// Shortcut for getting the type symbol for Bool
+    pub fn bool() -> Self {
+        Self::Named("Bool".to_string(), vec![])
+    }
+
+    /// Shortcut for getting the type symbol for Unit
+    pub fn unit() -> Self {
+        Self::Named("Tuple".to_string(), vec![])
+    }
+
+    /// Shortcut for getting the type symbol for Never
+    pub fn never() -> Self {
+        todo!()
+        //Self::Never
+    }
+
+    pub fn tuple(args: Vec<Self>) -> Self {
+        Self::Named("Tuple".into(), args)
+    }
+
+    pub fn named(name: impl Into<String>) -> Self {
+        Self::Named(name.into(), vec![])
+    }
+
+    pub fn is_integer(&self) -> bool {
+        match self {
+            Self::Named(nm, _) if nm == "I32" => true,
+            _ => false,
+        }
+    }
+
+    /// Takes a string and matches it against the builtin/
+    /// primitive types, returning the appropriate `TypeDef`
+    ///
+    /// If it is not a built-in type, or is a compound such
+    /// as a tuple or struct, returns None.
+    ///
+    /// The effective inverse of `TypeDef::get_name()`.  Compound
+    /// types take more parsing to turn from strings to `TypeDef`'s
+    /// and are handled in `parser::parse_type()`.
+    pub fn get_primitive_type(s: &str) -> Option<Type> {
+        todo!()
+        /*
+        match s {
+            "I8" => Some(TypeDef::SInt(1)),
+            "I16" => Some(TypeDef::SInt(2)),
+            "I32" => Some(TypeDef::SInt(4)),
+            "I64" => Some(TypeDef::SInt(8)),
+            "I128" => Some(TypeDef::SInt(16)),
+            "Bool" => Some(TypeDef::Bool),
+            "Never" => Some(TypeDef::Never),
+            _ => None,
+        }
+            */
+    }
+
+    /// Get a string for the name of the given type.
+    pub fn get_name(&self) -> Cow<'static, str> {
+        todo!()
+        /*
+            let join_types_with_commas = |lst: &[TypeSym]| {
+                let p_strs = lst
+                    .iter()
+                    .map(|ptype| {
+                        let ptype_def = INT.fetch_type(*ptype);
+                        ptype_def.get_name()
+                    })
+                    .collect::<Vec<_>>();
+                p_strs.join(", ")
+            };
+            let join_vars_with_commas = |lst: &BTreeMap<VarSym, TypeSym>| {
+                let p_strs = lst
+                    .iter()
+                    .map(|(pname, ptype)| {
+                        let ptype_def = INT.fetch_type(*ptype);
+                        let pname = INT.fetch(*pname);
+                        format!("{}: {}", pname, ptype_def.get_name())
+                    })
+                    .collect::<Vec<_>>();
+                p_strs.join(", ")
+            };
+            let join_generics_with_commas = |lst: &[TypeConstraint]| {
+                // slice.join() alone won't work here 'cause we gotta map the thing
+                // first, which makes an iterator, not a slice.
+                // Apparently we want std::iter::IntersperseWith, but, that's
+                // not stable yet.  Odd!
+                let strs = lst
+                    .iter()
+                    .map(|name| (&*INT.fetch(*name)).to_owned())
+                    .collect::<Vec<_>>();
+                strs.join(", ")
+            };
+            match self {
+                Type::SInt(16) => Cow::Borrowed("I128"),
+                Type::SInt(8) => Cow::Borrowed("I64"),
+                Type::SInt(4) => Cow::Borrowed("I32"),
+                Type::SInt(2) => Cow::Borrowed("I16"),
+                Type::SInt(1) => Cow::Borrowed("I8"),
+                Type::SInt(s) => panic!("Undefined integer size {}!", s),
+                Type::UnknownInt => Cow::Borrowed("{number}"),
+                Type::Bool => Cow::Borrowed("Bool"),
+                Type::Never => Cow::Borrowed("Never"),
+                Type::Tuple(v) => {
+                    if v.is_empty() {
+                        Cow::Borrowed("{}")
+                    } else {
+                        let mut res = String::from("{");
+                        res += &join_types_with_commas(v);
+                        res += "}";
+                        Cow::Owned(res)
+                    }
+                }
+                Type::Lambda {
+                    generics,
+                    params,
+                    rettype,
+                } => {
+                    let mut t = String::from("fn");
+                    if generics.len() > 0 {
+                        t += "[";
+                        t += &join_generics_with_commas(generics);
+                        t += "]";
+                    }
+                    t += "(";
+                    t += &join_types_with_commas(params);
+
+                    t += ")";
+                    let ret_def = INT.fetch_type(*rettype);
+                    match &*ret_def {
+                        Type::Tuple(x) if x.is_empty() => {
+                            // pass, implicitly return unit
+                        }
+                        x => {
+                            let type_str = x.get_name();
+                            t += ": ";
+                            t += &type_str;
+                        }
+                    }
+                    Cow::Owned(t)
+                }
+                Type::Struct { fields, .. } => {
+                    let mut res = String::from("struct {");
+                    res += &join_vars_with_commas(fields);
+                    res += "}";
+                    Cow::Owned(res)
+                }
+                Type::Enum { variants } => {
+                    let mut res = String::from("enum {");
+                    let s = variants
+                        .iter()
+                        .map(|(nm, vl)| format!("    {} = {},\n", INT.fetch(*nm), vl))
+                        .collect::<String>();
+                    res += &s;
+                    res += "\n}\n";
+                    Cow::Owned(res)
+                }
+                Type::NamedTypeVar(vsym) => Cow::Owned((&*INT.fetch(*vsym)).clone()),
+            }
+        */
+    }
+}
+
+/*
 /// The interned name of a type
 #[derive(Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct TypeSym(pub usize);
@@ -58,6 +397,7 @@ impl TypeSym {
         INT.fetch_type(*self)
     }
 }
+*/
 
 /// The interned name of a variable/value
 #[derive(Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -100,11 +440,7 @@ pub struct Path {
     pub path: Vec<VarSym>,
 }
 
-/// Generic type decls and constraints.
-/// Right now it's just a the generic name, but eventually
-/// it may be more complex.
-pub type TypeConstraint = VarSym;
-
+/*
 /// A complete-ish description of a type.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum TypeDef<T = TypeSym> {
@@ -302,6 +638,7 @@ impl TypeDef {
         }
     }
 }
+*/
 
 /// Interner context.
 ///
@@ -310,10 +647,8 @@ impl TypeDef {
 /// type for each step of compilation hasn't really worked out.
 #[derive(Debug)]
 pub struct Cx {
-    /// Interned symbols
+    /// Interned var names
     syms: intern::Interner<VarSym, String>,
-    /// Known types
-    types: intern::Interner<TypeSym, TypeDef>,
     //files: cs::files::SimpleFiles<String, String>,
 }
 
@@ -321,7 +656,6 @@ impl Cx {
     pub fn new() -> Self {
         Cx {
             syms: intern::Interner::new(),
-            types: intern::Interner::new(),
             //files: cs::files::SimpleFiles::new(mod_name.to_owned(), source.to_owned()),
         }
     }
@@ -336,22 +670,7 @@ impl Cx {
         self.syms.fetch(s)
     }
 
-    /// Intern a type defintion.
-    pub fn intern_type(&self, s: &TypeDef) -> TypeSym {
-        self.types.intern(&s)
-    }
-
-    /// Intern a new named type var matching the given string
-    pub fn named_type(&self, s: impl AsRef<str>) -> TypeSym {
-        let sym = self.intern(s);
-        self.types.intern(&TypeDef::NamedTypeVar(sym))
-    }
-
-    /// Get the TypeDef for a type symbol
-    pub fn fetch_type(&self, s: TypeSym) -> Arc<TypeDef> {
-        self.types.fetch(s)
-    }
-
+    /*
     /// Shortcut for getting the type symbol for an unknown int
     pub fn iunknown(&self) -> TypeSym {
         self.intern_type(&TypeDef::UnknownInt)
@@ -401,13 +720,14 @@ impl Cx {
     pub fn never(&self) -> TypeSym {
         self.intern_type(&TypeDef::Never)
     }
+    */
 
     /// Generate a new unique symbol including the given string
     /// Useful for some optimziations and intermediate names and such.
     ///
-    /// Starts with a `@` which currently cannot appear in any identifier.
+    /// Starts with a `!` which currently cannot appear in any identifier.
     pub fn gensym(&self, s: &str) -> VarSym {
-        let sym = format!("@{}_{}", s, self.syms.count());
+        let sym = format!("!{}_{}", s, self.syms.count());
         self.intern(sym)
     }
 }
@@ -444,18 +764,14 @@ mod tests {
     /// Make sure outputting a lambda's name gives us something we expect.
     #[test]
     fn check_name_format() {
-        let args = vec![INT.i32(), INT.bool()];
-        let def = TypeDef::Lambda {
-            generics: vec![],
-            params: args,
-            rettype: INT.i32(),
-        };
+        let args = vec![Type::i32(), Type::bool()];
+        let def = Type::Func(args, Box::new(Type::i32()));
         let gotten_name = def.get_name();
         let desired_name = "fn(I32, Bool): I32";
         assert_eq!(&gotten_name, desired_name);
     }
 
-    /// Make sure that `TypeDef::get_name()` and `TypeDef::get_primitive_type()`
+    /// Make sure that `Type::get_name()` and `TypeDef::get_primitive_type()`
     /// are inverses for all primitive types.
     ///
     /// TODO: This currently requires that we have a list of all primitive types here,
@@ -463,16 +779,16 @@ mod tests {
     #[test]
     fn check_primitive_names() {
         let prims = vec![
-            TypeDef::SInt(1),
-            TypeDef::SInt(2),
-            TypeDef::SInt(4),
-            TypeDef::SInt(8),
-            TypeDef::SInt(16),
-            TypeDef::Never,
-            TypeDef::Bool,
+            Type::i8(),
+            Type::i16(),
+            Type::i32(),
+            Type::i64(),
+            Type::i128(),
+            Type::never(),
+            Type::bool(),
         ];
         for p in &prims {
-            assert_eq!(p, &TypeDef::get_primitive_type(&p.get_name()).unwrap());
+            assert_eq!(p, &Type::get_primitive_type(&p.get_name()).unwrap());
         }
     }
 }

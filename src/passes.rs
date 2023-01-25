@@ -10,7 +10,7 @@
 //! scope vanishes, for example, and anything potentially
 //! ambiguous becomes unambiguous.
 
-use crate::hir::{Decl as D, Expr as E, Ir, TypedExpr};
+use crate::hir::{Decl as D, Expr as E, ExprNode, Ir};
 use crate::*;
 
 type Pass = fn(Ir) -> Ir;
@@ -21,7 +21,7 @@ pub fn run_passes(ir: Ir) -> Ir {
 }
 
 /// Lambda lift a single expr.
-fn lambda_lift_expr(expr: TypedExpr, output_funcs: &mut Vec<D>) -> TypedExpr {
+fn lambda_lift_expr(expr: ExprNode, output_funcs: &mut Vec<D>) -> ExprNode {
     let result = match expr.e {
         E::BinOp { op, lhs, rhs } => {
             let nlhs = lambda_lift_expr(*lhs, output_funcs);
@@ -100,14 +100,14 @@ fn lambda_lift_expr(expr: TypedExpr, output_funcs: &mut Vec<D>) -> TypedExpr {
         }
         x => x,
     };
-    hir::TypedExpr {
+    hir::ExprNode {
         e: result,
         id: expr.id,
     }
 }
 
 /// Lambda lift a list of expr's.
-fn lambda_lift_exprs(exprs: Vec<TypedExpr>, output_funcs: &mut Vec<D>) -> Vec<TypedExpr> {
+fn lambda_lift_exprs(exprs: Vec<ExprNode>, output_funcs: &mut Vec<D>) -> Vec<ExprNode> {
     exprs
         .into_iter()
         .map(|e| lambda_lift_expr(e, output_funcs))
@@ -147,7 +147,7 @@ fn lambda_lifting(ir: Ir) -> Ir {
     }
 }
 
-fn _enum_to_int_expr(_expr: TypedExpr, _output_funcs: &mut Vec<D>) -> TypedExpr {
+fn _enum_to_int_expr(_expr: ExprNode, _output_funcs: &mut Vec<D>) -> ExprNode {
     todo!()
 }
 

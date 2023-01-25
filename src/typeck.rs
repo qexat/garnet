@@ -1,20 +1,16 @@
 //! Typechecking and other semantic checking.
 //! Operates on the HIR.
 //!
-//! This is mostly based on
-//! https://ahnfelt.medium.com/type-inference-by-example-793d83f98382
-//!
-//! We go through and generate a type variable for each expression,
-//! then unify to solve them, probably in a more-or-less-bidirectional
-//! fashion.
 
 use std::borrow::Cow;
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::rc::Rc;
 
+use crate::*;
+
 use crate::hir::{self, Expr};
-use crate::{TypeDef, TypeSym, VarSym, INT};
+use crate::{Type, VarSym, INT};
 
 #[derive(Debug, Clone)]
 pub enum TypeError {
@@ -22,8 +18,8 @@ pub enum TypeError {
     AlreadyDefined(VarSym),
     TypeMismatch {
         expr_name: Cow<'static, str>,
-        got: TypeSym,
-        expected: TypeSym,
+        got: Type,
+        expected: Type,
     },
     AmbiguousType {
         expr_name: Cow<'static, str>,
@@ -36,45 +32,45 @@ pub enum TypeError {
     InvalidReturn,
     Return {
         fname: VarSym,
-        got: TypeSym,
-        expected: TypeSym,
+        got: Type,
+        expected: Type,
     },
     BopType {
         bop: hir::BOp,
-        got1: TypeSym,
-        got2: TypeSym,
-        expected: TypeSym,
+        got1: Type,
+        got2: Type,
+        expected: Type,
     },
     UopType {
         op: hir::UOp,
-        got: TypeSym,
-        expected: TypeSym,
+        got: Type,
+        expected: Type,
     },
     LetType {
         name: VarSym,
-        got: TypeSym,
-        expected: TypeSym,
+        got: Type,
+        expected: Type,
     },
     IfType {
-        expected: TypeSym,
-        got: TypeSym,
+        expected: Type,
+        got: Type,
     },
     Cond {
-        got: TypeSym,
+        got: Type,
     },
     Param {
-        got: TypeSym,
-        expected: TypeSym,
+        got: Type,
+        expected: Type,
     },
     Call {
-        got: TypeSym,
+        got: Type,
     },
     TupleRef {
-        got: TypeSym,
+        got: Type,
     },
     StructRef {
         fieldname: VarSym,
-        got: TypeSym,
+        got: Type,
     },
     StructField {
         expected: Vec<VarSym>,
@@ -110,8 +106,8 @@ impl TypeError {
             } => format!(
                 "Type mismatch in '{}' expresssion, expected {} but got {}",
                 expr_name,
-                expected.val().get_name(),
-                got.val().get_name()
+                expected.get_name(),
+                got.get_name()
             ),
             TypeError::AmbiguousType { expr_name } => {
                 format!("Ambiguous/unknown type for expression '{}'", expr_name)
@@ -210,234 +206,410 @@ impl TypeError {
     }
 }
 
-/// A variable binding
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct VarBinding {
-    pub name: VarSym,
-    pub typevar: TypeVar,
-    pub mutable: bool,
+/// Type checking engine
+#[derive(Default)]
+pub struct Tck {
+    /*
+    /// Used to generate unique IDs
+    id_counter: usize,
+    /// Binding from type vars to what we know about the type
+    vars: BTreeMap<TypeId, TypeInfo>,
+    /// What we know about the type of each node in the AST.
+    types: BTreeMap<ast::AstId, TypeId>,
+    */
 }
 
-/// A generated type variable.
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
-pub struct TypeVar(usize);
+/*
 
-/// What a type var may be equal to.
-///
-/// I tend to think of these as "facts we know about our types", but apparently "constraints" is a
-/// more proper term.
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
-pub enum Constraint {
-    /// var 1 == var 2
-    TypeVar(TypeVar),
-    /// var 1 == some known type
-    TypeSym(TypeSym),
+impl Tck {
+    /// Save the type variable associated with the given expr
+    fn set_expr_type(&mut self, expr: &ast::ExprNode, ty: TypeId) {
+        assert!(
+            self.types.get(&expr.id).is_none(),
+            "Redefining known type, not suuuuure if this is bad or not.  Probably is though, since we should always be changing the meaning of an expr's associated type variable instead."
+        );
+        self.types.insert(expr.id, ty);
+    }
+
+    /// Panics if the expression's type is not set.
+    fn get_expr_type(&mut self, expr: &ast::ExprNode) -> TypeId {
+        *self.types.get(&expr.id).unwrap_or_else(|| {
+            panic!(
+                "Could not get type of expr with ID {:?}!\nExpr was {:?}",
+                expr.id, expr
+            )
+        })
+    }
+
+    /// Create a new type term with whatever we have about its type
+    pub fn insert(&mut self, info: TypeInfo) -> TypeId {
+        // Generate a new ID for our type term
+        self.id_counter += 1;
+        let id = TypeId(self.id_counter);
+        assert!(self.vars.get(&id).is_none(), "Can't happen");
+        self.vars.insert(id, info);
+        id
+    }
+
+    /// Create a new type term out of a known type, such as if we
+    /// declare a var's type.
+    pub fn insert_known(&mut self, t: &Type) -> TypeId {
+        // Recursively insert all subtypes.
+        let tinfo = match t {
+            //Type::Primitive(_) => todo!(),
+            Type::Enum(vals) => TypeInfo::Enum(vals.clone()),
+            Type::Named(s, args) => {
+                let new_args = args.iter().map(|t| self.insert_known(t)).collect();
+                TypeInfo::Named(s.clone(), new_args)
+            }
+            Type::Func(args, rettype) => {
+                let new_args = args.iter().map(|t| self.insert_known(t)).collect();
+                let new_rettype = self.insert_known(rettype);
+                TypeInfo::Func(new_args, new_rettype)
+            }
+            Type::Generic(s) => TypeInfo::TypeParam(s.to_string()),
+            Type::Array(ty, len) => {
+                let new_body = self.insert_known(&ty);
+                TypeInfo::Array(new_body, *len)
+            }
+            // TODO: Generics?
+            Type::Struct(body, _names) => {
+                let new_body = body
+                    .iter()
+                    .map(|(nm, t)| (nm.clone(), self.insert_known(t)))
+                    .collect();
+                TypeInfo::Struct(new_body)
+            }
+            // TODO: Generics?
+            Type::Sum(body, _names) => {
+                let new_body = body
+                    .iter()
+                    .map(|(nm, t)| (nm.clone(), self.insert_known(t)))
+                    .collect();
+                TypeInfo::Sum(new_body)
+            }
+        };
+        self.insert(tinfo)
+    }
+
+    /// Panics on invalid field name or not a struct type
+    pub fn get_struct_field_type(
+        &mut self,
+        symtbl: &Symtbl,
+        struct_type: TypeId,
+        field_name: &str,
+    ) -> TypeId {
+        use TypeInfo::*;
+        match self.vars[&struct_type].clone() {
+            Ref(t) => self.get_struct_field_type(symtbl, t, field_name),
+            Struct(body) => body.get(field_name).cloned().unwrap_or_else(|| {
+                panic!(
+                    "Struct has no field {}, valid fields are: {:#?}",
+                    field_name, body
+                )
+            }),
+            other => {
+                panic!(
+                    "Tried to get struct field {} from non-struct type {:?}",
+                    field_name, other
+                )
+            }
+        }
+    }
+
+    /// Make the types of two type terms equivalent (or produce an error if
+    /// there is a conflict between them)
+    pub fn unify(&mut self, symtbl: &Symtbl, a: TypeId, b: TypeId) -> Result<(), String> {
+        println!("> Unifying {:?} with {:?}", self.vars[&a], self.vars[&b]);
+        // If a == b then it's a little weird but shoooooould be fine
+        // as long as we don't get any mutual recursion or self-recursion
+        // involved
+        // Per MBones:
+        // Yes it makes sense. The unifier is tasked with solving literally whatever equations you throw at it, and this is an important edge case to check for (to avoid accidentally making cyclic datastructures). (The correct action from the unifier is to succeed with no updates, since it's already equal to itself)
+        if a == b {
+            return Ok(());
+        }
+        use TypeInfo::*;
+        match (self.vars[&a].clone(), self.vars[&b].clone()) {
+            // Follow any references
+            (Ref(a), _) => self.unify(symtbl, a, b),
+            (_, Ref(b)) => self.unify(symtbl, a, b),
+
+            // When we don't know anything about either term, assume that
+            // they match and make the one we know nothing about reference the
+            // one we may know something about
+            (Unknown, _) => {
+                self.vars.insert(a, TypeInfo::Ref(b));
+                Ok(())
+            }
+            (_, Unknown) => {
+                self.vars.insert(b, TypeInfo::Ref(a));
+                Ok(())
+            }
+
+            // For type constructors, if their names are the same we try
+            // to unify their args
+            (Named(n1, args1), Named(n2, args2)) => {
+                if n1 == n2 && args1.len() == args2.len() {
+                    for (arg1, arg2) in args1.iter().zip(args2.iter()) {
+                        self.unify(symtbl, *arg1, *arg2)?;
+                    }
+                    Ok(())
+                } else {
+                    panic!(
+                        "Mismatch between types {}({:?}) and {}({:?})",
+                        n1, args1, n2, args2
+                    )
+                }
+            }
+            // When unifying complex types, we must check their sub-types. This
+            // can be trivially implemented for tuples, sum types, etc.
+            (Func(a_i, a_o), Func(b_i, b_o)) => {
+                if a_i.len() != b_i.len() {
+                    return Err(String::from("Arg lists are not same length"));
+                }
+                for (arg_a, arg_b) in a_i.iter().zip(b_i) {
+                    self.unify(symtbl, *arg_a, arg_b)?;
+                }
+                self.unify(symtbl, a_o, b_o)
+            }
+            (Struct(body1), Struct(body2)) => {
+                for (nm, t1) in body1.iter() {
+                    let t2 = body2[nm];
+                    self.unify(symtbl, *t1, t2)?;
+                }
+                // Now we just do it again the other way around
+                // which is a dumb but effective way of making sure
+                // struct2 doesn't have any fields that struct1 doesn't.
+                for (nm, t2) in body2.iter() {
+                    let t1 = body1[nm];
+                    self.unify(symtbl, t1, *t2)?;
+                }
+                Ok(())
+            }
+            (Sum(body1), Sum(body2)) => {
+                // Same as struct types
+                for (nm, t1) in body1.iter() {
+                    let t2 = body2[nm];
+                    self.unify(symtbl, *t1, t2)?;
+                }
+                for (nm, t2) in body2.iter() {
+                    let t1 = body1[nm];
+                    self.unify(symtbl, t1, *t2)?;
+                }
+                Ok(())
+            }
+            (Array(body1, len1), Array(body2, len2)) if len1 == len2 => {
+                self.unify(symtbl, body1, body2)
+            }
+            // For declared type parameters like @T they match if their names match.
+            // TODO: And if they have been declared?  Not sure we can ever get to
+            // here if that's the case.
+            (TypeParam(s1), TypeParam(s2)) if s1 == s2 => Ok(()),
+            // If no previous attempts to unify were successful, raise an error
+            (a, b) => {
+                self.print_types();
+                Err(format!("Conflict between {:?} and {:?}", a, b))
+            }
+        }
+    }
+
+    /// Attempt to reconstruct a concrete type from the given type term ID. This
+    /// may fail if we don't yet have enough information to figure out what the
+    /// type is.
+    pub fn reconstruct(&self, id: TypeId) -> Result<Type, String> {
+        use TypeInfo::*;
+        match &self.vars[&id] {
+            Unknown => Err(format!("Cannot infer type for type ID {:?}", id)),
+            Ref(id) => self.reconstruct(*id),
+            Enum(ts) => Ok(Type::Enum(ts.clone())),
+            Named(s, args) => {
+                let arg_types: Result<Vec<_>, _> =
+                    args.iter().map(|x| self.reconstruct(*x)).collect();
+                Ok(Type::Named(s.clone(), arg_types?))
+            }
+            Func(args, rettype) => {
+                let real_args: Result<Vec<Type>, String> =
+                    args.into_iter().map(|arg| self.reconstruct(*arg)).collect();
+                Ok(Type::Func(
+                    real_args?,
+                    Box::new(self.reconstruct(*rettype)?),
+                ))
+            }
+            TypeParam(name) => Ok(Type::Generic(name.to_owned())),
+            Struct(body) => {
+                let real_body: Result<BTreeMap<_, _>, String> = body
+                    .iter()
+                    .map(|(nm, t)| {
+                        let new_t = self.reconstruct(*t)?;
+                        Ok((nm.clone(), new_t))
+                    })
+                    .collect();
+                // TODO: The empty params here feels suspicious, verify.
+                let params = vec![];
+                Ok(Type::Struct(real_body?, params))
+            }
+            Array(ty, len) => {
+                let real_body = self.reconstruct(*ty)?;
+                Ok(Type::Array(Box::new(real_body), *len))
+            }
+            Sum(body) => {
+                let real_body: Result<BTreeMap<_, _>, String> = body
+                    .iter()
+                    .map(|(nm, t)| {
+                        let new_t = self.reconstruct(*t)?;
+                        Ok((nm.clone(), new_t))
+                    })
+                    .collect();
+                let params = vec![];
+                Ok(Type::Sum(real_body?, params))
+            }
+        }
+    }
+
+    fn print_types(&self) {
+        let mut vars_report: Vec<_> = self.vars.iter().collect();
+        vars_report.sort_by(|(k1, _), (k2, _)| k1.cmp(k2));
+        for (k, v) in vars_report.iter() {
+            print!("  ${} => {:?}\n", k.0, v);
+        }
+    }
+
+    /// Kinda the opposite of reconstruction; takes a concrete type
+    /// and generates a new type with unknown's (type variables) for the generic types (type
+    /// parameters)
+    ///
+    /// The named_types is a *local* binding of generic type names to type variables.
+    /// We use this to make multiple mentions of the same type name, such as
+    /// `id :: T -> T`, all refer to the same type variable.
+    /// Feels Weird but it works.
+    ///
+    /// This has to actually be an empty hashtable on the first instantitaion
+    /// instead of the symtbl, since the symtbl is full of type parameter names from the
+    /// enclosing function and those are what we explicitly want to get away from.
+    fn instantiate(&mut self, t: &Type, known_types: Option<BTreeMap<String, TypeId>>) -> TypeId {
+        fn helper(tck: &mut Tck, named_types: &mut BTreeMap<String, TypeId>, t: &Type) -> TypeId {
+            let typeinfo = match t {
+                //Type::Primitive(_) => todo!(),
+                Type::Enum(vals) => TypeInfo::Enum(vals.clone()),
+                Type::Named(s, args) => {
+                    let inst_args: Vec<_> =
+                        args.iter().map(|t| helper(tck, named_types, t)).collect();
+                    TypeInfo::Named(s.clone(), inst_args)
+                }
+                Type::Generic(s) => {
+                    // If we know this is is a particular generic, match wiht it
+                    if let Some(ty) = named_types.get(s) {
+                        TypeInfo::Ref(*ty)
+                    } else {
+                        panic!("Referred to unknown generic named {}", s);
+                    }
+                }
+                Type::Func(args, rettype) => {
+                    let inst_args: Vec<_> =
+                        args.iter().map(|t| helper(tck, named_types, t)).collect();
+                    let inst_ret = helper(tck, named_types, rettype);
+                    TypeInfo::Func(inst_args, inst_ret)
+                }
+                Type::Struct(body, _names) => {
+                    let inst_body = body
+                        .iter()
+                        .map(|(nm, ty)| (nm.clone(), helper(tck, named_types, ty)))
+                        .collect();
+                    TypeInfo::Struct(inst_body)
+                }
+                Type::Array(ty, len) => {
+                    let inst_ty = helper(tck, named_types, &*ty);
+                    TypeInfo::Array(inst_ty, *len)
+                }
+                Type::Sum(body, _names) => {
+                    let inst_body = body
+                        .iter()
+                        .map(|(nm, ty)| (nm.clone(), helper(tck, named_types, ty)))
+                        .collect();
+                    TypeInfo::Sum(inst_body)
+                }
+            };
+            tck.insert(typeinfo)
+        }
+        // We have to pluck any unknowns out of the toplevel type and create
+        // new type vars for them.
+        // We don't worry about binding those vars or such, that is what unification
+        // will do later.
+        // We do have to take any of those unknowns that are actually
+        // known and preserve that knowledge though.
+        let known_types = &mut known_types.unwrap_or_else(Default::default);
+        let type_params = t.get_type_params();
+        // Probably a cleaner way to do this but oh well.
+        // We to through the type params, and if any of them
+        // are unknown we put a new TypeInfo::Unknown in for them.
+        for param in type_params {
+            known_types
+                .entry(param)
+                .or_insert_with(|| self.insert(TypeInfo::Unknown));
+        }
+        helper(self, known_types, t)
+    }
 }
 
-impl Constraint {
-    // Shortcuts for common known types
-    fn bool() -> Self {
-        Constraint::TypeSym(INT.bool())
-    }
-    fn unit() -> Self {
-        Constraint::TypeSym(INT.unit())
-    }
-    fn iunknown() -> Self {
-        Constraint::TypeSym(INT.iunknown())
-    }
+#[derive(Clone, Default)]
+struct ScopeFrame {
+    symbols: BTreeMap<String, TypeId>,
+    types: BTreeMap<String, Type>,
 }
 
-/// A unique var ID used to unambiguously identify variables regardless of scope.
-///
-/// They need to be unique at least per compilation unit, but since we don't really do compilation
-/// units other than a single file right now, that's fine.
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
-struct UniqueVar(usize);
-
-/// TODO: Might need have a reverse lookup table too?
-///
-/// TODO: Clean up some of how this is associated with Scope's.  Tck contains a Scope which handles
-/// scope information, and also this Symtbl which handles *all* information which is flat in a
-/// single namespace.
-///
-/// TODO: Probably doesn't need to be immutable anymore.
-#[derive(Clone, Debug, PartialEq)]
-pub struct Symtbl {
-    vars: im::HashMap<UniqueVar, VarBinding>,
-    typenames: im::HashMap<VarSym, TypeSym>,
+/// Basic symbol table that maps names to type ID's
+/// and manages scope.
+/// Looks ugly, works well.
+#[derive(Clone)]
+struct Symtbl {
+    frames: Rc<RefCell<Vec<ScopeFrame>>>,
 }
 
 impl Default for Symtbl {
-    fn default() -> Self {
-        Symtbl {
-            vars: Default::default(),
-            typenames: Default::default(),
-        }
-    }
-}
-
-impl Symtbl {
-    fn add_type(&mut self, name: VarSym, typedef: TypeSym) {
-        self.typenames.insert(name, typedef);
-    }
-
-    fn get_type(&mut self, name: VarSym) -> Option<TypeSym> {
-        self.typenames.get(&name).cloned()
-    }
-
-    /*
-    /// Looks up a typedef and if it is `Named` try to keep looking
-    /// it up until we find the actual concrete type.  Returns None
-    /// if it can't.
-    ///
-    /// TODO: This is weird, currently necessary for structs though.
-    fn follow_typedef(&mut self, name: VarSym) -> Option<TypeSym> {
-        match self.types.get(&name) {
-            Some(tsym) => match &**tsym.val() {
-                &TypeDef::Named(vsym) => self.follow_typedef(vsym),
-                _other => Some(*tsym),
-            },
-            None => None,
-        }
-    }
-    */
-
-    /*
-    /// Take a typesym and look it up to a concrete type definition of some kind.
-    /// Recursively follows named types, which might or might not be a good idea...
-    ///
-    /// TODO: This is weird, currently necessary for structs though.
-    fn resolve_typedef(&mut self, t: TypeSym) -> Option<std::sync::Arc<TypeDef>> {
-        let tdef = t.val();
-        match &*tdef {
-            TypeDef::NamedType(vsym) => self.resolve_typedef(*vsym).map(|sym| sym.val()),
-            _other => Some(tdef),
-        }
-    }
-    */
-
-    /*
-    /// Returns Ok if the type exists, or a TypeError of the appropriate
-    /// kind if it does not.
-    fn type_exists(&mut self, tsym: TypeSym) -> Result<(), TypeError> {
-        match &*tsym.val() {
-            /*
-             * TODO
-            TypeDef::Named(name) => {
-                if self.types.get(name).is_some() {
-                    Ok(())
-                } else {
-                    Err(TypeError::UnknownType(*name))
-                }
-            }
-            */
-            // Primitive type
-            _ => Ok(()),
-        }
-    }
-    */
-
-    /// Add a variable to the symbol table.  Panics on duplicates,
-    /// since UniqueVar's are supposed to be, you know, unique.
-    fn add_binding(&mut self, name: UniqueVar, binding: VarBinding) {
-        if self.vars.insert(name, binding).is_some() {
-            panic!("Unique var is not unique enough: {:?}", name)
-        }
-    }
-
-    /// Get the type of the given variable, or an error.
-    /// The type will be a type variable that must then be unified, I guess.
-    fn get_var_type(&self, name: UniqueVar) -> Result<TypeVar, TypeError> {
-        Ok(self.get_binding(name)?.typevar)
-    }
-
-    /// Get (a clone of) the binding of the given variable, or an error
-    fn get_binding(&self, name: UniqueVar) -> Result<VarBinding, TypeError> {
-        if let Some(binding) = self.vars.get(&name) {
-            return Ok(binding.clone());
-        }
-        //Err(TypeError::UnknownVar(name))
-        panic!("Unique var is unbound: {:?}", name);
-    }
-
-    fn _binding_exists(&self, name: UniqueVar) -> bool {
-        self.get_binding(name).is_ok()
-    }
-}
-
-/// Tracks variables and names in scope.
-/// So the way we do this is is a little weird 'cause we can't
-/// forget scope info.  We needd to know stuff about specific variables
-/// that may be used to solve type inference stuff above their scope
-/// or even before they're declared.
-///
-/// SO.  This is the usual scope-as-stack-of-vars type thing.
-/// We use this to do our normal scope cehcking, and also create a
-/// mapping from var name to a unique variable id for every variable
-/// use and declaration.
-///
-/// That way we can have a list of all the variables in each
-/// function regardless of name, and just totally ignore scoping
-/// from then on.
-///
-/// Uses internal mutability and returns a guard value to manage push/pops
-/// because otherwise life is kinda awful.  Just do `let _guard = scope.push()`
-/// and it will pop automatically when the _guard value is dropped.
-#[derive(Clone, Debug)]
-struct Scope {
-    vars: Rc<RefCell<Vec<HashMap<VarSym, UniqueVar>>>>,
-    /// We don't need a stack for generic types, they only
-    /// occur at top-level constructs.  (Nested functions get
-    /// lambda-lifted before now, remember.)
-    /// They're kept here rather than in the Symtbl though,
-    /// because they're context-dependent.
-    generic_types: HashMap<VarSym, TypeVar>,
-}
-
-impl Default for Scope {
     /// We start with an empty toplevel scope existing.
-    fn default() -> Scope {
-        Scope {
-            vars: Rc::new(RefCell::new(vec![HashMap::new()])),
-            generic_types: HashMap::new(),
+    fn default() -> Self {
+        Self {
+            frames: Rc::new(RefCell::new(vec![ScopeFrame::default()])),
         }
     }
 }
 
 pub struct ScopeGuard {
-    scope: Scope,
+    scope: Symtbl,
 }
 
 impl Drop for ScopeGuard {
     fn drop(&mut self) {
-        self.scope.pop();
+        self.scope
+            .frames
+            .borrow_mut()
+            .pop()
+            .expect("Scope stack underflow");
     }
 }
 
-impl Scope {
-    fn push(&self) -> ScopeGuard {
-        self.vars.borrow_mut().push(HashMap::new());
+impl Symtbl {
+    fn push_scope(&self) -> ScopeGuard {
+        self.frames.borrow_mut().push(ScopeFrame::default());
         ScopeGuard {
             scope: self.clone(),
         }
     }
 
-    fn pop(&self) {
-        self.vars.borrow_mut().pop().expect("Scope stack underflow");
-    }
-
-    fn add_var(&self, var: VarSym, unique: UniqueVar) {
-        self.vars
+    fn add_var(&self, var: impl AsRef<str>, ty: TypeId) {
+        self.frames
             .borrow_mut()
             .last_mut()
             .expect("Scope stack underflow")
-            .insert(var, unique);
+            .symbols
+            .insert(var.as_ref().to_owned(), ty);
     }
 
     /// Checks whether the var exists in the currently alive scopes
-    fn get_var_with_scope(&self, var: VarSym) -> Option<UniqueVar> {
-        for scope in self.vars.borrow().iter().rev() {
-            let v = scope.get(&var);
+    fn get_var_binding(&self, var: impl AsRef<str>) -> Option<TypeId> {
+        for scope in self.frames.borrow().iter().rev() {
+            let v = scope.symbols.get(var.as_ref());
             if v.is_some() {
                 return v.cloned();
             }
@@ -445,1014 +617,478 @@ impl Scope {
         return None;
     }
 
-    fn var_is_bound(&self, var: VarSym) -> bool {
-        self.get_var_with_scope(var).is_some()
+    fn add_type(&self, name: impl AsRef<str>, ty: &Type) {
+        self.frames
+            .borrow_mut()
+            .last_mut()
+            .expect("Scope stack underflow")
+            .types
+            .insert(name.as_ref().to_owned(), ty.to_owned());
     }
 
-    fn add_generic(&mut self, name: VarSym, tvar: TypeVar) {
-        self.generic_types.insert(name, tvar);
-    }
-
-    fn get_generic(&mut self, name: VarSym) -> Option<TypeVar> {
-        self.generic_types.get(&name).cloned()
-    }
-
-    fn clear_generics(&mut self) {
-        self.generic_types.clear();
+    fn get_type(&self, ty: impl AsRef<str>) -> Option<Type> {
+        for scope in self.frames.borrow().iter().rev() {
+            let v = scope.types.get(ty.as_ref());
+            if v.is_some() {
+                return v.cloned();
+            }
+        }
+        return None;
     }
 }
 
-/// Top level type checking context struct.
-#[derive(Clone, Debug)]
-pub struct Tck {
-    /// A mapping containing a type variable for each expression.
-    /// Then we update the type variables with what we know about them
-    /// as we typecheck/infer.
-    exprtypes: HashMap<hir::Eid, TypeVar>,
-
-    /// What info we know about our typevars.
-    /// We may have multiple non-identical constraints for each type var,
-    /// so we keep a set of them.
-    constraints: HashMap<TypeVar, Constraint>,
-
-    /// Symbol table.  All known vars and types.
-    symtbl: Symtbl,
-
-    /// The current scope stack.
-    /// This is its own type 'cause it's a little clearer
-    /// where we're manipulating scope vs. all vars.
-    ///
-    /// So the Scope gives us varsym -> uniquevar, and
-    /// symtbl gives us uniquevar -> binding
-    scope: Scope,
-
-    /// Index of the next type var gensym.
-    next_typevar: usize,
-
-    /// Index of the next unique var symbol.  These could be
-    /// unique per function or globally, for now they're globally
-    /// because there's no real reason not to be.
-    next_uniquevar: usize,
-}
-
-impl Default for Tck {
-    /// Create a new Tck with whatever default types etc we need.
-    fn default() -> Self {
-        let mut x = Tck {
-            exprtypes: Default::default(),
-            constraints: Default::default(),
-            symtbl: Default::default(),
-            scope: Default::default(),
-            next_typevar: 0,
-            next_uniquevar: 0,
-        };
-        // We add a built-in function for printing, currently.
-        {
-            let name = INT.intern("__println");
-            let typesym = INT.intern_type(&TypeDef::Lambda {
-                generics: vec![],
-                params: vec![INT.i32()],
-                rettype: INT.unit(),
-            });
-            x.create_var(name, Some(typesym), false);
-        }
-        {
-            let name = INT.intern("__println_bool");
-            let typesym = INT.intern_type(&TypeDef::Lambda {
-                generics: vec![],
-                params: vec![INT.bool()],
-                rettype: INT.unit(),
-            });
-            x.create_var(name, Some(typesym), false);
-        }
-        {
-            let name = INT.intern("__println_i64");
-            let typesym = INT.intern_type(&TypeDef::Lambda {
-                generics: vec![],
-                params: vec![INT.i64()],
-                rettype: INT.unit(),
-            });
-            x.create_var(name, Some(typesym), false);
-        }
-        {
-            let name = INT.intern("__println_i16");
-            let typesym = INT.intern_type(&TypeDef::Lambda {
-                generics: vec![],
-                params: vec![INT.i16()],
-                rettype: INT.unit(),
-            });
-            x.create_var(name, Some(typesym), false);
-        }
-        x
-    }
-}
-
-impl Tck {
-    /// Takes a typevar and follows whatever constraints
-    /// we have on it until it hits a real type.  Returns
-    /// None if it can't do that.
-    ///
-    /// Panics if the typevars form a loop, which should never happen.
-    pub fn follow_typevar(&self, tv: TypeVar) -> Option<TypeSym> {
-        fn helper(tck: &Tck, tv: TypeVar, original_typevar: TypeVar) -> Option<TypeSym> {
-            let constraint = tck.constraints.get(&tv)?;
-            match constraint {
-                Constraint::TypeVar(tv2) => {
-                    assert!(*tv2 != original_typevar);
-                    helper(tck, *tv2, original_typevar)
-                }
-                Constraint::TypeSym(ts) => Some(*ts),
-            }
-        }
-
-        helper(self, tv, tv)
-    }
-
-    /// Create a new type var and associate it with the given expression ID
-    pub fn create_exprtype(&mut self, expr: &hir::TypedExpr) -> TypeVar {
-        let tv = self.new_typevar();
-        let old = self.exprtypes.insert(expr.id, tv);
-        if old.is_some() {
-            panic!(
-                "Tried to bind {:?} twice, how unique is it?!\nExpr is {:?}",
-                expr.id, expr
-            );
-        }
-        tv
-    }
-
-    fn new_typevar(&mut self) -> TypeVar {
-        let tv = TypeVar(self.next_typevar);
-        self.next_typevar += 1;
-        tv
-    }
-
-    fn new_uniquevar(&mut self) -> UniqueVar {
-        let uv = UniqueVar(self.next_typevar);
-        self.next_uniquevar += 1;
-        uv
-    }
-
-    /// Try getting the typevar for the given expression.
-    /// Returns None if it does not have one.
-    pub fn get_typevar_for_expression(&self, expr: &hir::TypedExpr) -> Option<TypeVar> {
-        self.exprtypes.get(&expr.id).cloned()
-    }
-
-    /// Take a given var sym and crate a new unique name for it, and add
-    /// a binding for it in the current scope.  (Unique names are truly
-    /// unique and thus don't care about scope.)
-    ///
-    /// If the var's type is unknown, then we create a type var for it.
-    ///
-    /// If the var has a type associated with it, then we create a type
-    /// var for it and list it as a known fact.
-    ///
-    /// We return the UniqueVar ID so we can add it to a Scope as well.
-    /// We might just want to handle that here, we will see.
-    fn create_var(&mut self, name: VarSym, ty: Option<TypeSym>, mutable: bool) -> UniqueVar {
-        let uniquevar = self.new_uniquevar();
-        let tv = self.new_typevar();
-        let binding = VarBinding {
-            name,
-            typevar: tv,
-            mutable,
-        };
-        // If we know the real type of the variable, save it
-        if let Some(t) = ty {
-            println!("Adding constraint {:?} to typevar {:?}", t, tv);
-            self.add_constraint(tv, Constraint::TypeSym(t));
-        }
-        self.symtbl.add_binding(uniquevar, binding);
-        self.scope.add_var(name, uniquevar);
-        uniquevar
-    }
-
-    fn add_constraint(&mut self, tv: TypeVar, constraint: Constraint) {
-        println!("Adding constraint {:?} to typevar {:?}", constraint, tv);
-        use std::collections::hash_map::Entry;
-        match self.constraints.entry(tv) {
-            Entry::Occupied(o) => {
-                panic!(
-                    "Duplicate type var {:?} with constraints {:?} and {:?}, should never happen?",
-                    tv,
-                    o.get(),
-                    constraint
-                )
-            }
-            Entry::Vacant(v) => v.insert(constraint),
-        };
-    }
-
-    /// So, what is an lvalue?
-    /// Well, it's a variable,
-    /// or it's an lvalue in a deref expr or tupleref
-    fn is_mutable_lvalue(&self, expr: &hir::Expr) -> Result<bool, TypeError> {
-        match expr {
-            hir::Expr::Var { name } => {
-                let uniquevar = self
-                    .scope
-                    .get_var_with_scope(*name)
-                    .ok_or(TypeError::UnknownVar(*name))?;
-                let binding = self.symtbl.get_binding(uniquevar)?;
-                Ok(binding.mutable)
-            }
-            hir::Expr::StructRef { expr, .. } => self.is_mutable_lvalue(&expr.e),
-            _ => Ok(false),
-        }
-    }
-}
-
-/// Scan through all decl's and add any bindings to the symbol table,
-/// so we don't need to do anything with forward references.
-fn predeclare_decl(tck: &mut Tck, decl: &hir::Decl) -> Result<(), TypeError> {
-    match decl {
-        hir::Decl::Function {
-            name, signature, ..
-        } => {
-            // Does var exist in the global scope?
-            if tck.scope.var_is_bound(*name) {
-                return Err(TypeError::AlreadyDefined(*name));
-            }
-            // Add function to global scope
-            let function_type = signature.to_type();
-            tck.create_var(*name, Some(function_type), false);
-        }
-        hir::Decl::Const { name, typename, .. } => {
-            if tck.scope.var_is_bound(*name) {
-                return Err(TypeError::AlreadyDefined(*name));
-            }
-            tck.create_var(*name, Some(*typename), false);
-        }
-        hir::Decl::TypeDef { name, typedecl } => {
-            // Gotta make sure there's no duplicate declarations
-            // This kinda has to happen here rather than in typeck()
-            if tck.symtbl.get_type(*name).is_some() {
-                return Err(TypeError::AlreadyDefined(*name));
-            }
-            tck.symtbl.add_type(*name, *typedecl);
-            todo!("Predeclare typedef");
-        }
-        hir::Decl::Constructor { name, signature } => {
-            {
-                if tck.scope.var_is_bound(*name) {
-                    return Err(TypeError::AlreadyDefined(*name));
-                }
-                let function_type = signature.to_type();
-                tck.create_var(*name, Some(function_type), false);
-            }
-
-            // Also we need to add a deconstructor function.  This is kinda a placeholder, but,
-            // should work for now.
-            {
-                let deconstruct_name = INT.intern(format!("{}_unwrap", *name.val()));
-                if tck.scope.var_is_bound(deconstruct_name) {
-                    return Err(TypeError::AlreadyDefined(*name));
-                }
-                let type_params = vec![signature.rettype];
-                let rettype = signature.params[0].1;
-                let function_type = INT.intern_type(&TypeDef::Lambda {
-                    generics: vec![],
-                    params: type_params,
-                    rettype,
-                });
-                tck.create_var(deconstruct_name, Some(function_type), false);
-            }
-            todo!("Predeclare constructor");
-        }
-    }
-    Ok(())
-}
-
-// TODO: Might have to create an existential var or something instead of iunknown()
-// Yeah it should give you a constraint, not a type
-fn infer_literal(lit: &hir::Literal) -> Result<TypeSym, TypeError> {
+fn infer_lit(lit: &ast::Literal) -> TypeInfo {
     match lit {
-        hir::Literal::Integer(_) => Ok(INT.iunknown()),
-        hir::Literal::SizedInteger { vl: _, bytes } => Ok(INT.intern_type(&TypeDef::SInt(*bytes))),
-        hir::Literal::Bool(_) => Ok(INT.bool()),
+        ast::Literal::Integer(_) => TypeInfo::Named("I32".to_string(), vec![]),
+        ast::Literal::Bool(_) => TypeInfo::Named("Bool".to_string(), vec![]),
+        ast::Literal::EnumLit(nm, _) => TypeInfo::Named(nm.to_string(), vec![]),
     }
 }
-
-/// Try to resolve all unknowns in a type and turn them all into knowns.
-/// Right now t his is easy 'casue we only really handle types that can't
-/// contain unknown types.
-///
-/// Called "reconstruct" in zesterer's
-/// "Type inference in less than 100 lines of Rust"
-///
-/// or maybe called "subst" in "Complete & Easy"
-///
-/// ...we're gonna have to have a TypeDef that has
-/// typevars rather than varsym's in it, aren't we.
-pub fn try_solve_type(tck: &Tck, tv: TypeVar) -> Option<TypeSym> {
-    let tsym = tck.follow_typevar(tv)?;
-    let tdef = &*tsym.val();
-    match tdef {
-        TypeDef::UnknownInt => Some(tsym),
-        TypeDef::SInt(_) => Some(tsym),
-        TypeDef::Tuple(items) if items.len() == 0 => Some(tsym),
-        // Simple case first
-        TypeDef::Lambda {
-            generics,
-            params: _,
-            rettype: _,
-        } => Some(tsym),
-        TypeDef::Never => Some(tsym),
-        TypeDef::NamedTypeVar(..) => Some(tsym),
-        other => todo!("Solve {:?}", other),
-    }
-}
-
-/// Try to set v1 equal to v2
-fn try_unify(tck: &mut Tck, v1: TypeVar, v2: TypeVar) -> Result<(), TypeError> {
-    println!("Unifying {:?} and {:?}", v1, v2);
-    let t1 = *tck.constraints.get(&v1).unwrap_or_else(|| {
-        panic!(
-            "Type variable 1 {:?} has no constraints, should not happen!",
-            v1
-        )
-    });
-    let t2 = *tck.constraints.get(&v2).unwrap_or_else(|| {
-        panic!(
-            "Type variable 2 {:?} has no constraints, should not happen!",
-            v2
-        )
-    });
-    match (t1, t2) {
-        // Follow any references
-        (Constraint::TypeVar(t1var), _) => try_unify(tck, t1var, v2),
-        (_, Constraint::TypeVar(t2var)) => try_unify(tck, v1, t2var),
-        // Un-intern type syms and unify from there
-        (Constraint::TypeSym(s1), Constraint::TypeSym(s2)) => {
-            let tdef1 = &*s1.val();
-            let tdef2 = &*s2.val();
-            use TypeDef::*;
-            match (tdef1, tdef2) {
-                // Primitives are easy
-                (Bool, Bool) => Ok(()),
-                (SInt(i1), SInt(i2)) if i1 == i2 => Ok(()),
-                (UnknownInt, UnknownInt) => Ok(()),
-                // If we have a known an unknown int, update the unknown
-                // one to match the known one
-                (UnknownInt, SInt(_i2)) => {
-                    tck.constraints.insert(v1, t2);
-                    Ok(())
-                }
-                (SInt(_i1), UnknownInt) => {
-                    tck.constraints.insert(v2, t1);
-                    Ok(())
-                }
-                // Never types!  They never occur, so they always match
-                // anything.
-                // I think?  Hmmmm...
-                (Never, _) => Ok(()),
-                (_, Never) => Ok(()),
-                // TODO: Hmmmm, is this right, or do we have
-                // to recurse and keep trying to unify?
-                (NamedTypeVar(nm), _thing) => {
-                    let tvar = tck.scope.get_generic(*nm).expect("Unbound generic type");
-                    tck.constraints.insert(tvar, t2);
-                    Ok(())
-                }
-                (_thing, NamedTypeVar(nm)) => {
-                    let tvar = tck.scope.get_generic(*nm).expect("Unbound generic type");
-                    tck.constraints.insert(tvar, t1);
-                    Ok(())
-                }
-                (
-                    Lambda {
-                        generics: generics1,
-                        params: params1,
-                        rettype: rettype1,
-                    },
-                    Lambda {
-                        generics: generics2,
-                        params: params2,
-                        rettype: rettype2,
-                    },
-                ) => {
-                    assert!(params1.len() == params2.len());
-                    assert!(generics1.len() == generics2.len());
-                    // Unify params
-                    for (p1, p2) in params1.iter().zip(params2.iter()) {
-                        let t1 = tck.new_typevar();
-                        tck.add_constraint(t1, Constraint::TypeSym(*p1));
-                        let t2 = tck.new_typevar();
-                        tck.add_constraint(t2, Constraint::TypeSym(*p2));
-                        try_unify(tck, t1, t2)?;
-                    }
-                    // Unify return types
-                    let r1 = tck.new_typevar();
-                    tck.add_constraint(r1, Constraint::TypeSym(*rettype1));
-                    let r2 = tck.new_typevar();
-                    tck.add_constraint(r2, Constraint::TypeSym(*rettype2));
-                    try_unify(tck, r1, r2)?;
-                    Ok(())
-                }
-
-                // If the types are actually literally equal then there's
-                // not really any way for them to not be identical?
-                (s1, s2) if s1 == s2 => Ok(()),
-                (s1, s2) => panic!(
-                    "Type mismatch trying to unify concrete types {:?} and {:?}",
-                    s1, s2
-                ),
-            }
-        }
-    }
-}
-
-/// The infer part of our vaguely-bidi type checker.
-/// It outputs a constraint -- basically the expression
-/// given must either resolve to a known type, or an unknown
-/// type where it says "I don't know what type this expression is,
-/// but I know it must be the same as `TypeVar(foo)`"
-///
-/// This is kinda deliberately incomplete, as it ends up getting used
-/// less than I expected.  We can fill out more cases as we encounter
-/// them.
-fn infer_expr(
+fn typecheck_func_body(
+    name: Option<&str>,
     tck: &mut Tck,
-    expr: &hir::TypedExpr,
-    rettype: TypeSym,
-) -> Result<Constraint, TypeError> {
-    match &expr.e {
-        Expr::Lit { val } => {
-            let lit_type = infer_literal(val)?;
-            Ok(Constraint::TypeSym(lit_type))
-        }
-        Expr::Var { name } => {
-            let uvar = tck
-                .scope
-                .get_var_with_scope(*name)
-                .ok_or(TypeError::UnknownVar(*name))?;
-            let typevar = tck.symtbl.get_binding(uvar)?.typevar;
-            Ok(Constraint::TypeVar(typevar))
-        }
-        Expr::BinOp { op, lhs, rhs } => {
-            use crate::ast::BOp::*;
-            match op {
-                // Logical operations always take and return bool
-                And | Or | Xor => {
-                    let boolconstraint = Constraint::bool();
-                    check_expr(tck, lhs, boolconstraint, rettype)?;
-                    check_expr(tck, rhs, boolconstraint, rettype)?;
-
-                    Ok(boolconstraint)
-                }
-                // If we have a numerical operation, we find the types
-                // of the arguments and make sure they are matching numeric
-                // types.
-                /*
-                Add | Sub | Mul | Div | Mod => {
-                    // Input constraints: LHS and RHS must be the same type
-                    let lhs_typevar = tck.create_exprtype(lhs);
-                    let rhs_typevar = tck.create_exprtype(rhs);
-                    tck.add_constraint(lhs_typevar, Constraint::TypeVar(rhs_typevar));
-                    // Input constraint: RHS must be a number (and thus
-                    // LHS must be a number)
-                    tck.add_constraint(rhs_typevar, Constraint::iunknown());
-                    // Output constraint: This operation returns
-                    // some kind of integer that is the same as the
-                    // input types.
-                    let ret = Ok(Constraint::TypeVar(lhs_typevar));
-
-                    let _lhs_constraint = infer_expr(tck, lhs, rettype)?;
-                    let _rhs_constraint = infer_expr(tck, rhs, rettype)?;
-                    try_unify(tck, lhs_typevar, rhs_typevar)?;
-
-                    ret
-                }
-                */
-                other => todo!("binop: {:?}", other),
-            }
-        }
-        Expr::Funcall { .. } => {
-            todo!("infer funcall")
-        }
-        Expr::If { cases } => {
-            let boolconstraint = Constraint::bool();
-            //let body_rettype = Constraint::TypeVar(tck.new_typevar());
-            assert_ne!(cases.len(), 0,  "The length of cases can not be 0 because we always have at least an if case and an else cases added in lowering");
-            let mut last_constraint = Constraint::unit();
-            for (cond, body) in cases {
-                check_expr(tck, cond, boolconstraint, rettype)?;
-                //check_exprs(tck, body, body_rettype, rettype)?;
-                last_constraint = infer_exprs(tck, body, rettype)?;
-            }
-            let expr_typevar = tck.new_typevar();
-            tck.add_constraint(expr_typevar, last_constraint);
-            Ok(Constraint::TypeVar(expr_typevar))
-        }
-        Expr::UniOp { op, rhs } => {
-            use crate::ast::UOp::*;
-            match op {
-                Neg => {
-                    let intconstraint = Constraint::iunknown();
-                    check_expr(tck, rhs, intconstraint, rettype)?;
-                    Ok(intconstraint)
-                }
-                Not => {
-                    let boolconstraint = Constraint::bool();
-                    check_expr(tck, rhs, boolconstraint, rettype)?;
-                    Ok(boolconstraint)
-                }
-                other => todo!("Infer uni op {:?}", other),
-            }
-        }
-        Expr::Let { .. } => {
-            let unitconstraint = Constraint::unit();
-            check_expr(tck, expr, unitconstraint, rettype)?;
-            Ok(unitconstraint)
-        }
-        e => {
-            todo!("infer_expr: {:?}", e)
-        }
-    }
-}
-
-/// Just like check_exprs(), but starts off with inferring.
-fn infer_exprs(
-    tck: &mut Tck,
-    exprs: &[hir::TypedExpr],
-    rettype: TypeSym,
-) -> Result<Constraint, TypeError> {
-    let last_expr_idx = exprs.len();
-    if last_expr_idx > 0 {
-        for expr in &exprs[..(last_expr_idx - 1)] {
-            let _ignore = infer_expr(tck, expr, rettype)?;
-        }
-        let last_expr = &exprs[last_expr_idx - 1];
-        infer_expr(tck, last_expr, rettype)
-    } else {
-        // Body is empty, so the return type must be unit
-        if rettype == INT.unit() {
-            Ok(Constraint::unit())
-        } else {
-            Err(TypeError::TypeMismatch {
-                expr_name: "empty block".into(),
-                got: rettype,
-                expected: INT.unit(),
-            })
-        }
-    }
-}
-
-/// The "check" step of our vaguely-bidi type inference.  This is where
-/// checking an expr starts.
-///
-/// rettype is the return type of the function this expr is in, any non-local exits (`return`, `?`,
-/// etc) need to know that type.
-///
-/// The process:
-///  * Create typevar for expr
-///  * Create typevar for the `expected` type we are given
-///  * If the desired types for the sort of expression is known, call `check_expr()` with
-///    the target type.  Example: `x and y`, we know the vars must be bool, so we just check against
-///    them.
-///    If we don't know the types (`x + y` may be several types), we call `infer_exprs()` on the
-///    sub-exprs and try to unify them together as necessary (`x` and `y` may be several types, but
-///    must be the same type as each other).
-///  * Add any constraints we have discovered from this process to our `Tck`
-///  * Then we try to unify the `expected` typevar with the expression's typevar
-fn check_expr(
-    tck: &mut Tck,
-    expr: &hir::TypedExpr,
-    expected: Constraint,
-    rettype: TypeSym, // function rettype is always known for sure
-) -> Result<(), TypeError> {
-    let expr_typevar = tck.create_exprtype(expr);
-    // create a 'dummy' type var for the expected constraint,
-    // because unification always has to work on TypeVar's, not
-    // Constraint's, so it can update the variables involved.
-    let expected_var = tck.new_typevar();
-    tck.add_constraint(expected_var, expected);
-    println!("Checking expression {:?}", expr);
+    symtbl: &Symtbl,
+    signature: &ast::Signature,
+    body: &[ast::ExprNode],
+) -> Result<TypeId, String> {
     println!(
-        "Expr typevar: {:?}, expected type {:?}",
-        expr_typevar, expected
+        "Typechecking function {:?} with signature {:?}",
+        name, signature
     );
-    match &expr.e {
-        Expr::Lit { .. } => {
-            let constraint = infer_expr(tck, expr, rettype)?;
-            println!("Inferred {:?} for expr {:?}", constraint, expr_typevar);
-            tck.add_constraint(expr_typevar, constraint);
-            println!("Lit typevar is {:?}", expr_typevar);
-            try_unify(tck, expected_var, expr_typevar)?;
+    // Insert info about the function signature
+    let mut params = vec![];
+    for (_paramname, paramtype) in &signature.params {
+        let p = tck.insert_known(paramtype);
+        params.push(p);
+    }
+    let rettype = tck.insert_known(&signature.rettype);
+    println!(
+        "signature is: {:?}",
+        TypeInfo::Func(params.clone(), rettype.clone())
+    );
+    let f = tck.insert(TypeInfo::Func(params, rettype));
+
+    // If we have a name (ie, are not a lambda), bind the function's type to its name
+    // A gensym might make this easier/nicer someday, but this works for now.
+    //
+    // Note we do this *before* pushing the scope and checking its body,
+    // so this will add the function's name to the outer scope.
+    if let Some(n) = name {
+        symtbl.add_var(n, f);
+    }
+
+    // Add params to function's scope
+    let _guard = symtbl.push_scope();
+    for (paramname, paramtype) in &signature.params {
+        let p = tck.insert_known(paramtype);
+        symtbl.add_var(paramname, p);
+    }
+
+    // Typecheck body
+    for expr in body {
+        typecheck_expr(tck, symtbl, expr)?;
+        // TODO here: unit type for expressions and such
+    }
+    let last_expr = body.last().expect("empty body, aieeee");
+    let last_expr_type = tck.get_expr_type(last_expr);
+    println!(
+        "Unifying last expr...?  Is type {:?}, we want {:?}",
+        last_expr_type, rettype
+    );
+    tck.unify(symtbl, last_expr_type, rettype)?;
+
+    for expr in body {
+        let t = tck.get_expr_type(expr);
+        tck.reconstruct(t).unwrap();
+    }
+
+    println!(
+        "Typechecked function {}, types are",
+        name.unwrap_or("(lambda)")
+    );
+    tck.print_types();
+    Ok(f)
+}
+
+fn typecheck_expr(tck: &mut Tck, symtbl: &Symtbl, expr: &ast::ExprNode) -> Result<TypeId, String> {
+    use ast::Expr::*;
+    match &*expr.node {
+        Lit { val } => {
+            let lit_type = infer_lit(val);
+            let typeid = tck.insert(lit_type);
+            tck.set_expr_type(expr, typeid);
+            Ok(typeid)
         }
-        Expr::Let {
+        Var { name } => {
+            let ty = symtbl
+                .get_var_binding(name)
+                .unwrap_or_else(|| panic!("unbound var: {:?}", name));
+            tck.set_expr_type(expr, ty);
+            Ok(ty)
+        }
+        Let {
             varname,
             typename,
             init,
-            mutable,
         } => {
-            // create our unique var name and
-            // get the type var for that particular variable
-            let uniquevar = tck.create_var(*varname, Some(*typename), *mutable);
-            let var_type = tck
-                .symtbl
-                .get_var_type(uniquevar)
-                .expect("Should never happen");
-            // Check the init expression and make sure it matches with the
-            // declared type
-            check_expr(tck, init, Constraint::TypeVar(var_type), *typename)?;
-            // The return type of the `let` expression is unit, so
-            // set it to that and make sure it unifies with the expected
-            // type.
-            tck.add_constraint(expr_typevar, Constraint::unit());
-            try_unify(tck, expected_var, expr_typevar)?;
+            typecheck_expr(tck, symtbl, init)?;
+            let init_expr_type = tck.get_expr_type(init);
+            // Does our let decl have a type attached to it?
+            let var_type = if let Some(t) = typename {
+                tck.insert_known(t)
+            } else {
+                tck.insert(TypeInfo::Unknown)
+            };
+            tck.unify(symtbl, init_expr_type, var_type)?;
+
+            // A `let` expr returns unit, not the type of `init`
+            let unit_type = tck.insert(TypeInfo::Named("Tuple".to_owned(), vec![]));
+            tck.set_expr_type(expr, unit_type);
+
+            symtbl.add_var(varname, var_type);
+            Ok(var_type)
         }
-        Expr::Var { name } => {
-            // Get the unique var for this var in our scope
-            let uvar = tck
-                .scope
-                .get_var_with_scope(*name)
-                .ok_or(TypeError::UnknownVar(*name))?;
-            // find its type variable and see if it unifies with
-            // our expected type
-            let typevar = tck.symtbl.get_binding(uvar)?.typevar;
-            println!("Unique var {:?} has typevar {:?}", uvar, typevar);
-            // We gotta remember: We have typevars for variables, and typevars
-            // for expressions, and they are *not the same* because variables
-            // can be declared in function args which are not expressions.
-            // So here we make them depend on each other so we can unify em.
-            tck.add_constraint(expr_typevar, Constraint::TypeVar(typevar));
-            try_unify(tck, typevar, expected_var)?;
+        Lambda { signature, body } => {
+            let t = typecheck_func_body(None, tck, symtbl, signature, body)?;
+            tck.set_expr_type(expr, t);
+            Ok(t)
         }
-        Expr::BinOp { op, lhs, rhs } => {
-            use crate::ast::BOp::*;
-            match op {
-                // Logical operations always take and return bool
-                And | Or | Xor => {
-                    // Make sure our subexpr's return bool
-                    let boolconstraint = Constraint::bool();
-                    check_expr(tck, lhs, boolconstraint, rettype)?;
-                    check_expr(tck, rhs, boolconstraint, rettype)?;
-                    // Make it so the current expr returns bool and check whether
-                    // that unifies with the expected type
-                    tck.add_constraint(expr_typevar, boolconstraint);
-                    try_unify(tck, expr_typevar, expected_var)?;
-                }
-                // If we have a numerical operation, we find the types
-                // of the arguments and make sure they are matching numeric
-                // types.
-                Add | Sub | Mul | Div | Mod => {
-                    // Input constraints: LHS and RHS must be the same type
-                    // and must be numbers
-                    //
-                    // Sooo I think we check one side of the expr is
-                    // some kind of integer,
-                    // then check that the other side is compatible with it?
-                    let numconstraint = Constraint::iunknown();
-                    check_expr(tck, lhs, numconstraint, rettype)?;
-                    let lhs_var = tck.get_typevar_for_expression(lhs).expect("Can't happen?");
-                    check_expr(tck, rhs, Constraint::TypeVar(lhs_var), rettype)?;
+        StructRef { e, name } => {
+            typecheck_expr(tck, symtbl, e)?;
+            let struct_type = tck.get_expr_type(e);
+            println!("Heckin struct...  Type of {:?} is {:?}", e, struct_type);
+            // struct_type is the type of the struct... but the
+            // type of this structref expr is the type of the *field in the struct*.
+            let struct_field_type = tck.get_struct_field_type(symtbl, struct_type, name);
+            println!(
+                "Heckin struct ref...  Type of {:?}.{} is {:?}",
+                e, name, struct_field_type
+            );
+            tck.set_expr_type(expr, struct_field_type);
 
-                    // Make sure the return type matches the type for the inputs
-                    tck.add_constraint(expr_typevar, Constraint::TypeVar(lhs_var));
-                    try_unify(tck, expr_typevar, expected_var)?;
-                }
-                // Comparison takes two values that must be the same type of number,
-                // and returns a bool
-                Gt | Lt | Gte | Lte => {
-                    let numconstraint = Constraint::iunknown();
-                    check_expr(tck, lhs, numconstraint, rettype)?;
-                    let lhs_var = tck.get_typevar_for_expression(lhs).expect("Can't happen?");
-                    check_expr(tck, rhs, Constraint::TypeVar(lhs_var), rettype)?;
-
-                    let boolconstraint = Constraint::bool();
-                    tck.add_constraint(expr_typevar, boolconstraint);
-                    try_unify(tck, expr_typevar, expected_var)?;
-                }
-                // Equality take two values that must be the same type,
-                // and return a bool
-                Eq | Neq => {
-                    let lhs_constraint = infer_expr(tck, lhs, rettype)?;
-                    check_expr(tck, rhs, lhs_constraint, rettype)?;
-
-                    let boolconstraint = Constraint::bool();
-                    tck.add_constraint(expr_typevar, boolconstraint);
-                    try_unify(tck, expr_typevar, expected_var)?;
-                }
-            }
-        }
-        Expr::Funcall {
-            func,
-            params,
-            generic_types,
-        } => {
-            // What type do we think the `func` expression is?
-            let func_constraint = infer_expr(tck, &*func, rettype)?;
-            let func_typevar = tck.create_exprtype(&*func);
-            tck.add_constraint(func_typevar, func_constraint);
-
-            // Now, the function type may be anything, including not a function.
-            // but, the thing is, for now our function types can *not*
-            // have generic types or typevars, we *always* know the signature
-            // of each of a function.
-            //
-            // OKAY, let's add generics.  Basically what we need to doooooo
-            // is... for each param in the call, if that param is a generic, we try to
-            // infer the type for that expr, add a constraint for that type
-            // on that generic (we might need to create typevars for all generics
-            // first), and then... are we fine then???  No, because we need
-            // to know something about the type from try_solve_type too.
-            let func_typesym = try_solve_type(tck, func_typevar).unwrap();
-            let func_typedef = &*func_typesym.val();
-            // And if it's actually a function...
-            match func_typedef {
-                TypeDef::Lambda {
-                    params: param_types,
-                    rettype: call_rettype,
-                    generics,
-                } => {
-                    // Ok, when we call a function with generic types,
-                    // do we try to substitute those types for what we
-                    // give them and then just check, or do we literally
-                    // instantiate a new function with the types substituted
-                    // and then typecheck as normal?
-                    //
-                    // It has to be the first because all we may actually
-                    // know about the generic is "it is this type var".
-                    //
-                    // Ok for now we don't infer shit, we just map
-                    // the declared generics to the function's l
-
-                    // We go through the params we were given and check
-                    // that they match the function's sig
-                    assert_eq!(params.len(), param_types.len());
-                    assert_eq!(generics.len(), generic_types.len());
-                    for (g1, g2) in generics.iter().zip(generic_types) {
-                        let tv = tck.new_typevar();
-                        tck.scope.add_generic(*g1, tv);
-                        tck.add_constraint(tv, Constraint::TypeSym(*g2));
+            match tck.reconstruct(struct_type)? {
+                Type::Struct(body, _names) => Ok(tck.insert_known(&body[name])),
+                Type::Named(s, _args) => {
+                    let hopefully_a_struct = symtbl.get_type(s).unwrap();
+                    match hopefully_a_struct {
+                        Type::Struct(body, _names) => Ok(tck.insert_known(&body[name])),
+                        _other => Err(format!("Yeah I know this is wrong bite me")),
                     }
+                }
+                other => Err(format!(
+                    "Tried to get field named {} but it is an {:?}, not a struct",
+                    name, other
+                )),
+            }
+        }
+        TupleCtor { body } => {
+            let body_types: Result<Vec<_>, _> = body
+                .iter()
+                .map(|expr| typecheck_expr(tck, symtbl, expr))
+                .collect();
+            let body_types = body_types?;
+            let tuple_type = TypeInfo::Named("Tuple".to_string(), body_types);
+            let typeid = tck.insert(tuple_type);
+            tck.set_expr_type(expr, typeid);
+            Ok(typeid)
+        }
+        Funcall { func, params } => {
+            // Oh, defined generics are "easy".
+            // Each time I call a function I create new type
+            // vars for its generic args.
+            // Apparently that is the "instantiation".
 
-                    for (p, t) in params.iter().zip(param_types) {
-                        // (the 'rettype' here is the enclosing function's rettype,
-                        // not the one we're calling!)
-                        check_expr(tck, p, Constraint::TypeSym(*t), rettype)?;
+            let func_type = typecheck_expr(tck, symtbl, func)?;
+            // We know this will work because we require full function signatures
+            // on our functions.
+            let actual_func_type = tck.reconstruct(func_type)?;
+            match &actual_func_type {
+                Type::Func(_args, _rettype) => {
+                    println!("Calling function {:?} is {:?}", func, actual_func_type);
+                    // So when we call a function we need to know what its
+                    // type params are.  Then we bind those type parameters
+                    // to things.
+                }
+                _ => panic!("Tried to call something not a function"),
+            }
+
+            // Synthesize what we know about the function
+            // from the call.
+            let mut params_list = vec![];
+            for param in params {
+                typecheck_expr(tck, symtbl, param)?;
+                let param_type = tck.get_expr_type(param);
+                params_list.push(param_type);
+            }
+            // We don't know what the expected return type of the function call
+            // is yet; we make a type var that will get resolved when the enclosing
+            // expression is.
+            let rettype_var = tck.insert(TypeInfo::Unknown);
+            let funcall_var = tck.insert(TypeInfo::Func(params_list.clone(), rettype_var));
+
+            // Now I guess this is where we make a copy of the function
+            // with new generic types.
+            // Is this "instantiation"???
+            // Yes it is.  Differentiate "type parameters", which are the
+            // types a function takes as input (our `Generic` or `TypeParam`
+            // things I suppose), from "type variables" which are the TypeId
+            // we have to solve for.
+            //
+            // So we go through the generics the function declares and create
+            // new type vars for each of them.
+            let heck = tck.instantiate(&actual_func_type, None);
+            tck.unify(symtbl, heck, funcall_var)?;
+
+            tck.set_expr_type(expr, rettype_var);
+            Ok(rettype_var)
+        }
+
+        StructCtor { body } => {
+            let body_types: Result<BTreeMap<_, _>, _> = body
+                .iter()
+                .map(|(name, expr)| {
+                    // ? in map doesn't work too well...
+                    println!("Checking field {} expr {:?}", name, expr);
+                    match typecheck_expr(tck, symtbl, expr) {
+                        Ok(t) => Ok((name.to_string(), t)),
+                        Err(s) => Err(s),
                     }
-                    // Then we make sure the function's rettype equals the
-                    // expected type
-                    tck.add_constraint(expr_typevar, Constraint::TypeSym(*call_rettype));
-                    try_unify(tck, expr_typevar, expected_var)?;
-                }
-                other => {
-                    return Err(TypeError::TypeMismatch {
-                        expr_name: format!("{:?}", expr).into(),
-                        got: INT.intern_type(other),
-                        expected: INT.intern_type(func_typedef),
-                    })
-                }
-            }
+                })
+                .collect();
+            println!("Typechecking struct ctor: {:?}", body_types);
+            let body_types = body_types?;
+            let struct_type = TypeInfo::Struct(body_types);
+            let typeid = tck.insert(struct_type);
+            tck.set_expr_type(expr, typeid);
+            Ok(typeid)
         }
-        // Ok so we need to assert that for each
-        // IfCase, the condition returns a bool and the
-        // bodies all return the same type.
-        // The HIR has no falseblock, it just always inserts
-        // `if(true)` at the end
-        Expr::If { cases } => {
-            let boolconstraint = Constraint::bool();
-            tck.add_constraint(expr_typevar, expected);
-            for (cond, body) in cases {
-                check_expr(tck, cond, boolconstraint, rettype)?;
-                check_exprs(tck, body, Constraint::TypeVar(expr_typevar), rettype)?;
-            }
-            try_unify(tck, expr_typevar, expected_var)?;
-        }
-        Expr::Block { body } => {
-            tck.add_constraint(expr_typevar, expected);
-            check_exprs(tck, body, Constraint::TypeVar(expr_typevar), rettype)?;
-            try_unify(tck, expr_typevar, expected_var)?;
-        }
-        Expr::UniOp { op, rhs } => {
-            use crate::ast::UOp;
-            match op {
-                UOp::Neg => {
-                    let intconstraint = Constraint::iunknown();
-                    check_expr(tck, rhs, intconstraint, rettype)?;
-                    // Return type of this expression is the same as the input type
-                    let rhs_var = tck.get_typevar_for_expression(rhs).expect("Can't happen?");
-                    tck.add_constraint(expr_typevar, Constraint::TypeVar(rhs_var));
-                    try_unify(tck, expr_typevar, expected_var)?;
-                }
-                UOp::Not => {
-                    let boolconstraint = Constraint::bool();
-                    check_expr(tck, rhs, boolconstraint, rettype)?;
-                    tck.add_constraint(expr_typevar, boolconstraint);
-                    try_unify(tck, expr_typevar, expected_var)?;
-                }
-                other => todo!("Uni op: {:?}", other),
-            }
-        }
-        Expr::Loop { body } => {
-            let unitconstraint = Constraint::unit();
-            check_exprs(tck, body, unitconstraint, rettype)?;
-
-            // Loops return unit (for now)
-            tck.add_constraint(expr_typevar, unitconstraint);
-            try_unify(tck, expr_typevar, expected_var)?;
-        }
-        Expr::Assign { lhs, rhs } => {
-            // Similar to `let`
-            // hm right now our only lvalues are variables, so this is simple
-            // for now but will get more complicated.
-            if !tck.is_mutable_lvalue(&lhs.e)? {
-                return Err(TypeError::Mutability {
-                    expr_name: "assignment".into(),
-                });
-            }
-            let lconstraint = infer_expr(tck, lhs, rettype)?;
-            let lhs_typevar = tck.create_exprtype(lhs);
-            tck.add_constraint(lhs_typevar, lconstraint);
-            check_expr(tck, rhs, lconstraint, rettype)?;
-            let rhs_typevar = tck.get_typevar_for_expression(rhs).expect("Can't happen?");
-            try_unify(tck, lhs_typevar, rhs_typevar)?;
-            // An assignment always returns unit
-            tck.add_constraint(expr_typevar, Constraint::unit());
-            try_unify(tck, expected_var, expr_typevar)?;
-        }
-        Expr::Break => {
-            // Break's just return unit (for now)
-            // TODO: Make sure we're actually in a loop
-            let unitconstraint = Constraint::unit();
-            tck.add_constraint(expr_typevar, unitconstraint);
-            try_unify(tck, expr_typevar, expected_var)?;
-        }
-        Expr::StructCtor { body } if body.len() == 0 => {
-            // This is just a unit literal
-            let unitconstraint = Constraint::unit();
-            tck.add_constraint(expr_typevar, unitconstraint);
-            try_unify(tck, expr_typevar, expected_var)?;
-        }
-        Expr::Return { retval } => {
-            let retconstraint = Constraint::TypeSym(rettype);
-            check_expr(tck, retval, retconstraint, rettype)?;
-            tck.add_constraint(expr_typevar, Constraint::TypeSym(INT.never()));
-            try_unify(tck, expr_typevar, expected_var)?;
-        }
-        e => {
-            todo!("check_expr for expr {:?}", e)
-            /*
-            eprintln!("Checking thing: {:?} ", e);
-            let a = infer_expr(tck, expr, rettype)?;
-            eprintln!("Type of {:?} is: {:?}", e, a);
-                */
-            // What is a substitution? It's a ~~miserable pile of secrets~~
-            // map from type variables to types.
-            //let x = self.type_sub(self.ctx.subst(a), self.ctx.subst(t));
-            //eprintln!("Type subbed: {:?}, {:?}", x, self.ctx);
-            //x
-        }
-    }
-    Ok(())
-}
-
-/// Check multiple expressions, assuming the last one matches
-/// `expected` and the others match `unit`
-fn check_exprs(
-    tck: &mut Tck,
-    exprs: &[hir::TypedExpr],
-    expected: Constraint,
-    rettype: TypeSym,
-) -> Result<(), TypeError> {
-    let last_expr_idx = exprs.len();
-    // This loop is the sort of thing that feels like there should
-    // be some turbo fancy combinator for it and it really isn't
-    // worth the trouble.
-    // I guess it'd be easier with recursion but eh
-    if last_expr_idx > 0 {
-        for expr in &exprs[..(last_expr_idx - 1)] {
-            // We expect exprs in the body of the value to return unit
-            // ...but we want to allow them to be anything...
-            // So... I guess we check that they are equivalent to the
-            // bottom type?
-            //
-            // TODO: I'm REALLY NOT SURE using the Never type here is
-            // at all correct, but it works for now?
-            // Maybe try inferring the expr's instead.
-            // Another option would be to do basically what Rust does
-            // with ; and wrap contiguous expressions in an `ignore` function,
-            // but that feels kinda weird, especially since we don't
-            // require semicolons.
-            //
-            // Let's roll with something like this for now.
-            let cons = Constraint::TypeSym(INT.never());
-            check_expr(tck, expr, cons, rettype)?;
-        }
-        // Check that the last expression has the expected
-        // return type
-        let last_expr = &exprs[last_expr_idx - 1];
-        check_expr(tck, last_expr, expected, rettype)?;
-        Ok(())
-    } else {
-        // Body is empty, so the return type must be unit
-        if rettype == INT.unit() {
-            Ok(())
-        } else {
-            Err(TypeError::TypeMismatch {
-                expr_name: "empty block".into(),
-                got: rettype,
-                expected: INT.unit(),
-            })
-        }
-    }
-}
-
-fn typecheck_decl(tck: &mut Tck, decl: &hir::Decl) -> Result<(), TypeError> {
-    match decl {
-        hir::Decl::Function {
-            name: _name,
-            signature,
+        TypeCtor {
+            name,
+            type_params,
             body,
         } => {
-            let _guard = tck.scope.push();
-            // Add function params to symbol table and scope
-            for (var, ty) in &signature.params {
-                let uniquevar = tck.create_var(*var, Some(*ty), false);
-                tck.scope.add_var(*var, uniquevar);
-            }
-            // Add generic params to scope
-            tck.scope.clear_generics();
-            for name in &signature.generics {
-                let tv = tck.new_typevar();
-                tck.scope.add_generic(*name, tv);
-            }
-            check_exprs(
-                tck,
-                &body,
-                Constraint::TypeSym(signature.rettype),
-                signature.rettype,
-            )?;
-            // Now that we've checked everything in the
-            // function, we need to reconstruct and attempt to solve any
-            // unknowns, and error if there are any unknowns left over.
-            for expr in body {
-                // TODO: Make sure this recursively solves *every* expression's
-                // typevar in the whole tree.  I think it does, but need to double-check.
-                let tv = tck
-                    .get_typevar_for_expression(expr)
-                    .expect(&format!("No typevar for expression {:?}, aieeee", expr));
-                if try_solve_type(tck, tv).is_none() {
-                    return Err(TypeError::AmbiguousType {
-                        expr_name: format!("{:?}", expr).into(),
-                    });
-                }
-            }
-            Ok(())
-        }
-        _ => todo!("Typecheck decl type {:?}", decl),
-        /*
-        hir::Decl::Const { name, typename, .. } => {
-            if tck.symtbl.binding_exists(*name) {
-                return Err(TypeError::AlreadyDefined(*name));
-            }
-            tck.add_var(*name, Some(*typename), false);
-        }
-        hir::Decl::TypeDef { name, typedecl } => {
-            // Gotta make sure there's no duplicate declarations
-            // This kinda has to happen here rather than in typeck()
-            if tck.symtbl.get_type(*name).is_some() {
-                return Err(TypeError::AlreadyDefined(*name));
-            }
-            tck.symtbl.add_type(*name, *typedecl);
-            todo!("Predeclare typedef");
-        }
-        hir::Decl::Constructor { name, signature } => {
-            {
-                if tck.symtbl.get_var(*name).is_ok() {
-                    return Err(TypeError::AlreadyDefined(*name));
-                }
-                let function_type = signature.to_type();
-                tck.add_var(*name, Some(function_type), false);
-            }
+            let named_type = symtbl.get_type(name).expect("Unknown type constructor");
+            println!("Got type named {}: is {:?}", name, named_type);
+            // Ok if we have declared type params we gotta instantiate them
+            // to match the type's generics.
+            //let type_param_names = named_type.get_generic_args();
+            let type_param_names = named_type.get_type_params();
+            assert_eq!(
+                type_params.len(),
+                type_param_names.len(),
+                "Type '{}' expected params {:?} but got params {:?}",
+                name,
+                type_param_names,
+                type_params
+            );
+            let tid = tck.instantiate(&named_type, None);
+            println!("Instantiated {:?} into {:?}", named_type, tid);
 
-            // Also we need to add a deconstructor function.  This is kinda a placeholder, but,
-            // should work for now.
-            {
-                let deconstruct_name = INT.intern(format!("{}_unwrap", *name.val()));
-                if tck.symtbl.get_var(deconstruct_name).is_ok() {
-                    return Err(TypeError::AlreadyDefined(*name));
-                }
-                let type_params = vec![signature.rettype];
-                let rettype = signature.params[0].1;
-                let function_type = INT.intern_type(&TypeDef::Lambda {
-                    generics: vec![],
-                    params: type_params,
-                    rettype,
-                });
-                tck.add_var(deconstruct_name, Some(function_type), false);
-            }
-            todo!("Predeclare constructor");
+            //let tid = tck.insert_known(&named_type);
+            let body_type = typecheck_expr(tck, symtbl, body)?;
+            println!("Expected type is {:?}, body type is {:?}", tid, body_type);
+            tck.unify(symtbl, tid, body_type)?;
+            println!("Done unifying type ctor");
+            // The type the expression returns
+            let constructed_type =
+                tck.insert_known(&Type::Named(name.clone(), type_params.clone()));
+            tck.set_expr_type(expr, constructed_type);
+            Ok(constructed_type)
         }
-        */
+        TypeUnwrap { e } => {
+            let mut body_type = typecheck_expr(tck, symtbl, e)?;
+            loop {
+                // I guess we follow TypeInfo references the stupid way?
+                // We don't have a convenient place to recurse for this,
+                // apparently, which is already a Smell but let's see
+                // where this takes us.
+                let well_heck = tck.vars[&body_type].clone();
+                match well_heck.clone() {
+                    TypeInfo::Named(nm, params) => {
+                        println!("Unwrapping type {}{:?}", nm, params);
+                        let t = symtbl
+                            .get_type(&nm)
+                            .expect("Named type doesn't name anything?!!");
+                        println!("Inner type is {:?}", t);
+                        // t is a concrete Type, not a TypeInfo that may have
+                        // unknowns, so we instantiate it to sub out any of its
+                        // type params with new unknowns.
+                        //
+                        // But then we have to bind those type params to
+                        // what we *know* about the type already...
+                        let type_param_names = t.collect_generic_names();
+                        let known_type_params = type_param_names
+                            .iter()
+                            .cloned()
+                            .zip(params.iter().cloned())
+                            .collect();
+                        let inst_t = tck.instantiate(&t, Some(known_type_params));
+                        //let heckin_hecker = tck.insert(well_heck);
+                        //tck.unify(symtbl, inst_t, heckin_hecker)?;
+                        tck.set_expr_type(expr, inst_t);
+                        return Ok(inst_t);
+                    }
+                    TypeInfo::Ref(other) => {
+                        body_type = other;
+                        // and loop to try again
+                    }
+                    other => panic!("Cannot unwrap non-named type {:?}", other),
+                }
+            }
+        }
+        SumCtor {
+            name,
+            variant,
+            body,
+        } => {
+            let named_type = symtbl.get_type(name).expect("Unknown sum type constructor");
+            /*
+            let body_type = typecheck_expr(tck, symtbl, body)?;
+            let well_heck = tck.vars[&body_type].clone();
+            match well_heck.clone() {
+                Type::Sum(sum_body, _generics) => {
+                    todo!()
+                }
+            */
+
+            // This might be wrong, we can probably do it the other way around
+            // like we do with TypeUnwrap: start by checking the inner expr type and make
+            // sure it matches what we expect.  Generics might require that.
+            //
+            // TODO: Generics
+            match named_type.clone() {
+                Type::Sum(sum_body, _generics) => {
+                    let variant_type = &sum_body[variant];
+                    let variant_typeid = tck.insert_known(variant_type);
+                    let body_type = typecheck_expr(tck, symtbl, body)?;
+                    tck.unify(symtbl, variant_typeid, body_type)?;
+
+                    // The expr is the type we expect, our return type is the
+                    // sum type we conjure up
+                    // TODO: Might be easier to have our compiler generate
+                    // the TypeCtor for it?
+                    let rettype = tck.insert_known(&Type::Named(name.clone(), vec![]));
+                    tck.set_expr_type(expr, rettype);
+                    Ok(rettype)
+                }
+                _ => unreachable!("This code is compiler generated, should never happen!"),
+            }
+        }
+        ArrayCtor { body } => {
+            let len = body.len();
+            // So if the body has len 0 we can't know what type it is.
+            // So we create a new unknown and then try unifying it with
+            // all the expressions in the body.
+            let body_type = tck.insert(TypeInfo::Unknown);
+            for expr in body {
+                let expr_type = typecheck_expr(tck, symtbl, expr)?;
+                tck.unify(symtbl, body_type, expr_type)?;
+            }
+            let arr_type = tck.insert(TypeInfo::Array(body_type, len));
+            tck.set_expr_type(expr, arr_type);
+            Ok(arr_type)
+        }
+        ArrayRef { e, idx } => todo!(),
     }
+}
+
+/// From example code:
+/// "In reality, the most common approach will be to walk your AST, assigning type
+/// terms to each of your nodes with whatever information you have available. You
+/// will also need to call `engine.unify(x, y)` when you know two nodes have the
+/// same type, such as in the statement `x = y;`."
+pub fn typecheck(ast: &ast::Ast) {
+    let tck = &mut Tck::default();
+    let symtbl = &mut Symtbl::default();
+    for decl in &ast.decls {
+        use ast::Decl::*;
+
+        match decl {
+            Function {
+                name,
+                signature,
+                body,
+            } => {
+                let t = typecheck_func_body(Some(name), tck, symtbl, signature, body);
+                t.unwrap_or_else(|e| {
+                    println!("Error, type context is:");
+                    tck.print_types();
+                    panic!("Error while typechecking function {}:\n{}", name, e)
+                });
+            }
+            TypeDef { name, params, ty } => {
+                // Make sure that there are no unbound generics in the typedef
+                // that aren't mentioned in the params.
+                let generic_names: BTreeSet<String> =
+                    ty.collect_generic_names().into_iter().collect();
+                let param_names: BTreeSet<String> = params.iter().cloned().collect();
+                let difference: Vec<_> = generic_names
+                    .symmetric_difference(&param_names)
+                    // gramble gramble &String
+                    .map(|s| s.as_str())
+                    .collect();
+                if difference.len() != 0 {
+                    let differences = difference.join(", ");
+                    panic!("Error in typedef {}: Type params do not match generics mentioned in body.  Unmatched types: {}", name, differences);
+                }
+
+                // Remember that we know about a type with this name
+                symtbl.add_type(name, ty)
+            }
+            ConstDef { name, init } => {
+                // The init expression is typechecked in its own
+                // scope, since it may theoretically be a `let` or
+                // something that introduces new names inside it.
+                let init_type = {
+                    let _guard = symtbl.push_scope();
+                    let t = typecheck_expr(tck, symtbl, init).unwrap();
+                    t
+                };
+                println!("Typechecked const {}, type is {:?}", name, init_type);
+                symtbl.add_var(name, init_type);
+            }
+        }
+    }
+    // Print out toplevel symbols
+    for (name, id) in &symtbl.frames.borrow().last().unwrap().symbols {
+        println!("value {} type is {:?}", name, tck.reconstruct(*id));
+    }
+}
+*/
+
+/// A identifier to uniquely refer to our type terms
+#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
+pub struct TypeId(usize);
+
+/// Information about a type term
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum TypeInfo {
+    /// No information about the type of this type term
+    Unknown,
+    /// This type term is the same as another type term
+    Ref(TypeId),
+    Enum(Vec<String>),
+    /// N-ary type constructor.
+    /// It could be Int()
+    /// or List(Int)
+    /// or List(T)
+    Named(String, Vec<TypeId>),
+    /// This type term is definitely a function
+    Func(Vec<TypeId>, TypeId),
+    /// This is definitely some kind of struct
+    Struct(BTreeMap<String, TypeId>),
+    /// Definitely a sum type
+    Sum(BTreeMap<String, TypeId>),
+    Array(TypeId, usize),
+    /// This is some generic type that has a name like @A
+    /// AKA a type parameter.
+    TypeParam(String),
 }
 
 /// Top level driver function for type checking.
 pub fn typecheck(ir: &hir::Ir) -> Result<Tck, TypeError> {
+    todo!()
+    /*
     let mut tck = Tck::default();
     for decl in &ir.decls {
         predeclare_decl(&mut tck, decl)?;
@@ -1461,4 +1097,5 @@ pub fn typecheck(ir: &hir::Ir) -> Result<Tck, TypeError> {
         typecheck_decl(&mut tck, decl)?;
     }
     Ok(tck)
+        */
 }

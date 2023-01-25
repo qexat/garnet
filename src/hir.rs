@@ -37,10 +37,10 @@ impl Eid {
 
 /// An expression with a type annotation.
 /// Currently will be () for something that hasn't been
-/// typechecked, or a `TypeSym` with the appropriate type
+/// typechecked, or a `Type` with the appropriate type
 /// after type checking has been done.
 #[derive(Debug, Clone, PartialEq)]
-pub struct TypedExpr {
+pub struct ExprNode {
     /// expression
     pub e: Expr,
     /// Expression ID
@@ -55,64 +55,64 @@ pub enum Expr {
     },
     EnumLit {
         val: VarSym,
-        ty: TypeSym,
+        ty: Type,
     },
     Var {
         name: VarSym,
     },
     BinOp {
         op: BOp,
-        lhs: Box<TypedExpr>,
-        rhs: Box<TypedExpr>,
+        lhs: Box<ExprNode>,
+        rhs: Box<ExprNode>,
     },
     UniOp {
         op: UOp,
-        rhs: Box<TypedExpr>,
+        rhs: Box<ExprNode>,
     },
     Block {
-        body: Vec<TypedExpr>,
+        body: Vec<ExprNode>,
     },
     Let {
         varname: VarSym,
-        typename: TypeSym,
-        init: Box<TypedExpr>,
+        typename: Type,
+        init: Box<ExprNode>,
         mutable: bool,
     },
     If {
-        cases: Vec<(TypedExpr, Vec<TypedExpr>)>,
+        cases: Vec<(ExprNode, Vec<ExprNode>)>,
     },
     Loop {
-        body: Vec<TypedExpr>,
+        body: Vec<ExprNode>,
     },
     Lambda {
         signature: Signature,
-        body: Vec<TypedExpr>,
+        body: Vec<ExprNode>,
     },
     Funcall {
-        func: Box<TypedExpr>,
-        params: Vec<TypedExpr>,
-        generic_types: Vec<TypeSym>,
+        func: Box<ExprNode>,
+        params: Vec<ExprNode>,
+        generic_types: Vec<Type>,
     },
     Break,
     Return {
-        retval: Box<TypedExpr>,
+        retval: Box<ExprNode>,
     },
     StructCtor {
-        body: Vec<(VarSym, TypedExpr)>,
+        body: Vec<(VarSym, ExprNode)>,
     },
     StructRef {
-        expr: Box<TypedExpr>,
+        expr: Box<ExprNode>,
         elt: VarSym,
     },
     Assign {
-        lhs: Box<TypedExpr>,
-        rhs: Box<TypedExpr>,
+        lhs: Box<ExprNode>,
+        rhs: Box<ExprNode>,
     },
     Deref {
-        expr: Box<TypedExpr>,
+        expr: Box<ExprNode>,
     },
     Ref {
-        expr: Box<TypedExpr>,
+        expr: Box<ExprNode>,
     },
 }
 
@@ -138,22 +138,22 @@ impl Expr {
 }
 
 /// A top-level declaration in the source file.
-/// Like TypedExpr, contains a type annotation.
+/// Like ExprNode, contains a type annotation.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Decl {
     Function {
         name: VarSym,
         signature: Signature,
-        body: Vec<TypedExpr>,
+        body: Vec<ExprNode>,
     },
     Const {
         name: VarSym,
-        typename: TypeSym,
-        init: TypedExpr,
+        typename: Type,
+        init: ExprNode,
     },
     TypeDef {
         name: VarSym,
-        typedecl: TypeSym,
+        typedecl: Type,
     },
     /// Our first compiler intrinsic!  \o/
     ///
@@ -204,7 +204,7 @@ fn lower_signature(sig: &ast::Signature) -> Signature {
 }
 
 /// This is the biggie currently
-fn lower_expr(expr: &ast::Expr) -> TypedExpr {
+fn lower_expr(expr: &ast::Expr) -> ExprNode {
     use ast::Expr as E;
     use Expr::*;
     let new_exp = match expr {
@@ -243,7 +243,7 @@ fn lower_expr(expr: &ast::Expr) -> TypedExpr {
             let ninit = Box::new(lower_expr(init));
             Let {
                 varname: *varname,
-                typename: *typename,
+                typename: typename.clone(),
                 init: ninit,
                 mutable: *mutable,
             }
@@ -338,14 +338,14 @@ fn lower_expr(expr: &ast::Expr) -> TypedExpr {
             rhs: Box::new(lower_expr(rhs)),
         },
     };
-    TypedExpr {
+    ExprNode {
         e: new_exp,
         id: Eid::new(),
     }
 }
 
 /// handy shortcut to lower Vec<ast::Expr>
-fn lower_exprs(exprs: &[ast::Expr]) -> Vec<TypedExpr> {
+fn lower_exprs(exprs: &[ast::Expr]) -> Vec<ExprNode> {
     exprs.iter().map(|e| lower_expr(e)).collect()
 }
 
@@ -373,7 +373,7 @@ fn lower_decl(accm: &mut Vec<Decl>, decl: &ast::Decl) {
             ..
         } => accm.push(Decl::Const {
             name: *name,
-            typename: *typename,
+            typename: typename.clone(),
             init: lower_expr(init),
         }),
         // this needs to generate the typedef AND the type constructor
@@ -416,7 +416,7 @@ fn lower_decl(accm: &mut Vec<Decl>, decl: &ast::Decl) {
                             val: *var,
                         };
                         let t = f(&e);
-                        let te = TypedExpr {
+                        let te = ExprNode {
                             e,
                             t,
                             s: ISymtbl::default(),
@@ -437,7 +437,7 @@ fn lower_decl(accm: &mut Vec<Decl>, decl: &ast::Decl) {
                     accm.push(Decl::Const {
                         name: INT.intern(struct_name),
                         typename: INT.intern_type(&struct_type),
-                        init: TypedExpr {
+                        init: ExprNode {
                             e,
                             t,
                             s: ISymtbl::default(),
@@ -467,7 +467,7 @@ mod tests {
     use crate::testutil::*;
 
     /// HACK to get around the Eid's not matching :|
-    fn test_eq(e1: &TypedExpr, e2: &TypedExpr) {
+    fn test_eq(e1: &ExprNode, e2: &ExprNode) {
         let mut e1 = e1.clone();
         e1.id = e1.id;
         assert_eq!(&e1, e2);
@@ -475,12 +475,12 @@ mod tests {
 
     /*
     /// Shortcut to take an Expr and wrap it
-    /// in a TypedExpr with a unit type.
+    /// in a ExprNode with a unit type.
     ///
     /// TODO: Better name?
     #[cfg(test)]
-    pub(crate) fn plz(e: Expr) -> Box<TypedExpr> {
-        Box::new(TypedExpr { e, id: Eid::new() })
+    pub(crate) fn plz(e: Expr) -> Box<ExprNode> {
+        Box::new(ExprNode { e, id: Eid::new() })
     }
 
         /// Does `return;` turn into `return ();`?
