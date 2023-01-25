@@ -20,7 +20,8 @@ use crate::*;
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Eid(usize);
 
-/// Ugly horrible global for storing index values for expression ID's
+/// Ugly horrible global for storing index values for expression ID's,
+/// so each expression gets a unique ID.
 /// TODO: Someday make this an atomic or something other than a rwlock
 static NEXT_EID: Lazy<RwLock<Eid>> = Lazy::new(|| RwLock::new(Eid(0)));
 
