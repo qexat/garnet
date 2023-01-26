@@ -359,6 +359,16 @@ impl Tck {
         match (self.vars[&a].clone(), self.vars[&b].clone()) {
             // Primitives just match directly
             (Prim(p1), Prim(p2)) if p1 == p2 => Ok(()),
+            // Unknown integers unified with known integers become known
+            // integers.
+            (Prim(PrimType::UnknownInt), Prim(PrimType::SInt(_))) => {
+                self.vars.insert(a, TypeInfo::Ref(b));
+                Ok(())
+            }
+            (Prim(PrimType::SInt(_)), Prim(PrimType::UnknownInt)) => {
+                self.vars.insert(b, TypeInfo::Ref(a));
+                Ok(())
+            }
             // Follow any references
             (Ref(a), _) => self.unify(symtbl, a, b),
             (_, Ref(b)) => self.unify(symtbl, a, b),
@@ -625,6 +635,14 @@ impl Symtbl {
         let println_sig = Type::Func(vec![Type::i32()], Box::new(Type::unit()));
         let println_ty = tck.insert_known(&println_sig);
         self.add_var(Sym::new("__println"), println_ty);
+
+        let println_sig = Type::Func(vec![Type::i64()], Box::new(Type::unit()));
+        let println_ty = tck.insert_known(&println_sig);
+        self.add_var(Sym::new("__println_i64"), println_ty);
+
+        let println_sig = Type::Func(vec![Type::bool()], Box::new(Type::unit()));
+        let println_ty = tck.insert_known(&println_sig);
+        self.add_var(Sym::new("__println_bool"), println_ty);
     }
     fn push_scope(&self) -> ScopeGuard {
         self.frames.borrow_mut().push(ScopeFrame::default());
@@ -675,7 +693,7 @@ impl Symtbl {
 
 fn infer_lit(lit: &ast::Literal) -> TypeInfo {
     match lit {
-        ast::Literal::Integer(_) => TypeInfo::Prim(PrimType::SInt(4)),
+        ast::Literal::Integer(_) => TypeInfo::Prim(PrimType::UnknownInt),
         ast::Literal::Bool(_) => TypeInfo::Prim(PrimType::Bool),
         ast::Literal::EnumLit(nm, _) => TypeInfo::Named(nm.to_string(), vec![]),
         _ => todo!(),
@@ -763,6 +781,36 @@ fn typecheck_expr(tck: &mut Tck, symtbl: &Symtbl, expr: &hir::ExprNode) -> Resul
             tck.set_expr_type(expr, ty);
             Ok(ty)
         }
+        BinOp { op, lhs, rhs } => {
+            let t1 = typecheck_expr(tck, symtbl, lhs)?;
+            let t2 = typecheck_expr(tck, symtbl, rhs)?;
+            let t3 = tck.insert_known(&op.input_type());
+            tck.unify(symtbl, t1, t2)?;
+            tck.unify(symtbl, t2, t3)?;
+            // TODO NEXT: the BOp::output_type() operation taking an input is kinda fundamentally at
+            // odds with unification...
+            // The point is that if we know a type of an input we know its output.
+            // BUT we need to handle this differently for predicates and num ops,
+            // because for predicates the output type is always known and is often NOT the same
+            // as the input type, but for
+            // numerical ops the output type may NOT be known (may be Ref, Unknown, etc if we
+            // haven't checked enough of the program yet), but once it IS known it has to be the
+            // same as its inputs!
+            let expected_output = tck.insert_known(&op.output_type());
+            tck.unify(symtbl, t3, expected_output)?;
+            tck.set_expr_type(expr, expected_output);
+            Ok(expected_output)
+        }
+        UniOp { op, rhs } => {
+            let expr_in = typecheck_expr(tck, symtbl, rhs)?;
+            let expected_in = tck.insert_known(&op.input_type());
+            tck.unify(symtbl, expr_in, expected_in)?;
+            // TODO NEXT: Similar problem as BOp
+            let expected_output = tck.insert_known(&op.output_type());
+            tck.unify(symtbl, expr_in, expected_output)?;
+            tck.set_expr_type(expr, expected_output);
+            Ok(expected_output)
+        }
         Funcall {
             func,
             params,
@@ -817,13 +865,15 @@ fn typecheck_expr(tck: &mut Tck, symtbl: &Symtbl, expr: &hir::ExprNode) -> Resul
             tck.set_expr_type(expr, rettype_var);
             Ok(rettype_var)
         }
-        x => todo!("{:?}", x),
-        /*
         Let {
             varname,
             typename,
             init,
+            mutable,
         } => {
+            if *mutable {
+                todo!("Handle mutability");
+            }
             typecheck_expr(tck, symtbl, init)?;
             let init_expr_type = tck.get_expr_type(init);
             // Does our let decl have a type attached to it?
@@ -838,9 +888,11 @@ fn typecheck_expr(tck: &mut Tck, symtbl: &Symtbl, expr: &hir::ExprNode) -> Resul
             let unit_type = tck.insert(TypeInfo::Named("Tuple".to_owned(), vec![]));
             tck.set_expr_type(expr, unit_type);
 
-            symtbl.add_var(varname, var_type);
+            symtbl.add_var(*varname, var_type);
             Ok(var_type)
         }
+        x => todo!("{:?}", x),
+        /*
         Lambda { signature, body } => {
             let t = typecheck_func_body(None, tck, symtbl, &signature, body)?;
             tck.set_expr_type(expr, t);
