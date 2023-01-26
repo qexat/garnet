@@ -69,16 +69,10 @@ impl BOp {
     /// Needs to know what the type of the expression given to it is,
     /// but also assumes that the LHS and RHS have the same input type.
     /// Ensuring that is left as an exercise to the user.
-    pub fn output_type(&self, input_type: Type) -> Type {
+    pub fn output_type(&self) -> Type {
         use BOp::*;
         match self {
-            Add | Sub | Mul | Div | Mod => {
-                if input_type.is_integer() {
-                    input_type
-                } else {
-                    unimplemented!("hmmmm, typechecking should probably never allow this");
-                }
-            }
+            Add | Sub | Mul | Div | Mod => Type::iunknown(),
             Eq | Neq | Gt | Lt | Gte | Lte => Type::bool(),
             And | Or | Xor => Type::bool(),
         }
@@ -109,16 +103,10 @@ impl UOp {
     }
 
     /// What the resultant type of the uop is
-    pub fn output_type(&self, input_type: Type) -> Type {
+    pub fn output_type(&self) -> Type {
         use UOp::*;
         match self {
-            Neg => {
-                if input_type.is_integer() {
-                    input_type
-                } else {
-                    unimplemented!("hmmmm, typechecking should probably never allow this");
-                }
-            }
+            Neg => Type::iunknown(),
             Not => Type::bool(),
             Ref => todo!(),
             Deref => todo!(),
