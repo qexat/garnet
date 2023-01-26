@@ -208,12 +208,12 @@ fn compile_decl(w: &mut impl Write, decl: &hir::Decl, tck: &Tck) -> io::Result<(
 
 fn compile_fn_signature(sig: &ast::Signature) -> String {
     let mut accm = String::from("");
-    todo!();
-    /*
-    if sig.generics.len() > 0 {
+    let generics = sig.generic_type_names();
+
+    if generics.len() > 0 {
         accm += "<";
-        for generic in sig.generics.iter() {
-            accm += &mangle_name(&*INT.fetch(*generic));
+        for generic in generics.iter() {
+            accm += &mangle_name(generic);
             accm += ", ";
         }
         accm += ">";
@@ -222,13 +222,12 @@ fn compile_fn_signature(sig: &ast::Signature) -> String {
     for (varsym, typesym) in sig.params.iter() {
         accm += &*INT.fetch(*varsym);
         accm += ": ";
-        accm += &compile_typename(&*typesym);
+        accm += &compile_typename(&typesym);
         accm += ", ";
     }
     accm += ") -> ";
-    accm += &compile_typename(&*INT.fetch_type(sig.rettype));
+    accm += &compile_typename(&sig.rettype);
     accm
-    */
 }
 
 fn compile_exprs(exprs: &[hir::ExprNode], separator: &str, tck: &Tck) -> String {

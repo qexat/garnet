@@ -258,107 +258,99 @@ impl Type {
 
     /// Get a string for the name of the given type.
     pub fn get_name(&self) -> Cow<'static, str> {
-        todo!()
+        let join_types_with_commas = |lst: &[Type]| {
+            let p_strs = lst.iter().map(Type::get_name).collect::<Vec<_>>();
+            p_strs.join(", ")
+        };
+        let join_vars_with_commas = |lst: &BTreeMap<Sym, Type>| {
+            let p_strs = lst
+                .iter()
+                .map(|(pname, ptype)| {
+                    let pname = pname.val();
+                    format!("{}: {}", pname, ptype.get_name())
+                })
+                .collect::<Vec<_>>();
+            p_strs.join(", ")
+        };
         /*
-            let join_types_with_commas = |lst: &[TypeSym]| {
-                let p_strs = lst
+        let join_generics_with_commas = |lst: &[TypeConstraint]| {
+            // slice.join() alone won't work here 'cause we gotta map the thing
+            // first, which makes an iterator, not a slice.
+            // Apparently we want std::iter::IntersperseWith, but, that's
+            // not stable yet.  Odd!
+            let strs = lst
+                .iter()
+                .map(|name| (&*INT.fetch(*name)).to_owned())
+                .collect::<Vec<_>>();
+            strs.join(", ")
+        };
+        */
+        match self {
+            Type::Prim(PrimType::SInt(16)) => Cow::Borrowed("I128"),
+            Type::Prim(PrimType::SInt(8)) => Cow::Borrowed("I64"),
+            Type::Prim(PrimType::SInt(4)) => Cow::Borrowed("I32"),
+            Type::Prim(PrimType::SInt(2)) => Cow::Borrowed("I16"),
+            Type::Prim(PrimType::SInt(1)) => Cow::Borrowed("I8"),
+            Type::Prim(PrimType::SInt(s)) => panic!("Undefined integer size {}!", s),
+            Type::Prim(PrimType::UnknownInt) => Cow::Borrowed("{number}"),
+            Type::Prim(PrimType::Bool) => Cow::Borrowed("Bool"),
+            Type::Enum(variants) => {
+                let mut res = String::from("enum {");
+                let s = variants
                     .iter()
-                    .map(|ptype| {
-                        let ptype_def = INT.fetch_type(*ptype);
-                        ptype_def.get_name()
-                    })
-                    .collect::<Vec<_>>();
-                p_strs.join(", ")
-            };
-            let join_vars_with_commas = |lst: &BTreeMap<Sym, TypeSym>| {
-                let p_strs = lst
-                    .iter()
-                    .map(|(pname, ptype)| {
-                        let ptype_def = INT.fetch_type(*ptype);
-                        let pname = INT.fetch(*pname);
-                        format!("{}: {}", pname, ptype_def.get_name())
-                    })
-                    .collect::<Vec<_>>();
-                p_strs.join(", ")
-            };
-            let join_generics_with_commas = |lst: &[TypeConstraint]| {
-                // slice.join() alone won't work here 'cause we gotta map the thing
-                // first, which makes an iterator, not a slice.
-                // Apparently we want std::iter::IntersperseWith, but, that's
-                // not stable yet.  Odd!
-                let strs = lst
-                    .iter()
-                    .map(|name| (&*INT.fetch(*name)).to_owned())
-                    .collect::<Vec<_>>();
-                strs.join(", ")
-            };
-            match self {
-                Type::SInt(16) => Cow::Borrowed("I128"),
-                Type::SInt(8) => Cow::Borrowed("I64"),
-                Type::SInt(4) => Cow::Borrowed("I32"),
-                Type::SInt(2) => Cow::Borrowed("I16"),
-                Type::SInt(1) => Cow::Borrowed("I8"),
-                Type::SInt(s) => panic!("Undefined integer size {}!", s),
-                Type::UnknownInt => Cow::Borrowed("{number}"),
-                Type::Bool => Cow::Borrowed("Bool"),
-                Type::Never => Cow::Borrowed("Never"),
-                Type::Tuple(v) => {
-                    if v.is_empty() {
-                        Cow::Borrowed("{}")
-                    } else {
-                        let mut res = String::from("{");
-                        res += &join_types_with_commas(v);
-                        res += "}";
-                        Cow::Owned(res)
-                    }
-                }
-                Type::Lambda {
-                    generics,
-                    params,
-                    rettype,
-                } => {
-                    let mut t = String::from("fn");
-                    if generics.len() > 0 {
-                        t += "[";
-                        t += &join_generics_with_commas(generics);
-                        t += "]";
-                    }
-                    t += "(";
-                    t += &join_types_with_commas(params);
-
-                    t += ")";
-                    let ret_def = INT.fetch_type(*rettype);
-                    match &*ret_def {
-                        Type::Tuple(x) if x.is_empty() => {
-                            // pass, implicitly return unit
-                        }
-                        x => {
-                            let type_str = x.get_name();
-                            t += ": ";
-                            t += &type_str;
-                        }
-                    }
-                    Cow::Owned(t)
-                }
-                Type::Struct { fields, .. } => {
-                    let mut res = String::from("struct {");
-                    res += &join_vars_with_commas(fields);
+                    .map(|(nm, vl)| format!("    {} = {},\n", INT.fetch(*nm), vl))
+                    .collect::<String>();
+                res += &s;
+                res += "\n}\n";
+                Cow::Owned(res)
+            }
+            Type::Named(nm, tys) if nm == "Tuple" => {
+                if tys.is_empty() {
+                    Cow::Borrowed("{}")
+                } else {
+                    let mut res = String::from("{");
+                    res += &join_types_with_commas(tys);
                     res += "}";
                     Cow::Owned(res)
                 }
-                Type::Enum { variants } => {
-                    let mut res = String::from("enum {");
-                    let s = variants
-                        .iter()
-                        .map(|(nm, vl)| format!("    {} = {},\n", INT.fetch(*nm), vl))
-                        .collect::<String>();
-                    res += &s;
-                    res += "\n}\n";
-                    Cow::Owned(res)
-                }
-                Type::NamedTypeVar(vsym) => Cow::Owned((&*INT.fetch(*vsym)).clone()),
             }
-        */
+            Type::Named(nm, tys) => {
+                let result = if tys.len() == 0 {
+                    nm.to_owned()
+                } else {
+                    format!("{}({})", nm, &join_types_with_commas(tys))
+                };
+                Cow::Owned(result)
+            }
+            Type::Func(params, rettype) => {
+                let mut t = String::from("fn");
+                t += "(";
+                t += &join_types_with_commas(params);
+
+                t += ")";
+                let rettype_str = rettype.get_name();
+                t += ": ";
+                t += &rettype_str;
+                Cow::Owned(t)
+            }
+            Type::Struct(body, _generics) => {
+                let mut res = String::from("struct");
+                res += &join_vars_with_commas(body);
+                res += "end";
+                Cow::Owned(res)
+            }
+            Type::Sum(body, _generics) => {
+                let mut res = String::from("sum");
+                res += &join_vars_with_commas(body);
+                res += "end";
+                Cow::Owned(res)
+            }
+            Type::Array(body, len) => {
+                let inner_name = body.get_name();
+                Cow::Owned(format!("{}[{}]", inner_name, len))
+            }
+            Type::Generic(name) => Cow::Owned(format!("@{}", name)),
+        }
     }
 }
 
