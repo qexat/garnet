@@ -400,7 +400,7 @@ impl Tck {
     /// Make the types of two type terms equivalent (or produce an error if
     /// there is a conflict between them)
     pub fn unify(&mut self, symtbl: &Symtbl, a: TypeId, b: TypeId) -> Result<(), String> {
-        println!("> Unifying {:?} with {:?}", self.vars[&a], self.vars[&b]);
+        //println!("> Unifying {:?} with {:?}", self.vars[&a], self.vars[&b]);
         // If a == b then it's a little weird but shoooooould be fine
         // as long as we don't get any mutual recursion or self-recursion
         // involved
@@ -760,10 +760,12 @@ fn typecheck_func_body(
     signature: &hir::Signature,
     body: &[hir::ExprNode],
 ) -> Result<TypeId, String> {
+    /*
     println!(
         "Typechecking function {:?} with signature {:?}",
         name, signature
     );
+    */
     // Insert info about the function signature
     let mut params = vec![];
     for (_paramname, paramtype) in &signature.params {
@@ -771,10 +773,12 @@ fn typecheck_func_body(
         params.push(p);
     }
     let rettype = tck.insert_known(&signature.rettype);
+    /*
     println!(
         "signature is: {:?}",
         TypeInfo::Func(params.clone(), rettype.clone())
     );
+    */
     let f = tck.insert(TypeInfo::Func(params, rettype));
 
     // If we have a name (ie, are not a lambda), bind the function's type to its name
@@ -800,10 +804,12 @@ fn typecheck_func_body(
     }
     let last_expr = body.last().expect("empty body, aieeee");
     let last_expr_type = tck.get_expr_type(last_expr);
+    /*
     println!(
         "Unifying last expr...?  Is type {:?}, we want {:?}",
         last_expr_type, rettype
     );
+    */
     tck.unify(symtbl, last_expr_type, rettype)?;
 
     for expr in body {
@@ -811,11 +817,13 @@ fn typecheck_func_body(
         tck.reconstruct(t).unwrap();
     }
 
+    /*
     println!(
         "Typechecked function {}, types are",
         name.unwrap_or(Sym::new("(lambda)"))
     );
     tck.print_types();
+    */
     Ok(f)
 }
 
@@ -887,7 +895,7 @@ fn typecheck_expr(tck: &mut Tck, symtbl: &Symtbl, expr: &hir::ExprNode) -> Resul
             let actual_func_type = tck.reconstruct(func_type)?;
             match &actual_func_type {
                 Type::Func(_args, _rettype) => {
-                    println!("Calling function {:?} is {:?}", func, actual_func_type);
+                    //println!("Calling function {:?} is {:?}", func, actual_func_type);
                     // So when we call a function we need to know what its
                     // type params are.  Then we bind those type parameters
                     // to things.
@@ -1169,7 +1177,7 @@ pub fn typecheck(ast: &hir::Ir) -> Result<Tck, TypeError> {
             } => {
                 let t = typecheck_func_body(Some(*name), tck, symtbl, signature, body);
                 t.unwrap_or_else(|e| {
-                    println!("Error, type context is:");
+                    eprintln!("Error, type context is:");
                     tck.print_types();
                     panic!("Error while typechecking function {}:\n{}", name, e)
                 });
@@ -1220,9 +1228,11 @@ pub fn typecheck(ast: &hir::Ir) -> Result<Tck, TypeError> {
         }
     }
     // Print out toplevel symbols
+    /*
     for (name, id) in &symtbl.frames.borrow().last().unwrap().symbols {
         println!("value {} type is {:?}", name, tck.reconstruct(*id));
     }
+    */
     Ok(t)
 }
 
