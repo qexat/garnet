@@ -42,7 +42,7 @@ impl Eid {
 #[derive(Debug, Clone, PartialEq)]
 pub struct ExprNode {
     /// expression
-    pub e: Expr,
+    pub e: Box<Expr>,
     /// Expression ID
     pub id: Eid,
 }
@@ -62,20 +62,20 @@ pub enum Expr {
     },
     BinOp {
         op: BOp,
-        lhs: Box<ExprNode>,
-        rhs: Box<ExprNode>,
+        lhs: ExprNode,
+        rhs: ExprNode,
     },
     UniOp {
         op: UOp,
-        rhs: Box<ExprNode>,
+        rhs: ExprNode,
     },
     Block {
         body: Vec<ExprNode>,
     },
     Let {
         varname: Sym,
-        typename: Type,
-        init: Box<ExprNode>,
+        typename: Option<Type>,
+        init: ExprNode,
         mutable: bool,
     },
     If {
@@ -89,30 +89,30 @@ pub enum Expr {
         body: Vec<ExprNode>,
     },
     Funcall {
-        func: Box<ExprNode>,
+        func: ExprNode,
         params: Vec<ExprNode>,
         generic_types: Vec<Type>,
     },
     Break,
     Return {
-        retval: Box<ExprNode>,
+        retval: ExprNode,
     },
     StructCtor {
         body: Vec<(Sym, ExprNode)>,
     },
     StructRef {
-        expr: Box<ExprNode>,
+        expr: ExprNode,
         elt: Sym,
     },
     Assign {
-        lhs: Box<ExprNode>,
-        rhs: Box<ExprNode>,
+        lhs: ExprNode,
+        rhs: ExprNode,
     },
     Deref {
-        expr: Box<ExprNode>,
+        expr: ExprNode,
     },
     Ref {
-        expr: Box<ExprNode>,
+        expr: ExprNode,
     },
 }
 
@@ -153,6 +153,7 @@ pub enum Decl {
     },
     TypeDef {
         name: Sym,
+        params: Vec<String>,
         typedecl: Type,
     },
     /// Our first compiler intrinsic!  \o/
@@ -162,10 +163,7 @@ pub enum Decl {
     /// and produces that type.  We have no way to write such
     /// a function by hand, so here we are.  In all other ways
     /// though we treat it exactly like a function though.
-    Constructor {
-        name: Sym,
-        signature: Signature,
-    },
+    Constructor { name: Sym, signature: Signature },
 }
 
 /// A compilable chunk of IR.
@@ -218,17 +216,14 @@ fn lower_expr(expr: &ast::Expr) -> ExprNode {
             let nrhs = lower_expr(rhs);
             BinOp {
                 op: nop,
-                lhs: Box::new(nlhs),
-                rhs: Box::new(nrhs),
+                lhs: nlhs,
+                rhs: nrhs,
             }
         }
         E::UniOp { op, rhs } => {
             let nop = lower_uop(op);
             let nrhs = lower_expr(rhs);
-            UniOp {
-                op: nop,
-                rhs: Box::new(nrhs),
-            }
+            UniOp { op: nop, rhs: nrhs }
         }
         E::Block { body } => {
             let nbody = body.iter().map(|e| lower_expr(e)).collect();
@@ -240,10 +235,10 @@ fn lower_expr(expr: &ast::Expr) -> ExprNode {
             init,
             mutable,
         } => {
-            let ninit = Box::new(lower_expr(init));
+            let ninit = lower_expr(init);
             Let {
                 varname: *varname,
-                typename: typename.clone(),
+                typename: Some(typename.clone()),
                 init: ninit,
                 mutable: *mutable,
             }
@@ -287,7 +282,7 @@ fn lower_expr(expr: &ast::Expr) -> ExprNode {
             params,
             generic_types,
         } => {
-            let nfunc = Box::new(lower_expr(func));
+            let nfunc = lower_expr(func);
             let nparams = lower_exprs(params);
             Funcall {
                 func: nfunc,
@@ -297,7 +292,7 @@ fn lower_expr(expr: &ast::Expr) -> ExprNode {
         }
         E::Break => Break,
         E::Return { retval: e } => Return {
-            retval: Box::new(lower_expr(e)),
+            retval: lower_expr(e),
         },
         // Turn {foo, bar} into {_0: foo, _1: bar}
         E::TupleCtor { body } => {
@@ -320,26 +315,26 @@ fn lower_expr(expr: &ast::Expr) -> ExprNode {
         }
         // Turn tuple.0 into struct._0
         E::TupleRef { expr, elt } => Expr::StructRef {
-            expr: Box::new(lower_expr(expr)),
+            expr: lower_expr(expr),
             elt: Sym::new(format!("_{}", elt)),
         },
         E::StructRef { expr, elt } => Expr::StructRef {
-            expr: Box::new(lower_expr(expr)),
+            expr: lower_expr(expr),
             elt: *elt,
         },
         E::Deref { expr } => Expr::Deref {
-            expr: Box::new(lower_expr(expr)),
+            expr: lower_expr(expr),
         },
         E::Ref { expr } => Expr::Ref {
-            expr: Box::new(lower_expr(expr)),
+            expr: lower_expr(expr),
         },
         E::Assign { lhs, rhs } => Expr::Assign {
-            lhs: Box::new(lower_expr(lhs)),
-            rhs: Box::new(lower_expr(rhs)),
+            lhs: lower_expr(lhs),
+            rhs: lower_expr(rhs),
         },
     };
     ExprNode {
-        e: new_exp,
+        e: Box::new(new_exp),
         id: Eid::new(),
     }
 }
@@ -479,7 +474,7 @@ mod tests {
     ///
     /// TODO: Better name?
     #[cfg(test)]
-    pub(crate) fn plz(e: Expr) -> Box<ExprNode> {
+    pub(crate) fn plz(e: Expr) -> ExprNode {
         Box::new(ExprNode { e, id: Eid::new() })
     }
 

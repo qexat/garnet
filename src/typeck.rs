@@ -9,8 +9,37 @@ use std::rc::Rc;
 
 use crate::*;
 
-use crate::hir::{self, Expr};
+use crate::hir;
 use crate::{Sym, Type};
+
+/// A identifier to uniquely refer to our type terms
+#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
+pub struct TypeId(usize);
+
+/// Information about a type term
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum TypeInfo {
+    /// No information about the type of this type term
+    Unknown,
+    /// This type term is the same as another type term
+    Ref(TypeId),
+    Enum(Vec<(Sym, i32)>),
+    /// N-ary type constructor.
+    /// It could be Int()
+    /// or List(Int)
+    /// or List(T)
+    Named(String, Vec<TypeId>),
+    /// This type term is definitely a function
+    Func(Vec<TypeId>, TypeId),
+    /// This is definitely some kind of struct
+    Struct(BTreeMap<Sym, TypeId>),
+    /// Definitely a sum type
+    Sum(BTreeMap<Sym, TypeId>),
+    Array(TypeId, usize),
+    /// This is some generic type that has a name like @A
+    /// AKA a type parameter.
+    TypeParam(Sym),
+}
 
 #[derive(Debug, Clone)]
 pub enum TypeError {
@@ -209,21 +238,17 @@ impl TypeError {
 /// Type checking engine
 #[derive(Default)]
 pub struct Tck {
-    /*
     /// Used to generate unique IDs
     id_counter: usize,
     /// Binding from type vars to what we know about the type
     vars: BTreeMap<TypeId, TypeInfo>,
     /// What we know about the type of each node in the AST.
-    types: BTreeMap<ast::AstId, TypeId>,
-    */
+    types: BTreeMap<hir::Eid, TypeId>,
 }
-
-/*
 
 impl Tck {
     /// Save the type variable associated with the given expr
-    fn set_expr_type(&mut self, expr: &ast::ExprNode, ty: TypeId) {
+    fn set_expr_type(&mut self, expr: &hir::ExprNode, ty: TypeId) {
         assert!(
             self.types.get(&expr.id).is_none(),
             "Redefining known type, not suuuuure if this is bad or not.  Probably is though, since we should always be changing the meaning of an expr's associated type variable instead."
@@ -232,7 +257,7 @@ impl Tck {
     }
 
     /// Panics if the expression's type is not set.
-    fn get_expr_type(&mut self, expr: &ast::ExprNode) -> TypeId {
+    fn get_expr_type(&mut self, expr: &hir::ExprNode) -> TypeId {
         *self.types.get(&expr.id).unwrap_or_else(|| {
             panic!(
                 "Could not get type of expr with ID {:?}!\nExpr was {:?}",
@@ -256,7 +281,7 @@ impl Tck {
     pub fn insert_known(&mut self, t: &Type) -> TypeId {
         // Recursively insert all subtypes.
         let tinfo = match t {
-            //Type::Primitive(_) => todo!(),
+            Type::Prim(_) => todo!(),
             Type::Enum(vals) => TypeInfo::Enum(vals.clone()),
             Type::Named(s, args) => {
                 let new_args = args.iter().map(|t| self.insert_known(t)).collect();
@@ -267,7 +292,7 @@ impl Tck {
                 let new_rettype = self.insert_known(rettype);
                 TypeInfo::Func(new_args, new_rettype)
             }
-            Type::Generic(s) => TypeInfo::TypeParam(s.to_string()),
+            Type::Generic(s) => TypeInfo::TypeParam(Sym::new(s)),
             Type::Array(ty, len) => {
                 let new_body = self.insert_known(&ty);
                 TypeInfo::Array(new_body, *len)
@@ -276,7 +301,7 @@ impl Tck {
             Type::Struct(body, _names) => {
                 let new_body = body
                     .iter()
-                    .map(|(nm, t)| (nm.clone(), self.insert_known(t)))
+                    .map(|(nm, t)| (*nm, self.insert_known(t)))
                     .collect();
                 TypeInfo::Struct(new_body)
             }
@@ -284,7 +309,7 @@ impl Tck {
             Type::Sum(body, _names) => {
                 let new_body = body
                     .iter()
-                    .map(|(nm, t)| (nm.clone(), self.insert_known(t)))
+                    .map(|(nm, t)| (*nm, self.insert_known(t)))
                     .collect();
                 TypeInfo::Sum(new_body)
             }
@@ -297,12 +322,12 @@ impl Tck {
         &mut self,
         symtbl: &Symtbl,
         struct_type: TypeId,
-        field_name: &str,
+        field_name: Sym,
     ) -> TypeId {
         use TypeInfo::*;
         match self.vars[&struct_type].clone() {
             Ref(t) => self.get_struct_field_type(symtbl, t, field_name),
-            Struct(body) => body.get(field_name).cloned().unwrap_or_else(|| {
+            Struct(body) => body.get(&field_name).cloned().unwrap_or_else(|| {
                 panic!(
                     "Struct has no field {}, valid fields are: {:#?}",
                     field_name, body
@@ -436,7 +461,7 @@ impl Tck {
                     Box::new(self.reconstruct(*rettype)?),
                 ))
             }
-            TypeParam(name) => Ok(Type::Generic(name.to_owned())),
+            TypeParam(name) => Ok(Type::Generic(name.to_string())),
             Struct(body) => {
                 let real_body: Result<BTreeMap<_, _>, String> = body
                     .iter()
@@ -490,7 +515,7 @@ impl Tck {
     fn instantiate(&mut self, t: &Type, known_types: Option<BTreeMap<String, TypeId>>) -> TypeId {
         fn helper(tck: &mut Tck, named_types: &mut BTreeMap<String, TypeId>, t: &Type) -> TypeId {
             let typeinfo = match t {
-                //Type::Primitive(_) => todo!(),
+                Type::Prim(_) => todo!(),
                 Type::Enum(vals) => TypeInfo::Enum(vals.clone()),
                 Type::Named(s, args) => {
                     let inst_args: Vec<_> =
@@ -554,7 +579,7 @@ impl Tck {
 
 #[derive(Clone, Default)]
 struct ScopeFrame {
-    symbols: BTreeMap<String, TypeId>,
+    symbols: BTreeMap<Sym, TypeId>,
     types: BTreeMap<String, Type>,
 }
 
@@ -562,7 +587,7 @@ struct ScopeFrame {
 /// and manages scope.
 /// Looks ugly, works well.
 #[derive(Clone)]
-struct Symtbl {
+pub struct Symtbl {
     frames: Rc<RefCell<Vec<ScopeFrame>>>,
 }
 
@@ -597,19 +622,19 @@ impl Symtbl {
         }
     }
 
-    fn add_var(&self, var: impl AsRef<str>, ty: TypeId) {
+    fn add_var(&self, var: Sym, ty: TypeId) {
         self.frames
             .borrow_mut()
             .last_mut()
             .expect("Scope stack underflow")
             .symbols
-            .insert(var.as_ref().to_owned(), ty);
+            .insert(var, ty);
     }
 
     /// Checks whether the var exists in the currently alive scopes
-    fn get_var_binding(&self, var: impl AsRef<str>) -> Option<TypeId> {
+    fn get_var_binding(&self, var: Sym) -> Option<TypeId> {
         for scope in self.frames.borrow().iter().rev() {
-            let v = scope.symbols.get(var.as_ref());
+            let v = scope.symbols.get(&var);
             if v.is_some() {
                 return v.cloned();
             }
@@ -617,18 +642,18 @@ impl Symtbl {
         return None;
     }
 
-    fn add_type(&self, name: impl AsRef<str>, ty: &Type) {
+    fn add_type(&self, name: Sym, ty: &Type) {
         self.frames
             .borrow_mut()
             .last_mut()
             .expect("Scope stack underflow")
             .types
-            .insert(name.as_ref().to_owned(), ty.to_owned());
+            .insert((*name.val()).to_owned(), ty.to_owned());
     }
 
-    fn get_type(&self, ty: impl AsRef<str>) -> Option<Type> {
+    fn get_type(&self, ty: Sym) -> Option<Type> {
         for scope in self.frames.borrow().iter().rev() {
-            let v = scope.types.get(ty.as_ref());
+            let v = scope.types.get(&*ty.val());
             if v.is_some() {
                 return v.cloned();
             }
@@ -642,14 +667,15 @@ fn infer_lit(lit: &ast::Literal) -> TypeInfo {
         ast::Literal::Integer(_) => TypeInfo::Named("I32".to_string(), vec![]),
         ast::Literal::Bool(_) => TypeInfo::Named("Bool".to_string(), vec![]),
         ast::Literal::EnumLit(nm, _) => TypeInfo::Named(nm.to_string(), vec![]),
+        _ => todo!(),
     }
 }
 fn typecheck_func_body(
-    name: Option<&str>,
+    name: Option<Sym>,
     tck: &mut Tck,
     symtbl: &Symtbl,
-    signature: &ast::Signature,
-    body: &[ast::ExprNode],
+    signature: &hir::Signature,
+    body: &[hir::ExprNode],
 ) -> Result<TypeId, String> {
     println!(
         "Typechecking function {:?} with signature {:?}",
@@ -681,7 +707,7 @@ fn typecheck_func_body(
     let _guard = symtbl.push_scope();
     for (paramname, paramtype) in &signature.params {
         let p = tck.insert_known(paramtype);
-        symtbl.add_var(paramname, p);
+        symtbl.add_var(*paramname, p);
     }
 
     // Typecheck body
@@ -704,14 +730,16 @@ fn typecheck_func_body(
 
     println!(
         "Typechecked function {}, types are",
-        name.unwrap_or("(lambda)")
+        name.unwrap_or(Sym::new("(lambda)"))
     );
     tck.print_types();
     Ok(f)
 }
 
-fn typecheck_expr(tck: &mut Tck, symtbl: &Symtbl, expr: &ast::ExprNode) -> Result<TypeId, String> {
-    use ast::Expr::*;
+fn typecheck_expr(tck: &mut Tck, symtbl: &Symtbl, expr: &hir::ExprNode) -> Result<TypeId, String> {
+    todo!()
+    /*
+    use hir::Expr::*;
     match &*expr.node {
         Lit { val } => {
             let lit_type = infer_lit(val);
@@ -749,7 +777,7 @@ fn typecheck_expr(tck: &mut Tck, symtbl: &Symtbl, expr: &ast::ExprNode) -> Resul
             Ok(var_type)
         }
         Lambda { signature, body } => {
-            let t = typecheck_func_body(None, tck, symtbl, signature, body)?;
+            let t = typecheck_func_body(None, tck, symtbl, &signature, body)?;
             tck.set_expr_type(expr, t);
             Ok(t)
         }
@@ -990,6 +1018,7 @@ fn typecheck_expr(tck: &mut Tck, symtbl: &Symtbl, expr: &ast::ExprNode) -> Resul
         }
         ArrayRef { e, idx } => todo!(),
     }
+        */
 }
 
 /// From example code:
@@ -997,11 +1026,12 @@ fn typecheck_expr(tck: &mut Tck, symtbl: &Symtbl, expr: &ast::ExprNode) -> Resul
 /// terms to each of your nodes with whatever information you have available. You
 /// will also need to call `engine.unify(x, y)` when you know two nodes have the
 /// same type, such as in the statement `x = y;`."
-pub fn typecheck(ast: &ast::Ast) {
-    let tck = &mut Tck::default();
+pub fn typecheck(ast: &hir::Ir) -> Result<Tck, TypeError> {
+    let mut t = Tck::default();
+    let tck = &mut t;
     let symtbl = &mut Symtbl::default();
     for decl in &ast.decls {
-        use ast::Decl::*;
+        use hir::Decl::*;
 
         match decl {
             Function {
@@ -1009,18 +1039,22 @@ pub fn typecheck(ast: &ast::Ast) {
                 signature,
                 body,
             } => {
-                let t = typecheck_func_body(Some(name), tck, symtbl, signature, body);
+                let t = typecheck_func_body(Some(*name), tck, symtbl, signature, body);
                 t.unwrap_or_else(|e| {
                     println!("Error, type context is:");
                     tck.print_types();
                     panic!("Error while typechecking function {}:\n{}", name, e)
                 });
             }
-            TypeDef { name, params, ty } => {
+            TypeDef {
+                name,
+                params,
+                typedecl,
+            } => {
                 // Make sure that there are no unbound generics in the typedef
                 // that aren't mentioned in the params.
                 let generic_names: BTreeSet<String> =
-                    ty.collect_generic_names().into_iter().collect();
+                    typedecl.collect_generic_names().into_iter().collect();
                 let param_names: BTreeSet<String> = params.iter().cloned().collect();
                 let difference: Vec<_> = generic_names
                     .symmetric_difference(&param_names)
@@ -1033,12 +1067,18 @@ pub fn typecheck(ast: &ast::Ast) {
                 }
 
                 // Remember that we know about a type with this name
-                symtbl.add_type(name, ty)
+                symtbl.add_type(*name, typedecl)
             }
-            ConstDef { name, init } => {
+            Const {
+                name,
+                typename,
+                init,
+            } => {
                 // The init expression is typechecked in its own
                 // scope, since it may theoretically be a `let` or
                 // something that introduces new names inside it.
+                todo!("Unify const typename with init expr val")
+                /*
                 let init_type = {
                     let _guard = symtbl.push_scope();
                     let t = typecheck_expr(tck, symtbl, init).unwrap();
@@ -1046,45 +1086,19 @@ pub fn typecheck(ast: &ast::Ast) {
                 };
                 println!("Typechecked const {}, type is {:?}", name, init_type);
                 symtbl.add_var(name, init_type);
+                        */
             }
+            Constructor { .. } => todo!("Why isn't this just a function?"),
         }
     }
     // Print out toplevel symbols
     for (name, id) in &symtbl.frames.borrow().last().unwrap().symbols {
         println!("value {} type is {:?}", name, tck.reconstruct(*id));
     }
-}
-*/
-
-/// A identifier to uniquely refer to our type terms
-#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
-pub struct TypeId(usize);
-
-/// Information about a type term
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum TypeInfo {
-    /// No information about the type of this type term
-    Unknown,
-    /// This type term is the same as another type term
-    Ref(TypeId),
-    Enum(Vec<String>),
-    /// N-ary type constructor.
-    /// It could be Int()
-    /// or List(Int)
-    /// or List(T)
-    Named(String, Vec<TypeId>),
-    /// This type term is definitely a function
-    Func(Vec<TypeId>, TypeId),
-    /// This is definitely some kind of struct
-    Struct(BTreeMap<String, TypeId>),
-    /// Definitely a sum type
-    Sum(BTreeMap<String, TypeId>),
-    Array(TypeId, usize),
-    /// This is some generic type that has a name like @A
-    /// AKA a type parameter.
-    TypeParam(String),
+    Ok(t)
 }
 
+/*
 /// Top level driver function for type checking.
 pub fn typecheck(ir: &hir::Ir) -> Result<Tck, TypeError> {
     todo!()
@@ -1099,3 +1113,4 @@ pub fn typecheck(ir: &hir::Ir) -> Result<Tck, TypeError> {
     Ok(tck)
         */
 }
+*/

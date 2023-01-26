@@ -408,12 +408,6 @@ impl From<Sym> for usize {
     }
 }
 
-impl fmt::Debug for Sym {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Sym({}, {:?})", self.0, INT.fetch(*self))
-    }
-}
-
 impl Sym {
     pub fn new(s: impl AsRef<str>) -> Self {
         INT.intern(s)
@@ -421,6 +415,18 @@ impl Sym {
     /// Get the underlying string
     pub fn val(&self) -> Arc<String> {
         INT.fetch(*self)
+    }
+}
+
+impl fmt::Debug for Sym {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "Sym({}, {:?})", self.0, self.val())
+    }
+}
+
+impl fmt::Display for Sym {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.val())
     }
 }
 

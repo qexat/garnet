@@ -163,7 +163,11 @@ fn compile_decl(w: &mut impl Write, decl: &hir::Decl, tck: &Tck) -> io::Result<(
             writeln!(w, "const {}: {} = {};", nstr, tstr, istr)
         }
         // Typedefs compile into newtype structs.
-        hir::Decl::TypeDef { name, typedecl } => {
+        hir::Decl::TypeDef {
+            name,
+            typedecl,
+            params,
+        } => {
             let nstr = mangle_name(&INT.fetch(*name));
             let tstr = compile_typedef(&*typedecl);
             writeln!(w, "pub struct {}({});", nstr, tstr)
@@ -269,7 +273,7 @@ fn compile_uop(op: hir::UOp) -> &'static str {
 
 fn compile_expr(expr: &hir::ExprNode, tck: &Tck) -> String {
     use hir::Expr as E;
-    match &expr.e {
+    match &*expr.e {
         E::Lit {
             val: ast::Literal::Integer(i),
         } => format!("{}", i),
@@ -301,7 +305,7 @@ fn compile_expr(expr: &hir::ExprNode, tck: &Tck) -> String {
             mutable,
         } => {
             let vstr = mangle_name(&*INT.fetch(*varname));
-            let tstr = compile_typename(&*typename);
+            let tstr = compile_typename(&typename.clone().expect("TODO"));
             let istr = compile_expr(init, tck);
             if *mutable {
                 format!("let mut {}: {} = {};", vstr, tstr, istr)
@@ -417,5 +421,6 @@ fn compile_expr(expr: &hir::ExprNode, tck: &Tck) -> String {
         }
         E::Deref { expr } => format!("*{}", compile_expr(expr, tck)),
         E::Ref { expr } => format!("&{}", compile_expr(expr, tck)),
+        _ => todo!(),
     }
 }

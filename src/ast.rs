@@ -24,6 +24,8 @@ pub enum Literal {
     },
     /// A bool literal
     Bool(bool),
+    /// Enum literal
+    EnumLit(Sym, Sym),
 }
 
 /// Binary operation
