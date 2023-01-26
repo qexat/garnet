@@ -44,23 +44,22 @@ fn compile_typedef(td: &Type) -> Cow<'static, str> {
 /// Similar to `compile_typedef` but only gets names, not full definitions.
 ///
 /// Needed for when we do `let x: Foo = ...` rather than `struct Foo { ... }`
-fn compile_typename(_td: &Type) -> Cow<'static, str> {
-    todo!()
-    /*
-    use crate::TypeDef::*;
-    match td {
-        SInt(16) => "i128".into(),
-        SInt(8) => "i64".into(),
-        SInt(4) => "i32".into(),
-        SInt(2) => "i16".into(),
-        SInt(1) => "i8".into(),
-        SInt(e) => {
+fn compile_typename(t: &Type) -> Cow<'static, str> {
+    use crate::Type::*;
+    match t {
+        Prim(PrimType::SInt(16)) => "i128".into(),
+        Prim(PrimType::SInt(8)) => "i64".into(),
+        Prim(PrimType::SInt(4)) => "i32".into(),
+        Prim(PrimType::SInt(2)) => "i16".into(),
+        Prim(PrimType::SInt(1)) => "i8".into(),
+        Prim(PrimType::SInt(e)) => {
             unreachable!("Invalid integer size: {}", e)
         }
-        UnknownInt => unreachable!("Backend got an integer of unknown size, should never happen!"),
-        Bool => "bool".into(),
-        Never => panic!("Stable rust can't quite do this yet..."),
-        Tuple(types) => {
+        Prim(PrimType::UnknownInt) => {
+            unreachable!("Backend got an integer of unknown size, should never happen!")
+        }
+        Prim(PrimType::Bool) => "bool".into(),
+        Named(s, types) if s == "Tuple" => {
             let mut accm = String::from("(");
             for typ in types {
                 accm += &compile_typename(&*typ);
@@ -69,13 +68,10 @@ fn compile_typename(_td: &Type) -> Cow<'static, str> {
             accm += ")";
             accm.into()
         }
-        Lambda {
-            generics,
-            params,
-            rettype,
-        } => {
+        Func(params, rettype) => {
             let mut accm = String::from("fn ");
             // TODO: ...make sure this actually works.
+            /*
             if generics.len() > 0 {
                 accm += "<";
                 for g in generics {
@@ -84,6 +80,7 @@ fn compile_typename(_td: &Type) -> Cow<'static, str> {
                 }
                 accm += ">";
             }
+            */
             accm += "(";
             for p in params {
                 accm += &compile_typename(&*p);
@@ -94,7 +91,7 @@ fn compile_typename(_td: &Type) -> Cow<'static, str> {
             accm.into()
         }
         //Named(sym) => (&*INT.fetch(*sym)).clone().into(),
-        Struct { fields } => {
+        Struct(fields, _generics) => {
             // We compile our structs into Rust tuples.
             // Our fields are always ordered via BTreeMap etc,
             // so it's okay
@@ -105,21 +102,22 @@ fn compile_typename(_td: &Type) -> Cow<'static, str> {
             */
             let mut accm = String::from("(");
             for (nm, typ) in fields.iter() {
-                accm += &format!("/* {} */
-    {}, \n", INT.fetch(*nm), compile_typename(&*typ));
+                accm += &format!(
+                    "/* {} */
+    {}, \n",
+                    INT.fetch(*nm),
+                    compile_typename(&*typ)
+                );
             }
             accm += ")";
             accm.into()
         }
-        Enum { variants: _ } => {
+        Enum(_) => {
             todo!("Enums probably should be lowered to numbers?")
         }
-        NamedTypeVar(vsym) => {
-            let s = &*INT.fetch(*vsym);
-            mangle_name(s).into()
-        }
+        Generic(s) => mangle_name(s).into(),
+        _ => todo!(),
     }
-*/
 }
 
 pub(super) fn output(lir: &hir::Ir, tck: &Tck) -> Vec<u8> {
