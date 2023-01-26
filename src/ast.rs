@@ -53,32 +53,6 @@ pub enum BOp {
     Xor,
 }
 
-impl BOp {
-    /// Returns the type that the bin op operates on.
-    pub fn input_type(&self) -> Type {
-        use BOp::*;
-        match self {
-            And | Or | Xor => Type::bool(),
-            // TODO: This is wrong for Eq and Neq 'cause they can accept anything...
-            _ => Type::iunknown(),
-        }
-    }
-
-    /// What the resultant type of the binop is.
-    ///
-    /// Needs to know what the type of the expression given to it is,
-    /// but also assumes that the LHS and RHS have the same input type.
-    /// Ensuring that is left as an exercise to the user.
-    pub fn output_type(&self) -> Type {
-        use BOp::*;
-        match self {
-            Add | Sub | Mul | Div | Mod => Type::iunknown(),
-            Eq | Neq | Gt | Lt | Gte | Lte => Type::bool(),
-            And | Or | Xor => Type::bool(),
-        }
-    }
-}
-
 /// Unary operation
 #[allow(missing_docs)]
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -87,31 +61,6 @@ pub enum UOp {
     Not,
     Ref,
     Deref,
-}
-
-impl UOp {
-    /// Returns the type that the unary op operates on.
-    /// Currently, only numbers.
-    pub fn input_type(&self) -> Type {
-        use UOp::*;
-        match self {
-            Neg => Type::iunknown(),
-            Not => Type::bool(),
-            Ref => todo!(),
-            Deref => todo!(),
-        }
-    }
-
-    /// What the resultant type of the uop is
-    pub fn output_type(&self) -> Type {
-        use UOp::*;
-        match self {
-            Neg => Type::iunknown(),
-            Not => Type::bool(),
-            Ref => todo!(),
-            Deref => todo!(),
-        }
-    }
 }
 
 /// An arm in an `if ... elseif ... elseif ...` chain.

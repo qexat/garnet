@@ -42,6 +42,60 @@ pub enum TypeInfo {
     TypeParam(Sym),
 }
 
+impl hir::BOp {
+    /// Returns the type that the bin op operates on.
+    pub fn input_type(&self, tck: &mut Tck) -> TypeId {
+        use hir::BOp::*;
+        match self {
+            And | Or | Xor => tck.insert_known(&Type::bool()),
+            Eq | Neq => tck.insert(TypeInfo::Unknown),
+            // Don't know what it is but it's gotta be a number
+            Gt | Lt | Gte | Lte => tck.insert_known(&Type::iunknown()),
+            Add | Sub | Mul | Div | Mod => tck.insert_known(&Type::iunknown()),
+        }
+    }
+
+    /// What the resultant type of the binop is.
+    ///
+    /// Needs to know what the type of the expression given to it is,
+    /// but also assumes that the LHS and RHS have the same input type.
+    /// Ensuring that is left as an exercise to the user.
+    pub fn output_type(&self, tck: &mut Tck, input: TypeId) -> TypeId {
+        use hir::BOp::*;
+        match self {
+            // Output of math ops is same type as input
+            Add | Sub | Mul | Div | Mod => tck.insert(TypeInfo::Ref(input)),
+            // Output of logic ops is always a bool
+            Eq | Neq | Gt | Lt | Gte | Lte | And | Or | Xor => tck.insert_known(&Type::bool()),
+        }
+    }
+}
+
+impl hir::UOp {
+    /// Returns the type that the unary op operates on.
+    /// Currently, only numbers.
+    pub fn input_type(&self, tck: &mut Tck) -> TypeId {
+        use hir::UOp::*;
+        match self {
+            Neg => tck.insert_known(&Type::iunknown()),
+            Not => tck.insert_known(&Type::bool()),
+            Ref => todo!(),
+            Deref => todo!(),
+        }
+    }
+
+    /// What the resultant type of the uop is
+    pub fn output_type(&self, tck: &mut Tck, input: TypeId) -> TypeId {
+        use hir::UOp::*;
+        match self {
+            Neg => tck.insert(TypeInfo::Ref(input)),
+            Not => tck.insert_known(&Type::bool()),
+            Ref => todo!(),
+            Deref => todo!(),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum TypeError {
     UnknownVar(Sym),
@@ -784,30 +838,36 @@ fn typecheck_expr(tck: &mut Tck, symtbl: &Symtbl, expr: &hir::ExprNode) -> Resul
         BinOp { op, lhs, rhs } => {
             let t1 = typecheck_expr(tck, symtbl, lhs)?;
             let t2 = typecheck_expr(tck, symtbl, rhs)?;
-            let t3 = tck.insert_known(&op.input_type());
+            let t3 = op.input_type(tck);
             tck.unify(symtbl, t1, t2)?;
             tck.unify(symtbl, t2, t3)?;
-            // TODO NEXT: the BOp::output_type() operation taking an input is kinda fundamentally at
-            // odds with unification...
+            // Figuring out the type of a binop output is kinda a pain.
             // The point is that if we know a type of an input we know its output.
-            // BUT we need to handle this differently for predicates and num ops,
-            // because for predicates the output type is always known and is often NOT the same
-            // as the input type, but for
-            // numerical ops the output type may NOT be known (may be Ref, Unknown, etc if we
-            // haven't checked enough of the program yet), but once it IS known it has to be the
-            // same as its inputs!
-            let expected_output = tck.insert_known(&op.output_type());
-            tck.unify(symtbl, t3, expected_output)?;
+            // But this is fundamentally at odds with unification because we don't
+            // evaluate types greedily, we may not know what the types of the
+            // inputs are until later in the program and that's fine!
+            //
+            // BUT we need to know that type to handle this differently for predicates and num ops,
+            // because for predicates the output type is always known and is often NOT the same as
+            // the input type, but for numerical ops the output type may NOT be known (may be Ref,
+            // Unknown, etc if we haven't checked enough of the program yet), but once it IS known
+            // it has to be the same as its inputs!
+            //
+            // This actually appears to work out just fine though, we make the
+            // output type of the numerical ops a Ref to the input types, which
+            // we know must be the same anyway.  Soooooo once we FIND the input
+            // types, the output type snaps to it automatically.  Whew!
+            let expected_output = op.output_type(tck, t3);
             tck.set_expr_type(expr, expected_output);
             Ok(expected_output)
         }
         UniOp { op, rhs } => {
             let expr_in = typecheck_expr(tck, symtbl, rhs)?;
-            let expected_in = tck.insert_known(&op.input_type());
+            let expected_in = op.input_type(tck);
             tck.unify(symtbl, expr_in, expected_in)?;
-            // TODO NEXT: Similar problem as BOp
-            let expected_output = tck.insert_known(&op.output_type());
-            tck.unify(symtbl, expr_in, expected_output)?;
+            // Similar problem as BOp
+            let expected_output = op.output_type(tck, expected_in);
+            //tck.unify(symtbl, expr_in, expected_output)?;
             tck.set_expr_type(expr, expected_output);
             Ok(expected_output)
         }
