@@ -357,6 +357,8 @@ impl Tck {
         }
         use TypeInfo::*;
         match (self.vars[&a].clone(), self.vars[&b].clone()) {
+            // Primitives just match directly
+            (Prim(p1), Prim(p2)) if p1 == p2 => Ok(()),
             // Follow any references
             (Ref(a), _) => self.unify(symtbl, a, b),
             (_, Ref(b)) => self.unify(symtbl, a, b),
@@ -517,7 +519,7 @@ impl Tck {
     fn instantiate(&mut self, t: &Type, known_types: Option<BTreeMap<String, TypeId>>) -> TypeId {
         fn helper(tck: &mut Tck, named_types: &mut BTreeMap<String, TypeId>, t: &Type) -> TypeId {
             let typeinfo = match t {
-                Type::Prim(_) => todo!(),
+                Type::Prim(val) => TypeInfo::Prim(val.clone()),
                 Type::Enum(vals) => TypeInfo::Enum(vals.clone()),
                 Type::Named(s, args) => {
                     let inst_args: Vec<_> =
@@ -594,11 +596,13 @@ pub struct Symtbl {
 }
 
 impl Default for Symtbl {
-    /// We start with an empty toplevel scope existing.
+    /// We start with an empty toplevel scope existing,
+    /// then add some builtin's to it.
     fn default() -> Self {
-        Self {
+        let s = Self {
             frames: Rc::new(RefCell::new(vec![ScopeFrame::default()])),
-        }
+        };
+        s
     }
 }
 
@@ -617,6 +621,11 @@ impl Drop for ScopeGuard {
 }
 
 impl Symtbl {
+    fn add_builtins(&self, tck: &mut Tck) {
+        let println_sig = Type::Func(vec![Type::i32()], Box::new(Type::unit()));
+        let println_ty = tck.insert_known(&println_sig);
+        self.add_var(Sym::new("__println"), println_ty);
+    }
     fn push_scope(&self) -> ScopeGuard {
         self.frames.borrow_mut().push(ScopeFrame::default());
         ScopeGuard {
@@ -666,8 +675,8 @@ impl Symtbl {
 
 fn infer_lit(lit: &ast::Literal) -> TypeInfo {
     match lit {
-        ast::Literal::Integer(_) => TypeInfo::Named("I32".to_string(), vec![]),
-        ast::Literal::Bool(_) => TypeInfo::Named("Bool".to_string(), vec![]),
+        ast::Literal::Integer(_) => TypeInfo::Prim(PrimType::SInt(4)),
+        ast::Literal::Bool(_) => TypeInfo::Prim(PrimType::Bool),
         ast::Literal::EnumLit(nm, _) => TypeInfo::Named(nm.to_string(), vec![]),
         _ => todo!(),
     }
@@ -754,6 +763,60 @@ fn typecheck_expr(tck: &mut Tck, symtbl: &Symtbl, expr: &hir::ExprNode) -> Resul
             tck.set_expr_type(expr, ty);
             Ok(ty)
         }
+        Funcall {
+            func,
+            params,
+            generic_types,
+        } => {
+            // Oh, defined generics are "easy".
+            // Each time I call a function I create new type
+            // vars for its generic args.
+            // Apparently that is the "instantiation".
+
+            let func_type = typecheck_expr(tck, symtbl, func)?;
+            // We know this will work because we require full function signatures
+            // on our functions.
+            let actual_func_type = tck.reconstruct(func_type)?;
+            match &actual_func_type {
+                Type::Func(_args, _rettype) => {
+                    println!("Calling function {:?} is {:?}", func, actual_func_type);
+                    // So when we call a function we need to know what its
+                    // type params are.  Then we bind those type parameters
+                    // to things.
+                }
+                _ => panic!("Tried to call something not a function"),
+            }
+
+            // Synthesize what we know about the function
+            // from the call.
+            let mut params_list = vec![];
+            for param in params {
+                typecheck_expr(tck, symtbl, param)?;
+                let param_type = tck.get_expr_type(param);
+                params_list.push(param_type);
+            }
+            // We don't know what the expected return type of the function call
+            // is yet; we make a type var that will get resolved when the enclosing
+            // expression is.
+            let rettype_var = tck.insert(TypeInfo::Unknown);
+            let funcall_var = tck.insert(TypeInfo::Func(params_list.clone(), rettype_var));
+
+            // Now I guess this is where we make a copy of the function
+            // with new generic types.
+            // Is this "instantiation"???
+            // Yes it is.  Differentiate "type parameters", which are the
+            // types a function takes as input (our `Generic` or `TypeParam`
+            // things I suppose), from "type variables" which are the TypeId
+            // we have to solve for.
+            //
+            // So we go through the generics the function declares and create
+            // new type vars for each of them.
+            let heck = tck.instantiate(&actual_func_type, None);
+            tck.unify(symtbl, heck, funcall_var)?;
+
+            tck.set_expr_type(expr, rettype_var);
+            Ok(rettype_var)
+        }
         x => todo!("{:?}", x),
         /*
         Let {
@@ -821,56 +884,6 @@ fn typecheck_expr(tck: &mut Tck, symtbl: &Symtbl, expr: &hir::ExprNode) -> Resul
             let typeid = tck.insert(tuple_type);
             tck.set_expr_type(expr, typeid);
             Ok(typeid)
-        }
-        Funcall { func, params } => {
-            // Oh, defined generics are "easy".
-            // Each time I call a function I create new type
-            // vars for its generic args.
-            // Apparently that is the "instantiation".
-
-            let func_type = typecheck_expr(tck, symtbl, func)?;
-            // We know this will work because we require full function signatures
-            // on our functions.
-            let actual_func_type = tck.reconstruct(func_type)?;
-            match &actual_func_type {
-                Type::Func(_args, _rettype) => {
-                    println!("Calling function {:?} is {:?}", func, actual_func_type);
-                    // So when we call a function we need to know what its
-                    // type params are.  Then we bind those type parameters
-                    // to things.
-                }
-                _ => panic!("Tried to call something not a function"),
-            }
-
-            // Synthesize what we know about the function
-            // from the call.
-            let mut params_list = vec![];
-            for param in params {
-                typecheck_expr(tck, symtbl, param)?;
-                let param_type = tck.get_expr_type(param);
-                params_list.push(param_type);
-            }
-            // We don't know what the expected return type of the function call
-            // is yet; we make a type var that will get resolved when the enclosing
-            // expression is.
-            let rettype_var = tck.insert(TypeInfo::Unknown);
-            let funcall_var = tck.insert(TypeInfo::Func(params_list.clone(), rettype_var));
-
-            // Now I guess this is where we make a copy of the function
-            // with new generic types.
-            // Is this "instantiation"???
-            // Yes it is.  Differentiate "type parameters", which are the
-            // types a function takes as input (our `Generic` or `TypeParam`
-            // things I suppose), from "type variables" which are the TypeId
-            // we have to solve for.
-            //
-            // So we go through the generics the function declares and create
-            // new type vars for each of them.
-            let heck = tck.instantiate(&actual_func_type, None);
-            tck.unify(symtbl, heck, funcall_var)?;
-
-            tck.set_expr_type(expr, rettype_var);
-            Ok(rettype_var)
         }
 
         StructCtor { body } => {
@@ -1032,6 +1045,7 @@ pub fn typecheck(ast: &hir::Ir) -> Result<Tck, TypeError> {
     let mut t = Tck::default();
     let tck = &mut t;
     let symtbl = &mut Symtbl::default();
+    symtbl.add_builtins(tck);
     for decl in &ast.decls {
         use hir::Decl::*;
 
