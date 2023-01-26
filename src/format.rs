@@ -90,6 +90,8 @@ fn unparse_expr(e: &Expr, indent: usize, out: &mut dyn io::Write) -> io::Result<
                 write!(out, "{}i{}", vl, size)
             }
             Literal::Bool(b) => write!(out, "{}", b),
+            // TODO: generics??
+            Literal::EnumLit(s, _generics) => write!(out, "{}", s),
         },
         E::Var { name } => {
             let name = name.val();

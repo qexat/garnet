@@ -22,22 +22,19 @@ pub fn run_passes(ir: Ir) -> Ir {
 
 /// Lambda lift a single expr.
 fn lambda_lift_expr(expr: ExprNode, output_funcs: &mut Vec<D>) -> ExprNode {
-    let result = match expr.e {
+    let result = match *expr.e {
         E::BinOp { op, lhs, rhs } => {
-            let nlhs = lambda_lift_expr(*lhs, output_funcs);
-            let nrhs = lambda_lift_expr(*rhs, output_funcs);
+            let nlhs = lambda_lift_expr(lhs, output_funcs);
+            let nrhs = lambda_lift_expr(rhs, output_funcs);
             E::BinOp {
                 op,
-                lhs: Box::new(nlhs),
-                rhs: Box::new(nrhs),
+                lhs: nlhs,
+                rhs: nrhs,
             }
         }
         E::UniOp { op, rhs } => {
-            let nrhs = lambda_lift_expr(*rhs, output_funcs);
-            E::UniOp {
-                op,
-                rhs: Box::new(nrhs),
-            }
+            let nrhs = lambda_lift_expr(rhs, output_funcs);
+            E::UniOp { op, rhs: nrhs }
         }
         E::Block { body } => E::Block {
             body: lambda_lift_exprs(body, output_funcs),
@@ -50,7 +47,7 @@ fn lambda_lift_expr(expr: ExprNode, output_funcs: &mut Vec<D>) -> ExprNode {
         } => E::Let {
             varname,
             typename,
-            init: Box::new(lambda_lift_expr(*init, output_funcs)),
+            init: lambda_lift_expr(init, output_funcs),
             mutable,
         },
         E::If { cases } => {
@@ -69,14 +66,14 @@ fn lambda_lift_expr(expr: ExprNode, output_funcs: &mut Vec<D>) -> ExprNode {
             body: lambda_lift_exprs(body, output_funcs),
         },
         E::Return { retval } => E::Return {
-            retval: Box::new(lambda_lift_expr(*retval, output_funcs)),
+            retval: lambda_lift_expr(retval, output_funcs),
         },
         E::Funcall {
             func,
             params,
             generic_types,
         } => {
-            let new_func = Box::new(lambda_lift_expr(*func, output_funcs));
+            let new_func = lambda_lift_expr(func, output_funcs);
             let new_params = lambda_lift_exprs(params, output_funcs);
             let new_generics = generic_types.to_vec();
             E::Funcall {
@@ -101,7 +98,7 @@ fn lambda_lift_expr(expr: ExprNode, output_funcs: &mut Vec<D>) -> ExprNode {
         x => x,
     };
     hir::ExprNode {
-        e: result,
+        e: Box::new(result),
         id: expr.id,
     }
 }
