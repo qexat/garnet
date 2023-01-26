@@ -587,7 +587,7 @@ impl<'input> Parser<'input> {
             ..self.parse_fn_signature()
         };
         */
-        let mut signature = self.parse_fn_signature();
+        let signature = self.parse_fn_signature();
         self.expect(T::Equals);
         let body = self.parse_exprs();
         self.expect(T::End);

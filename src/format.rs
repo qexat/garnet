@@ -4,7 +4,6 @@
 use std::io;
 
 use crate::ast::*;
-use crate::INT;
 
 const INDENT_SIZE: usize = 4;
 
