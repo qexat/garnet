@@ -23,6 +23,7 @@ pub enum TypeInfo {
     Unknown,
     /// This type term is the same as another type term
     Ref(TypeId),
+    Prim(PrimType),
     Enum(Vec<(Sym, i32)>),
     /// N-ary type constructor.
     /// It could be Int()
@@ -281,7 +282,7 @@ impl Tck {
     pub fn insert_known(&mut self, t: &Type) -> TypeId {
         // Recursively insert all subtypes.
         let tinfo = match t {
-            Type::Prim(_) => todo!(),
+            Type::Prim(ty) => TypeInfo::Prim(ty.clone()),
             Type::Enum(vals) => TypeInfo::Enum(vals.clone()),
             Type::Named(s, args) => {
                 let new_args = args.iter().map(|t| self.insert_known(t)).collect();
@@ -446,6 +447,7 @@ impl Tck {
         use TypeInfo::*;
         match &self.vars[&id] {
             Unknown => Err(format!("Cannot infer type for type ID {:?}", id)),
+            Prim(ty) => Ok(Type::Prim(ty.clone())),
             Ref(id) => self.reconstruct(*id),
             Enum(ts) => Ok(Type::Enum(ts.clone())),
             Named(s, args) => {
@@ -737,10 +739,8 @@ fn typecheck_func_body(
 }
 
 fn typecheck_expr(tck: &mut Tck, symtbl: &Symtbl, expr: &hir::ExprNode) -> Result<TypeId, String> {
-    todo!()
-    /*
     use hir::Expr::*;
-    match &*expr.node {
+    match &*expr.e {
         Lit { val } => {
             let lit_type = infer_lit(val);
             let typeid = tck.insert(lit_type);
@@ -749,11 +749,13 @@ fn typecheck_expr(tck: &mut Tck, symtbl: &Symtbl, expr: &hir::ExprNode) -> Resul
         }
         Var { name } => {
             let ty = symtbl
-                .get_var_binding(name)
+                .get_var_binding(*name)
                 .unwrap_or_else(|| panic!("unbound var: {:?}", name));
             tck.set_expr_type(expr, ty);
             Ok(ty)
         }
+        x => todo!("{:?}", x),
+        /*
         Let {
             varname,
             typename,
@@ -1017,8 +1019,8 @@ fn typecheck_expr(tck: &mut Tck, symtbl: &Symtbl, expr: &hir::ExprNode) -> Resul
             Ok(arr_type)
         }
         ArrayRef { e, idx } => todo!(),
-    }
         */
+    }
 }
 
 /// From example code:
