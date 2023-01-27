@@ -33,6 +33,21 @@ pub enum PrimType {
     Bool,
 }
 
+impl PrimType {
+    fn get_name(&self) -> Cow<'static, str> {
+        match self {
+            PrimType::SInt(16) => Cow::Borrowed("I128"),
+            PrimType::SInt(8) => Cow::Borrowed("I64"),
+            PrimType::SInt(4) => Cow::Borrowed("I32"),
+            PrimType::SInt(2) => Cow::Borrowed("I16"),
+            PrimType::SInt(1) => Cow::Borrowed("I8"),
+            PrimType::SInt(s) => panic!("Undefined integer size {}!", s),
+            PrimType::UnknownInt => Cow::Borrowed("{number}"),
+            PrimType::Bool => Cow::Borrowed("Bool"),
+        }
+    }
+}
+
 /// A concrete type that has been fully inferred
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Type {
@@ -286,14 +301,7 @@ impl Type {
         };
         */
         match self {
-            Type::Prim(PrimType::SInt(16)) => Cow::Borrowed("I128"),
-            Type::Prim(PrimType::SInt(8)) => Cow::Borrowed("I64"),
-            Type::Prim(PrimType::SInt(4)) => Cow::Borrowed("I32"),
-            Type::Prim(PrimType::SInt(2)) => Cow::Borrowed("I16"),
-            Type::Prim(PrimType::SInt(1)) => Cow::Borrowed("I8"),
-            Type::Prim(PrimType::SInt(s)) => panic!("Undefined integer size {}!", s),
-            Type::Prim(PrimType::UnknownInt) => Cow::Borrowed("{number}"),
-            Type::Prim(PrimType::Bool) => Cow::Borrowed("Bool"),
+            Type::Prim(p) => p.get_name(),
             Type::Enum(variants) => {
                 let mut res = String::from("enum {");
                 let s = variants

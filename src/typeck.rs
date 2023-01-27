@@ -42,6 +42,25 @@ pub enum TypeInfo {
     TypeParam(Sym),
 }
 
+impl TypeInfo {
+    fn get_name(&self, tck: &Tck) -> Cow<'static, str> {
+        use TypeInfo::*;
+        match self {
+            Unknown => Cow::Borrowed("{unknown}"),
+            Prim(p) => p.get_name(),
+            Ref(id) => Cow::Owned(format!("Ref({})", tck.vars[id].get_name(tck))),
+            Enum(_v) => todo!(),
+            Named(_s, _g) => todo!(), //Cow::Owned(s.clone()),
+            Func(_params, _rettype) => todo!(),
+            Struct(_s) => todo!(),
+            Sum(_s) => todo!(),
+            Array(id, len) => Cow::Owned(format!("{}[{}]", tck.vars[id].get_name(tck), len)),
+            TypeParam(sym) => Cow::Owned(format!("@{}", &*sym.val())),
+        }
+    }
+}
+
+// TODO: These should probably be method of tck tbh
 impl hir::BOp {
     /// Returns the type that the bin op operates on.
     pub fn input_type(&self, tck: &mut Tck) -> TypeId {
@@ -501,7 +520,11 @@ impl Tck {
             // If no previous attempts to unify were successful, raise an error
             (a, b) => {
                 self.print_types();
-                Err(format!("Conflict between {:?} and {:?}", a, b))
+                Err(format!(
+                    "Conflict between {} and {}",
+                    a.get_name(self),
+                    b.get_name(self)
+                ))
             }
         }
     }
@@ -753,6 +776,9 @@ fn infer_lit(lit: &ast::Literal) -> TypeInfo {
         _ => todo!(),
     }
 }
+
+/// TODO: This doesn't necessarily handle a func body as much
+/// as a block with its own scope, which is what we actually want.
 fn typecheck_func_body(
     name: Option<Sym>,
     tck: &mut Tck,
@@ -827,9 +853,27 @@ fn typecheck_func_body(
     Ok(f)
 }
 
+/// Typechecks a list of expressions and returns the last return type,
+/// or unit if the list is empty.  Does NOT push a new scope.
+fn typecheck_exprs(
+    tck: &mut Tck,
+    symtbl: &Symtbl,
+    exprs: &[hir::ExprNode],
+) -> Result<TypeId, String> {
+    for expr in exprs {
+        typecheck_expr(tck, symtbl, expr)?;
+    }
+    let last_exprtype = exprs
+        .last()
+        .and_then(|last_expr| Some(tck.get_expr_type(last_expr)))
+        // If we have an empty body, our rettype is unit
+        .unwrap_or_else(|| tck.insert_known(&Type::unit()));
+    Ok(last_exprtype)
+}
+
 fn typecheck_expr(tck: &mut Tck, symtbl: &Symtbl, expr: &hir::ExprNode) -> Result<TypeId, String> {
     use hir::Expr::*;
-    match &*expr.e {
+    let rettype = match &*expr.e {
         Lit { val } => {
             let lit_type = infer_lit(val);
             let typeid = tck.insert(lit_type);
@@ -958,6 +1002,24 @@ fn typecheck_expr(tck: &mut Tck, symtbl: &Symtbl, expr: &hir::ExprNode) -> Resul
 
             symtbl.add_var(*varname, var_type);
             Ok(var_type)
+        }
+        If { cases } => {
+            // We know from the parser/lowering that we have at least one case,
+            // if there's no declared "else" then the last case is `...else if true then ...` where
+            // the body is unit, etc.
+            // So we can just treat all the cases consistently.
+            let rettype = tck.insert(TypeInfo::Unknown);
+            let booltype = tck.insert(TypeInfo::Prim(PrimType::Bool));
+            for (case, body) in cases {
+                let case_type = typecheck_expr(tck, symtbl, case)?;
+                tck.unify(symtbl, case_type, booltype)?;
+
+                let _guard = symtbl.push_scope();
+                let body_type = typecheck_exprs(tck, symtbl, body)?;
+                tck.unify(symtbl, body_type, rettype)?;
+            }
+            tck.set_expr_type(expr, rettype);
+            Ok(rettype)
         }
         x => todo!("{:?}", x),
         /*
@@ -1153,34 +1215,31 @@ fn typecheck_expr(tck: &mut Tck, symtbl: &Symtbl, expr: &hir::ExprNode) -> Resul
         }
         ArrayRef { e, idx } => todo!(),
         */
+    };
+    if let Err(e) = rettype {
+        panic!("Error typechecking expression {:?}: {}", expr, e);
     }
+    rettype
 }
 
-/// From example code:
-/// "In reality, the most common approach will be to walk your AST, assigning type
-/// terms to each of your nodes with whatever information you have available. You
-/// will also need to call `engine.unify(x, y)` when you know two nodes have the
-/// same type, such as in the statement `x = y;`."
-pub fn typecheck(ast: &hir::Ir) -> Result<Tck, TypeError> {
-    let mut t = Tck::default();
-    let tck = &mut t;
-    let symtbl = &mut Symtbl::default();
-    symtbl.add_builtins(tck);
-    for decl in &ast.decls {
-        use hir::Decl::*;
-
-        match decl {
+fn predeclare_decls(tck: &mut Tck, symtbl: &mut Symtbl, decls: &[hir::Decl]) {
+    use hir::Decl::*;
+    for d in decls {
+        match d {
             Function {
                 name,
                 signature,
-                body,
+                body: _,
             } => {
-                let t = typecheck_func_body(Some(*name), tck, symtbl, signature, body);
-                t.unwrap_or_else(|e| {
-                    eprintln!("Error, type context is:");
-                    tck.print_types();
-                    panic!("Error while typechecking function {}:\n{}", name, e)
-                });
+                // TODO: Kinda duplicated, not a huge fan.
+                let mut params = vec![];
+                for (_paramname, paramtype) in &signature.params {
+                    let p = tck.insert_known(paramtype);
+                    params.push(p);
+                }
+                let rettype = tck.insert_known(&signature.rettype);
+                let f = tck.insert(TypeInfo::Func(params, rettype));
+                symtbl.add_var(*name, f);
             }
             TypeDef {
                 name,
@@ -1204,6 +1263,74 @@ pub fn typecheck(ast: &hir::Ir) -> Result<Tck, TypeError> {
 
                 // Remember that we know about a type with this name
                 symtbl.add_type(*name, typedecl)
+            }
+            Const {
+                name,
+                typename,
+                init,
+            } => {
+                // The init expression is typechecked in its own
+                // scope, since it may theoretically be a `let` or
+                // something that introduces new names inside it.
+                todo!("Unify const typename with init expr val")
+            }
+            Constructor { .. } => todo!("Why isn't this just a function?"),
+        }
+    }
+}
+
+/// From example code:
+/// "In reality, the most common approach will be to walk your AST, assigning type
+/// terms to each of your nodes with whatever information you have available. You
+/// will also need to call `engine.unify(x, y)` when you know two nodes have the
+/// same type, such as in the statement `x = y;`."
+pub fn typecheck(ast: &hir::Ir) -> Result<Tck, TypeError> {
+    let mut t = Tck::default();
+    let tck = &mut t;
+    let symtbl = &mut Symtbl::default();
+    symtbl.add_builtins(tck);
+    predeclare_decls(tck, symtbl, &ast.decls);
+    for decl in &ast.decls {
+        use hir::Decl::*;
+
+        match decl {
+            Function {
+                name,
+                signature,
+                body,
+            } => {
+                let t = typecheck_func_body(Some(*name), tck, symtbl, signature, body);
+                t.unwrap_or_else(|e| {
+                    eprintln!("Error, type context is:");
+                    tck.print_types();
+                    panic!("Error while typechecking function {}:\n{}", name, e)
+                });
+            }
+            TypeDef {
+                name: _,
+                params: _,
+                typedecl: _,
+            } => {
+                todo!()
+                /* TODO: Handle recursive types properly
+                // Make sure that there are no unbound generics in the typedef
+                // that aren't mentioned in the params.
+                let generic_names: BTreeSet<String> =
+                    typedecl.collect_generic_names().into_iter().collect();
+                let param_names: BTreeSet<String> = params.iter().cloned().collect();
+                let difference: Vec<_> = generic_names
+                    .symmetric_difference(&param_names)
+                    // gramble gramble &String
+                    .map(|s| s.as_str())
+                    .collect();
+                if difference.len() != 0 {
+                    let differences = difference.join(", ");
+                    panic!("Error in typedef {}: Type params do not match generics mentioned in body.  Unmatched types: {}", name, differences);
+                }
+
+                // Remember that we know about a type with this name
+                symtbl.add_type(*name, typedecl)
+                */
             }
             Const {
                 name,
