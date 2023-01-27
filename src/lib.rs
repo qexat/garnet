@@ -59,7 +59,7 @@ pub enum Type {
     /// ... I seem to have ended up with anonymous enums somehow.
     /// Not sure how I feel about this.
     Enum(Vec<(Sym, i32)>),
-    Named(String, Vec<Type>),
+    Named(Sym, Vec<Type>),
     Func(Vec<Type>, Box<Type>),
     /// The vec is the name of any generic type bindings in there
     /// 'cause we need to keep track of those apparently.
@@ -72,13 +72,13 @@ pub enum Type {
     /// Arrays are just a type and a number.
     Array(Box<Type>, usize),
     /// A generic type parameter
-    Generic(String),
+    Generic(Sym),
 }
 
 impl Type {
     /// Search through the type and return any generic types in it.
-    fn collect_generic_names(&self) -> Vec<String> {
-        fn helper(t: &Type, accm: &mut Vec<String>) {
+    fn collect_generic_names(&self) -> Vec<Sym> {
+        fn helper(t: &Type, accm: &mut Vec<Sym>) {
             match t {
                 Type::Prim(_) => (),
                 Type::Enum(_ts) => (),
@@ -137,8 +137,8 @@ impl Type {
     /// Returns the type parameters *specified by the toplevel type*.
     /// Does *not* recurse to all types below it!
     /// ...except for function args apparently.
-    fn get_type_params(&self) -> Vec<String> {
-        fn helper(t: &Type, accm: &mut Vec<String>) {
+    fn get_type_params(&self) -> Vec<Sym> {
+        fn helper(t: &Type, accm: &mut Vec<Sym>) {
             match t {
                 Type::Prim(_) => (),
                 Type::Enum(_ts) => (),
@@ -172,7 +172,7 @@ impl Type {
                     // This works, it's just, yanno, also O(n^2)
                     // Could use a set to check membership , but fuckit for now.
                     if !accm.contains(s) {
-                        accm.push(s.clone())
+                        accm.push(*s)
                     }
                 }
             }
@@ -225,20 +225,20 @@ impl Type {
 
     /// Shortcut for getting the type symbol for Unit
     pub fn unit() -> Self {
-        Self::Named("Tuple".to_string(), vec![])
+        Self::Named(Sym::new("Tuple"), vec![])
     }
 
     /// Shortcut for getting the type symbol for Never
     pub fn never() -> Self {
-        Self::Named("Never".to_string(), vec![])
+        Self::Named(Sym::new("Never"), vec![])
     }
 
     pub fn tuple(args: Vec<Self>) -> Self {
-        Self::Named("Tuple".into(), args)
+        Self::Named(Sym::new("Tuple"), args)
     }
 
     pub fn named(name: impl Into<String>) -> Self {
-        Self::Named(name.into(), vec![])
+        Self::Named(Sym::new(&name.into()), vec![])
     }
 
     pub fn is_integer(&self) -> bool {
@@ -299,7 +299,7 @@ impl Type {
                 res += "\n}\n";
                 Cow::Owned(res)
             }
-            Type::Named(nm, tys) if nm == "Tuple" => {
+            Type::Named(nm, tys) if nm == &Sym::new("Tuple") => {
                 if tys.is_empty() {
                     Cow::Borrowed("{}")
                 } else {
@@ -311,9 +311,9 @@ impl Type {
             }
             Type::Named(nm, tys) => {
                 let result = if tys.len() == 0 {
-                    nm.to_owned()
+                    (&*nm.val()).clone()
                 } else {
-                    format!("{}({})", nm, &join_types_with_commas(tys))
+                    format!("{}({})", nm.val(), &join_types_with_commas(tys))
                 };
                 Cow::Owned(result)
             }
