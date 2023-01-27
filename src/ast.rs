@@ -89,11 +89,11 @@ impl Signature {
         Type::Func(paramtypes, Box::new(self.rettype.clone()))
     }
 
-    pub fn generic_type_names(&self) -> Vec<String> {
+    pub fn generic_type_names(&self) -> Vec<Sym> {
         self.params
             .iter()
             .filter_map(|(_nm, ty)| match ty {
-                Type::Generic(x) => Some(x.clone()),
+                Type::Generic(x) => Some(*x),
                 _ => None,
             })
             .collect()

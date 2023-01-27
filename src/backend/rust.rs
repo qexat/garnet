@@ -59,7 +59,7 @@ fn compile_typename(t: &Type) -> Cow<'static, str> {
             unreachable!("Backend got an integer of unknown size, should never happen!")
         }
         Prim(PrimType::Bool) => "bool".into(),
-        Named(s, types) if s == "Tuple" => {
+        Named(s, types) if s == &Sym::new("Tuple") => {
             let mut accm = String::from("(");
             for typ in types {
                 accm += &compile_typename(&*typ);
@@ -115,7 +115,7 @@ fn compile_typename(t: &Type) -> Cow<'static, str> {
         Enum(_) => {
             todo!("Enums probably should be lowered to numbers?")
         }
-        Generic(s) => mangle_name(s).into(),
+        Generic(s) => mangle_name(&*s.val()).into(),
         _ => todo!(),
     }
 }
@@ -215,7 +215,7 @@ fn compile_fn_signature(sig: &ast::Signature) -> String {
     if generics.len() > 0 {
         accm += "<";
         for generic in generics.iter() {
-            accm += &mangle_name(generic);
+            accm += &mangle_name(&*generic.val());
             accm += ", ";
         }
         accm += ">";

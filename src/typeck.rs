@@ -29,7 +29,7 @@ pub enum TypeInfo {
     /// It could be Int()
     /// or List(Int)
     /// or List(T)
-    Named(String, Vec<TypeId>),
+    Named(Sym, Vec<TypeId>),
     /// This type term is definitely a function
     Func(Vec<TypeId>, TypeId),
     /// This is definitely some kind of struct
@@ -56,61 +56,6 @@ impl TypeInfo {
             Sum(_s) => todo!(),
             Array(id, len) => Cow::Owned(format!("{}[{}]", tck.vars[id].get_name(tck), len)),
             TypeParam(sym) => Cow::Owned(format!("@{}", &*sym.val())),
-        }
-    }
-}
-
-// TODO: These should probably be method of tck tbh
-impl hir::BOp {
-    /// Returns the type that the bin op operates on.
-    pub fn input_type(&self, tck: &mut Tck) -> TypeId {
-        use hir::BOp::*;
-        match self {
-            And | Or | Xor => tck.insert_known(&Type::bool()),
-            Eq | Neq => tck.insert(TypeInfo::Unknown),
-            // Don't know what it is but it's gotta be a number
-            Gt | Lt | Gte | Lte => tck.insert_known(&Type::iunknown()),
-            Add | Sub | Mul | Div | Mod => tck.insert_known(&Type::iunknown()),
-        }
-    }
-
-    /// What the resultant type of the binop is.
-    ///
-    /// Needs to know what the type of the expression given to it is,
-    /// but also assumes that the LHS and RHS have the same input type.
-    /// Ensuring that is left as an exercise to the user.
-    pub fn output_type(&self, tck: &mut Tck, input: TypeId) -> TypeId {
-        use hir::BOp::*;
-        match self {
-            // Output of math ops is same type as input
-            Add | Sub | Mul | Div | Mod => tck.insert(TypeInfo::Ref(input)),
-            // Output of logic ops is always a bool
-            Eq | Neq | Gt | Lt | Gte | Lte | And | Or | Xor => tck.insert_known(&Type::bool()),
-        }
-    }
-}
-
-impl hir::UOp {
-    /// Returns the type that the unary op operates on.
-    /// Currently, only numbers.
-    pub fn input_type(&self, tck: &mut Tck) -> TypeId {
-        use hir::UOp::*;
-        match self {
-            Neg => tck.insert_known(&Type::iunknown()),
-            Not => tck.insert_known(&Type::bool()),
-            Ref => todo!(),
-            Deref => todo!(),
-        }
-    }
-
-    /// What the resultant type of the uop is
-    pub fn output_type(&self, tck: &mut Tck, input: TypeId) -> TypeId {
-        use hir::UOp::*;
-        match self {
-            Neg => tck.insert(TypeInfo::Ref(input)),
-            Not => tck.insert_known(&Type::bool()),
-            Ref => todo!(),
-            Deref => todo!(),
         }
     }
 }
@@ -366,7 +311,7 @@ impl Tck {
                 let new_rettype = self.insert_known(rettype);
                 TypeInfo::Func(new_args, new_rettype)
             }
-            Type::Generic(s) => TypeInfo::TypeParam(Sym::new(s)),
+            Type::Generic(s) => TypeInfo::TypeParam(*s),
             Type::Array(ty, len) => {
                 let new_body = self.insert_known(&ty);
                 TypeInfo::Array(new_body, *len)
@@ -413,6 +358,56 @@ impl Tck {
                     field_name, other
                 )
             }
+        }
+    }
+
+    /// Returns the type that the bin op operates on.
+    pub fn bop_input_type(&mut self, bop: hir::BOp) -> TypeId {
+        use hir::BOp::*;
+        match bop {
+            And | Or | Xor => self.insert_known(&Type::bool()),
+            Eq | Neq => self.insert(TypeInfo::Unknown),
+            // Don't know what it is but it's gotta be a number
+            Gt | Lt | Gte | Lte => self.insert_known(&Type::iunknown()),
+            Add | Sub | Mul | Div | Mod => self.insert_known(&Type::iunknown()),
+        }
+    }
+
+    /// What the resultant type of the binop is.
+    ///
+    /// Needs to know what the type of the expression given to it is,
+    /// but also assumes that the LHS and RHS have the same input type.
+    /// Ensuring that is left as an exercise to the user.
+    pub fn bop_output_type(&mut self, bop: hir::BOp, input: TypeId) -> TypeId {
+        use hir::BOp::*;
+        match bop {
+            // Output of math ops is same type as input
+            Add | Sub | Mul | Div | Mod => self.insert(TypeInfo::Ref(input)),
+            // Output of logic ops is always a bool
+            Eq | Neq | Gt | Lt | Gte | Lte | And | Or | Xor => self.insert_known(&Type::bool()),
+        }
+    }
+
+    /// Returns the type that the unary op operates on.
+    /// Currently, only numbers.
+    pub fn uop_input_type(&mut self, uop: hir::UOp) -> TypeId {
+        use hir::UOp::*;
+        match uop {
+            Neg => self.insert_known(&Type::iunknown()),
+            Not => self.insert_known(&Type::bool()),
+            Ref => todo!(),
+            Deref => todo!(),
+        }
+    }
+
+    /// What the resultant type of the uop is
+    pub fn uop_output_type(&mut self, uop: hir::UOp, input: TypeId) -> TypeId {
+        use hir::UOp::*;
+        match uop {
+            Neg => self.insert(TypeInfo::Ref(input)),
+            Not => self.insert_known(&Type::bool()),
+            Ref => todo!(),
+            Deref => todo!(),
         }
     }
 
@@ -552,7 +547,7 @@ impl Tck {
                     Box::new(self.reconstruct(*rettype)?),
                 ))
             }
-            TypeParam(name) => Ok(Type::Generic(name.to_string())),
+            TypeParam(name) => Ok(Type::Generic(*name)),
             Struct(body) => {
                 let real_body: Result<BTreeMap<_, _>, String> = body
                     .iter()
@@ -603,8 +598,8 @@ impl Tck {
     /// This has to actually be an empty hashtable on the first instantitaion
     /// instead of the symtbl, since the symtbl is full of type parameter names from the
     /// enclosing function and those are what we explicitly want to get away from.
-    fn instantiate(&mut self, t: &Type, known_types: Option<BTreeMap<String, TypeId>>) -> TypeId {
-        fn helper(tck: &mut Tck, named_types: &mut BTreeMap<String, TypeId>, t: &Type) -> TypeId {
+    fn instantiate(&mut self, t: &Type, known_types: Option<BTreeMap<Sym, TypeId>>) -> TypeId {
+        fn helper(tck: &mut Tck, named_types: &mut BTreeMap<Sym, TypeId>, t: &Type) -> TypeId {
             let typeinfo = match t {
                 Type::Prim(val) => TypeInfo::Prim(val.clone()),
                 Type::Enum(vals) => TypeInfo::Enum(vals.clone()),
@@ -671,7 +666,7 @@ impl Tck {
 #[derive(Clone, Default)]
 struct ScopeFrame {
     symbols: BTreeMap<Sym, TypeId>,
-    types: BTreeMap<String, Type>,
+    types: BTreeMap<Sym, Type>,
 }
 
 /// Basic symbol table that maps names to type ID's
@@ -754,12 +749,12 @@ impl Symtbl {
             .last_mut()
             .expect("Scope stack underflow")
             .types
-            .insert((*name.val()).to_owned(), ty.to_owned());
+            .insert(name, ty.to_owned());
     }
 
     fn get_type(&self, ty: Sym) -> Option<Type> {
         for scope in self.frames.borrow().iter().rev() {
-            let v = scope.types.get(&*ty.val());
+            let v = scope.types.get(&ty);
             if v.is_some() {
                 return v.cloned();
             }
@@ -772,7 +767,7 @@ fn infer_lit(lit: &ast::Literal) -> TypeInfo {
     match lit {
         ast::Literal::Integer(_) => TypeInfo::Prim(PrimType::UnknownInt),
         ast::Literal::Bool(_) => TypeInfo::Prim(PrimType::Bool),
-        ast::Literal::EnumLit(nm, _) => TypeInfo::Named(nm.to_string(), vec![]),
+        ast::Literal::EnumLit(nm, _) => TypeInfo::Named(*nm, vec![]),
         _ => todo!(),
     }
 }
@@ -890,7 +885,7 @@ fn typecheck_expr(tck: &mut Tck, symtbl: &Symtbl, expr: &hir::ExprNode) -> Resul
         BinOp { op, lhs, rhs } => {
             let t1 = typecheck_expr(tck, symtbl, lhs)?;
             let t2 = typecheck_expr(tck, symtbl, rhs)?;
-            let t3 = op.input_type(tck);
+            let t3 = tck.bop_input_type(*op);
             tck.unify(symtbl, t1, t2)?;
             tck.unify(symtbl, t2, t3)?;
             // Figuring out the type of a binop output is kinda a pain.
@@ -909,16 +904,16 @@ fn typecheck_expr(tck: &mut Tck, symtbl: &Symtbl, expr: &hir::ExprNode) -> Resul
             // output type of the numerical ops a Ref to the input types, which
             // we know must be the same anyway.  Soooooo once we FIND the input
             // types, the output type snaps to it automatically.  Whew!
-            let expected_output = op.output_type(tck, t3);
+            let expected_output = tck.bop_output_type(*op, t3);
             tck.set_expr_type(expr, expected_output);
             Ok(expected_output)
         }
         UniOp { op, rhs } => {
             let expr_in = typecheck_expr(tck, symtbl, rhs)?;
-            let expected_in = op.input_type(tck);
+            let expected_in = tck.uop_input_type(*op);
             tck.unify(symtbl, expr_in, expected_in)?;
             // Similar problem as BOp
-            let expected_output = op.output_type(tck, expected_in);
+            let expected_output = tck.uop_output_type(*op, expected_in);
             //tck.unify(symtbl, expr_in, expected_output)?;
             tck.set_expr_type(expr, expected_output);
             Ok(expected_output)
@@ -997,7 +992,7 @@ fn typecheck_expr(tck: &mut Tck, symtbl: &Symtbl, expr: &hir::ExprNode) -> Resul
             tck.unify(symtbl, init_expr_type, var_type)?;
 
             // A `let` expr returns unit, not the type of `init`
-            let unit_type = tck.insert(TypeInfo::Named("Tuple".to_owned(), vec![]));
+            let unit_type = tck.insert(TypeInfo::Named(Sym::new("Tuple"), vec![]));
             tck.set_expr_type(expr, unit_type);
 
             symtbl.add_var(*varname, var_type);
@@ -1248,16 +1243,17 @@ fn predeclare_decls(tck: &mut Tck, symtbl: &mut Symtbl, decls: &[hir::Decl]) {
             } => {
                 // Make sure that there are no unbound generics in the typedef
                 // that aren't mentioned in the params.
-                let generic_names: BTreeSet<String> =
+                let generic_names: BTreeSet<Sym> =
                     typedecl.collect_generic_names().into_iter().collect();
-                let param_names: BTreeSet<String> = params.iter().cloned().collect();
-                let difference: Vec<_> = generic_names
-                    .symmetric_difference(&param_names)
-                    // gramble gramble &String
-                    .map(|s| s.as_str())
-                    .collect();
+                let param_names: BTreeSet<Sym> = params.iter().cloned().collect();
+                let difference: Vec<_> = generic_names.symmetric_difference(&param_names).collect();
                 if difference.len() != 0 {
-                    let differences = difference.join(", ");
+                    // gramble gramble strings
+                    let differences: Vec<_> = difference
+                        .into_iter()
+                        .map(|sym| (&*sym.val()).clone())
+                        .collect();
+                    let differences = differences.join(", ");
                     panic!("Error in typedef {}: Type params do not match generics mentioned in body.  Unmatched types: {}", name, differences);
                 }
 

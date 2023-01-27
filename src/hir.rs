@@ -174,7 +174,7 @@ pub enum Decl {
     },
     TypeDef {
         name: Sym,
-        params: Vec<String>,
+        params: Vec<Sym>,
         typedecl: Type,
     },
     /// Our first compiler intrinsic!  \o/
