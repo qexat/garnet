@@ -118,8 +118,15 @@ pub enum Expr {
     Return {
         retval: ExprNode,
     },
+    TupleCtor {
+        body: Vec<ExprNode>,
+    },
     StructCtor {
         body: Vec<(Sym, ExprNode)>,
+    },
+    TupleRef {
+        expr: ExprNode,
+        elt: usize,
     },
     StructRef {
         expr: ExprNode,
@@ -154,7 +161,7 @@ impl Expr {
 
     /// Shortcut function for making literal unit
     pub const fn unit() -> Self {
-        Self::StructCtor { body: vec![] }
+        Self::TupleCtor { body: vec![] }
     }
 }
 
@@ -320,14 +327,18 @@ fn lower_expr(expr: &ast::Expr) -> ExprNode {
         E::Return { retval: e } => Return {
             retval: lower_expr(e),
         },
-        // Turn {foo, bar} into {_0: foo, _1: bar}
         E::TupleCtor { body } => {
-            let body_pairs = body
-                .into_iter()
-                .enumerate()
-                .map(|(i, vl)| (Sym::new(format!("_{}", i)), lower_expr(vl)))
-                .collect();
-            Expr::StructCtor { body: body_pairs }
+            /*
+            // Turn {foo, bar} into {_0: foo, _1: bar}
+                let body_pairs = body
+                    .into_iter()
+                    .enumerate()
+                    .map(|(i, vl)| (Sym::new(format!("_{}", i)), lower_expr(vl)))
+                    .collect();
+                Expr::StructCtor { body: body_pairs }
+                */
+            let body = lower_exprs(body);
+            Expr::TupleCtor { body }
         }
         E::StructCtor {
             body,
@@ -339,11 +350,17 @@ fn lower_expr(expr: &ast::Expr) -> ExprNode {
                 .collect();
             Expr::StructCtor { body: lowered_body }
         }
+        E::TupleRef { expr, elt } => Expr::TupleRef {
+            expr: lower_expr(expr),
+            elt: *elt,
+        },
+        /*
         // Turn tuple.0 into struct._0
         E::TupleRef { expr, elt } => Expr::StructRef {
             expr: lower_expr(expr),
             elt: Sym::new(format!("_{}", elt)),
         },
+        */
         E::StructRef { expr, elt } => Expr::StructRef {
             expr: lower_expr(expr),
             elt: *elt,

@@ -376,7 +376,11 @@ fn compile_expr(expr: &hir::ExprNode, tck: &Tck) -> String {
         }
         */
         // Unit type
-        E::StructCtor { body } if body.len() == 0 => String::from(" ()\n"),
+        E::TupleCtor { body } if body.len() == 0 => String::from(" ()\n"),
+        E::TupleCtor { body } => {
+            let contents = compile_exprs(body, ",", tck);
+            format!("({})", contents)
+        }
         E::StructCtor { body } => {
             /*
             if types.len() > 0 {
@@ -393,11 +397,9 @@ fn compile_expr(expr: &hir::ExprNode, tck: &Tck) -> String {
         E::StructRef { expr, elt } => {
             // We turn our structs into Rust tuples, so we need to
             // to turn our field names into indices
-            todo!()
-            /*
-            let tv = tck.get_typevar_for_expression(expr).unwrap();
-            let tdef = tck.follow_typevar(tv).unwrap();
-            if let Type::Struct(body, _generics) = tdef {
+            let typevar = tck.get_expr_type(expr);
+            let ty = tck.reconstruct(typevar).unwrap();
+            if let Type::Struct(body, _generics) = ty {
                 let mut nth = 9999_9999;
                 for (i, (nm, _ty)) in body.iter().enumerate() {
                     if nm == elt {
@@ -409,16 +411,29 @@ fn compile_expr(expr: &hir::ExprNode, tck: &Tck) -> String {
             } else {
                 panic!(
                     "Struct wasn't actually a struct in backend, was {}.  should never happen",
-                    compile_typename(tdef)
+                    compile_typename(&ty)
                 )
             }
-            */
+        }
+        E::TupleRef { expr, elt } => {
+            // We turn our structs into Rust tuples, so we need to
+            // to turn our field names into indices
+            let typevar = tck.get_expr_type(expr);
+            let ty = tck.reconstruct(typevar).unwrap();
+            if let Type::Named(_thing, _generics) = ty {
+                format!("{}.{}", compile_expr(expr, tck), elt)
+            } else {
+                panic!(
+                    "Struct wasn't actually a struct in backend, was {}.  should never happen",
+                    compile_typename(&ty)
+                )
+            }
         }
         E::Assign { lhs, rhs } => {
             format!("{} = {}", compile_expr(lhs, tck), compile_expr(rhs, tck))
         }
         E::Deref { expr } => format!("*{}", compile_expr(expr, tck)),
         E::Ref { expr } => format!("&{}", compile_expr(expr, tck)),
-        _ => todo!(),
+        other => todo!("{:?}", other),
     }
 }

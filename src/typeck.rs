@@ -276,7 +276,7 @@ impl Tck {
     }
 
     /// Panics if the expression's type is not set.
-    fn get_expr_type(&mut self, expr: &hir::ExprNode) -> TypeId {
+    pub fn get_expr_type(&self, expr: &hir::ExprNode) -> TypeId {
         *self.types.get(&expr.id).unwrap_or_else(|| {
             panic!(
                 "Could not get type of expr with ID {:?}!\nExpr was {:?}",
@@ -356,6 +356,27 @@ impl Tck {
                 panic!(
                     "Tried to get struct field {} from non-struct type {:?}",
                     field_name, other
+                )
+            }
+        }
+    }
+
+    pub fn get_tuple_field_type(
+        &mut self,
+        symtbl: &Symtbl,
+        tuple_type: TypeId,
+        n: usize,
+    ) -> TypeId {
+        use TypeInfo::*;
+        match self.vars[&tuple_type].clone() {
+            Ref(t) => self.get_tuple_field_type(symtbl, t, n),
+            Named(nm, tys) if &*nm.val() == "Tuple" => tys.get(n).cloned().unwrap_or_else(|| {
+                panic!("Tuple has no field {}, valid fields are: {:#?}", n, tys)
+            }),
+            other => {
+                panic!(
+                    "Tried to get tuple field {} from non-tuple type {:?}",
+                    n, other
                 )
             }
         }
@@ -766,9 +787,9 @@ impl Symtbl {
 fn infer_lit(lit: &ast::Literal) -> TypeInfo {
     match lit {
         ast::Literal::Integer(_) => TypeInfo::Prim(PrimType::UnknownInt),
+        ast::Literal::SizedInteger { bytes, .. } => TypeInfo::Prim(PrimType::SInt(*bytes)),
         ast::Literal::Bool(_) => TypeInfo::Prim(PrimType::Bool),
         ast::Literal::EnumLit(nm, _) => TypeInfo::Named(*nm, vec![]),
-        _ => todo!(),
     }
 }
 
@@ -819,12 +840,15 @@ fn typecheck_func_body(
     }
 
     // Typecheck body
+    let last_expr_type = typecheck_exprs(tck, symtbl, body)?;
+    /*
     for expr in body {
         typecheck_expr(tck, symtbl, expr)?;
         // TODO here: unit type for expressions and such
     }
     let last_expr = body.last().expect("empty body, aieeee");
     let last_expr_type = tck.get_expr_type(last_expr);
+    */
     /*
     println!(
         "Unifying last expr...?  Is type {:?}, we want {:?}",
@@ -917,6 +941,16 @@ fn typecheck_expr(tck: &mut Tck, symtbl: &Symtbl, expr: &hir::ExprNode) -> Resul
             //tck.unify(symtbl, expr_in, expected_output)?;
             tck.set_expr_type(expr, expected_output);
             Ok(expected_output)
+        }
+        Block { body } => {
+            let rettype = typecheck_exprs(tck, symtbl, body)?;
+            tck.set_expr_type(expr, rettype);
+            Ok(rettype)
+        }
+        Loop { body } => {
+            let rettype = typecheck_exprs(tck, symtbl, body)?;
+            tck.set_expr_type(expr, rettype);
+            Ok(rettype)
         }
         Funcall {
             func,
@@ -1016,53 +1050,29 @@ fn typecheck_expr(tck: &mut Tck, symtbl: &Symtbl, expr: &hir::ExprNode) -> Resul
             tck.set_expr_type(expr, rettype);
             Ok(rettype)
         }
-        x => todo!("{:?}", x),
-        /*
-        Lambda { signature, body } => {
-            let t = typecheck_func_body(None, tck, symtbl, &signature, body)?;
-            tck.set_expr_type(expr, t);
-            Ok(t)
-        }
-        StructRef { e, name } => {
-            typecheck_expr(tck, symtbl, e)?;
-            let struct_type = tck.get_expr_type(e);
-            println!("Heckin struct...  Type of {:?} is {:?}", e, struct_type);
-            // struct_type is the type of the struct... but the
-            // type of this structref expr is the type of the *field in the struct*.
-            let struct_field_type = tck.get_struct_field_type(symtbl, struct_type, name);
-            println!(
-                "Heckin struct ref...  Type of {:?}.{} is {:?}",
-                e, name, struct_field_type
-            );
-            tck.set_expr_type(expr, struct_field_type);
-
-            match tck.reconstruct(struct_type)? {
-                Type::Struct(body, _names) => Ok(tck.insert_known(&body[name])),
-                Type::Named(s, _args) => {
-                    let hopefully_a_struct = symtbl.get_type(s).unwrap();
-                    match hopefully_a_struct {
-                        Type::Struct(body, _names) => Ok(tck.insert_known(&body[name])),
-                        _other => Err(format!("Yeah I know this is wrong bite me")),
-                    }
-                }
-                other => Err(format!(
-                    "Tried to get field named {} but it is an {:?}, not a struct",
-                    name, other
-                )),
-            }
-        }
         TupleCtor { body } => {
             let body_types: Result<Vec<_>, _> = body
                 .iter()
                 .map(|expr| typecheck_expr(tck, symtbl, expr))
                 .collect();
             let body_types = body_types?;
-            let tuple_type = TypeInfo::Named("Tuple".to_string(), body_types);
+            let tuple_type = TypeInfo::Named(Sym::new("Tuple"), body_types);
             let typeid = tck.insert(tuple_type);
             tck.set_expr_type(expr, typeid);
             Ok(typeid)
         }
+        TupleRef { expr: e, elt } => {
+            typecheck_expr(tck, symtbl, e)?;
+            let tuple_type = tck.get_expr_type(e);
+            let field_type = tck.get_tuple_field_type(symtbl, tuple_type, *elt);
+            println!(
+                "Heckin tuple ref...  Type of {:?}.{} is {:?}",
+                e, elt, field_type
+            );
+            tck.set_expr_type(expr, field_type);
 
+            Ok(field_type)
+        }
         StructCtor { body } => {
             let body_types: Result<BTreeMap<_, _>, _> = body
                 .iter()
@@ -1070,7 +1080,7 @@ fn typecheck_expr(tck: &mut Tck, symtbl: &Symtbl, expr: &hir::ExprNode) -> Resul
                     // ? in map doesn't work too well...
                     println!("Checking field {} expr {:?}", name, expr);
                     match typecheck_expr(tck, symtbl, expr) {
-                        Ok(t) => Ok((name.to_string(), t)),
+                        Ok(t) => Ok((*name, t)),
                         Err(s) => Err(s),
                     }
                 })
@@ -1082,6 +1092,43 @@ fn typecheck_expr(tck: &mut Tck, symtbl: &Symtbl, expr: &hir::ExprNode) -> Resul
             tck.set_expr_type(expr, typeid);
             Ok(typeid)
         }
+        StructRef { expr: e, elt } => {
+            typecheck_expr(tck, symtbl, e)?;
+            let struct_type = tck.get_expr_type(e);
+            //println!("Heckin struct...  Type of {:?} is {:?}", expr, struct_type);
+            // struct_type is the type of the struct... but the
+            // type of this structref expr is the type of the *field in the struct*.
+            let struct_field_type = tck.get_struct_field_type(symtbl, struct_type, *elt);
+            println!(
+                "Heckin struct ref...  Type of {:?}.{} is {:?}",
+                expr, elt, struct_field_type
+            );
+            tck.set_expr_type(expr, struct_field_type);
+
+            // TODO: Wait does this still need to be there?
+            match tck.reconstruct(struct_type)? {
+                Type::Struct(body, _elts) => Ok(tck.insert_known(&body[elt])),
+                Type::Named(s, _args) => {
+                    let hopefully_a_struct = symtbl.get_type(s).unwrap();
+                    match hopefully_a_struct {
+                        Type::Struct(body, _elts) => Ok(tck.insert_known(&body[elt])),
+                        _other => Err(format!("Yeah I know this is wrong bite me")),
+                    }
+                }
+                other => Err(format!(
+                    "Tried to get field named {} but it is an {:?}, not a struct",
+                    elt, other
+                )),
+            }
+        }
+        x => todo!("{:?}", x),
+        /*
+        Lambda { signature, body } => {
+            let t = typecheck_func_body(None, tck, symtbl, &signature, body)?;
+            tck.set_expr_type(expr, t);
+            Ok(t)
+        }
+
         TypeCtor {
             name,
             type_params,
