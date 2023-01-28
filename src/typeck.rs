@@ -686,7 +686,8 @@ impl Tck {
 
 #[derive(Clone, Default)]
 struct ScopeFrame {
-    symbols: BTreeMap<Sym, TypeId>,
+    /// Values are (type, mutability)
+    symbols: BTreeMap<Sym, (TypeId, bool)>,
     types: BTreeMap<Sym, Type>,
 }
 
@@ -727,15 +728,15 @@ impl Symtbl {
     fn add_builtins(&self, tck: &mut Tck) {
         let println_sig = Type::Func(vec![Type::i32()], Box::new(Type::unit()));
         let println_ty = tck.insert_known(&println_sig);
-        self.add_var(Sym::new("__println"), println_ty);
+        self.add_var(Sym::new("__println"), println_ty, false);
 
         let println_sig = Type::Func(vec![Type::i64()], Box::new(Type::unit()));
         let println_ty = tck.insert_known(&println_sig);
-        self.add_var(Sym::new("__println_i64"), println_ty);
+        self.add_var(Sym::new("__println_i64"), println_ty, false);
 
         let println_sig = Type::Func(vec![Type::bool()], Box::new(Type::unit()));
         let println_ty = tck.insert_known(&println_sig);
-        self.add_var(Sym::new("__println_bool"), println_ty);
+        self.add_var(Sym::new("__println_bool"), println_ty, false);
     }
     fn push_scope(&self) -> ScopeGuard {
         self.frames.borrow_mut().push(ScopeFrame::default());
@@ -744,17 +745,17 @@ impl Symtbl {
         }
     }
 
-    fn add_var(&self, var: Sym, ty: TypeId) {
+    fn add_var(&self, var: Sym, ty: TypeId, mutable: bool) {
         self.frames
             .borrow_mut()
             .last_mut()
             .expect("Scope stack underflow")
             .symbols
-            .insert(var, ty);
+            .insert(var, (ty, mutable));
     }
 
     /// Checks whether the var exists in the currently alive scopes
-    fn get_var_binding(&self, var: Sym) -> Option<TypeId> {
+    fn get_var_binding(&self, var: Sym) -> Option<(TypeId, bool)> {
         for scope in self.frames.borrow().iter().rev() {
             let v = scope.symbols.get(&var);
             if v.is_some() {
@@ -790,6 +791,18 @@ fn infer_lit(lit: &ast::Literal) -> TypeInfo {
         ast::Literal::SizedInteger { bytes, .. } => TypeInfo::Prim(PrimType::SInt(*bytes)),
         ast::Literal::Bool(_) => TypeInfo::Prim(PrimType::Bool),
         ast::Literal::EnumLit(nm, _) => TypeInfo::Named(*nm, vec![]),
+    }
+}
+
+fn is_mutable_lvalue(symtbl: &Symtbl, expr: &hir::ExprNode) -> bool {
+    use hir::Expr::*;
+    match &*expr.e {
+        Var { name } => {
+            let (_ty, mutable) = symtbl.get_var_binding(*name).unwrap();
+            mutable
+        }
+        StructRef { expr, .. } => is_mutable_lvalue(symtbl, expr),
+        _ => false,
     }
 }
 
@@ -829,14 +842,14 @@ fn typecheck_func_body(
     // Note we do this *before* pushing the scope and checking its body,
     // so this will add the function's name to the outer scope.
     if let Some(n) = name {
-        symtbl.add_var(n, f);
+        symtbl.add_var(n, f, false);
     }
 
     // Add params to function's scope
     let _guard = symtbl.push_scope();
     for (paramname, paramtype) in &signature.params {
         let p = tck.insert_known(paramtype);
-        symtbl.add_var(*paramname, p);
+        symtbl.add_var(*paramname, p, false);
     }
 
     // Typecheck body
@@ -900,7 +913,7 @@ fn typecheck_expr(tck: &mut Tck, symtbl: &Symtbl, expr: &hir::ExprNode) -> Resul
             Ok(typeid)
         }
         Var { name } => {
-            let ty = symtbl
+            let (ty, _mutable) = symtbl
                 .get_var_binding(*name)
                 .unwrap_or_else(|| panic!("unbound var: {:?}", name));
             tck.set_expr_type(expr, ty);
@@ -1012,9 +1025,6 @@ fn typecheck_expr(tck: &mut Tck, symtbl: &Symtbl, expr: &hir::ExprNode) -> Resul
             init,
             mutable,
         } => {
-            if *mutable {
-                todo!("Handle mutability");
-            }
             typecheck_expr(tck, symtbl, init)?;
             let init_expr_type = tck.get_expr_type(init);
             // Does our let decl have a type attached to it?
@@ -1029,7 +1039,7 @@ fn typecheck_expr(tck: &mut Tck, symtbl: &Symtbl, expr: &hir::ExprNode) -> Resul
             let unit_type = tck.insert(TypeInfo::Named(Sym::new("Tuple"), vec![]));
             tck.set_expr_type(expr, unit_type);
 
-            symtbl.add_var(*varname, var_type);
+            symtbl.add_var(*varname, var_type, *mutable);
             Ok(var_type)
         }
         If { cases } => {
@@ -1093,8 +1103,7 @@ fn typecheck_expr(tck: &mut Tck, symtbl: &Symtbl, expr: &hir::ExprNode) -> Resul
             Ok(typeid)
         }
         StructRef { expr: e, elt } => {
-            typecheck_expr(tck, symtbl, e)?;
-            let struct_type = tck.get_expr_type(e);
+            let struct_type = typecheck_expr(tck, symtbl, e)?;
             //println!("Heckin struct...  Type of {:?} is {:?}", expr, struct_type);
             // struct_type is the type of the struct... but the
             // type of this structref expr is the type of the *field in the struct*.
@@ -1120,6 +1129,30 @@ fn typecheck_expr(tck: &mut Tck, symtbl: &Symtbl, expr: &hir::ExprNode) -> Resul
                     elt, other
                 )),
             }
+        }
+        Assign { lhs, rhs } => {
+            let rhs_type = typecheck_expr(tck, symtbl, rhs)?;
+            // TODO: Check for invalid lvalues???  Or does the parser make
+            // that impossible?  I forget.
+            let lhs_type = typecheck_expr(tck, symtbl, lhs)?;
+            if !is_mutable_lvalue(symtbl, lhs) {
+                let s = "assignment";
+                /*
+                return Err(TypeError::Mutability {
+                    expr_name: s.into(),
+                });
+                */
+                return Err(format!("Mutability mismatch in 'assignment'"));
+            }
+            tck.unify(symtbl, lhs_type, rhs_type)?;
+            let unit = tck.insert_known(&Type::unit());
+            tck.set_expr_type(expr, unit);
+            Ok(unit)
+        }
+        Break => {
+            let unit = tck.insert_known(&Type::unit());
+            tck.set_expr_type(expr, unit);
+            Ok(unit)
         }
         x => todo!("{:?}", x),
         /*
@@ -1281,7 +1314,7 @@ fn predeclare_decls(tck: &mut Tck, symtbl: &mut Symtbl, decls: &[hir::Decl]) {
                 }
                 let rettype = tck.insert_known(&signature.rettype);
                 let f = tck.insert(TypeInfo::Func(params, rettype));
-                symtbl.add_var(*name, f);
+                symtbl.add_var(*name, f, false);
             }
             TypeDef {
                 name,
