@@ -50,7 +50,7 @@ impl TypeInfo {
             Prim(p) => p.get_name(),
             Ref(id) => Cow::Owned(format!("Ref({})", tck.vars[id].get_name(tck))),
             Enum(_v) => todo!(),
-            Named(_s, _g) => todo!(), //Cow::Owned(s.clone()),
+            Named(s, _g) => (&*s.val()).to_owned().into(),
             Func(_params, _rettype) => todo!(),
             Struct(_s) => todo!(),
             Sum(_s) => todo!(),
