@@ -1266,11 +1266,8 @@ impl<'input> Parser<'input> {
     fn parse_type(&mut self) -> Option<Type> {
         let t = self.next();
         if let Some(inner) = &t {
-            Some(match inner {
-                Token {
-                    kind: T::Ident(s),
-                    span: _,
-                } => {
+            Some(match &inner.kind {
+                T::Ident(s) => {
                     if let Some(t) = Type::get_primitive_type(s.as_ref()) {
                         t
                     } else {
@@ -1279,27 +1276,20 @@ impl<'input> Parser<'input> {
                         Type::named(s)
                     }
                 }
-                Token {
-                    kind: T::TypeIdent(s),
-                    span: _,
-                } => Type::named(s),
-                Token {
-                    kind: T::LBrace, ..
-                } => {
+                T::TypeIdent(s) => Type::named(s),
+                T::LBrace => {
                     let tuptype = self.parse_tuple_type();
                     tuptype
                 }
-                Token { kind: T::Fn, .. } => {
+                T::Fn => {
                     let fntype = self.parse_fn_type();
                     fntype
                 }
-                Token {
-                    kind: T::Struct, ..
-                } => {
+                T::Struct => {
                     let fntype = self.parse_struct_type();
                     fntype
                 }
-                Token { kind: T::Enum, .. } => {
+                T::Enum => {
                     let fntype = self.parse_enum_type();
                     fntype
                 }
