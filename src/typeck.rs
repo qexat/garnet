@@ -853,15 +853,7 @@ fn typecheck_func_body(
     }
 
     // Typecheck body
-    let last_expr_type = typecheck_exprs(tck, symtbl, body)?;
-    /*
-    for expr in body {
-        typecheck_expr(tck, symtbl, expr)?;
-        // TODO here: unit type for expressions and such
-    }
-    let last_expr = body.last().expect("empty body, aieeee");
-    let last_expr_type = tck.get_expr_type(last_expr);
-    */
+    let last_expr_type = typecheck_exprs(tck, symtbl, rettype, body)?;
     /*
     println!(
         "Unifying last expr...?  Is type {:?}, we want {:?}",
@@ -890,10 +882,11 @@ fn typecheck_func_body(
 fn typecheck_exprs(
     tck: &mut Tck,
     symtbl: &Symtbl,
+    func_rettype: TypeId,
     exprs: &[hir::ExprNode],
 ) -> Result<TypeId, String> {
     for expr in exprs {
-        typecheck_expr(tck, symtbl, expr)?;
+        typecheck_expr(tck, symtbl, func_rettype, expr)?;
     }
     let last_exprtype = exprs
         .last()
@@ -903,7 +896,12 @@ fn typecheck_exprs(
     Ok(last_exprtype)
 }
 
-fn typecheck_expr(tck: &mut Tck, symtbl: &Symtbl, expr: &hir::ExprNode) -> Result<TypeId, String> {
+fn typecheck_expr(
+    tck: &mut Tck,
+    symtbl: &Symtbl,
+    func_rettype: TypeId,
+    expr: &hir::ExprNode,
+) -> Result<TypeId, String> {
     use hir::Expr::*;
     let rettype = match &*expr.e {
         Lit { val } => {
@@ -920,8 +918,8 @@ fn typecheck_expr(tck: &mut Tck, symtbl: &Symtbl, expr: &hir::ExprNode) -> Resul
             Ok(ty)
         }
         BinOp { op, lhs, rhs } => {
-            let t1 = typecheck_expr(tck, symtbl, lhs)?;
-            let t2 = typecheck_expr(tck, symtbl, rhs)?;
+            let t1 = typecheck_expr(tck, symtbl, func_rettype, lhs)?;
+            let t2 = typecheck_expr(tck, symtbl, func_rettype, rhs)?;
             let t3 = tck.bop_input_type(*op);
             tck.unify(symtbl, t1, t2)?;
             tck.unify(symtbl, t2, t3)?;
@@ -946,7 +944,7 @@ fn typecheck_expr(tck: &mut Tck, symtbl: &Symtbl, expr: &hir::ExprNode) -> Resul
             Ok(expected_output)
         }
         UniOp { op, rhs } => {
-            let expr_in = typecheck_expr(tck, symtbl, rhs)?;
+            let expr_in = typecheck_expr(tck, symtbl, func_rettype, rhs)?;
             let expected_in = tck.uop_input_type(*op);
             tck.unify(symtbl, expr_in, expected_in)?;
             // Similar problem as BOp
@@ -956,12 +954,12 @@ fn typecheck_expr(tck: &mut Tck, symtbl: &Symtbl, expr: &hir::ExprNode) -> Resul
             Ok(expected_output)
         }
         Block { body } => {
-            let rettype = typecheck_exprs(tck, symtbl, body)?;
+            let rettype = typecheck_exprs(tck, symtbl, func_rettype, body)?;
             tck.set_expr_type(expr, rettype);
             Ok(rettype)
         }
         Loop { body } => {
-            let rettype = typecheck_exprs(tck, symtbl, body)?;
+            let rettype = typecheck_exprs(tck, symtbl, func_rettype, body)?;
             tck.set_expr_type(expr, rettype);
             Ok(rettype)
         }
@@ -975,7 +973,7 @@ fn typecheck_expr(tck: &mut Tck, symtbl: &Symtbl, expr: &hir::ExprNode) -> Resul
             // vars for its generic args.
             // Apparently that is the "instantiation".
 
-            let func_type = typecheck_expr(tck, symtbl, func)?;
+            let func_type = typecheck_expr(tck, symtbl, func_rettype, func)?;
             // We know this will work because we require full function signatures
             // on our functions.
             let actual_func_type = tck.reconstruct(func_type)?;
@@ -993,7 +991,7 @@ fn typecheck_expr(tck: &mut Tck, symtbl: &Symtbl, expr: &hir::ExprNode) -> Resul
             // from the call.
             let mut params_list = vec![];
             for param in params {
-                typecheck_expr(tck, symtbl, param)?;
+                typecheck_expr(tck, symtbl, func_rettype, param)?;
                 let param_type = tck.get_expr_type(param);
                 params_list.push(param_type);
             }
@@ -1025,7 +1023,7 @@ fn typecheck_expr(tck: &mut Tck, symtbl: &Symtbl, expr: &hir::ExprNode) -> Resul
             init,
             mutable,
         } => {
-            typecheck_expr(tck, symtbl, init)?;
+            typecheck_expr(tck, symtbl, func_rettype, init)?;
             let init_expr_type = tck.get_expr_type(init);
             // Does our let decl have a type attached to it?
             let var_type = if let Some(t) = typename {
@@ -1050,11 +1048,11 @@ fn typecheck_expr(tck: &mut Tck, symtbl: &Symtbl, expr: &hir::ExprNode) -> Resul
             let rettype = tck.insert(TypeInfo::Unknown);
             let booltype = tck.insert(TypeInfo::Prim(PrimType::Bool));
             for (case, body) in cases {
-                let case_type = typecheck_expr(tck, symtbl, case)?;
+                let case_type = typecheck_expr(tck, symtbl, func_rettype, case)?;
                 tck.unify(symtbl, case_type, booltype)?;
 
                 let _guard = symtbl.push_scope();
-                let body_type = typecheck_exprs(tck, symtbl, body)?;
+                let body_type = typecheck_exprs(tck, symtbl, func_rettype, body)?;
                 tck.unify(symtbl, body_type, rettype)?;
             }
             tck.set_expr_type(expr, rettype);
@@ -1063,7 +1061,7 @@ fn typecheck_expr(tck: &mut Tck, symtbl: &Symtbl, expr: &hir::ExprNode) -> Resul
         TupleCtor { body } => {
             let body_types: Result<Vec<_>, _> = body
                 .iter()
-                .map(|expr| typecheck_expr(tck, symtbl, expr))
+                .map(|expr| typecheck_expr(tck, symtbl, func_rettype, expr))
                 .collect();
             let body_types = body_types?;
             let tuple_type = TypeInfo::Named(Sym::new("Tuple"), body_types);
@@ -1072,7 +1070,7 @@ fn typecheck_expr(tck: &mut Tck, symtbl: &Symtbl, expr: &hir::ExprNode) -> Resul
             Ok(typeid)
         }
         TupleRef { expr: e, elt } => {
-            typecheck_expr(tck, symtbl, e)?;
+            typecheck_expr(tck, symtbl, func_rettype, e)?;
             let tuple_type = tck.get_expr_type(e);
             let field_type = tck.get_tuple_field_type(symtbl, tuple_type, *elt);
             println!(
@@ -1089,7 +1087,7 @@ fn typecheck_expr(tck: &mut Tck, symtbl: &Symtbl, expr: &hir::ExprNode) -> Resul
                 .map(|(name, expr)| {
                     // ? in map doesn't work too well...
                     println!("Checking field {} expr {:?}", name, expr);
-                    match typecheck_expr(tck, symtbl, expr) {
+                    match typecheck_expr(tck, symtbl, func_rettype, expr) {
                         Ok(t) => Ok((*name, t)),
                         Err(s) => Err(s),
                     }
@@ -1103,7 +1101,7 @@ fn typecheck_expr(tck: &mut Tck, symtbl: &Symtbl, expr: &hir::ExprNode) -> Resul
             Ok(typeid)
         }
         StructRef { expr: e, elt } => {
-            let struct_type = typecheck_expr(tck, symtbl, e)?;
+            let struct_type = typecheck_expr(tck, symtbl, func_rettype, e)?;
             //println!("Heckin struct...  Type of {:?} is {:?}", expr, struct_type);
             // struct_type is the type of the struct... but the
             // type of this structref expr is the type of the *field in the struct*.
@@ -1131,10 +1129,10 @@ fn typecheck_expr(tck: &mut Tck, symtbl: &Symtbl, expr: &hir::ExprNode) -> Resul
             }
         }
         Assign { lhs, rhs } => {
-            let rhs_type = typecheck_expr(tck, symtbl, rhs)?;
+            let rhs_type = typecheck_expr(tck, symtbl, func_rettype, rhs)?;
             // TODO: Check for invalid lvalues???  Or does the parser make
             // that impossible?  I forget.
-            let lhs_type = typecheck_expr(tck, symtbl, lhs)?;
+            let lhs_type = typecheck_expr(tck, symtbl, func_rettype, lhs)?;
             if !is_mutable_lvalue(symtbl, lhs) {
                 let s = "assignment";
                 /*
@@ -1150,18 +1148,27 @@ fn typecheck_expr(tck: &mut Tck, symtbl: &Symtbl, expr: &hir::ExprNode) -> Resul
             Ok(unit)
         }
         Break => {
+            // TODO: I guess the return type of `break` is unit?
+            // Someday we might want to break with a return value, but not yet.
             let unit = tck.insert_known(&Type::unit());
             tck.set_expr_type(expr, unit);
             Ok(unit)
         }
-        x => todo!("{:?}", x),
-        /*
         Lambda { signature, body } => {
             let t = typecheck_func_body(None, tck, symtbl, &signature, body)?;
             tck.set_expr_type(expr, t);
             Ok(t)
         }
-
+        Return { retval } => {
+            // Does the type of the expression match the function's return type?
+            let t = typecheck_expr(tck, symtbl, func_rettype, retval)?;
+            tck.unify(symtbl, t, func_rettype)?;
+            // TODO: Never type instead of whatever this hack is
+            tck.set_expr_type(expr, t);
+            Ok(t)
+        }
+        x => todo!("{:?}", x),
+        /*
         TypeCtor {
             name,
             type_params,
@@ -1438,20 +1445,3 @@ pub fn typecheck(ast: &hir::Ir) -> Result<Tck, TypeError> {
     */
     Ok(t)
 }
-
-/*
-/// Top level driver function for type checking.
-pub fn typecheck(ir: &hir::Ir) -> Result<Tck, TypeError> {
-    todo!()
-    /*
-    let mut tck = Tck::default();
-    for decl in &ir.decls {
-        predeclare_decl(&mut tck, decl)?;
-    }
-    for decl in &ir.decls {
-        typecheck_decl(&mut tck, decl)?;
-    }
-    Ok(tck)
-        */
-}
-*/

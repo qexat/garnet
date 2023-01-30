@@ -50,4 +50,5 @@ fn main(): {} =
     -aa
     __println(aa)
     __println(ab)
+    {}
 end
