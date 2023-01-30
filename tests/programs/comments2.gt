@@ -6,6 +6,6 @@
 --   stdout: 12
 
 --- Doc comments go here
-fn main(): {} =
+fn main() {} =
     __println(12)
 end

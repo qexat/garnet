@@ -20,7 +20,7 @@
 --     true
 
 --- Truth tables, huzzah!
-fn main(): {} =
+fn main() {} =
     __println_bool(true and true)
     __println_bool(true and false)
     __println_bool(false and true)

@@ -5,8 +5,8 @@
 --   status: success
 --   stdout: 11
 
-fn main(): {} =
-    let mut i: I32 = 0;
+fn main() {} =
+    let mut i I32 = 0;
     loop
         i = i + 1
         if i > 10 then break end

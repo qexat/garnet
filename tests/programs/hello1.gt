@@ -5,6 +5,6 @@
 --   status: success
 --   stdout: 12
 
-fn main(): {} =
+fn main() {} =
     __println(12)
 end

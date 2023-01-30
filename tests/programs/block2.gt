@@ -7,8 +7,8 @@
 
 -- Do blocks with one expression work?
 
-fn main(): {} =
-    let x: I32 = do
+fn main() {} =
+    let x I32 = do
         42
     end
     __println(x)

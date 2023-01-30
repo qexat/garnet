@@ -5,8 +5,8 @@
 --     ...Mutability mismatch in 'assignment'...
 --     ...
 
-fn main(): {} =
-    let x: I32 = 10
+fn main() {} =
+    let x I32 = 10
     x = 20
     __println(x)
 end

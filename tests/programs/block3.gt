@@ -7,8 +7,8 @@
 
 -- Do blocks with no expressions fail to compile?
 
-fn main(): {} =
-    let x: I32 = do
+fn main() {} =
+    let x I32 = do
     end
     __println(x)
 end

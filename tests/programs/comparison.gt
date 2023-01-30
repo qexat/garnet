@@ -23,7 +23,7 @@
 --     false
 
 --- Comparisons and equality
-fn main(): {} =
+fn main() {} =
     -- The numbers break the test output into sections so it's easier to
     -- see
     __println(1)

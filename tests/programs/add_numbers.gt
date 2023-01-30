@@ -5,11 +5,11 @@
 --   status: success
 --   stdout: 12
 
-fn foo(x: I64): I64 =
+fn foo(x I64) I64 =
     x + 3
 end
 
-fn main(): {} =
-    let x: I64 = foo(9)
+fn main() {} =
+    let x I64 = foo(9)
     __println_i64(x)
 end

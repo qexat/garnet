@@ -5,6 +5,6 @@
 --     ...Expected non-empty expression block...
 --     ...
 
-fn main(): {} =
+fn main() {} =
     --__println(12)
 end

@@ -64,9 +64,9 @@ fn unparse_sig(sig: &Signature, out: &mut dyn io::Write) -> io::Result<()> {
     for (name, typename) in sig.params.iter() {
         let name = name.val();
         let tname = typename.get_name();
-        write!(out, "{}: {}", name, tname)?;
+        write!(out, "{} {}", name, tname)?;
     }
-    write!(out, "): ")?;
+    write!(out, ") ")?;
     let rettype = sig.rettype.get_name();
     write!(out, "{}", rettype)
 }
@@ -150,7 +150,7 @@ fn unparse_expr(e: &Expr, indent: usize, out: &mut dyn io::Write) -> io::Result<
             }
             write!(out, "{} ", name)?;
             let tname = typename.get_name();
-            write!(out, ": {} ", tname)?;
+            write!(out, " {} ", tname)?;
             write!(out, "= ")?;
 
             unparse_expr(init, 0, out)?;
@@ -270,7 +270,7 @@ mod tests {
     use std::io::Cursor;
     #[test]
     fn test_reparse() {
-        let src = r#"fn test(x: I32): I32 =
+        let src = r#"fn test(x I32) I32 =
     3 * x + 2
 end
 

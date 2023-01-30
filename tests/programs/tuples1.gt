@@ -5,8 +5,8 @@
 --   status: success
 --   stdout: 3
 
-fn main(): {} =
-    -- TODO: Make the UnknownInt thing work inside tuples.
-    let t: {I32, I32, Bool} = {3I32, 5I32, false}
+fn main() {} =
+    -- TODO Make the UnknownInt thing work inside tuples.
+    let t {I32, I32, Bool} = {3I32, 5I32, false}
     __println(t.0)
 end
