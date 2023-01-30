@@ -275,7 +275,6 @@ fn compile_expr(expr: &hir::ExprNode, tck: &Tck) -> String {
         E::Lit {
             val: ast::Literal::Integer(i),
         } => format!("{}", i),
-        E::EnumLit { val: _val, ty: _ty } => todo!(),
         E::Lit {
             val: ast::Literal::Bool(b),
         } => format!("{}", b),
@@ -284,6 +283,11 @@ fn compile_expr(expr: &hir::ExprNode, tck: &Tck) -> String {
         } => {
             let bits = bytes * 8;
             format!("{}i{}", vl, bits)
+        }
+        E::Lit {
+            val: ast::Literal::EnumLit(enm, name),
+        } => {
+            todo!()
         }
         E::Var { name, .. } => mangle_name(&*INT.fetch(*name)),
         E::BinOp { op, lhs, rhs } => format!(
@@ -432,8 +436,10 @@ fn compile_expr(expr: &hir::ExprNode, tck: &Tck) -> String {
         E::Assign { lhs, rhs } => {
             format!("{} = {}", compile_expr(lhs, tck), compile_expr(rhs, tck))
         }
+        /*
         E::Deref { expr } => format!("*{}", compile_expr(expr, tck)),
         E::Ref { expr } => format!("&{}", compile_expr(expr, tck)),
+        */
         other => todo!("{:?}", other),
     }
 }
