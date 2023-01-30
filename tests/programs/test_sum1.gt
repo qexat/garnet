@@ -1,0 +1,28 @@
+-- Compile:
+--   status: success
+
+
+type Foo = sum
+    -- For now sum type things *must* have a type argument,
+    -- so we just do unit
+    X {},
+    Y { I32, Bool, Bool },
+    Z struct
+        a: I32,
+        b: I32
+    end,
+end
+
+fn thing(i Foo) Foo =
+    i
+end
+
+
+fn main() I32 =
+    let x Foo = Foo.X{}
+    let y Foo = Foo.Y { 12, true, false }
+    let z Foo = Foo.Z { .a = 12, .b = 40 }
+    let a = thing(y)
+    3
+end
+
