@@ -1,0 +1,14 @@
+-- Compile:
+--   status: success
+
+
+fn apply_bool(f fn(Bool) Bool, arg Bool) Bool =
+    f(arg)
+end
+
+
+fn main() I32 =
+    let f fn(Bool) Bool = fn(val Bool) Bool = val end
+    let a Bool = apply_bool(f, true)
+    3
+end

@@ -116,7 +116,7 @@ fn compile_typename(t: &Type) -> Cow<'static, str> {
             todo!("Enums probably should be lowered to numbers?")
         }
         Generic(s) => mangle_name(&*s.val()).into(),
-        _ => todo!(),
+        other => todo!("compile_typename: {:?}", other),
     }
 }
 

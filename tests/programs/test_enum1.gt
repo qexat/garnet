@@ -1,0 +1,18 @@
+-- Compile:
+--   status: success
+
+
+type Foo = enum
+    X, Y, Z,
+end
+
+fn thing(i Foo) Foo =
+    i
+end
+
+
+fn main() I32 =
+    let x Foo = Foo.X
+    let y = thing(Foo.Y)
+    3
+end

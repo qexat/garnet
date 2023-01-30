@@ -562,7 +562,6 @@ impl<'input> Parser<'input> {
 
     fn parse_const(&mut self, doc_comment: Vec<String>) -> ast::Decl {
         let name = self.expect_ident();
-        self.expect(T::Colon);
         let typename = self.parse_type().unwrap();
         self.expect(T::Equals);
         let init = self.parse_expr(0).unwrap();
@@ -629,14 +628,9 @@ impl<'input> Parser<'input> {
 
     /// signature = fn_args [":" typename]
     fn parse_fn_signature(&mut self) -> ast::Signature {
-        // TODO: parse generics
-        //let generics = vec![];
+        // TODO: Elide trailing unit type?
         let params = self.parse_fn_args();
-        let rettype = if self.peek_expect(T::Colon.discr()) {
-            self.parse_type().unwrap()
-        } else {
-            Type::unit()
-        };
+        let rettype = self.parse_type().expect("FIXME");
         ast::Signature { params, rettype }
     }
 
@@ -704,7 +698,6 @@ impl<'input> Parser<'input> {
 
         while let Some((T::Ident(_i), _span)) = self.lex.peek() {
             let name = self.expect_ident();
-            self.expect(T::Colon);
             let tname = self.parse_type().unwrap();
             args.push((name, tname));
 
@@ -717,15 +710,27 @@ impl<'input> Parser<'input> {
         args
     }
 
+    /// type_list = "(" [type {"," type} [","] ")"
+    fn parse_type_list(&mut self) -> Vec<Type> {
+        let mut args = vec![];
+        self.expect(T::LParen);
+
+        while !self.peek_is(T::RParen.discr()) {
+            let tname = self.parse_type().expect("FIXME");
+            args.push(tname);
+
+            if self.peek_expect(T::Comma.discr()) {
+            } else {
+                break;
+            }
+        }
+        self.expect(T::RParen);
+        args
+    }
+
     fn parse_fn_type(&mut self) -> Type {
-        // TODO: Parse generic stuffs?
-        //let generics = vec![];
-        let params = self.parse_fn_type_args();
-        let rettype = if self.peek_expect(T::Colon.discr()) {
-            self.parse_type().unwrap()
-        } else {
-            Type::unit()
-        };
+        let params = self.parse_type_list();
+        let rettype = self.parse_type().expect("FIXME");
         Type::Func(params, Box::new(rettype))
     }
 
@@ -1132,7 +1137,6 @@ impl<'input> Parser<'input> {
             false
         };
         let varname = self.expect_ident();
-        self.expect(T::Colon);
         let typename = self.parse_type().unwrap();
         self.expect(T::Equals);
         let init = Box::new(

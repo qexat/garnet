@@ -539,12 +539,11 @@ fn lower_decl(accm: &mut Vec<Decl>, decl: &ast::Decl) {
         // declaration.  Plus the type deconstructor.
         D::TypeDef {
             name,
-            //params,
             typedecl,
             doc_comment,
         } => {
-            // TODO: Unheck params
-            let params = vec![];
+            // TODO: Doublecheck params
+            let params = typedecl.collect_generic_names();
             lower_typedef(accm, *name, typedecl, &params);
             accm.push(Decl::TypeDef {
                 name: *name,
