@@ -6,17 +6,17 @@
 --     ...
 
 /-
-fn foo(): {} =
+fn foo() {} =
     {}
 end
 
 /-
-fn main(): {} =
+fn main() {} =
     {}
 end
 -/
 
-fn main(): {} =
+fn main() {} =
     __println(12)
 end
 

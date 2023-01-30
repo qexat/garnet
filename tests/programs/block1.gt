@@ -5,8 +5,8 @@
 --   status: success
 --   stdout: 42
 
-fn main(): {} =
-    let x: I32 = do
+fn main() {} =
+    let x I32 = do
         12
         42
     end

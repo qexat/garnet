@@ -1,12 +1,12 @@
 -- Compile:
 --   status: error
 
-fn test(x: Bool, y: I32): Bool =
+fn test(x Bool, y I32) Bool =
     if x then true
     else y+2
     end
 end
 
-fn main(): {} =
+fn main() {} =
     test(true, 3)
 end

@@ -15,38 +15,38 @@
 
 -- Test tricky parse expressions
 
-fn foo(): I32 =
-    let y: I32 = 2
+fn foo() I32 =
+    let y I32 = 2
     -1;
     y
 end
 
-fn bar(): I32 =
-    let y: I32 = 2;
+fn bar() I32 =
+    let y I32 = 2;
     -y
 end
 
-fn baz(): I32 =
-    let y: I32 = -3
+fn baz() I32 =
+    let y I32 = -3
     return y
 end
 
-fn main(): {} =
+fn main() {} =
     __println(foo())
     __println(bar())
     __println(baz())
 
-    let x: I32 = 2 - 1
-    let y: I32 = 2
+    let x I32 = 2 - 1
+    let y I32 = 2
     -1
-    let z: I32 = 2;
+    let z I32 = 2;
     -1
     __println(x)
     __println(y)
     __println(z)
 
-    let aa: I32 = 2 + -1
-    let ab: I32 = 2 +
+    let aa I32 = 2 + -1
+    let ab I32 = 2 +
     -aa
     __println(aa)
     __println(ab)

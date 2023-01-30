@@ -5,12 +5,12 @@
 --   status: success
 --   stdout: 90
 
-fn apply(f: fn(I32): I32, arg: I32): I32 =
+fn apply(f fn(I32) I32, arg I32) I32 =
     f(arg)
 end
 
-fn main(): {} =
-    let f: fn(I32): I32 = fn(x: I32): I32 = x * 9 end
-    let result: I32 = apply(f, 10)
+fn main() {} =
+    let f fn(I32) I32 = fn(x I32) I32 = x * 9 end
+    let result I32 = apply(f, 10)
     __println(result)
 end

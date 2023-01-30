@@ -1409,7 +1409,7 @@ mod tests {
 
     #[test]
     fn test_const() {
-        test_decl_is("const foo: I32 = -9", || ast::Decl::Const {
+        test_decl_is("const foo I32 = -9", || ast::Decl::Const {
             name: Sym::new("foo"),
             typename: Type::i32(),
             init: Expr::UniOp {
@@ -1422,7 +1422,7 @@ mod tests {
 
     #[test]
     fn test_fn() {
-        test_decl_is("fn foo(x: I32): I32 = 9 end", || {
+        test_decl_is("fn foo(x I32) I32 = 9 end", || {
             let i32_t = Type::i32();
             ast::Decl::Function {
                 name: Sym::new("foo"),
@@ -1448,10 +1448,10 @@ mod tests {
     #[test]
     fn test_multiple_decls() {
         let s = r#"
-const foo: I32 = -9
-const bar: Bool = 4
+const foo  I32 = -9
+const bar  Bool = 4
 --- rawr!
-const baz: {} = {}
+const baz  {} = {}
 type blar = I8
 "#;
         let p = &mut Parser::new("unittest", s);
@@ -1502,30 +1502,30 @@ type blar = I8
     fn parse_fn_args() {
         let valid_args = vec![
             "()",
-            "(x: Bool)",
-            "(x: Bool,)",
-            "(x: I32, y: Bool)",
-            "(x: I32, y: Bool,)",
+            "(x  Bool)",
+            "(x  Bool,)",
+            "(x  I32, y  Bool)",
+            "(x  I32, y  Bool,)",
         ];
         test_parse_with(|p| p.parse_fn_args(), &valid_args)
     }
     #[test]
     fn parse_fn_signature() {
         let valid_args = vec![
-            "()",
-            "(x: Bool):I32",
-            "(x: Bool):{}",
-            "(x: I16, y: Bool)",
-            "(x: I64, y: Bool):Bool",
-            "(x: I8, y: Bool,)",
-            "(x: I32, y: Bool,):Bool",
-            "(f: fn(I32):I128, x: I32):Bool",
+            "() {}",
+            "(x  Bool) I32",
+            "(x  Bool) {}",
+            "(x  I16, y  Bool) {}",
+            "(x  I64, y  Bool) Bool",
+            "(x  I8, y  Bool,) {}",
+            "(x  I32, y  Bool,) Bool",
+            "(f  fn(I32) I128, x  I32) Bool",
         ];
         test_parse_with(|p| p.parse_fn_signature(), &valid_args)
     }
     #[test]
     fn parse_let() {
-        let valid_args = vec!["let x: I32 = 5", "let y: Bool = false", "let z: {} = z"];
+        let valid_args = vec!["let x I32 = 5", "let y Bool = false", "let z {} = z"];
         // The lifetimes and inference here gets WEIRD if you try to pass it Parser::parse_let.
         test_parse_with(|p| p.parse_let(), &valid_args);
         test_parse_with(|p| p.parse_expr(0), &valid_args);
@@ -1535,7 +1535,7 @@ type blar = I8
     fn parse_if() {
         let valid_args = vec![
             "if x then y end",
-            "if 10 then let x: Bool = false 10 end",
+            "if 10 then let x  Bool = false 10 end",
             r#"if 10 then false
             else true
             end
@@ -1579,10 +1579,10 @@ type blar = I8
     #[test]
     fn parse_lambda() {
         let valid_args = vec![
-            "fn(x:I32):I32 = x end",
-            "fn(x:I32, i:Bool) = x end",
-            "fn(f:fn(I32):I32, x:I32) = f(x) end",
-            "fn() = {} end",
+            "fn(x I32) I32 = x end",
+            "fn(x I32, i Bool) I32 = x end",
+            "fn(f fn(I32) I32, x I32) {} = f(x) end",
+            "fn() {} = {} end",
         ];
         test_parse_with(|p| p.parse_lambda(), &valid_args);
         test_parse_with(|p| p.parse_expr(0), &valid_args);
@@ -1609,13 +1609,13 @@ type blar = I8
 
     #[test]
     fn parse_fn_decls() {
-        let valid_args = vec!["fn foo1(f: I32): I32 = f end", "fn foo2(f: @T): @T = f end"];
+        let valid_args = vec!["fn foo1(f I32) I32 = f end", "fn foo2(f @T) @T = f end"];
         test_parse_with(|p| p.parse_decl().unwrap(), &valid_args);
     }
 
     #[test]
     fn parse_fn_lambda() {
-        let valid_args = vec!["fn apply_one(f: fn(I32):I32, x: I32): I32 = f(x) end"];
+        let valid_args = vec!["fn apply_one(f fn(I32)I32, x I32) I32 = f(x) end"];
         test_parse_with(|p| p.parse_decl().unwrap(), &valid_args);
     }
 

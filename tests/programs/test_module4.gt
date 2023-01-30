@@ -2,7 +2,7 @@
 --   status: error
 
 type Idx(@Self, @Output) = struct
-    idx: fn(@Self, I32): @Output,
+    idx: fn(@Self, I32) @Output,
 end
 
 type List(@T) = struct
