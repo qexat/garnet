@@ -141,7 +141,7 @@ pub enum Expr {
     },
     // Opposite of TypeCtor
     TypeUnwrap {
-        e: ExprNode,
+        expr: ExprNode,
     },
     TupleRef {
         expr: ExprNode,
@@ -389,6 +389,9 @@ fn lower_expr(expr: &ast::Expr) -> ExprNode {
         E::StructRef { expr, elt } => Expr::StructRef {
             expr: lower_expr(expr),
             elt: *elt,
+        },
+        E::TypeUnwrap { expr } => Expr::TypeUnwrap {
+            expr: lower_expr(expr),
         },
         E::Deref { expr } => todo!(),
         E::Ref { expr } => todo!(),

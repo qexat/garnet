@@ -1,13 +1,19 @@
 -- Compile:
 --   status: success
+-- Run:
+--   status: success
+--   stdout:
+--     1
+--     false
 
 fn identity(i @T) @T =
     let y @T = i
     y
 end
 
-fn main() I32 =
+fn main() {} =
     let a I32 = identity(1)
+    __println(a)
     let c Bool = identity(false)
-    3
+    __println_bool(c)
 end
