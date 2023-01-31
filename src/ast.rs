@@ -167,6 +167,9 @@ pub enum Expr {
         lhs: Box<Expr>,
         rhs: Box<Expr>,
     },
+    TypeUnwrap {
+        expr: Box<Expr>,
+    },
     Ref {
         expr: Box<Expr>,
     },

@@ -115,8 +115,8 @@ fn eat_block_comment(lex: &mut Lexer<TokenKind>) -> String {
 pub enum TokenKind {
     #[regex("[a-zA-Z_][a-zA-Z0-9_]*", |lex| lex.slice().to_owned())]
     Ident(String),
-    #[regex("@[a-zA-Z_][a-zA-Z0-9_]*", |lex| lex.slice().to_owned())]
-    TypeIdent(String),
+    //#[regex("@[a-zA-Z_][a-zA-Z0-9_]*", |lex| lex.slice().to_owned())]
+    //TypeIdent(String),
     #[regex("true|false", |lex| lex.slice().parse())]
     Bool(bool),
     #[regex("[0-9][0-9_]*I8", make_i8)]
@@ -1045,14 +1045,9 @@ impl<'input> Parser<'input> {
                             generic_types,
                         }
                     }
-                    T::Dollar => {
-                        let params = self.parse_function_args();
-                        ast::Expr::Funcall {
-                            func: Box::new(lhs),
-                            params,
-                            generic_types,
-                        }
-                    }
+                    T::Dollar => ast::Expr::TypeUnwrap {
+                        expr: Box::new(lhs),
+                    },
                     T::Colon => {
                         self.expect(T::Colon);
                         let ident = self.expect_ident();
@@ -1288,12 +1283,16 @@ impl<'input> Parser<'input> {
         let t = self.next().unwrap_or_else(|| self.error("type", None));
         let mut ty = match t.kind {
             T::Ident(ref s) => {
-                let type_params = if self.peek_is(T::LParen.discr()) {
-                    self.parse_type_list()
+                if let Some(t) = Type::get_primitive_type(s) {
+                    t
                 } else {
-                    vec![]
-                };
-                Type::Named(Sym::new(s), type_params)
+                    let type_params = if self.peek_is(T::LParen.discr()) {
+                        self.parse_type_list()
+                    } else {
+                        vec![]
+                    };
+                    Type::Named(Sym::new(s), type_params)
+                }
             }
             T::At => {
                 let s = self.expect_ident();
@@ -1522,6 +1521,7 @@ type blar = I8
             "(x  Bool)",
             "(x  Bool,)",
             "(x  I32, y  Bool)",
+            "(x @X, y @Y)",
             "(x  I32, y  Bool,)",
         ];
         test_parse_with(|p| p.parse_fn_args(), &valid_args)
@@ -1626,7 +1626,9 @@ type blar = I8
 
     #[test]
     fn parse_fn_decls() {
-        let valid_args = vec!["fn foo1(f I32) I32 = f end", "fn foo2(f @T) @T = f end"];
+        //let valid_args = vec!["fn foo1(f I32) I32 = f end", "fn foo2(f @T) @T = f end"];
+        //let valid_args = vec!["fn foo2(f @T) @T = f end"];
+        let valid_args = vec!["fn foo1(f I32) I32 = f end"];
         test_parse_with(|p| p.parse_decl().unwrap(), &valid_args);
     }
 

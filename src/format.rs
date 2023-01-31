@@ -239,6 +239,10 @@ fn unparse_expr(e: &Expr, indent: usize, out: &mut dyn io::Write) -> io::Result<
             unparse_expr(&*expr, indent, out)?;
             write!(out, ".{}", elt.val())
         }
+        E::TypeUnwrap { expr } => {
+            unparse_expr(&*expr, indent, out)?;
+            write!(out, "$")
+        }
         E::Ref { expr } => {
             unparse_expr(&*expr, indent, out)?;
             write!(out, "&")
