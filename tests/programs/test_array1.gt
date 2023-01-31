@@ -10,8 +10,7 @@ fn foo(i @T[3]) @T[3] =
     i
 end
 
-fn main() I32 =
+fn main() {} =
     let a I32[4] = identity([1, 2, 3, 4])
     let b = foo([1, 2, 3])
-    3
 end

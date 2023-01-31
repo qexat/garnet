@@ -149,8 +149,10 @@ fn unparse_expr(e: &Expr, indent: usize, out: &mut dyn io::Write) -> io::Result<
                 write!(out, "mut ")?;
             }
             write!(out, "{} ", name)?;
-            let tname = typename.get_name();
-            write!(out, " {} ", tname)?;
+            if let Some(t) = typename {
+                let tname = t.get_name();
+                write!(out, " {} ", tname)?;
+            }
             write!(out, "= ")?;
 
             unparse_expr(init, 0, out)?;
@@ -217,15 +219,10 @@ fn unparse_expr(e: &Expr, indent: usize, out: &mut dyn io::Write) -> io::Result<
             }
             write!(out, "}}")
         }
-        E::StructCtor { body, types } => {
-            writeln!(out, "struct {{")?;
-            for (nm, ty) in types {
-                let tname = ty.get_name();
-                write!(out, "type {} = {}", nm.val(), tname)?;
-                writeln!(out, ",")?;
-            }
+        E::StructCtor { body } => {
+            writeln!(out, "{{")?;
             for (nm, expr) in body {
-                write!(out, "{} = ", nm.val())?;
+                write!(out, ".{} = ", nm.val())?;
                 unparse_expr(expr, 0, out)?;
                 writeln!(out, ",")?;
             }
@@ -255,6 +252,14 @@ fn unparse_expr(e: &Expr, indent: usize, out: &mut dyn io::Write) -> io::Result<
             unparse_expr(&*lhs, indent, out)?;
             write!(out, " = ")?;
             unparse_expr(&*rhs, indent, out)
+        }
+        E::ArrayCtor { body } => {
+            writeln!(out, "[")?;
+            for expr in body {
+                unparse_expr(expr, 0, out)?;
+                writeln!(out, ",")?;
+            }
+            write!(out, "]")
         }
     }
 }

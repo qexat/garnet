@@ -293,7 +293,7 @@ fn lower_expr(expr: &ast::Expr) -> ExprNode {
             let ninit = lower_expr(init);
             Let {
                 varname: *varname,
-                typename: Some(typename.clone()),
+                typename: typename.clone(),
                 init: ninit,
                 mutable: *mutable,
             }
@@ -365,10 +365,7 @@ fn lower_expr(expr: &ast::Expr) -> ExprNode {
             let body = lower_exprs(body);
             Expr::TupleCtor { body }
         }
-        E::StructCtor {
-            body,
-            types: _types,
-        } => {
+        E::StructCtor { body } => {
             let lowered_body = body
                 .iter()
                 .map(|(nm, expr)| (*nm, lower_expr(expr)))
@@ -406,6 +403,9 @@ fn lower_expr(expr: &ast::Expr) -> ExprNode {
         E::Assign { lhs, rhs } => Expr::Assign {
             lhs: lower_expr(lhs),
             rhs: lower_expr(rhs),
+        },
+        E::ArrayCtor { body } => Expr::ArrayCtor {
+            body: lower_exprs(body.as_slice()),
         },
     };
     ExprNode::new(new_exp)
