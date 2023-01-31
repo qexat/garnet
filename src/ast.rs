@@ -227,6 +227,7 @@ pub enum Decl {
     },
     TypeDef {
         name: Sym,
+        params: Vec<Sym>,
         typedecl: Type,
         doc_comment: Vec<String>,
     },
