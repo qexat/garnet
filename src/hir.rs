@@ -540,9 +540,10 @@ fn lower_decl(accm: &mut Vec<Decl>, decl: &ast::Decl) {
         D::TypeDef {
             name,
             typedecl,
-            doc_comment,
+            doc_comment: _doc_comment,
+            params: _params,
         } => {
-            // TODO: Doublecheck params
+            // TODO: figure out params
             let params = typedecl.collect_generic_names();
             lower_typedef(accm, *name, typedecl, &params);
             accm.push(Decl::TypeDef {
