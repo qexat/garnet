@@ -120,7 +120,7 @@ pub enum Expr {
     },
     Let {
         varname: Sym,
-        typename: Type,
+        typename: Option<Type>,
         init: Box<Expr>,
         mutable: bool,
     },
@@ -149,8 +149,10 @@ pub enum Expr {
         body: Vec<Expr>,
     },
     StructCtor {
-        types: BTreeMap<Sym, Type>,
-        body: Vec<(Sym, Expr)>,
+        body: BTreeMap<Sym, Expr>,
+    },
+    ArrayCtor {
+        body: Vec<Expr>,
     },
     /// Tuple element reference
     TupleRef {

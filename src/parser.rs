@@ -805,42 +805,25 @@ impl<'input> Parser<'input> {
         (fields, typefields)
     }
 
-    fn parse_struct_lit_fields(&mut self) -> (Vec<(Sym, ast::Expr)>, BTreeMap<Sym, Type>) {
-        let typefields = BTreeMap::new();
-        let mut fields = vec![];
+    fn parse_struct_lit_fields(&mut self) -> BTreeMap<Sym, ast::Expr> {
+        let mut fields = BTreeMap::default();
 
-        // TODO someday: Doc comments on struct fields
         loop {
-            match self.lex.peek() {
-                Some((T::Ident(_i), _span)) => {
-                    let name = self.expect_ident();
-                    self.expect(T::Equals);
-                    let tname = self.parse_expr(0).unwrap();
-                    fields.push((name, tname));
-                }
-                /*
-                Some((T::Type, _span)) => {
-                    self.expect(T::Type);
-                    let name = self.expect_ident();
-                    self.expect(T::Equals);
-                    let ty = self.parse_type();
-                    typefields.insert(name, ty);
-                }
-                */
-                _ => break,
+            if self.peek_expect(T::Period.discr()) {
+                let name = self.expect_ident();
+                self.expect(T::Equals);
+                let vl = self.parse_expr(0).unwrap();
+                fields.insert(name, vl);
+            } else {
+                break;
             }
 
-            // TODO: Figure out how to not make this comma parsing jank af
-            // maybe
-            // {term ","} [term [","]]
-            // or
-            // [THING { "," THING } [","]]
             if self.peek_expect(T::Comma.discr()) {
             } else {
                 break;
             }
         }
-        (fields, typefields)
+        fields
     }
 
     fn parse_enum_fields(&mut self) -> Vec<(Sym, i32)> {
@@ -877,9 +860,7 @@ impl<'input> Parser<'input> {
             if let Some(other) = seen.get(vl) {
                 eprintln!(
                     "Duplicate variant in enum: field {} and {} both have value {}",
-                    INT.fetch(*name),
-                    INT.fetch(*other),
-                    *vl
+                    &*name, &*other, *vl
                 );
             }
             seen.insert(*vl, *name);
@@ -972,8 +953,10 @@ impl<'input> Parser<'input> {
             }
             T::Integer(_) => ast::Expr::int(self.expect_int() as i128),
             T::IntegerSize((_str, size)) => ast::Expr::sized_int(self.expect_int() as i128, *size),
-            // Tuple literal
+            // Tuple/struct literal
             T::LBrace => self.parse_constructor(),
+            // Array literal
+            T::LBracket => self.parse_array_constructor(),
             T::Struct => {
                 // TODO: Decide on a syntax that doesn't suck ass.
                 // `struct { foo = 1, bar = 2}`
@@ -1153,7 +1136,12 @@ impl<'input> Parser<'input> {
             false
         };
         let varname = self.expect_ident();
-        let typename = self.parse_type();
+        let typename = if self.peek_expect(T::Equals.discr()) {
+            None
+        } else {
+            let t = Some(self.parse_type());
+            t
+        };
         self.expect(T::Equals);
         let init = Box::new(
             self.parse_expr(0)
@@ -1257,6 +1245,22 @@ impl<'input> Parser<'input> {
     /// tuple constructor = "{" [expr {"," expr} [","] "}"
     fn parse_constructor(&mut self) -> ast::Expr {
         self.expect(T::LBrace);
+        if self.peek_is(T::Period.discr()) {
+            self.parse_struct_literal()
+        } else {
+            self.parse_tuple_literal()
+        }
+    }
+
+    /// struct constructor = "{" "." ident "=" expr {"," ...} "}"
+    fn parse_struct_literal(&mut self) -> ast::Expr {
+        let body = self.parse_struct_lit_fields();
+        self.expect(T::RBrace);
+        ast::Expr::StructCtor { body }
+    }
+
+    /// tuple constructor = "{" [expr {"," expr} [","] "}"
+    fn parse_tuple_literal(&mut self) -> ast::Expr {
         let mut body = vec![];
         while let Some(expr) = self.parse_expr(0) {
             body.push(expr);
@@ -1270,13 +1274,19 @@ impl<'input> Parser<'input> {
         ast::Expr::TupleCtor { body }
     }
 
-    /// struct literal = "struct" "{" ... "}"
-    fn parse_struct_literal(&mut self) -> ast::Expr {
-        self.expect(T::Struct);
-        self.expect(T::LBrace);
-        let (body, types) = self.parse_struct_lit_fields();
-        self.expect(T::RBrace);
-        ast::Expr::StructCtor { body, types }
+    fn parse_array_constructor(&mut self) -> ast::Expr {
+        self.expect(T::LBracket);
+        let mut body = vec![];
+        while let Some(expr) = self.parse_expr(0) {
+            body.push(expr);
+
+            if self.peek_expect(T::Comma.discr()) {
+            } else {
+                break;
+            }
+        }
+        self.expect(T::RBracket);
+        ast::Expr::ArrayCtor { body }
     }
 
     fn parse_type(&mut self) -> Type {
@@ -1314,6 +1324,7 @@ impl<'input> Parser<'input> {
             _ => self.error("type", Some(t)),
         };
         // Array?  (Or other postfix shit, this be gettin whack)
+        // TODO: Figure out what you're actually doing here.
         while self.peek_is(T::LBracket.discr()) {
             self.expect(T::LBracket);
             let len = self.expect_int();
@@ -1383,7 +1394,7 @@ fn infix_binding_power(op: &TokenKind) -> Option<(usize, usize)> {
 mod tests {
     use crate::ast::{self, Expr};
     use crate::parser::*;
-    use crate::{Type, INT};
+    use crate::Type;
 
     /// Take a list of strings and try parsing them with the given function.
     /// Is ok iff the parsing succeeds, does no checking that the produced
@@ -1543,6 +1554,14 @@ type blar = I8
     #[test]
     fn parse_let() {
         let valid_args = vec!["let x I32 = 5", "let y Bool = false", "let z {} = z"];
+        // The lifetimes and inference here gets WEIRD if you try to pass it Parser::parse_let.
+        test_parse_with(|p| p.parse_let(), &valid_args);
+        test_parse_with(|p| p.parse_expr(0), &valid_args);
+    }
+
+    #[test]
+    fn parse_let_type_inferred() {
+        let valid_args = vec!["let x = 5", "let y = false", "let z = [1, 2, 3]"];
         // The lifetimes and inference here gets WEIRD if you try to pass it Parser::parse_let.
         test_parse_with(|p| p.parse_let(), &valid_args);
         test_parse_with(|p| p.parse_expr(0), &valid_args);
