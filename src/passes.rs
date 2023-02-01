@@ -76,18 +76,12 @@ fn lambda_lift_expr(expr: ExprNode, output_funcs: &mut Vec<D>) -> ExprNode {
         E::Return { retval } => E::Return {
             retval: lambda_lift_expr(retval, output_funcs),
         },
-        E::Funcall {
-            func,
-            params,
-            generic_types,
-        } => {
+        E::Funcall { func, params } => {
             let new_func = lambda_lift_expr(func, output_funcs);
             let new_params = lambda_lift_exprs(params, output_funcs);
-            let new_generics = generic_types.to_vec();
             E::Funcall {
                 func: new_func,
                 params: new_params,
-                generic_types: new_generics,
             }
         }
         E::Lambda { signature, body } => {

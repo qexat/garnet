@@ -18,11 +18,10 @@ fn thing(i Foo) Foo =
 end
 
 
-fn main() I32 =
+fn main() {} =
     let x Foo = Foo.X{}
     let y Foo = Foo.Y { 12, true, false }
     let z Foo = Foo.Z { .a = 12, .b = 40 }
     let a = thing(y)
-    3
 end
 

@@ -7,10 +7,9 @@ fn apply(f fn(@In) @Out, arg @In) @Out =
 end
 
 
-fn main() I32 =
+fn main() {} =
     let f1 fn(Bool) Bool = fn(val Bool) Bool = val end
     let f2 fn(Bool) I32 = fn(val Bool) I32 = 4 end
     let a Bool = apply(f1, true)
     let b I32 = apply(f2, true)
-    3
 end

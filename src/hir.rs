@@ -108,8 +108,6 @@ pub enum Expr {
     Funcall {
         func: ExprNode,
         params: Vec<ExprNode>,
-        // TODO: hmmmm
-        generic_types: Vec<Type>,
     },
     Break,
     Return {
@@ -335,17 +333,12 @@ fn lower_expr(expr: &ast::Expr) -> ExprNode {
                 body: nbody,
             }
         }
-        E::Funcall {
-            func,
-            params,
-            generic_types,
-        } => {
+        E::Funcall { func, params } => {
             let nfunc = lower_expr(func);
             let nparams = lower_exprs(params);
             Funcall {
                 func: nfunc,
                 params: nparams,
-                generic_types: generic_types.to_vec(),
             }
         }
         E::Break => Break,
@@ -495,6 +488,7 @@ fn lower_typedef(accm: &mut Vec<Decl>, name: Sym, ty: &Type, params: &[Sym]) {
         // For other types, we create a constructor function to build them.
         other => {
             let s = Sym::new("x");
+            println!("Lowering params {:?}", params);
             let type_params: Vec<_> = params.iter().map(|s| Type::Generic(*s)).collect();
             let signature = ast::Signature {
                 params: vec![(s, other.clone())],
@@ -550,15 +544,13 @@ fn lower_decl(accm: &mut Vec<Decl>, decl: &ast::Decl) {
         D::TypeDef {
             name,
             typedecl,
-            doc_comment: _doc_comment,
-            params: _params,
+            doc_comment: _,
+            params,
         } => {
-            // TODO: figure out params
-            let params = typedecl.collect_generic_names();
             lower_typedef(accm, *name, typedecl, &params);
             accm.push(Decl::TypeDef {
                 name: *name,
-                params,
+                params: params.clone(),
                 typedecl: typedecl.clone(),
             });
         }
