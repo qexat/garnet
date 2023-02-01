@@ -12,11 +12,10 @@ fn id(x @T) @T =
 end
 
 
-fn main() I32 =
+fn main() {} =
     let f1 Foo = id(Foo {
         .a = 3,
         .b = false
     })
     let f2 struct a: I32, b: Bool end = id({ .a = 3, .b = false })
-    3
 end

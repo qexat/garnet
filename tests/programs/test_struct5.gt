@@ -11,7 +11,7 @@ fn id(x @T) @T =
 end
 
 
-fn main() I32 =
+fn main() {} =
     let f1 Foo(I32) = id(Foo {
         .a = 3,
         .b = false
@@ -21,5 +21,4 @@ fn main() I32 =
         .a = true,
         .b = false
     })
-    3
 end
