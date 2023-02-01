@@ -7,8 +7,7 @@ fn apply(f fn(@T) @T, arg @T) @T =
 end
 
 
-fn main() I32 =
+fn main() {} =
     let f fn(Bool) Bool = fn(val Bool) Bool = val end
     let a Bool = apply(f, true)
-    3
 end

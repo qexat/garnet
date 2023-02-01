@@ -1013,14 +1013,12 @@ impl<'input> Parser<'input> {
                     break;
                 }
                 // TODO: Figure out some kind of turbofish for function calls???
-                let generic_types = vec![];
                 lhs = match op_token {
                     T::LParen => {
                         let params = self.parse_function_args();
                         ast::Expr::Funcall {
                             func: Box::new(lhs),
                             params,
-                            generic_types,
                         }
                     }
                     // If we see `foo {bar}`
@@ -1031,8 +1029,6 @@ impl<'input> Parser<'input> {
                         ast::Expr::Funcall {
                             func: Box::new(lhs),
                             params: vec![params],
-                            // TODO: Figure out generics here
-                            generic_types,
                         }
                     }
                     T::Dollar => ast::Expr::TypeUnwrap {
@@ -1047,7 +1043,6 @@ impl<'input> Parser<'input> {
                         ast::Expr::Funcall {
                             func: Box::new(ident_expr),
                             params,
-                            generic_types,
                         }
                     }
                     T::Period => {
@@ -1481,6 +1476,16 @@ mod tests {
     }
 
     #[test]
+    fn test_typedef_generics() {
+        test_decl_is("type bop(@T) = @T", || ast::Decl::TypeDef {
+            name: Sym::new("bop"),
+            typedecl: Type::Generic(Sym::new("T")),
+            doc_comment: vec![],
+            params: vec![Sym::new("T")],
+        });
+    }
+
+    #[test]
     fn test_multiple_decls() {
         let s = r#"
 const foo  I32 = -9
@@ -1673,7 +1678,6 @@ type blar = I8
                 name: Sym::new("y"),
             }),
             params: vec![Expr::int(1), Expr::int(2), Expr::int(3)],
-            generic_types: vec![],
         });
 
         test_expr_is("foo(0, bar(1 * 2), 3)", || Expr::Funcall {
@@ -1691,11 +1695,9 @@ type blar = I8
                         lhs: Box::new(Expr::int(1)),
                         rhs: Box::new(Expr::int(2)),
                     }],
-                    generic_types: vec![],
                 },
                 Expr::int(3),
             ],
-            generic_types: vec![],
         });
 
         test_expr_is("(1)", || Expr::int(1));
@@ -1792,14 +1794,12 @@ type blar = I8
                 name: Sym::new("x"),
             }),
             params: vec![],
-            generic_types: vec![],
         });
         test_expr_is("(x())", || Expr::Funcall {
             func: Box::new(Expr::Var {
                 name: Sym::new("x"),
             }),
             params: vec![],
-            generic_types: vec![],
         });
 
         test_expr_is("(1+2)*3", || Expr::BinOp {

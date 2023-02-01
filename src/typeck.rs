@@ -980,11 +980,7 @@ fn typecheck_expr(
             tck.set_expr_type(expr, rettype);
             Ok(rettype)
         }
-        Funcall {
-            func,
-            params,
-            generic_types,
-        } => {
+        Funcall { func, params } => {
             // Oh, defined generics are "easy".
             // Each time I call a function I create new type
             // vars for its generic args.

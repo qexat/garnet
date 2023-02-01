@@ -138,7 +138,6 @@ pub enum Expr {
     Funcall {
         func: Box<Expr>,
         params: Vec<Expr>,
-        generic_types: Vec<Type>,
     },
     Break,
     Return {

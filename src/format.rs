@@ -192,11 +192,7 @@ fn unparse_expr(e: &Expr, indent: usize, out: &mut dyn io::Write) -> io::Result<
             writeln!(out)?;
             writeln!(out, "end")
         }
-        E::Funcall {
-            func,
-            params,
-            generic_types: _generic_types,
-        } => {
+        E::Funcall { func, params } => {
             unparse_expr(func, 0, out)?;
             write!(out, "(")?;
             for e in params {

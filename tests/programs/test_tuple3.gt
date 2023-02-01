@@ -7,7 +7,6 @@ fn identity(i @T) @T =
     y
 end
 
-fn main() I32 =
+fn main() {} =
     let a {I32, Bool, I32} = identity{1, 2, 3}
-    3
 end

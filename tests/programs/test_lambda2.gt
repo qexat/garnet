@@ -7,8 +7,7 @@ fn apply_bool(f fn(Bool) Bool, arg Bool) Bool =
 end
 
 
-fn main() I32 =
+fn main() {} =
     let f fn(Bool) Bool = fn(val Bool) Bool = val end
     let a Bool = apply_bool(f, true)
-    3
 end
