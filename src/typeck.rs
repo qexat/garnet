@@ -1167,14 +1167,12 @@ fn typecheck_expr(
             tck.set_expr_type(expr, t);
             Ok(t)
         }
-        x => todo!("{:?}", x),
-        /*
         TypeCtor {
             name,
             type_params,
             body,
         } => {
-            let named_type = symtbl.get_type(name).expect("Unknown type constructor");
+            let named_type = symtbl.get_type(*name).expect("Unknown type constructor");
             println!("Got type named {}: is {:?}", name, named_type);
             // Ok if we have declared type params we gotta instantiate them
             // to match the type's generics.
@@ -1192,7 +1190,7 @@ fn typecheck_expr(
             println!("Instantiated {:?} into {:?}", named_type, tid);
 
             //let tid = tck.insert_known(&named_type);
-            let body_type = typecheck_expr(tck, symtbl, body)?;
+            let body_type = typecheck_expr(tck, symtbl, func_rettype, body)?;
             println!("Expected type is {:?}, body type is {:?}", tid, body_type);
             tck.unify(symtbl, tid, body_type)?;
             println!("Done unifying type ctor");
@@ -1202,19 +1200,21 @@ fn typecheck_expr(
             tck.set_expr_type(expr, constructed_type);
             Ok(constructed_type)
         }
-        TypeUnwrap { e } => {
-            let mut body_type = typecheck_expr(tck, symtbl, e)?;
+        TypeUnwrap { expr } => {
+            let mut body_type = typecheck_expr(tck, symtbl, func_rettype, expr)?;
             loop {
                 // I guess we follow TypeInfo references the stupid way?
                 // We don't have a convenient place to recurse for this,
                 // apparently, which is already a Smell but let's see
                 // where this takes us.
+                //
+                // TODO: Make this suck less
                 let well_heck = tck.vars[&body_type].clone();
                 match well_heck.clone() {
                     TypeInfo::Named(nm, params) => {
                         println!("Unwrapping type {}{:?}", nm, params);
                         let t = symtbl
-                            .get_type(&nm)
+                            .get_type(nm)
                             .expect("Named type doesn't name anything?!!");
                         println!("Inner type is {:?}", t);
                         // t is a concrete Type, not a TypeInfo that may have
@@ -1248,7 +1248,9 @@ fn typecheck_expr(
             variant,
             body,
         } => {
-            let named_type = symtbl.get_type(name).expect("Unknown sum type constructor");
+            let named_type = symtbl
+                .get_type(*name)
+                .expect("Unknown sum type constructor");
             /*
             let body_type = typecheck_expr(tck, symtbl, body)?;
             let well_heck = tck.vars[&body_type].clone();
@@ -1267,7 +1269,7 @@ fn typecheck_expr(
                 Type::Sum(sum_body, _generics) => {
                     let variant_type = &sum_body[variant];
                     let variant_typeid = tck.insert_known(variant_type);
-                    let body_type = typecheck_expr(tck, symtbl, body)?;
+                    let body_type = typecheck_expr(tck, symtbl, func_rettype, body)?;
                     tck.unify(symtbl, variant_typeid, body_type)?;
 
                     // The expr is the type we expect, our return type is the
@@ -1288,7 +1290,7 @@ fn typecheck_expr(
             // all the expressions in the body.
             let body_type = tck.insert(TypeInfo::Unknown);
             for expr in body {
-                let expr_type = typecheck_expr(tck, symtbl, expr)?;
+                let expr_type = typecheck_expr(tck, symtbl, func_rettype, expr)?;
                 tck.unify(symtbl, body_type, expr_type)?;
             }
             let arr_type = tck.insert(TypeInfo::Array(body_type, len));
@@ -1296,7 +1298,6 @@ fn typecheck_expr(
             Ok(arr_type)
         }
         ArrayRef { e, idx } => todo!(),
-        */
     };
     if let Err(e) = rettype {
         panic!("Error typechecking expression {:?}: {}", expr, e);

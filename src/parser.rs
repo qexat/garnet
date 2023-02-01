@@ -1140,9 +1140,9 @@ impl<'input> Parser<'input> {
             None
         } else {
             let t = Some(self.parse_type());
+            self.expect(T::Equals);
             t
         };
-        self.expect(T::Equals);
         let init = Box::new(
             self.parse_expr(0)
                 .expect("Expected expression after `let ... =`, did not get one"),

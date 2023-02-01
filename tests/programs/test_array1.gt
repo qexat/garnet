@@ -12,5 +12,6 @@ end
 
 fn main() {} =
     let a I32[4] = identity([1, 2, 3, 4])
-    let b = foo([1, 2, 3])
+    -- TODO: Typechecker allows this to pass as UnknownInt[3]
+    let b I32[3] = foo([1, 2, 3])
 end

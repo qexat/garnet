@@ -60,6 +60,7 @@ fn compile_typename(t: &Type) -> Cow<'static, str> {
         }
         Prim(PrimType::Bool) => "bool".into(),
         Named(s, types) if s == &Sym::new("Tuple") => {
+            println!("Compiling tuple {:?}...", t);
             let mut accm = String::from("(");
             for typ in types {
                 accm += &compile_typename(&*typ);
@@ -116,6 +117,7 @@ fn compile_typename(t: &Type) -> Cow<'static, str> {
             todo!("Enums probably should be lowered to numbers?")
         }
         Generic(s) => mangle_name(&*s.val()).into(),
+        Array(t, len) => format!("[{};{}]", compile_typename(t), len).into(),
         other => todo!("compile_typename: {:?}", other),
     }
 }
@@ -302,12 +304,17 @@ fn compile_expr(expr: &hir::ExprNode, tck: &Tck) -> String {
         E::Block { body } => format!("{{\n{}\n}}", compile_exprs(body, ";\n", tck)),
         E::Let {
             varname,
-            typename,
+            typename: _,
             init,
             mutable,
         } => {
             let vstr = mangle_name(&*INT.fetch(*varname));
-            let tstr = compile_typename(&typename.clone().expect("TODO"));
+            // typename may be elided, so we get the real type from the tck
+            // TODO: Someday this should just be filled in by a lowering pass
+            let type_id = tck.get_expr_type(init);
+            let typ = tck.reconstruct(type_id).expect("Passed typechecking but failed to reconstruct during codegen, should never happen!");
+            println!("Type for let statement is {:?}", typ);
+            let tstr = compile_typename(&typ);
             let istr = compile_expr(init, tck);
             if *mutable {
                 format!("let mut {}: {} = {};", vstr, tstr, istr)
@@ -435,6 +442,15 @@ fn compile_expr(expr: &hir::ExprNode, tck: &Tck) -> String {
         }
         E::Assign { lhs, rhs } => {
             format!("{} = {}", compile_expr(lhs, tck), compile_expr(rhs, tck))
+        }
+        E::ArrayCtor { body } => {
+            let mut accm = String::from("[");
+            for expr in body {
+                accm += &compile_expr(expr, tck);
+                accm += ", ";
+            }
+            accm += "]";
+            accm
         }
         /*
         E::Deref { expr } => format!("*{}", compile_expr(expr, tck)),
