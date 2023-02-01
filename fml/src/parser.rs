@@ -663,7 +663,6 @@ impl<'input> Parser<'input> {
         ast::ExprNode::new(ast::Expr::Lambda { signature, body })
     }
 
-    /// struct constructor = "{" "." ident "=" expr {"," ...} "}"
     fn parse_array_constructor(&mut self) -> ast::ExprNode {
         self.expect(T::LBracket);
         let mut body = vec![];
