@@ -15,11 +15,10 @@ fn thing(i I32) Foo =
 end
 
 
-fn main() I32 =
+fn main() {} =
     let f1 Foo = Foo {
         .a = 3,
         .b = false
     }
     let f2 Foo = thing(4)
-    3
 end
