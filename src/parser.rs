@@ -883,16 +883,14 @@ impl<'input> Parser<'input> {
     }
 
     fn parse_struct_type(&mut self) -> Type {
-        self.expect(T::LBrace);
         let (fields, _typefields) = self.parse_struct_fields();
-        self.expect(T::RBrace);
+        self.expect(T::End);
         Type::Struct(fields, vec![])
     }
 
     fn parse_enum_type(&mut self) -> Type {
-        self.expect(T::LBrace);
         let variants = self.parse_enum_fields();
-        self.expect(T::RBrace);
+        self.expect(T::End);
         Type::Enum(variants)
     }
 
@@ -958,11 +956,8 @@ impl<'input> Parser<'input> {
             // Array literal
             T::LBracket => self.parse_array_constructor(),
             T::Struct => {
-                // TODO: Decide on a syntax that doesn't suck ass.
-                // `struct { foo = 1, bar = 2}`
-                // ${ foo = 1, bar = 2 }
-                // { foo = 1, bar = 2 }
-                // { :foo 1, :bar 2 }
+                // TODO: Bikeshed syntax more
+                // { .foo = 1, .bar = 2 }
                 // ???
                 self.parse_struct_literal()
             }
@@ -1025,6 +1020,18 @@ impl<'input> Parser<'input> {
                         ast::Expr::Funcall {
                             func: Box::new(lhs),
                             params,
+                            generic_types,
+                        }
+                    }
+                    // If we see `foo {bar}`
+                    // then parse it as `foo({bar})`
+                    // Thanks Lua!!!
+                    T::LBrace => {
+                        let params = self.parse_constructor();
+                        ast::Expr::Funcall {
+                            func: Box::new(lhs),
+                            params: vec![params],
+                            // TODO: Figure out generics here
                             generic_types,
                         }
                     }
@@ -1353,10 +1360,12 @@ fn postfix_binding_power(op: &TokenKind) -> Option<(usize, ())> {
     match op {
         // "." for tuple/struct references.
         T::Period => Some((130, ())),
-        // "$" opening function call generic args
+        // "$" type unwrap operator
         T::Dollar => Some((121, ())),
         // "(" opening function call args
         T::LParen => Some((120, ())),
+        // "{" opening single-struct function call args
+        T::LBrace => Some((119, ())),
         // ":" universal function call syntax
         T::Colon => Some((115, ())),
         // "^" for pointer derefs.  TODO: Check precedence?

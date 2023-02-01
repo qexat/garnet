@@ -2,8 +2,7 @@
 --   status: success
 
 
-fn main() I32 =
+fn main() {} =
     let f fn(Bool) Bool = fn(val Bool) Bool = val end
     let a Bool = f(true)
-    3
 end
