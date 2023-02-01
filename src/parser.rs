@@ -1031,9 +1031,12 @@ impl<'input> Parser<'input> {
                             params: vec![params],
                         }
                     }
-                    T::Dollar => ast::Expr::TypeUnwrap {
-                        expr: Box::new(lhs),
-                    },
+                    T::Dollar => {
+                        self.expect(T::Dollar);
+                        ast::Expr::TypeUnwrap {
+                            expr: Box::new(lhs),
+                        }
+                    }
                     T::Colon => {
                         self.expect(T::Colon);
                         let ident = self.expect_ident();
