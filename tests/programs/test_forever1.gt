@@ -8,6 +8,6 @@ fn zoom(i @T) @T =
     zoom(i)
 end
 
-fn main() I32 =
-    3
+fn main() {} =
+    {}
 end

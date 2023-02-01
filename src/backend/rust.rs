@@ -113,11 +113,20 @@ fn compile_typename(t: &Type) -> Cow<'static, str> {
             accm += ")";
             accm.into()
         }
-        Enum(_) => {
-            todo!("Enums probably should be lowered to numbers?")
+        Enum(things) => {
+            // Construct names for anonymous enums by concat'ing the member
+            // names together.
+            // TODO: is this just silly?
+            // Lowering enums to numbers first would make this easier tbh
+            let mut accm = String::from("Enum");
+            for (nm, _vl) in things {
+                accm += &*nm.val();
+            }
+            accm.into()
         }
         Generic(s) => mangle_name(&*s.val()).into(),
         Array(t, len) => format!("[{};{}]", compile_typename(t), len).into(),
+        Named(sym, _generics) => format!("{}", sym).into(),
         other => todo!("compile_typename: {:?}", other),
     }
 }
@@ -166,30 +175,12 @@ fn compile_decl(w: &mut impl Write, decl: &hir::Decl, tck: &Tck) -> io::Result<(
         hir::Decl::TypeDef {
             name,
             typedecl,
-            params,
+            params: _,
         } => {
             let nstr = mangle_name(&INT.fetch(*name));
             let tstr = compile_typedef(&*typedecl);
             writeln!(w, "pub struct {}({});", nstr, tstr)
         }
-        /*
-        hir::Decl::StructDef {
-            name,
-            fields,
-            typefields: _,
-        } => {
-            let nstr = mangle_name(&INT.fetch(*name));
-            let mut accm = String::new();
-            for (n, t) in fields {
-                accm += &format!(
-                    "{}: {},\n",
-                    &INT.fetch(*n),
-                    compile_typedef(&*t)
-                );
-            }
-            writeln!(w, "pub struct {} {{\n {} }}\n", nstr, accm)
-        }
-        */
         // For these we have to look at the signature and make a
         // function that constructs a struct or tuple or whatever
         // out of it.
@@ -289,7 +280,7 @@ fn compile_expr(expr: &hir::ExprNode, tck: &Tck) -> String {
         E::Lit {
             val: ast::Literal::EnumLit(enm, name),
         } => {
-            todo!()
+            format!("{}.{}", enm, name)
         }
         E::Var { name, .. } => mangle_name(&*INT.fetch(*name)),
         E::BinOp { op, lhs, rhs } => format!(

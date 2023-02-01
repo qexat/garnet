@@ -1,8 +1,10 @@
 //! Transformation/optimization passes that function on the IR.
-//! May function on typed or untyped IR, either way.
+//! May happen before or after typechecking, either way.
 //! For now each is a function from `IR -> IR`, rather than
 //! having a visitor and mutating stuff or anything like that,
 //! which may be less efficient but is IMO simpler to think about.
+//! But also maybe more tedious to write.  A proper recursion scheme
+//! seems like the thing to do, but
 //!
 //! TODO: A pass that might be useful would be "alpha renaming".
 //! Essentially you walk through your entire compilation unit and
@@ -14,10 +16,16 @@ use crate::hir::{Decl as D, Expr as E, ExprNode, Ir};
 use crate::*;
 
 type Pass = fn(Ir) -> Ir;
+type TckPass = fn(Ir, &typeck::Tck) -> Ir;
 
 pub fn run_passes(ir: Ir) -> Ir {
     let passes: &[Pass] = &[lambda_lifting];
     passes.iter().fold(ir, |prev_ir, f| f(prev_ir))
+}
+
+pub fn run_typechecked_passes(ir: Ir, tck: &typeck::Tck) -> Ir {
+    let passes: &[TckPass] = &[];
+    passes.iter().fold(ir, |prev_ir, f| f(prev_ir, tck))
 }
 
 /// Lambda lift a single expr.

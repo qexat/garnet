@@ -457,6 +457,7 @@ pub fn try_compile(
     let hir = hir::lower(&ast);
     let hir = passes::run_passes(hir);
     let tck = typeck::typecheck(&hir)?;
+    let hir = passes::run_typechecked_passes(hir, &tck);
     Ok(backend::output(backend, &hir, &tck))
 }
 

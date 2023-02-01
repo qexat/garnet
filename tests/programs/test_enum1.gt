@@ -11,8 +11,7 @@ fn thing(i Foo) Foo =
 end
 
 
-fn main() I32 =
+fn main() {} =
     let x Foo = Foo.X
     let y = thing(Foo.Y)
-    3
 end

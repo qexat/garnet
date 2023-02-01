@@ -438,9 +438,16 @@ fn lower_typedef(accm: &mut Vec<Decl>, name: Sym, ty: &Type, params: &[Sym]) {
                 })
                 .collect();
             let init_val = ExprNode::new(Expr::StructCtor { body: struct_body });
+            let struct_signature = ts
+                .iter()
+                //.map(|(enumname, _enumval)| (*enumname, ty.clone()))
+                .map(|(enumname, _enumval)| (*enumname, Type::Named(name, vec![])))
+                .collect();
+            // Enums cannot have type parameters, so this works.
+            let init_type = Type::Struct(struct_signature, vec![]);
             let new_constdef = Const {
                 name,
-                typename: todo!(),
+                typename: init_type,
                 init: init_val,
             };
             accm.push(new_constdef);

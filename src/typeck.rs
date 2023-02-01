@@ -49,10 +49,27 @@ impl TypeInfo {
             Unknown => Cow::Borrowed("{unknown}"),
             Prim(p) => p.get_name(),
             Ref(id) => Cow::Owned(format!("Ref({})", tck.vars[id].get_name(tck))),
-            Enum(_v) => todo!(),
+            Enum(v) => {
+                let mut accm = String::from("enum ");
+                // TODO: Do heckin' something with the val???
+                for (name, _vl) in v {
+                    accm += &format!("{}, ", name);
+                }
+                accm += "end";
+                accm.into()
+            }
             Named(s, _g) => (&*s.val()).to_owned().into(),
             Func(_params, _rettype) => todo!(),
-            Struct(_s) => todo!(),
+            Struct(body) => {
+                let mut accm = String::from("struct\n");
+                // TODO: Do heckin' something with the val???
+                for (name, id) in body {
+                    let typename = tck.vars[id].get_name(tck);
+                    accm += &format!("{}: {},\n", name, typename);
+                }
+                accm += "end\n";
+                accm.into()
+            }
             Sum(_s) => todo!(),
             Array(id, len) => Cow::Owned(format!("{}[{}]", tck.vars[id].get_name(tck), len)),
             TypeParam(sym) => Cow::Owned(format!("@{}", &*sym.val())),
@@ -1351,12 +1368,11 @@ fn predeclare_decls(tck: &mut Tck, symtbl: &mut Symtbl, decls: &[hir::Decl]) {
             Const {
                 name,
                 typename,
-                init,
+                init: _,
             } => {
-                // The init expression is typechecked in its own
-                // scope, since it may theoretically be a `let` or
-                // something that introduces new names inside it.
-                todo!("Unify const typename with init expr val")
+                // We don't try typechecking the body yet.
+                let ty = tck.insert_known(&typename);
+                symtbl.add_var(*name, ty, false)
             }
             Constructor { .. } => todo!("Why isn't this just a function?"),
         }
@@ -1391,49 +1407,46 @@ pub fn typecheck(ast: &hir::Ir) -> Result<Tck, TypeError> {
                 });
             }
             TypeDef {
-                name: _,
-                params: _,
-                typedecl: _,
+                name,
+                params,
+                typedecl,
             } => {
-                todo!()
-                /* TODO: Handle recursive types properly
+                // TODO: Handle recursive types properly?  Somehow.
                 // Make sure that there are no unbound generics in the typedef
                 // that aren't mentioned in the params.
-                let generic_names: BTreeSet<String> =
+                let generic_names: BTreeSet<Sym> =
                     typedecl.collect_generic_names().into_iter().collect();
-                let param_names: BTreeSet<String> = params.iter().cloned().collect();
-                let difference: Vec<_> = generic_names
-                    .symmetric_difference(&param_names)
-                    // gramble gramble &String
-                    .map(|s| s.as_str())
-                    .collect();
+                let param_names: BTreeSet<Sym> = params.iter().cloned().collect();
+                let difference: Vec<_> = generic_names.symmetric_difference(&param_names).collect();
                 if difference.len() != 0 {
-                    let differences = difference.join(", ");
-                    panic!("Error in typedef {}: Type params do not match generics mentioned in body.  Unmatched types: {}", name, differences);
+                    let differences: Vec<_> = difference
+                        .into_iter()
+                        .map(|sym| (&*sym.val()).clone())
+                        .collect();
+                    panic!("Error in typedef {}: Type params do not match generics mentioned in body.  Unmatched types: {:?}", name, differences);
                 }
 
                 // Remember that we know about a type with this name
                 symtbl.add_type(*name, typedecl)
-                */
             }
             Const {
-                name,
+                name: _,
                 typename,
                 init,
             } => {
                 // The init expression is typechecked in its own
                 // scope, since it may theoretically be a `let` or
                 // something that introduces new names inside it.
-                todo!("Unify const typename with init expr val")
-                /*
+                println!("init is {:#?}", init);
+                let desired_type = tck.insert_known(typename);
                 let init_type = {
                     let _guard = symtbl.push_scope();
-                    let t = typecheck_expr(tck, symtbl, init).unwrap();
+                    let t = typecheck_expr(tck, symtbl, desired_type, init).unwrap();
                     t
                 };
-                println!("Typechecked const {}, type is {:?}", name, init_type);
-                symtbl.add_var(name, init_type);
-                        */
+                tck.unify(symtbl, desired_type, init_type)
+                    .expect("Error typechecking const decl");
+                //println!("Typechecked const {}, type is {:?}", name, init_type);
             }
             Constructor { .. } => todo!("Why isn't this just a function?"),
         }
