@@ -7,9 +7,9 @@
 //! It's mostly a layer of indirection for further stuff to happen to, so we can change
 //! the parser without changing the typechecking and codegen.
 
-use std::sync::RwLock;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
-use crate::ast::{self};
+use crate::ast;
 pub use crate::ast::{BOp, IfCase, Literal, Signature, UOp};
 use crate::*;
 
@@ -20,18 +20,23 @@ use crate::*;
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Eid(usize);
 
-/// Ugly horrible global for storing index values for expression ID's,
-/// so each expression gets a unique ID.
-/// TODO: Someday make this an atomic or something other than a rwlock
-static NEXT_EID: Lazy<RwLock<Eid>> = Lazy::new(|| RwLock::new(Eid(0)));
+/// Slightly less ugly horrible atomic global for storing index values for
+/// expression ID's, so each expression gets a unique ID.
+static NEXT_EID: AtomicUsize = AtomicUsize::new(0);
 
 impl Eid {
     fn new() -> Self {
-        let mut current = NEXT_EID.write().unwrap();
-        let ret = *current;
-        let next_eid = Eid(current.0 + 1);
-        *current = next_eid;
-        ret
+        // We may be able to use Ordering::Relaxed here since we don't
+        // care what the value actually is, just that it increments
+        // atomically.  Eh, it's fine.
+        let current = NEXT_EID.fetch_add(1, Ordering::AcqRel);
+        // Check for overflow, since fetch_add can't do it.
+        // It returns the previous value, so if the next value
+        // is < than it, we've overflowed.
+        if (current.wrapping_add(1)) < current {
+            panic!("Integer overflow incrementing Eid; is your program absolutely enormous?");
+        }
+        Eid(current)
     }
 }
 
