@@ -24,7 +24,7 @@ pub fn run_passes(ir: Ir) -> Ir {
 }
 
 pub fn run_typechecked_passes(ir: Ir, tck: &typeck::Tck) -> Ir {
-    let passes: &[TckPass] = &[];
+    let passes: &[TckPass] = &[name_struct_types];
     passes.iter().fold(ir, |prev_ir, f| f(prev_ir, tck))
 }
 
@@ -115,10 +115,13 @@ fn lambda_lift_exprs(exprs: Vec<ExprNode>, output_funcs: &mut Vec<D>) -> Vec<Exp
 
 /// A transformation pass that removes lambda expressions and turns
 /// them into function decl's.
+/// TODO: Doesn't handle actual closures yet though.
 ///
 /// TODO: Output is an IR that does not have any lambda expr's in it, which
 /// I would like to make un-representable, but don't see a good way
 /// to do yet.  Add a tag type of some kind to the Ir?
+/// Eeeeeeeeh we might just have to check on it later one way or another,
+/// either when doing codegen or when transforming our HIR to a lower-level IR.
 fn lambda_lifting(ir: Ir) -> Ir {
     let mut new_functions = vec![];
     let new_decls: Vec<D> = ir
@@ -150,7 +153,60 @@ fn _enum_to_int_expr(_expr: ExprNode, _output_funcs: &mut Vec<D>) -> ExprNode {
     todo!()
 }
 
-fn _enum_to_int(ir: Ir) -> Ir {
+/// Takes any anonymous struct types and replaces them with
+/// named structs, with consistently mangled names we produce.
+/// This is necessary because we have anonymous structs but
+/// Rust doesn't.
+///
+/// Would it be easier to just create names for our
+fn name_struct_types(ir: Ir, tck: &typeck::Tck) -> Ir {
+    use hir::Decl;
+    // A set of new structdecls we have, so we can collect them
+    // without duplicates.
+    let declared_structs: BTreeMap<String, Decl> = BTreeMap::new();
+    fn mangle_struct_name(ty: &Type) -> String {
+        match ty {
+            Type::Struct(fields, generics) => {
+                let mut accm = String::from("__struct_");
+                for (k, v) in fields {
+                    accm += &format!("{}_{}__", k.val(), v.get_name());
+                }
+                accm
+            }
+            _ => panic!("{:?} is not a struct", ty),
+        }
+    }
+
+    for decl in &ir.decls {
+        match decl {
+            Decl::Const {
+                name,
+                typename,
+                init,
+            } => {
+                // This is kinda the simplest case so we'll do it first.
+                // If the type is an anonymous struct type,
+                // we conjure forth a new named struct.
+                match typename {
+                    Type::Struct(_, _) => {
+                        let name = mangle_struct_name(typename);
+                    }
+                    _ => todo!(),
+                }
+            }
+            Decl::Function { .. } => todo!(),
+            Decl::TypeDef {
+                name,
+                params,
+                typedecl,
+            } => todo!(),
+        }
+    }
+    todo!()
+}
+
+/// Takes any enum typedef and values turns them into plain integers.
+fn _enum_to_int(ir: Ir, tck: &typeck::Tck) -> Ir {
     let mut new_functions = vec![];
     let new_decls: Vec<D> = ir
         .decls

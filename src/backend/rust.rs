@@ -181,23 +181,6 @@ fn compile_decl(w: &mut impl Write, decl: &hir::Decl, tck: &Tck) -> io::Result<(
             let tstr = compile_typedef(&*typedecl);
             writeln!(w, "pub struct {}({});", nstr, tstr)
         }
-        // For these we have to look at the signature and make a
-        // function that constructs a struct or tuple or whatever
-        // out of it.
-        hir::Decl::Constructor { name, signature } => {
-            // Rust's newtype struct constructors are already functions,
-            // so we don't need to actually output a separate constructor
-            // function.  Huh.
-            let typename = &*INT.fetch(*name);
-            let nstr = mangle_name(typename);
-            // We do need to make the destructure function I guess.
-            let destructure_signature = hir::Signature {
-                params: vec![(INT.intern("input"), signature.rettype.clone())],
-                rettype: signature.params[0].1.clone(),
-            };
-            let sig_str = compile_fn_signature(&destructure_signature);
-            writeln!(w, "fn {}_unwrap{} {{ input.0 }}\n", nstr, sig_str,)
-        }
     }
 }
 
