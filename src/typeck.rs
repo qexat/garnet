@@ -1370,7 +1370,6 @@ fn predeclare_decls(tck: &mut Tck, symtbl: &mut Symtbl, decls: &[hir::Decl]) {
                 let ty = tck.insert_known(&typename);
                 symtbl.add_var(*name, ty, false)
             }
-            Constructor { .. } => todo!("Why isn't this just a function?"),
         }
     }
 }
@@ -1444,7 +1443,6 @@ pub fn typecheck(ast: &hir::Ir) -> Result<Tck, TypeError> {
                     .expect("Error typechecking const decl");
                 //println!("Typechecked const {}, type is {:?}", name, init_type);
             }
-            Constructor { .. } => todo!("Why isn't this just a function?"),
         }
     }
     // Print out toplevel symbols
