@@ -24,7 +24,7 @@ pub fn run_passes(ir: Ir) -> Ir {
 }
 
 pub fn run_typechecked_passes(ir: Ir, tck: &typeck::Tck) -> Ir {
-    let passes: &[TckPass] = &[name_struct_types];
+    let passes: &[TckPass] = &[anon_struct_to_tuple];
     passes.iter().fold(ir, |prev_ir, f| f(prev_ir, tck))
 }
 
@@ -154,31 +154,47 @@ fn _enum_to_int_expr(_expr: ExprNode, _output_funcs: &mut Vec<D>) -> ExprNode {
 }
 
 /// Takes any anonymous struct types and replaces them with
-/// named structs, with consistently mangled names we produce.
+/// tuples.
 /// This is necessary because we have anonymous structs but
 /// Rust doesn't.
 ///
-/// Would it be easier to just create names for our
-fn name_struct_types(ir: Ir, tck: &typeck::Tck) -> Ir {
+/// I WAS going to turn them into named structs but then declaring them gets
+/// kinda squirrelly, because we don't really have a decl that translates
+/// directly into a Rust struct without being wrapped in a typedef first.  So I
+/// think I will translate them to tuples after all.
+
+fn anon_struct_to_tuple(ir: Ir, tck: &typeck::Tck) -> Ir {
     use hir::Decl;
-    // A set of new structdecls we have, so we can collect them
-    // without duplicates.
-    let declared_structs: BTreeMap<String, Decl> = BTreeMap::new();
-    fn mangle_struct_name(ty: &Type) -> String {
-        match ty {
-            Type::Struct(fields, generics) => {
-                let mut accm = String::from("__struct_");
-                for (k, v) in fields {
-                    accm += &format!("{}_{}__", k.val(), v.get_name());
-                }
-                accm
+    // Takes a struct and a field name and returns what tuple
+    // offset the field should correspond to.
+    fn offset_of_field(fields: &BTreeMap<Sym, Type>, name: Sym) -> usize {
+        // This is one of those times where an iterator chain is
+        // way stupider than just a normal for loop, alas.
+        // TODO someday: make this not O(n), or at least make it
+        // cache results.
+        for (i, (nm, _ty)) in fields.iter().enumerate() {
+            if *nm == name {
+                return i;
             }
-            _ => panic!("{:?} is not a struct", ty),
         }
+        panic!(
+            "Invalid struct name {} in struct got through typechecking, should never happen",
+            &*name.val()
+        );
     }
 
-    for decl in &ir.decls {
-        match decl {
+    fn struct_to_tuple(fields: &BTreeMap<Sym, Type>) -> Type {
+        // This is why structs contain a BTreeMap,
+        // so that this ordering is always consistent based
+        // on the field names.
+        let tuple_fields = fields.iter().map(|(_sym, ty)| ty.clone()).collect();
+        Type::tuple(tuple_fields)
+    }
+
+    let mut new_decls = vec![];
+
+    for decl in ir.decls.into_iter() {
+        match &decl {
             Decl::Const {
                 name,
                 typename,
@@ -188,13 +204,18 @@ fn name_struct_types(ir: Ir, tck: &typeck::Tck) -> Ir {
                 // If the type is an anonymous struct type,
                 // we conjure forth a new named struct.
                 match typename {
-                    Type::Struct(_, _) => {
-                        let name = mangle_struct_name(typename);
+                    Type::Struct(fields, _generics) => {
+                        let tuple = struct_to_tuple(fields);
+                        todo!("Translate struct literal init to a tuple")
                     }
-                    _ => todo!(),
+                    _ => new_decls.push(decl),
                 }
             }
-            Decl::Function { .. } => todo!(),
+            Decl::Function {
+                name,
+                signature,
+                body,
+            } => todo!(),
             Decl::TypeDef {
                 name,
                 params,
@@ -202,7 +223,7 @@ fn name_struct_types(ir: Ir, tck: &typeck::Tck) -> Ir {
             } => todo!(),
         }
     }
-    todo!()
+    Ir { decls: new_decls }
 }
 
 /// Takes any enum typedef and values turns them into plain integers.
