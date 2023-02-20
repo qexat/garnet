@@ -163,6 +163,193 @@ fn expr_map(expr: ExprNode, f: &mut dyn FnMut(E) -> E) -> ExprNode {
     expr.map(&mut res)
 }
 
+/* A pure version of the expr_map() that takes and returns state explicitly.
+    Seems to be strictly more of a pain in the ass than smuggling a closure
+into expr_map(), so probably not worth the trouble.
+fn expr_fold<S>(expr: ExprNode, state: S, f: &dyn Fn(E, S) -> (E, S)) -> (ExprNode, S) {
+    let res = |e, state| {
+        let mut st = state;
+        let borrowed_state = &mut st;
+        let newfun = &mut |e| {
+            let (new_expr, new_state) = f(e, *borrowed_state);
+            *borrowed_state = new_state;
+            e
+        };
+        let res = match e {
+            // Nodes with no recursive expressions.
+            // I list all these out explicitly instead of
+            // using a catchall so it doesn't fuck up if we change
+            // the type of Expr.
+            E::Lit { .. } => e,
+            E::Var { .. } => e,
+            E::Break => e,
+            E::TupleCtor { body } => E::TupleCtor {
+                body: exprs_map(body, newfun),
+            },
+            E::StructCtor { body } => {
+                let new_body = body
+                    .into_iter()
+                    .map(|(sym, vl)| (sym, expr_map(vl, newfun)))
+                    .collect();
+                E::StructCtor { body: new_body }
+            }
+            E::TypeCtor {
+                name,
+                type_params,
+                body,
+            } => E::TypeCtor {
+                name,
+                type_params,
+                body: expr_map(body, newfun),
+            },
+            E::SumCtor {
+                name,
+                variant,
+                body,
+            } => E::SumCtor {
+                name,
+                variant,
+                body: expr_map(body, newfun),
+            },
+            E::ArrayCtor { body } => E::ArrayCtor {
+                body: exprs_map(body, newfun),
+            },
+            E::TypeUnwrap { expr } => E::TypeUnwrap {
+                expr: expr_map(expr, newfun),
+            },
+            E::TupleRef { expr, elt } => E::TupleRef {
+                expr: expr_map(expr, newfun),
+                elt,
+            },
+            E::StructRef { expr, elt } => E::StructRef {
+                expr: expr_map(expr, newfun),
+                elt,
+            },
+            E::ArrayRef { e, idx } => E::ArrayRef {
+                e: expr_map(e, newfun),
+                idx,
+            },
+            E::Assign { lhs, rhs } => E::Assign {
+                lhs: expr_map(lhs, newfun), // TODO: Think real hard about lvalues
+                rhs: expr_map(rhs, newfun),
+            },
+            E::BinOp { op, lhs, rhs } => E::BinOp {
+                op,
+                lhs: expr_map(lhs, newfun),
+                rhs: expr_map(rhs, newfun),
+            },
+            E::UniOp { op, rhs } => E::UniOp {
+                op,
+                rhs: rhs.map(newfun),
+            },
+            E::Block { body } => E::Block {
+                body: exprs_map(body, newfun),
+            },
+            E::Let {
+                varname,
+                typename,
+                init,
+                mutable,
+            } => E::Let {
+                varname,
+                typename,
+                init: expr_map(init, newfun),
+                mutable,
+            },
+            E::If { cases } => {
+                let new_cases = cases
+                    .into_iter()
+                    .map(|(test, case)| {
+                        let new_test = expr_map(test, newfun);
+                        let new_cases = exprs_map(case, newfun);
+                        (new_test, new_cases)
+                    })
+                    .collect();
+                E::If { cases: new_cases }
+            }
+            E::Loop { body } => E::Loop {
+                body: exprs_map(body, newfun),
+            },
+            E::Return { retval } => E::Return {
+                retval: expr_map(retval, newfun),
+            },
+            E::Funcall { func, params } => {
+                let new_func = expr_map(func, newfun);
+                let new_params = exprs_map(params, newfun);
+                E::Funcall {
+                    func: new_func,
+                    params: new_params,
+                }
+            }
+            E::Lambda { signature, body } => E::Lambda {
+                signature,
+                body: exprs_map(body, newfun),
+            },
+        };
+        f(res, *borrowed_state)
+    };
+    expr.fold(state, &res)
+}
+
+fn exprs_fold<S>(exprs: Vec<ExprNode>, state: S, f: &dyn Fn(E, S) -> (E, S)) -> (Vec<ExprNode>, S) {
+    let mut res = vec![];
+    let mut new_state = state;
+    for e in exprs {
+        let (new_e, new_s) = expr_fold(e, new_state, f);
+        new_state = new_s;
+        res.push(new_e);
+    }
+    (res, new_state)
+}
+*/
+
+fn types_map(typs: Vec<Type>, f: &mut dyn FnMut(Type) -> Type) -> Vec<Type> {
+    typs.into_iter().map(|t| type_map(t, f)).collect()
+}
+
+/// Recursion scheme to turn one type into another.
+fn type_map(typ: Type, f: &mut dyn FnMut(Type) -> Type) -> Type {
+    // Really this is only here to be cute, it's used a grand total of twice.
+    // There's probably some horrible combinator chain we could use to make
+    // it generic over any iterator, if we want to make life even harder for
+    // ourself.
+    fn types_map_btree<K>(
+        typs: BTreeMap<K, Type>,
+        f: &mut dyn FnMut(Type) -> Type,
+    ) -> BTreeMap<K, Type>
+    where
+        K: Ord,
+    {
+        typs.into_iter()
+            .map(|(key, ty)| (key, type_map(ty, f)))
+            .collect()
+    }
+    let res = match typ {
+        Type::Struct(fields, _generics) => {
+            let fields = types_map_btree(fields, f);
+            Type::Struct(fields, _generics)
+        }
+        Type::Sum(fields, _generics) => {
+            let new_fields = types_map_btree(fields, f);
+            Type::Sum(new_fields, _generics)
+        }
+        Type::Array(ty, len) => Type::Array(Box::new(type_map(*ty, f)), len),
+        Type::Func(args, rettype) => {
+            let new_args = types_map(args, f);
+            let new_rettype = type_map(*rettype, f);
+            Type::Func(new_args, Box::new(new_rettype))
+        }
+        // Not super sure whether this is necessary, but can't hurt.
+        Type::Named(nm, tys) => Type::Named(nm, types_map(tys, f)),
+        Type::Prim(_) => typ,
+        Type::Enum(_) => typ,
+        Type::Generic(_) => typ,
+    };
+    f(res)
+}
+
+//////  Lambda lifting  /////
+
 fn lambda_lift_expr(expr: E, output_funcs: &mut Vec<D>) -> E {
     let result = match expr {
         E::Lambda { signature, body } => {
@@ -219,15 +406,22 @@ fn lambda_lift(ir: Ir) -> Ir {
     }
 }
 
+//////  Turn named enums into raw integers //////
+
 fn _enum_to_int_expr(_expr: ExprNode, _output_funcs: &mut Vec<D>) -> ExprNode {
     todo!()
 }
+
+//////  Monomorphization //////
+
 fn monomorphize(ir: Ir, _tck: &typeck::Tck) -> Ir {
     ir
 }
 
-// Takes a struct and a field name and returns what tuple
-// offset the field should correspond to.
+//////  Struct to tuple transformation //////
+
+/// Takes a struct and a field name and returns what tuple
+/// offset the field should correspond to.
 fn offset_of_field(fields: &BTreeMap<Sym, Type>, name: Sym) -> usize {
     // This is one of those times where an iterator chain is
     // way stupider than just a normal for loop, alas.
@@ -244,92 +438,37 @@ fn offset_of_field(fields: &BTreeMap<Sym, Type>, name: Sym) -> usize {
     );
 }
 
-fn struct_to_tuple(fields: &BTreeMap<Sym, Type>) -> Type {
+/*
+fn struct_fields_to_tuple(fields: &BTreeMap<Sym, Type>) -> Type {
     // This is why structs contain a BTreeMap,
     // so that this ordering is always consistent based
     // on the field names.
     let tuple_fields = fields
         .iter()
-        .map(|(_sym, ty)| translate_type(ty.clone()))
+        .map(|(_sym, ty)| type_map(ty.clone(), &mut tuplize_type))
         .collect();
     Type::tuple(tuple_fields)
 }
+*/
 
 /// Takes an arbitrary type and recursively turns anonymous
 /// structs into tuples.
-fn translate_type(typ: Type) -> Type {
+fn tuplize_type(typ: Type) -> Type {
     match typ {
         Type::Struct(fields, _generics) => {
             // This is why structs contain a BTreeMap,
             // so that this ordering is always consistent based
             // on the field names.
+
+            // TODO: What do we do with generics?  Anything?
             let tuple_fields = fields
                 .iter()
-                .map(|(_sym, ty)| translate_type(ty.clone()))
+                .map(|(_sym, ty)| type_map(ty.clone(), &mut tuplize_type))
                 .collect();
-            Type::tuple(tuple_fields)
-        }
-        Type::Sum(fields, _generics) => {
-            let new_fields = fields
-                .into_iter()
-                .map(|(sym, ty)| (sym, translate_type(ty)))
-                .collect();
-            Type::Sum(new_fields, _generics)
-        }
-        Type::Array(ty, len) => Type::Array(Box::new(translate_type(*ty)), len),
-        Type::Func(args, rettype) => {
-            let new_args = args.into_iter().map(|t| translate_type(t)).collect();
-            let new_rettype = translate_type(*rettype);
-            Type::Func(new_args, Box::new(new_rettype))
-        }
-        Type::Prim(_) => typ,
-        Type::Enum(_) => typ,
-        Type::Named(_, _) => typ,
-        Type::Generic(_) => typ,
-    }
-}
-
-fn enumize(typ: Type) -> Type {
-    match typ {
-        Type::Struct(fields, _generics) => {
-            // This is why structs contain a BTreeMap,
-            // so that this ordering is always consistent based
-            // on the field names.
-            let tuple_fields = fields.into_iter().map(|(_sym, ty)| ty).collect();
             Type::tuple(tuple_fields)
         }
         other => other,
     }
-}
-
-fn type_map(typ: Type, f: &mut dyn FnMut(Type) -> Type) -> Type {
-    let res = match typ {
-        Type::Struct(fields, _generics) => {
-            let fields = fields
-                .into_iter()
-                .map(|(sym, ty)| (sym, type_map(ty, f)))
-                .collect();
-            Type::Struct(fields, _generics)
-        }
-        Type::Sum(fields, _generics) => {
-            let new_fields = fields
-                .into_iter()
-                .map(|(sym, ty)| (sym, type_map(ty, f)))
-                .collect();
-            Type::Sum(new_fields, _generics)
-        }
-        Type::Array(ty, len) => Type::Array(Box::new(type_map(*ty, f)), len),
-        Type::Func(args, rettype) => {
-            let new_args = args.into_iter().map(|t| type_map(t, f)).collect();
-            let new_rettype = type_map(*rettype, f);
-            Type::Func(new_args, Box::new(new_rettype))
-        }
-        Type::Prim(_) => typ,
-        Type::Enum(_) => typ,
-        Type::Named(_, _) => typ,
-        Type::Generic(_) => typ,
-    };
-    f(res)
 }
 
 /// Takes any anonymous struct types and replaces them with
@@ -341,7 +480,7 @@ fn type_map(typ: Type, f: &mut dyn FnMut(Type) -> Type) -> Type {
 /// kinda squirrelly, because we don't really have a decl that translates
 /// directly into a Rust struct without being wrapped in a typedef first.  So I
 /// think I will translate them to tuples after all.
-fn anon_struct_to_tuple(ir: Ir, tck: &typeck::Tck) -> Ir {
+fn struct_to_tuple(ir: Ir, tck: &typeck::Tck) -> Ir {
     use hir::Decl;
     let mut new_decls = vec![];
 
@@ -357,7 +496,7 @@ fn anon_struct_to_tuple(ir: Ir, tck: &typeck::Tck) -> Ir {
                 // we conjure forth a new named struct.
                 match typename {
                     Type::Struct(fields, _generics) => {
-                        let tuple = struct_to_tuple(fields);
+                        //let tuple = struct_to_tuple(fields, tck);
                         todo!("Translate struct literal init to a tuple")
                     }
                     _ => new_decls.push(decl),
