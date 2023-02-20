@@ -78,7 +78,7 @@ impl ExprNode {
     ///
     /// Consumes self to preserve the invariant that no
     /// Eid's are ever duplicated.
-    pub fn map(self, f: &dyn Fn(Expr) -> Expr) -> Self {
+    pub fn map(self, f: &mut dyn FnMut(Expr) -> Expr) -> Self {
         ExprNode {
             e: Box::new(f(*self.e)),
             id: self.id,
