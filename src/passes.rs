@@ -11,6 +11,8 @@
 //! rename everything to a globally unique name.  This means that
 //! scope vanishes, for example, and anything potentially
 //! ambiguous becomes unambiguous.
+//!
+//! TODO also: monomorphization
 
 use crate::hir::{Decl as D, Expr as E, ExprNode, Ir};
 use crate::*;
@@ -24,7 +26,7 @@ pub fn run_passes(ir: Ir) -> Ir {
 }
 
 pub fn run_typechecked_passes(ir: Ir, tck: &typeck::Tck) -> Ir {
-    let passes: &[TckPass] = &[anon_struct_to_tuple];
+    let passes: &[TckPass] = &[monomorphize, anon_struct_to_tuple];
     passes.iter().fold(ir, |prev_ir, f| f(prev_ir, tck))
 }
 
@@ -152,6 +154,72 @@ fn lambda_lifting(ir: Ir) -> Ir {
 fn _enum_to_int_expr(_expr: ExprNode, _output_funcs: &mut Vec<D>) -> ExprNode {
     todo!()
 }
+fn monomorphize(ir: Ir, _tck: &typeck::Tck) -> Ir {
+    ir
+}
+
+// Takes a struct and a field name and returns what tuple
+// offset the field should correspond to.
+fn offset_of_field(fields: &BTreeMap<Sym, Type>, name: Sym) -> usize {
+    // This is one of those times where an iterator chain is
+    // way stupider than just a normal for loop, alas.
+    // TODO someday: make this not O(n), or at least make it
+    // cache results.
+    for (i, (nm, _ty)) in fields.iter().enumerate() {
+        if *nm == name {
+            return i;
+        }
+    }
+    panic!(
+        "Invalid struct name {} in struct got through typechecking, should never happen",
+        &*name.val()
+    );
+}
+
+fn struct_to_tuple(fields: &BTreeMap<Sym, Type>) -> Type {
+    // This is why structs contain a BTreeMap,
+    // so that this ordering is always consistent based
+    // on the field names.
+    let tuple_fields = fields
+        .iter()
+        .map(|(_sym, ty)| translate_type(ty.clone()))
+        .collect();
+    Type::tuple(tuple_fields)
+}
+
+/// Takes an arbitrary type and recursively turns anonymous
+/// structs into tuples.
+fn translate_type(typ: Type) -> Type {
+    match typ {
+        Type::Struct(fields, _generics) => {
+            // This is why structs contain a BTreeMap,
+            // so that this ordering is always consistent based
+            // on the field names.
+            let tuple_fields = fields
+                .iter()
+                .map(|(_sym, ty)| translate_type(ty.clone()))
+                .collect();
+            Type::tuple(tuple_fields)
+        }
+        Type::Sum(fields, _generics) => {
+            let new_fields = fields
+                .into_iter()
+                .map(|(sym, ty)| (sym, translate_type(ty)))
+                .collect();
+            Type::Sum(new_fields, _generics)
+        }
+        Type::Array(ty, len) => Type::Array(Box::new(translate_type(*ty)), len),
+        Type::Func(args, rettype) => {
+            let new_args = args.into_iter().map(|t| translate_type(t)).collect();
+            let new_rettype = translate_type(*rettype);
+            Type::Func(new_args, Box::new(new_rettype))
+        }
+        Type::Prim(_) => typ,
+        Type::Enum(_) => typ,
+        Type::Named(_, _) => typ,
+        Type::Generic(_) => typ,
+    }
+}
 
 /// Takes any anonymous struct types and replaces them with
 /// tuples.
@@ -162,35 +230,8 @@ fn _enum_to_int_expr(_expr: ExprNode, _output_funcs: &mut Vec<D>) -> ExprNode {
 /// kinda squirrelly, because we don't really have a decl that translates
 /// directly into a Rust struct without being wrapped in a typedef first.  So I
 /// think I will translate them to tuples after all.
-
 fn anon_struct_to_tuple(ir: Ir, tck: &typeck::Tck) -> Ir {
     use hir::Decl;
-    // Takes a struct and a field name and returns what tuple
-    // offset the field should correspond to.
-    fn offset_of_field(fields: &BTreeMap<Sym, Type>, name: Sym) -> usize {
-        // This is one of those times where an iterator chain is
-        // way stupider than just a normal for loop, alas.
-        // TODO someday: make this not O(n), or at least make it
-        // cache results.
-        for (i, (nm, _ty)) in fields.iter().enumerate() {
-            if *nm == name {
-                return i;
-            }
-        }
-        panic!(
-            "Invalid struct name {} in struct got through typechecking, should never happen",
-            &*name.val()
-        );
-    }
-
-    fn struct_to_tuple(fields: &BTreeMap<Sym, Type>) -> Type {
-        // This is why structs contain a BTreeMap,
-        // so that this ordering is always consistent based
-        // on the field names.
-        let tuple_fields = fields.iter().map(|(_sym, ty)| ty.clone()).collect();
-        Type::tuple(tuple_fields)
-    }
-
     let mut new_decls = vec![];
 
     for decl in ir.decls.into_iter() {
@@ -267,4 +308,25 @@ fn _enum_to_int(ir: Ir, tck: &typeck::Tck) -> Ir {
 /// them into pointer arithmatic, too.
 fn _pointerification(_ir: Ir) -> Ir {
     todo!()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn test_struct_anonymousifjlds() {
+        let mut body = BTreeMap::new();
+        body.insert(Sym::new("foo"), Type::i32());
+        body.insert(Sym::new("bar"), Type::i64());
+
+        let desired = struct_to_tuple(&body);
+        let inp = Type::Struct(body, vec![]);
+        let out = translate_type(inp.clone());
+        assert_eq!(out, desired);
+
+        let inp2 = Type::Array(Box::new(inp.clone()), 3);
+        let desired2 = Type::Array(Box::new(out.clone()), 3);
+        let out2 = translate_type(inp2);
+        assert_eq!(out2, desired2);
+    }
 }
