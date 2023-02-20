@@ -221,6 +221,49 @@ fn translate_type(typ: Type) -> Type {
     }
 }
 
+fn enumize(typ: Type) -> Type {
+    match typ {
+        Type::Struct(fields, _generics) => {
+            // This is why structs contain a BTreeMap,
+            // so that this ordering is always consistent based
+            // on the field names.
+            let tuple_fields = fields.into_iter().map(|(_sym, ty)| ty).collect();
+            Type::tuple(tuple_fields)
+        }
+        other => other,
+    }
+}
+
+fn type_map(typ: Type, f: &dyn Fn(Type) -> Type) -> Type {
+    let res = match typ {
+        Type::Struct(fields, _generics) => {
+            let fields = fields
+                .into_iter()
+                .map(|(sym, ty)| (sym, type_map(ty, f)))
+                .collect();
+            Type::Struct(fields, _generics)
+        }
+        Type::Sum(fields, _generics) => {
+            let new_fields = fields
+                .into_iter()
+                .map(|(sym, ty)| (sym, type_map(ty, f)))
+                .collect();
+            Type::Sum(new_fields, _generics)
+        }
+        Type::Array(ty, len) => Type::Array(Box::new(type_map(*ty, f)), len),
+        Type::Func(args, rettype) => {
+            let new_args = args.into_iter().map(|t| type_map(t, f)).collect();
+            let new_rettype = type_map(*rettype, f);
+            Type::Func(new_args, Box::new(new_rettype))
+        }
+        Type::Prim(_) => typ,
+        Type::Enum(_) => typ,
+        Type::Named(_, _) => typ,
+        Type::Generic(_) => typ,
+    };
+    f(res)
+}
+
 /// Takes any anonymous struct types and replaces them with
 /// tuples.
 /// This is necessary because we have anonymous structs but
@@ -324,9 +367,19 @@ mod tests {
         let out = translate_type(inp.clone());
         assert_eq!(out, desired);
 
-        let inp2 = Type::Array(Box::new(inp.clone()), 3);
         let desired2 = Type::Array(Box::new(out.clone()), 3);
-        let out2 = translate_type(inp2);
+        let inp2 = Type::Array(Box::new(inp.clone()), 3);
+        let out2 = translate_type(inp2.clone());
         assert_eq!(out2, desired2);
+
+        let desired3 = desired.clone();
+        let inp3 = inp.clone();
+        let out3 = type_map(inp3, &enumize);
+        assert_eq!(out3, desired3);
+
+        let desired4 = desired2.clone();
+        let inp4 = inp2.clone();
+        let out4 = type_map(inp4, &enumize);
+        assert_eq!(out4, desired4);
     }
 }
