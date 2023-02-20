@@ -21,71 +21,150 @@ type Pass = fn(Ir) -> Ir;
 type TckPass = fn(Ir, &typeck::Tck) -> Ir;
 
 pub fn run_passes(ir: Ir) -> Ir {
-    let passes: &[Pass] = &[lambda_lifting];
+    let passes: &[Pass] = &[lambda_lift];
     passes.iter().fold(ir, |prev_ir, f| f(prev_ir))
 }
 
 pub fn run_typechecked_passes(ir: Ir, tck: &typeck::Tck) -> Ir {
-    let passes: &[TckPass] = &[monomorphize, anon_struct_to_tuple];
+    //let passes: &[TckPass] = &[monomorphize, anon_struct_to_tuple];
+    let passes: &[TckPass] = &[];
     passes.iter().fold(ir, |prev_ir, f| f(prev_ir, tck))
 }
 
-/// Lambda lift a single expr.
-fn lambda_lift_expr(expr: ExprNode, output_funcs: &mut Vec<D>) -> ExprNode {
-    let result = match *expr.e {
-        E::BinOp { op, lhs, rhs } => {
-            let nlhs = lambda_lift_expr(lhs, output_funcs);
-            let nrhs = lambda_lift_expr(rhs, output_funcs);
-            E::BinOp {
-                op,
-                lhs: nlhs,
-                rhs: nrhs,
-            }
-        }
-        E::UniOp { op, rhs } => {
-            let nrhs = lambda_lift_expr(rhs, output_funcs);
-            E::UniOp { op, rhs: nrhs }
-        }
-        E::Block { body } => E::Block {
-            body: lambda_lift_exprs(body, output_funcs),
-        },
-        E::Let {
-            varname,
-            typename,
-            init,
-            mutable,
-        } => E::Let {
-            varname,
-            typename,
-            init: lambda_lift_expr(init, output_funcs),
-            mutable,
-        },
-        E::If { cases } => {
-            let new_cases = cases
-                .into_iter()
-                .map(|(test, case)| {
-                    let new_test = lambda_lift_expr(test, output_funcs);
-                    let new_cases = lambda_lift_exprs(case, output_funcs);
-                    (new_test, new_cases)
-                })
-                .collect();
-            E::If { cases: new_cases }
-        }
+fn exprs_map(exprs: Vec<ExprNode>, f: &mut dyn FnMut(E) -> E) -> Vec<ExprNode> {
+    exprs.into_iter().map(|e| expr_map(e, f)).collect()
+}
 
-        E::Loop { body } => E::Loop {
-            body: lambda_lift_exprs(body, output_funcs),
-        },
-        E::Return { retval } => E::Return {
-            retval: lambda_lift_expr(retval, output_funcs),
-        },
-        E::Funcall { func, params } => {
-            let new_func = lambda_lift_expr(func, output_funcs);
-            let new_params = lambda_lift_exprs(params, output_funcs);
-            E::Funcall {
-                func: new_func,
-                params: new_params,
+/// TODO: Returning and merging all these vec's is kinda cursed,
+/// but oh well.  Let's make it work first.
+/// To handle multiple expressions this will turn more into a fold()
+/// than a map(), it will take an accumulator that gets threaded through
+/// everything...  That gets *very weird* though and I manage to pour
+/// my coffee on my cat this morning so let's give that a miss for now.
+/// As it is, this can only transform subtrees into other subtrees.
+///
+/// We don't need a version of this for decls, 'cause decls
+/// can't be nested.
+fn expr_map(expr: ExprNode, f: &mut dyn FnMut(E) -> E) -> ExprNode {
+    let mut res = |e| {
+        let res = match e {
+            // Nodes with no recursive expressions.
+            // I list all these out explicitly instead of
+            // using a catchall so it doesn't fuck up if we change
+            // the type of Expr.
+            E::Lit { .. } => e,
+            E::Var { .. } => e,
+            E::Break => e,
+            E::TupleCtor { body } => E::TupleCtor {
+                body: exprs_map(body, f),
+            },
+            E::StructCtor { body } => {
+                let new_body = body
+                    .into_iter()
+                    .map(|(sym, vl)| (sym, expr_map(vl, f)))
+                    .collect();
+                E::StructCtor { body: new_body }
             }
-        }
+            E::TypeCtor {
+                name,
+                type_params,
+                body,
+            } => E::TypeCtor {
+                name,
+                type_params,
+                body: expr_map(body, f),
+            },
+            E::SumCtor {
+                name,
+                variant,
+                body,
+            } => E::SumCtor {
+                name,
+                variant,
+                body: expr_map(body, f),
+            },
+            E::ArrayCtor { body } => E::ArrayCtor {
+                body: exprs_map(body, f),
+            },
+            E::TypeUnwrap { expr } => E::TypeUnwrap {
+                expr: expr_map(expr, f),
+            },
+            E::TupleRef { expr, elt } => E::TupleRef {
+                expr: expr_map(expr, f),
+                elt,
+            },
+            E::StructRef { expr, elt } => E::StructRef {
+                expr: expr_map(expr, f),
+                elt,
+            },
+            E::ArrayRef { e, idx } => E::ArrayRef {
+                e: expr_map(e, f),
+                idx,
+            },
+            E::Assign { lhs, rhs } => E::Assign {
+                lhs: expr_map(lhs, f), // TODO: Think real hard about lvalues
+                rhs: expr_map(rhs, f),
+            },
+            E::BinOp { op, lhs, rhs } => E::BinOp {
+                op,
+                lhs: expr_map(lhs, f),
+                rhs: expr_map(rhs, f),
+            },
+            E::UniOp { op, rhs } => E::UniOp {
+                op,
+                rhs: rhs.map(f),
+            },
+            E::Block { body } => E::Block {
+                body: exprs_map(body, f),
+            },
+            E::Let {
+                varname,
+                typename,
+                init,
+                mutable,
+            } => E::Let {
+                varname,
+                typename,
+                init: expr_map(init, f),
+                mutable,
+            },
+            E::If { cases } => {
+                let new_cases = cases
+                    .into_iter()
+                    .map(|(test, case)| {
+                        let new_test = expr_map(test, f);
+                        let new_cases = exprs_map(case, f);
+                        (new_test, new_cases)
+                    })
+                    .collect();
+                E::If { cases: new_cases }
+            }
+            E::Loop { body } => E::Loop {
+                body: exprs_map(body, f),
+            },
+            E::Return { retval } => E::Return {
+                retval: expr_map(retval, f),
+            },
+            E::Funcall { func, params } => {
+                let new_func = expr_map(func, f);
+                let new_params = exprs_map(params, f);
+                E::Funcall {
+                    func: new_func,
+                    params: new_params,
+                }
+            }
+            E::Lambda { signature, body } => E::Lambda {
+                signature,
+                body: exprs_map(body, f),
+            },
+        };
+        f(res)
+    };
+    expr.map(&mut res)
+}
+
+fn lambda_lift_expr(expr: E, output_funcs: &mut Vec<D>) -> E {
+    let result = match expr {
         E::Lambda { signature, body } => {
             // This is actually the only important bit.
             // TODO: Make a more informative name, maybe including the file and line number or
@@ -94,25 +173,14 @@ fn lambda_lift_expr(expr: ExprNode, output_funcs: &mut Vec<D>) -> ExprNode {
             let function_decl = D::Function {
                 name: lambda_name,
                 signature,
-                body: lambda_lift_exprs(body, output_funcs),
+                body: exprs_map(body, &mut |e| lambda_lift_expr(e, output_funcs)),
             };
             output_funcs.push(function_decl);
             E::Var { name: lambda_name }
         }
         x => x,
     };
-    hir::ExprNode {
-        e: Box::new(result),
-        id: expr.id,
-    }
-}
-
-/// Lambda lift a list of expr's.
-fn lambda_lift_exprs(exprs: Vec<ExprNode>, output_funcs: &mut Vec<D>) -> Vec<ExprNode> {
-    exprs
-        .into_iter()
-        .map(|e| lambda_lift_expr(e, output_funcs))
-        .collect()
+    result
 }
 
 /// A transformation pass that removes lambda expressions and turns
@@ -124,7 +192,7 @@ fn lambda_lift_exprs(exprs: Vec<ExprNode>, output_funcs: &mut Vec<D>) -> Vec<Exp
 /// to do yet.  Add a tag type of some kind to the Ir?
 /// Eeeeeeeeh we might just have to check on it later one way or another,
 /// either when doing codegen or when transforming our HIR to a lower-level IR.
-fn lambda_lifting(ir: Ir) -> Ir {
+fn lambda_lift(ir: Ir) -> Ir {
     let mut new_functions = vec![];
     let new_decls: Vec<D> = ir
         .decls
@@ -135,7 +203,7 @@ fn lambda_lifting(ir: Ir) -> Ir {
                 signature,
                 body,
             } => {
-                let new_body = lambda_lift_exprs(body, &mut new_functions);
+                let new_body = exprs_map(body, &mut |e| lambda_lift_expr(e, &mut new_functions));
                 D::Function {
                     name,
                     signature,
@@ -234,7 +302,7 @@ fn enumize(typ: Type) -> Type {
     }
 }
 
-fn type_map(typ: Type, f: &dyn Fn(Type) -> Type) -> Type {
+fn type_map(typ: Type, f: &mut dyn FnMut(Type) -> Type) -> Type {
     let res = match typ {
         Type::Struct(fields, _generics) => {
             let fields = fields
@@ -262,85 +330,6 @@ fn type_map(typ: Type, f: &dyn Fn(Type) -> Type) -> Type {
         Type::Generic(_) => typ,
     };
     f(res)
-}
-
-/// TODO: Returning and merging all these vec's is kinda cursed,
-/// but oh well.  Let's make it work first.
-///
-/// We don't need a version of this for decls, 'cause decls
-/// can't be nested.
-fn expr_map(expr: ExprNode, f: &dyn Fn(E) -> E) -> ExprNode {
-    let res = |e| {
-        let res = match e {
-            E::BinOp { op, lhs, rhs } => E::BinOp {
-                op,
-                lhs: lhs.map(f),
-                rhs: rhs.map(f),
-            },
-            other => todo!(),
-            /*
-                    E::UniOp { op, rhs } => {
-                        let nrhs = expr_map(rhs, output_funcs);
-                        E::UniOp { op, rhs: nrhs }
-                    }
-                    E::Block { body } => E::Block {
-                        body: expr_maps(body, output_funcs),
-                    },
-                    E::Let {
-                        varname,
-                        typename,
-                        init,
-                        mutable,
-                    } => E::Let {
-                        varname,
-                        typename,
-                        init: expr_map(init, output_funcs),
-                        mutable,
-                    },
-                    E::If { cases } => {
-                        let new_cases = cases
-                            .into_iter()
-                            .map(|(test, case)| {
-                                let new_test = expr_map(test, output_funcs);
-                                let new_cases = expr_maps(case, output_funcs);
-                                (new_test, new_cases)
-                            })
-                            .collect();
-                        E::If { cases: new_cases }
-                    }
-
-                    E::Loop { body } => E::Loop {
-                        body: expr_maps(body, output_funcs),
-                    },
-                    E::Return { retval } => E::Return {
-                        retval: expr_map(retval, output_funcs),
-                    },
-                    E::Funcall { func, params } => {
-                        let new_func = expr_map(func, output_funcs);
-                        let new_params = expr_maps(params, output_funcs);
-                        E::Funcall {
-                            func: new_func,
-                            params: new_params,
-                        }
-                    }
-                    E::Lambda { signature, body } => {
-                        // This is actually the only important bit.
-                        // TODO: Make a more informative name, maybe including the file and line number or
-                        // such.
-                        let lambda_name = INT.gensym("lambda");
-                        let function_decl = D::Function {
-                            name: lambda_name,
-                            signature,
-                            body: expr_maps(body, output_funcs),
-                        };
-                        output_funcs.push(function_decl);
-                        E::Var { name: lambda_name }
-                    }
-            */
-        };
-        f(res)
-    };
-    expr.map(&res)
 }
 
 /// Takes any anonymous struct types and replaces them with
@@ -443,12 +432,12 @@ mod tests {
 
         let desired = struct_to_tuple(&body);
         let inp = Type::Struct(body, vec![]);
-        let out = type_map(inp.clone(), &enumize);
+        let out = type_map(inp.clone(), &mut enumize);
         assert_eq!(out, desired);
 
         let desired2 = Type::Array(Box::new(out.clone()), 3);
         let inp2 = Type::Array(Box::new(inp.clone()), 3);
-        let out2 = type_map(inp2.clone(), &enumize);
+        let out2 = type_map(inp2.clone(), &mut enumize);
         assert_eq!(out2, desired2);
     }
 
@@ -476,7 +465,7 @@ mod tests {
             lhs: ExprNode::int(4),
             rhs: ExprNode::int(3),
         });
-        let out = expr_map(inp, &swap_binop_args);
+        let out = expr_map(inp, &mut swap_binop_args);
         assert_eq!(out, desired);
 
         // Make sure it recurses properly for deeper trees.
@@ -498,7 +487,7 @@ mod tests {
                 rhs: ExprNode::int(100),
             }),
         });
-        let out2 = expr_map(inp2, &swap_binop_args);
+        let out2 = expr_map(inp2, &mut swap_binop_args);
         assert_eq!(out2, desired2);
     }
 }
