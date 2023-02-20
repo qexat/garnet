@@ -27,7 +27,7 @@ pub fn run_passes(ir: Ir) -> Ir {
 
 pub fn run_typechecked_passes(ir: Ir, tck: &typeck::Tck) -> Ir {
     //let passes: &[TckPass] = &[monomorphize, anon_struct_to_tuple];
-    let passes: &[TckPass] = &[];
+    let passes: &[TckPass] = &[struct_to_tuple];
     passes.iter().fold(ir, |prev_ir, f| f(prev_ir, tck))
 }
 
@@ -303,6 +303,25 @@ fn exprs_fold<S>(exprs: Vec<ExprNode>, state: S, f: &dyn Fn(E, S) -> (E, S)) -> 
 }
 */
 
+/*
+/// Takes a decl and applies the given expr transformer to any expression in it.
+/// ...Not suuuuuuuure it is worth it since we often(?) want to know or change
+/// something about the decl as well.
+fn decl_map_expr(decl: D, f: &mut dyn FnMut(Expr) -> Expr) -> Decl {
+    match decl {
+        D::Function { name, signature, body } => {
+            D::Function
+        },
+        D::Const { name, typename, init } => {
+
+        },
+        D::TypeDef { name, params, typedecl } => {
+
+        }
+    }
+}
+*/
+
 fn types_map(typs: Vec<Type>, f: &mut dyn FnMut(Type) -> Type) -> Vec<Type> {
     typs.into_iter().map(|t| type_map(t, f)).collect()
 }
@@ -348,6 +367,19 @@ fn type_map(typ: Type, f: &mut dyn FnMut(Type) -> Type) -> Type {
     f(res)
 }
 
+/// Produce a new signature by transforming the types
+fn signature_map(sig: hir::Signature, f: &mut dyn FnMut(Type) -> Type) -> hir::Signature {
+    let new_params = sig
+        .params
+        .into_iter()
+        .map(|(sym, ty)| (sym, type_map(ty, f)))
+        .collect();
+    hir::Signature {
+        params: new_params,
+        rettype: type_map(sig.rettype, f),
+    }
+}
+
 //////  Lambda lifting  /////
 
 fn lambda_lift_expr(expr: E, output_funcs: &mut Vec<D>) -> E {
@@ -372,7 +404,8 @@ fn lambda_lift_expr(expr: E, output_funcs: &mut Vec<D>) -> E {
 
 /// A transformation pass that removes lambda expressions and turns
 /// them into function decl's.
-/// TODO: Doesn't handle actual closures yet though.
+/// TODO: Doesn't handle actual closures yet though.  That should be a
+/// separate pass that happens first?
 ///
 /// TODO: Output is an IR that does not have any lambda expr's in it, which
 /// I would like to make un-representable, but don't see a good way
@@ -451,7 +484,7 @@ fn struct_fields_to_tuple(fields: &BTreeMap<Sym, Type>) -> Type {
 }
 */
 
-/// Takes an arbitrary type and recursively turns anonymous
+/// Takes an arbitrary type and recursively turns
 /// structs into tuples.
 fn tuplize_type(typ: Type) -> Type {
     match typ {
@@ -471,8 +504,19 @@ fn tuplize_type(typ: Type) -> Type {
     }
 }
 
-/// Takes any anonymous struct types and replaces them with
-/// tuples.
+/// Takes an arbitrary expr and if it is a struct ctor
+/// or ref turn it into a tuple ctor or ref.
+///
+/// TODO: Do something with the expr types?
+fn tuplize_expr(expr: E) -> E {
+    match expr {
+        E::StructCtor { body } => todo!(),
+        E::StructRef { expr, elt } => todo!(),
+        other => other,
+    }
+}
+
+/// Takes any struct types and replaces them with tuples.
 /// This is necessary because we have anonymous structs but
 /// Rust doesn't.
 ///
@@ -481,38 +525,43 @@ fn tuplize_type(typ: Type) -> Type {
 /// directly into a Rust struct without being wrapped in a typedef first.  So I
 /// think I will translate them to tuples after all.
 fn struct_to_tuple(ir: Ir, tck: &typeck::Tck) -> Ir {
-    use hir::Decl;
     let mut new_decls = vec![];
 
     for decl in ir.decls.into_iter() {
-        match &decl {
-            Decl::Const {
+        let res = match decl {
+            D::Const {
                 name,
                 typename,
                 init,
             } => {
-                // This is kinda the simplest case so we'll do it first.
-                // If the type is an anonymous struct type,
-                // we conjure forth a new named struct.
-                match typename {
-                    Type::Struct(fields, _generics) => {
-                        //let tuple = struct_to_tuple(fields, tck);
-                        todo!("Translate struct literal init to a tuple")
-                    }
-                    _ => new_decls.push(decl),
+                let new_type = type_map(typename, &mut tuplize_type);
+                let new_init = expr_map(init, &mut tuplize_expr);
+                D::Const {
+                    name,
+                    typename: new_type,
+                    init: new_init,
                 }
             }
-            Decl::Function {
+            D::Function {
                 name,
                 signature,
                 body,
-            } => todo!(),
-            Decl::TypeDef {
+            } => D::Function {
+                name,
+                signature: signature_map(signature, &mut tuplize_type),
+                body: exprs_map(body, &mut tuplize_expr),
+            },
+            D::TypeDef {
                 name,
                 params,
                 typedecl,
-            } => todo!(),
-        }
+            } => D::TypeDef {
+                name,
+                params,
+                typedecl: type_map(typedecl, &mut tuplize_type),
+            },
+        };
+        new_decls.push(res);
     }
     Ir { decls: new_decls }
 }
@@ -569,14 +618,14 @@ mod tests {
         body.insert(Sym::new("foo"), Type::i32());
         body.insert(Sym::new("bar"), Type::i64());
 
-        let desired = struct_to_tuple(&body);
+        let desired = tuplize_type(Type::Struct(body.clone(), vec![]));
         let inp = Type::Struct(body, vec![]);
-        let out = type_map(inp.clone(), &mut enumize);
+        let out = type_map(inp.clone(), &mut tuplize_type);
         assert_eq!(out, desired);
 
         let desired2 = Type::Array(Box::new(out.clone()), 3);
         let inp2 = Type::Array(Box::new(inp.clone()), 3);
-        let out2 = type_map(inp2.clone(), &mut enumize);
+        let out2 = type_map(inp2.clone(), &mut tuplize_type);
         assert_eq!(out2, desired2);
     }
 
