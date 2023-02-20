@@ -65,10 +65,23 @@ impl PartialEq for ExprNode {
 }
 
 impl ExprNode {
-    fn new(e: Expr) -> Self {
+    pub fn new(e: Expr) -> Self {
         ExprNode {
             e: Box::new(e),
             id: Eid::new(),
+        }
+    }
+
+    /// Call the function on the contents
+    /// and turn the result into a new ExprNode *without*
+    /// changing our Eid.
+    ///
+    /// Consumes self to preserve the invariant that no
+    /// Eid's are ever duplicated.
+    pub fn map(self, f: &dyn Fn(Expr) -> Expr) -> Self {
+        ExprNode {
+            e: Box::new(f(*self.e)),
+            id: self.id,
         }
     }
 }
@@ -315,6 +328,8 @@ fn lower_expr(expr: &ast::Expr) -> ExprNode {
                 .map(|case| (lower_expr(&*case.condition), lower_exprs(&case.body)))
                 .collect();
             // Add the "else" case, which we can just make `else if true then...`
+            // No idea if this is a good idea, but it makes life easier right
+            // this instant, so.  Hasn't bit me yet, so it's not a *bad* idea.
             let nelse_case = ExprNode::bool(true);
             // Empty false block becomes a false block that returns unit
             let false_exprs = if falseblock.len() == 0 {

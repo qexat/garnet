@@ -264,6 +264,85 @@ fn type_map(typ: Type, f: &dyn Fn(Type) -> Type) -> Type {
     f(res)
 }
 
+/// TODO: Returning and merging all these vec's is kinda cursed,
+/// but oh well.  Let's make it work first.
+///
+/// We don't need a version of this for decls, 'cause decls
+/// can't be nested.
+fn expr_map(expr: ExprNode, f: &dyn Fn(E) -> E) -> ExprNode {
+    let res = |e| {
+        let res = match e {
+            E::BinOp { op, lhs, rhs } => E::BinOp {
+                op,
+                lhs: lhs.map(f),
+                rhs: rhs.map(f),
+            },
+            other => todo!(),
+            /*
+                    E::UniOp { op, rhs } => {
+                        let nrhs = expr_map(rhs, output_funcs);
+                        E::UniOp { op, rhs: nrhs }
+                    }
+                    E::Block { body } => E::Block {
+                        body: expr_maps(body, output_funcs),
+                    },
+                    E::Let {
+                        varname,
+                        typename,
+                        init,
+                        mutable,
+                    } => E::Let {
+                        varname,
+                        typename,
+                        init: expr_map(init, output_funcs),
+                        mutable,
+                    },
+                    E::If { cases } => {
+                        let new_cases = cases
+                            .into_iter()
+                            .map(|(test, case)| {
+                                let new_test = expr_map(test, output_funcs);
+                                let new_cases = expr_maps(case, output_funcs);
+                                (new_test, new_cases)
+                            })
+                            .collect();
+                        E::If { cases: new_cases }
+                    }
+
+                    E::Loop { body } => E::Loop {
+                        body: expr_maps(body, output_funcs),
+                    },
+                    E::Return { retval } => E::Return {
+                        retval: expr_map(retval, output_funcs),
+                    },
+                    E::Funcall { func, params } => {
+                        let new_func = expr_map(func, output_funcs);
+                        let new_params = expr_maps(params, output_funcs);
+                        E::Funcall {
+                            func: new_func,
+                            params: new_params,
+                        }
+                    }
+                    E::Lambda { signature, body } => {
+                        // This is actually the only important bit.
+                        // TODO: Make a more informative name, maybe including the file and line number or
+                        // such.
+                        let lambda_name = INT.gensym("lambda");
+                        let function_decl = D::Function {
+                            name: lambda_name,
+                            signature,
+                            body: expr_maps(body, output_funcs),
+                        };
+                        output_funcs.push(function_decl);
+                        E::Var { name: lambda_name }
+                    }
+            */
+        };
+        f(res)
+    };
+    expr.map(&res)
+}
+
 /// Takes any anonymous struct types and replaces them with
 /// tuples.
 /// This is necessary because we have anonymous structs but
@@ -357,29 +436,69 @@ fn _pointerification(_ir: Ir) -> Ir {
 mod tests {
     use super::*;
     #[test]
-    fn test_struct_anonymousifjlds() {
+    fn test_enumize() {
         let mut body = BTreeMap::new();
         body.insert(Sym::new("foo"), Type::i32());
         body.insert(Sym::new("bar"), Type::i64());
 
         let desired = struct_to_tuple(&body);
         let inp = Type::Struct(body, vec![]);
-        let out = translate_type(inp.clone());
+        let out = type_map(inp.clone(), &enumize);
         assert_eq!(out, desired);
 
         let desired2 = Type::Array(Box::new(out.clone()), 3);
         let inp2 = Type::Array(Box::new(inp.clone()), 3);
-        let out2 = translate_type(inp2.clone());
+        let out2 = type_map(inp2.clone(), &enumize);
         assert_eq!(out2, desired2);
+    }
 
-        let desired3 = desired.clone();
-        let inp3 = inp.clone();
-        let out3 = type_map(inp3, &enumize);
-        assert_eq!(out3, desired3);
+    #[test]
+    fn test_expr_map() {
+        fn swap_binop_args(expr: E) -> E {
+            println!("Swapping {:?}", expr);
+            match expr {
+                E::BinOp { op, lhs, rhs } => E::BinOp {
+                    op,
+                    lhs: rhs,
+                    rhs: lhs,
+                },
+                other => other,
+            }
+        }
+        // Make sure this works for trivial exppressions
+        let inp = ExprNode::new(E::BinOp {
+            op: hir::BOp::Add,
+            lhs: ExprNode::int(3),
+            rhs: ExprNode::int(4),
+        });
+        let desired = ExprNode::new(E::BinOp {
+            op: hir::BOp::Add,
+            lhs: ExprNode::int(4),
+            rhs: ExprNode::int(3),
+        });
+        let out = expr_map(inp, &swap_binop_args);
+        assert_eq!(out, desired);
 
-        let desired4 = desired2.clone();
-        let inp4 = inp2.clone();
-        let out4 = type_map(inp4, &enumize);
-        assert_eq!(out4, desired4);
+        // Make sure it recurses properly for deeper trees.
+        let inp2 = ExprNode::new(E::BinOp {
+            op: hir::BOp::Add,
+            lhs: ExprNode::new(E::BinOp {
+                op: hir::BOp::Sub,
+                lhs: ExprNode::int(100),
+                rhs: ExprNode::int(200),
+            }),
+            rhs: ExprNode::int(4),
+        });
+        let desired2 = ExprNode::new(E::BinOp {
+            op: hir::BOp::Add,
+            lhs: ExprNode::int(4),
+            rhs: ExprNode::new(E::BinOp {
+                op: hir::BOp::Sub,
+                lhs: ExprNode::int(200),
+                rhs: ExprNode::int(100),
+            }),
+        });
+        let out2 = expr_map(inp2, &swap_binop_args);
+        assert_eq!(out2, desired2);
     }
 }
