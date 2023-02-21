@@ -9,8 +9,7 @@ fn thing(i I32) Foo =
 end
 
 
-fn main() I32 =
+fn main() {} =
     let f1 Foo = Foo{3, true}
     let f2 Foo = thing(4)
-    3
 end

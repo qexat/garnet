@@ -126,7 +126,16 @@ fn compile_typename(t: &Type) -> Cow<'static, str> {
         }
         Generic(s) => mangle_name(&*s.val()).into(),
         Array(t, len) => format!("[{};{}]", compile_typename(t), len).into(),
-        Named(sym, _generics) => format!("{}", sym).into(),
+        Named(sym, generics) => {
+            if generics.len() == 0 {
+                format!("{}", sym).into()
+            } else {
+                let generic_strings: Vec<_> =
+                    generics.iter().map(|t| compile_typename(t)).collect();
+                let args = generic_strings.join(", ");
+                format!("{}<{}>", sym, args).into()
+            }
+        }
         other => todo!("compile_typename: {:?}", other),
     }
 }
@@ -171,15 +180,28 @@ fn compile_decl(w: &mut impl Write, decl: &hir::Decl, tck: &Tck) -> io::Result<(
             let istr = compile_expr(init, tck);
             writeln!(w, "const {}: {} = {};", nstr, tstr, istr)
         }
-        // Typedefs compile into newtype structs.
+        // Typedefs compile into aliases.
+        // I wanted them to compile into newtype structs,
+        // but we already define a constructor function and that
+        // name clashes with the constructor function that rustc
+        // creates with newtype structs.
+        // So I guess we have some type erasure here.
         hir::Decl::TypeDef {
             name,
             typedecl,
-            params: _,
+            params,
         } => {
             let nstr = mangle_name(&INT.fetch(*name));
             let tstr = compile_typedef(&*typedecl);
-            writeln!(w, "pub struct {}({});", nstr, tstr)
+            //writeln!(w, "pub struct {}({});", nstr, tstr)
+            if params.len() == 0 {
+                writeln!(w, "pub type {} = {};", nstr, tstr)
+            } else {
+                let param_strings: Vec<_> =
+                    params.iter().map(|sym| (&*sym.val()).clone()).collect();
+                let args = param_strings.join(", ");
+                writeln!(w, "pub type {}<{}> = {};", nstr, args, tstr).into()
+            }
         }
     }
 }
@@ -361,6 +383,17 @@ fn compile_expr(expr: &hir::ExprNode, tck: &Tck) -> String {
         E::TupleCtor { body } => {
             let contents = compile_exprs(body, ",", tck);
             format!("({})", contents)
+        }
+        // Just becomes a function call.
+        // TODO someday: Make an explicit turbofish if necessary?
+        E::TypeCtor {
+            name: _,
+            body,
+            type_params: _,
+        } => {
+            let contents = compile_expr(body, tck);
+            //format!("{}({})", &*name.val(), contents)
+            format!("{}", contents)
         }
         E::StructCtor { body } => {
             /*

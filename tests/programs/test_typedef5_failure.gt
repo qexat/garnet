@@ -9,11 +9,10 @@ end
 
 type Bar = I32
 
-fn main() I32 =
+fn main() {} =
     let f1 Foo = thing(4, true)
     let f2 {I32, I32} = f1$
 
     let f3 = Bar(12)
     let f4 I32 = f3$
-    3
 end
