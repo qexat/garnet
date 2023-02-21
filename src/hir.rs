@@ -475,7 +475,7 @@ fn lower_typedef(accm: &mut Vec<Decl>, name: Sym, ty: &Type, params: &[Sym]) {
         // type X = {}
         // type Y = Thing
         // TODO: What do we do with the generics...
-        Type::Sum(body, _generics) => {
+        Type::Sum(body, generics) => {
             let struct_body: Vec<_> = body
                 .iter()
                 .map(|(variant_name, variant_type)| {
@@ -497,9 +497,14 @@ fn lower_typedef(accm: &mut Vec<Decl>, name: Sym, ty: &Type, params: &[Sym]) {
                 })
                 .collect();
             let init_val = ExprNode::new(Expr::StructCtor { body: struct_body });
+            let struct_typebody = body
+                .iter()
+                .map(|(variant_name, variant_type)| (*variant_name, variant_type.clone()))
+                .collect();
+            let struct_type = Type::Struct(struct_typebody, generics.clone());
             let new_constdef = Const {
                 name: name.to_owned(),
-                typename: todo!(),
+                typename: struct_type,
                 init: init_val,
             };
             accm.push(new_constdef);

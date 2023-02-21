@@ -59,7 +59,12 @@ impl TypeInfo {
                 accm.into()
             }
             Named(s, _g) => (&*s.val()).to_owned().into(),
-            Func(_params, _rettype) => todo!(),
+            Func(params, rettype) => {
+                let paramstr: Vec<_> = params.iter().map(|id| tck.vars[id].get_name(tck)).collect();
+                let paramstr = paramstr.join(", ");
+                let rettypestr = tck.vars[rettype].get_name(tck);
+                format!("fn({}) {}", paramstr, rettypestr).into()
+            }
             Struct(body) => {
                 let mut accm = String::from("struct\n");
                 // TODO: Do heckin' something with the val???
@@ -755,6 +760,10 @@ impl Symtbl {
         let println_sig = Type::Func(vec![Type::i32()], Box::new(Type::unit()));
         let println_ty = tck.insert_known(&println_sig);
         self.add_var(Sym::new("__println"), println_ty, false);
+
+        let println_sig = Type::Func(vec![Type::i16()], Box::new(Type::unit()));
+        let println_ty = tck.insert_known(&println_sig);
+        self.add_var(Sym::new("__println_i16"), println_ty, false);
 
         let println_sig = Type::Func(vec![Type::i64()], Box::new(Type::unit()));
         let println_ty = tck.insert_known(&println_sig);
