@@ -20,11 +20,11 @@ fn second(a @T1, b @T2) @T2 =
 end
 
 fn main() {} =
-    let x I32 = foo$[I32](42)
-    let y I16 = foo$[I16](42)
+    let x I32 = foo(42)
+    let y I16 = foo(42)
     __println(x)
     __println_i16(y)
 
-    let x1 I32 = first$[I32, I16](x, y)
-    let x2 I16 = first$[I16, I32](y, x)
+    let x1 I32 = first(x, y)
+    let x2 I16 = first(y, x)
 end

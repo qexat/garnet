@@ -153,12 +153,18 @@ impl Type {
                     }
                     helper(rettype, accm)
                 }
-                Type::Struct(_body, generics) => {
+                Type::Struct(body, generics) => {
+                    for (_, ty) in body {
+                        helper(ty, accm);
+                    }
                     for g in generics {
                         helper(g, accm);
                     }
                 }
-                Type::Sum(_body, generics) => {
+                Type::Sum(body, generics) => {
+                    for (_, ty) in body {
+                        helper(ty, accm);
+                    }
                     for g in generics {
                         helper(g, accm);
                     }
