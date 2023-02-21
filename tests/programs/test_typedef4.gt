@@ -12,9 +12,8 @@ fn thing2(i I32, x @A) {I32, @A} =
     {i, x}
 end
 
-fn main() I32 =
+fn main() {} =
     let f1 Foo(I32) = thing(4, 5)
     let f2 Foo(Bool) = thing(4, true)
     let f2 {I32, Bool} = thing2(4, true)
-    3
 end
