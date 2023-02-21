@@ -285,18 +285,20 @@ pub struct Tck {
 impl Tck {
     /// Save the type variable associated with the given expr
     fn set_expr_type(&mut self, expr: &hir::ExprNode, ty: TypeId) {
+        let res = self.types.insert(expr.id, ty);
         assert!(
-            self.types.get(&expr.id).is_none(),
+            res.is_none(),
             "Redefining known type, not suuuuure if this is bad or not.  Probably is though, since we should always be changing the meaning of an expr's associated type variable instead."
         );
-        self.types.insert(expr.id, ty);
     }
 
     /// Replace the given expr's type with a new one.
     /// Used for HIR transforms that change one node type into another.
     /// Panics if the expression's type is not set.
     pub fn replace_expr_type(&mut self, expr: &hir::ExprNode, ty: &Type) {
-        todo!()
+        let typeid = self.insert_known(ty);
+        let res = self.types.insert(expr.id, typeid);
+        assert!(res.is_some());
     }
 
     /// Panics if the expression's type is not set.

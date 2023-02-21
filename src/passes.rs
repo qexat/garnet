@@ -161,7 +161,8 @@ fn expr_map(expr: ExprNode, f: &mut dyn FnMut(ExprNode) -> ExprNode) -> ExprNode
             body: exprs_map(body, f),
         },
     };
-    expr.map(exprfn)
+    let x = expr.map(exprfn);
+    f(x)
 }
 
 /*
@@ -527,22 +528,25 @@ fn tuplize_expr(expr: ExprNode, tck: &mut typeck::Tck) -> ExprNode {
     // Doing it up front rather than only if we have a StructCtor
     // is kinda weird, but it makes the awkward borrowing work out.
     let expr_typeid = tck.get_expr_type(&expr);
-    let struct_type = tck.reconstruct(expr_typeid).expect("Should never happen?");
-    let new_t = tuplize_type(struct_type.clone());
-    tck.replace_expr_type(&expr, &new_t);
 
-    let res = &mut |e| match e {
+    let new_contents = match &*expr.e {
         E::StructCtor { body } => {
+            let struct_type = tck.reconstruct(expr_typeid).expect("Should never happen?");
             match &struct_type {
                 Type::Struct(type_body, _generics) => {
                     let mut ordered_body: Vec<_> = body
                         .into_iter()
-                        .map(|(ky, vl)| (offset_of_field(&type_body, ky), vl))
+                        .map(|(ky, vl)| (offset_of_field(&type_body, *ky), vl))
                         .collect();
                     ordered_body.sort_by(|a, b| a.0.cmp(&b.0));
-                    let new_body = ordered_body.into_iter().map(|(_i, expr)| expr).collect();
+                    let new_body = ordered_body
+                        .into_iter()
+                        .map(|(_i, expr)| expr.clone())
+                        .collect();
 
                     // Change the type of the struct literal expr node to the new tuple
+                    let new_t = tuplize_type(struct_type.clone());
+                    tck.replace_expr_type(&expr, &new_t);
                     E::TupleCtor { body: new_body }
                 }
                 _other => unreachable!("Should never happen?"),
@@ -552,15 +556,18 @@ fn tuplize_expr(expr: ExprNode, tck: &mut typeck::Tck) -> ExprNode {
             let struct_type = tck.reconstruct(expr_typeid).expect("Should never happen?");
             match struct_type {
                 Type::Struct(type_body, _generics) => {
-                    let offset = offset_of_field(&type_body, elt);
-                    E::TupleRef { expr, elt: offset }
+                    let offset = offset_of_field(&type_body, *elt);
+                    E::TupleRef {
+                        expr: expr.clone(),
+                        elt: offset,
+                    }
                 }
                 _other => unreachable!("Should never happen?"),
             }
         }
-        other => other,
+        _other => *expr.e.clone(),
     };
-    expr.map(res)
+    expr.map(&mut |_| new_contents.clone())
 }
 
 /// Takes any struct types and replaces them with tuples.
@@ -573,7 +580,7 @@ fn tuplize_expr(expr: ExprNode, tck: &mut typeck::Tck) -> ExprNode {
 /// think I will translate them to tuples after all.
 fn struct_to_tuple(ir: Ir, tck: &mut typeck::Tck) -> Ir {
     let mut new_decls = vec![];
-    let mut tuplize_expr = &mut |e| tuplize_expr(e, tck);
+    let tuplize_expr = &mut |e| tuplize_expr(e, tck);
 
     for decl in ir.decls.into_iter() {
         let res = match decl {
@@ -679,16 +686,16 @@ mod tests {
 
     #[test]
     fn test_expr_map() {
-        fn swap_binop_args(expr: E) -> E {
+        fn swap_binop_args(expr: ExprNode) -> ExprNode {
             println!("Swapping {:?}", expr);
-            match expr {
+            expr.map(&mut |e| match e {
                 E::BinOp { op, lhs, rhs } => E::BinOp {
                     op,
                     lhs: rhs,
                     rhs: lhs,
                 },
                 other => other,
-            }
+            })
         }
         // Make sure this works for trivial exppressions
         let inp = ExprNode::new(E::BinOp {
