@@ -85,17 +85,20 @@ impl ExprNode {
         }
     }
 
-    // Unneeded so far, see passes::expr_fold()
-    // pub fn fold<S>(self, state: S, f: &dyn Fn(Expr, S) -> (Expr, S)) -> (Self, S) {
-    //     let (new_e, new_s) = f(*self.e, state);
-    //     (
-    //         ExprNode {
-    //             e: Box::new(new_e),
-    //             id: self.id,
-    //         },
-    //         new_s,
-    //     )
-    // }
+    /*
+    /// Apply a function with extra state to the given node.
+    /// Unneeded so far, see passes::expr_fold()
+    pub fn fold<S>(self, state: S, f: &dyn Fn(Expr, S) -> (Expr, S)) -> (Self, S) {
+        let (new_e, new_s) = f(*self.e, state);
+        (
+            ExprNode {
+                e: Box::new(new_e),
+                id: self.id,
+            },
+            new_s,
+        )
+    }
+    */
 }
 
 /// An expression.

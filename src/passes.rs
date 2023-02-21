@@ -163,17 +163,26 @@ fn expr_map(expr: ExprNode, f: &mut dyn FnMut(E) -> E) -> ExprNode {
     expr.map(&mut res)
 }
 
-/* A pure version of the expr_map() that takes and returns state explicitly.
-    Seems to be strictly more of a pain in the ass than smuggling a closure
-into expr_map(), so probably not worth the trouble.
-fn expr_fold<S>(expr: ExprNode, state: S, f: &dyn Fn(E, S) -> (E, S)) -> (ExprNode, S) {
-    let res = |e, state| {
+/*
+/// A pure version of the expr_map() that takes and returns state explicitly.
+///     Seems to be strictly more of a pain in the ass than smuggling a closure
+/// into expr_map(), so probably not worth the trouble.
+fn expr_fold<S>(expr: ExprNode, state: S, f: &dyn Fn(E, S) -> (E, S)) -> (ExprNode, S)
+where
+    S: Clone,
+{
+    let res = |e, state: S| {
         let mut st = state;
-        let borrowed_state = &mut st;
+        // TODO: Packing our mutable state away in a closure and just using
+        // expr_map is in fact way more convenient than mongling it explicitly.
+        // The cost is requiring that S is cloned on each node.  We could
+        // probably do all the state-mongling ourself and change `expr_map()`
+        // to be implemented in terms of `expr_fold()`, but that really doesn't
+        // sound like much fun.
         let newfun = &mut |e| {
-            let (new_expr, new_state) = f(e, *borrowed_state);
-            *borrowed_state = new_state;
-            e
+            let (new_expr, new_state) = f(e, st.clone());
+            st = new_state;
+            new_expr
         };
         let res = match e {
             // Nodes with no recursive expressions.
@@ -286,12 +295,15 @@ fn expr_fold<S>(expr: ExprNode, state: S, f: &dyn Fn(E, S) -> (E, S)) -> (ExprNo
                 body: exprs_map(body, newfun),
             },
         };
-        f(res, *borrowed_state)
+        f(res, st)
     };
     expr.fold(state, &res)
 }
 
-fn exprs_fold<S>(exprs: Vec<ExprNode>, state: S, f: &dyn Fn(E, S) -> (E, S)) -> (Vec<ExprNode>, S) {
+fn exprs_fold<S>(exprs: Vec<ExprNode>, state: S, f: &dyn Fn(E, S) -> (E, S)) -> (Vec<ExprNode>, S)
+where
+    S: Clone,
+{
     let mut res = vec![];
     let mut new_state = state;
     for e in exprs {
