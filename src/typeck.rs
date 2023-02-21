@@ -292,6 +292,13 @@ impl Tck {
         self.types.insert(expr.id, ty);
     }
 
+    /// Replace the given expr's type with a new one.
+    /// Used for HIR transforms that change one node type into another.
+    /// Panics if the expression's type is not set.
+    pub fn replace_expr_type(&mut self, expr: &hir::ExprNode, ty: &Type) {
+        todo!()
+    }
+
     /// Panics if the expression's type is not set.
     pub fn get_expr_type(&self, expr: &hir::ExprNode) -> TypeId {
         *self.types.get(&expr.id).unwrap_or_else(|| {

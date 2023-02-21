@@ -18,25 +18,26 @@ use crate::hir::{Decl as D, Expr as E, ExprNode, Ir};
 use crate::*;
 
 type Pass = fn(Ir) -> Ir;
-type TckPass = fn(Ir, &typeck::Tck) -> Ir;
+
+/// Tck has to be mutable because we may change the return type
+/// of expr nodes.
+type TckPass = fn(Ir, &mut typeck::Tck) -> Ir;
 
 pub fn run_passes(ir: Ir) -> Ir {
     let passes: &[Pass] = &[lambda_lift];
     passes.iter().fold(ir, |prev_ir, f| f(prev_ir))
 }
 
-pub fn run_typechecked_passes(ir: Ir, tck: &typeck::Tck) -> Ir {
+pub fn run_typechecked_passes(ir: Ir, tck: &mut typeck::Tck) -> Ir {
     //let passes: &[TckPass] = &[monomorphize, anon_struct_to_tuple];
     let passes: &[TckPass] = &[struct_to_tuple];
     passes.iter().fold(ir, |prev_ir, f| f(prev_ir, tck))
 }
 
-fn exprs_map(exprs: Vec<ExprNode>, f: &mut dyn FnMut(E) -> E) -> Vec<ExprNode> {
+fn exprs_map(exprs: Vec<ExprNode>, f: &mut dyn FnMut(ExprNode) -> ExprNode) -> Vec<ExprNode> {
     exprs.into_iter().map(|e| expr_map(e, f)).collect()
 }
 
-/// TODO: Returning and merging all these vec's is kinda cursed,
-/// but oh well.  Let's make it work first.
 /// To handle multiple expressions this will turn more into a fold()
 /// than a map(), it will take an accumulator that gets threaded through
 /// everything...  That gets *very weird* though and I manage to pour
@@ -45,122 +46,122 @@ fn exprs_map(exprs: Vec<ExprNode>, f: &mut dyn FnMut(E) -> E) -> Vec<ExprNode> {
 ///
 /// We don't need a version of this for decls, 'cause decls
 /// can't be nested.
-fn expr_map(expr: ExprNode, f: &mut dyn FnMut(E) -> E) -> ExprNode {
-    let mut res = |e| {
-        let res = match e {
-            // Nodes with no recursive expressions.
-            // I list all these out explicitly instead of
-            // using a catchall so it doesn't fuck up if we change
-            // the type of Expr.
-            E::Lit { .. } => e,
-            E::Var { .. } => e,
-            E::Break => e,
-            E::TupleCtor { body } => E::TupleCtor {
-                body: exprs_map(body, f),
-            },
-            E::StructCtor { body } => {
-                let new_body = body
-                    .into_iter()
-                    .map(|(sym, vl)| (sym, expr_map(vl, f)))
-                    .collect();
-                E::StructCtor { body: new_body }
+///
+/// The function has to take and return an ExprNode, not an expr,
+/// because they may have to look up the type of the expression.
+fn expr_map(expr: ExprNode, f: &mut dyn FnMut(ExprNode) -> ExprNode) -> ExprNode {
+    let exprfn = &mut |e| match e {
+        // Nodes with no recursive expressions.
+        // I list all these out explicitly instead of
+        // using a catchall so it doesn't fuck up if we change
+        // the type of Expr.
+        E::Lit { .. } => e,
+        E::Var { .. } => e,
+        E::Break => e,
+        E::TupleCtor { body } => E::TupleCtor {
+            body: exprs_map(body, f),
+        },
+        E::StructCtor { body } => {
+            let new_body = body
+                .into_iter()
+                .map(|(sym, vl)| (sym, expr_map(vl, f)))
+                .collect();
+            E::StructCtor { body: new_body }
+        }
+        E::TypeCtor {
+            name,
+            type_params,
+            body,
+        } => E::TypeCtor {
+            name,
+            type_params,
+            body: expr_map(body, f),
+        },
+        E::SumCtor {
+            name,
+            variant,
+            body,
+        } => E::SumCtor {
+            name,
+            variant,
+            body: expr_map(body, f),
+        },
+        E::ArrayCtor { body } => E::ArrayCtor {
+            body: exprs_map(body, f),
+        },
+        E::TypeUnwrap { expr } => E::TypeUnwrap {
+            expr: expr_map(expr, f),
+        },
+        E::TupleRef { expr, elt } => E::TupleRef {
+            expr: expr_map(expr, f),
+            elt,
+        },
+        E::StructRef { expr, elt } => E::StructRef {
+            expr: expr_map(expr, f),
+            elt,
+        },
+        E::ArrayRef { e, idx } => E::ArrayRef {
+            e: expr_map(e, f),
+            idx,
+        },
+        E::Assign { lhs, rhs } => E::Assign {
+            lhs: expr_map(lhs, f), // TODO: Think real hard about lvalues
+            rhs: expr_map(rhs, f),
+        },
+        E::BinOp { op, lhs, rhs } => E::BinOp {
+            op,
+            lhs: expr_map(lhs, f),
+            rhs: expr_map(rhs, f),
+        },
+        E::UniOp { op, rhs } => E::UniOp {
+            op,
+            rhs: expr_map(rhs, f),
+        },
+        E::Block { body } => E::Block {
+            body: exprs_map(body, f),
+        },
+        E::Let {
+            varname,
+            typename,
+            init,
+            mutable,
+        } => E::Let {
+            varname,
+            typename,
+            init: expr_map(init, f),
+            mutable,
+        },
+        E::If { cases } => {
+            let new_cases = cases
+                .into_iter()
+                .map(|(test, case)| {
+                    let new_test = expr_map(test, f);
+                    let new_cases = exprs_map(case, f);
+                    (new_test, new_cases)
+                })
+                .collect();
+            E::If { cases: new_cases }
+        }
+        E::Loop { body } => E::Loop {
+            body: exprs_map(body, f),
+        },
+        E::Return { retval } => E::Return {
+            retval: expr_map(retval, f),
+        },
+        E::Funcall { func, params } => {
+            let new_func = expr_map(func, f);
+            let new_params = exprs_map(params, f);
+            E::Funcall {
+                func: new_func,
+                params: new_params,
             }
-            E::TypeCtor {
-                name,
-                type_params,
-                body,
-            } => E::TypeCtor {
-                name,
-                type_params,
-                body: expr_map(body, f),
-            },
-            E::SumCtor {
-                name,
-                variant,
-                body,
-            } => E::SumCtor {
-                name,
-                variant,
-                body: expr_map(body, f),
-            },
-            E::ArrayCtor { body } => E::ArrayCtor {
-                body: exprs_map(body, f),
-            },
-            E::TypeUnwrap { expr } => E::TypeUnwrap {
-                expr: expr_map(expr, f),
-            },
-            E::TupleRef { expr, elt } => E::TupleRef {
-                expr: expr_map(expr, f),
-                elt,
-            },
-            E::StructRef { expr, elt } => E::StructRef {
-                expr: expr_map(expr, f),
-                elt,
-            },
-            E::ArrayRef { e, idx } => E::ArrayRef {
-                e: expr_map(e, f),
-                idx,
-            },
-            E::Assign { lhs, rhs } => E::Assign {
-                lhs: expr_map(lhs, f), // TODO: Think real hard about lvalues
-                rhs: expr_map(rhs, f),
-            },
-            E::BinOp { op, lhs, rhs } => E::BinOp {
-                op,
-                lhs: expr_map(lhs, f),
-                rhs: expr_map(rhs, f),
-            },
-            E::UniOp { op, rhs } => E::UniOp {
-                op,
-                rhs: rhs.map(f),
-            },
-            E::Block { body } => E::Block {
-                body: exprs_map(body, f),
-            },
-            E::Let {
-                varname,
-                typename,
-                init,
-                mutable,
-            } => E::Let {
-                varname,
-                typename,
-                init: expr_map(init, f),
-                mutable,
-            },
-            E::If { cases } => {
-                let new_cases = cases
-                    .into_iter()
-                    .map(|(test, case)| {
-                        let new_test = expr_map(test, f);
-                        let new_cases = exprs_map(case, f);
-                        (new_test, new_cases)
-                    })
-                    .collect();
-                E::If { cases: new_cases }
-            }
-            E::Loop { body } => E::Loop {
-                body: exprs_map(body, f),
-            },
-            E::Return { retval } => E::Return {
-                retval: expr_map(retval, f),
-            },
-            E::Funcall { func, params } => {
-                let new_func = expr_map(func, f);
-                let new_params = exprs_map(params, f);
-                E::Funcall {
-                    func: new_func,
-                    params: new_params,
-                }
-            }
-            E::Lambda { signature, body } => E::Lambda {
-                signature,
-                body: exprs_map(body, f),
-            },
-        };
-        f(res)
+        }
+        E::Lambda { signature, body } => E::Lambda {
+            signature,
+            body: exprs_map(body, f),
+        },
     };
-    expr.map(&mut res)
+    expr.map(exprfn)
 }
 
 /*
@@ -394,8 +395,9 @@ fn signature_map(sig: hir::Signature, f: &mut dyn FnMut(Type) -> Type) -> hir::S
 
 //////  Lambda lifting  /////
 
-fn lambda_lift_expr(expr: E, output_funcs: &mut Vec<D>) -> E {
-    let result = match expr {
+/// Lambda lift a single expr, creating a new toplevel function if necessary.
+fn lambda_lift_expr(expr: ExprNode, output_funcs: &mut Vec<D>) -> ExprNode {
+    let result = &mut |e| match e {
         E::Lambda { signature, body } => {
             // This is actually the only important bit.
             // TODO: Make a more informative name, maybe including the file and line number or
@@ -411,7 +413,7 @@ fn lambda_lift_expr(expr: E, output_funcs: &mut Vec<D>) -> E {
         }
         x => x,
     };
-    result
+    expr.map(result)
 }
 
 /// A transformation pass that removes lambda expressions and turns
@@ -419,7 +421,7 @@ fn lambda_lift_expr(expr: E, output_funcs: &mut Vec<D>) -> E {
 /// TODO: Doesn't handle actual closures yet though.  That should be a
 /// separate pass that happens first?
 ///
-/// TODO: Output is an IR that does not have any lambda expr's in it, which
+/// TODO: Output is a HIR tree that does not have any lambda expr's in it, which
 /// I would like to make un-representable, but don't see a good way
 /// to do yet.  Add a tag type of some kind to the Ir?
 /// Eeeeeeeeh we might just have to check on it later one way or another,
@@ -459,7 +461,7 @@ fn _enum_to_int_expr(_expr: ExprNode, _output_funcs: &mut Vec<D>) -> ExprNode {
 
 //////  Monomorphization //////
 
-fn monomorphize(ir: Ir, _tck: &typeck::Tck) -> Ir {
+fn monomorphize(ir: Ir, _tck: &mut typeck::Tck) -> Ir {
     ir
 }
 
@@ -520,12 +522,45 @@ fn tuplize_type(typ: Type) -> Type {
 /// or ref turn it into a tuple ctor or ref.
 ///
 /// TODO: Do something with the expr types?
-fn tuplize_expr(expr: E) -> E {
-    match expr {
-        E::StructCtor { body } => todo!(),
-        E::StructRef { expr, elt } => todo!(),
+fn tuplize_expr(expr: ExprNode, tck: &mut typeck::Tck) -> ExprNode {
+    // Change the expression node's type to what it should be.
+    // Doing it up front rather than only if we have a StructCtor
+    // is kinda weird, but it makes the awkward borrowing work out.
+    let expr_typeid = tck.get_expr_type(&expr);
+    let struct_type = tck.reconstruct(expr_typeid).expect("Should never happen?");
+    let new_t = tuplize_type(struct_type.clone());
+    tck.replace_expr_type(&expr, &new_t);
+
+    let res = &mut |e| match e {
+        E::StructCtor { body } => {
+            match &struct_type {
+                Type::Struct(type_body, _generics) => {
+                    let mut ordered_body: Vec<_> = body
+                        .into_iter()
+                        .map(|(ky, vl)| (offset_of_field(&type_body, ky), vl))
+                        .collect();
+                    ordered_body.sort_by(|a, b| a.0.cmp(&b.0));
+                    let new_body = ordered_body.into_iter().map(|(_i, expr)| expr).collect();
+
+                    // Change the type of the struct literal expr node to the new tuple
+                    E::TupleCtor { body: new_body }
+                }
+                _other => unreachable!("Should never happen?"),
+            }
+        }
+        E::StructRef { expr, elt } => {
+            let struct_type = tck.reconstruct(expr_typeid).expect("Should never happen?");
+            match struct_type {
+                Type::Struct(type_body, _generics) => {
+                    let offset = offset_of_field(&type_body, elt);
+                    E::TupleRef { expr, elt: offset }
+                }
+                _other => unreachable!("Should never happen?"),
+            }
+        }
         other => other,
-    }
+    };
+    expr.map(res)
 }
 
 /// Takes any struct types and replaces them with tuples.
@@ -536,8 +571,9 @@ fn tuplize_expr(expr: E) -> E {
 /// kinda squirrelly, because we don't really have a decl that translates
 /// directly into a Rust struct without being wrapped in a typedef first.  So I
 /// think I will translate them to tuples after all.
-fn struct_to_tuple(ir: Ir, tck: &typeck::Tck) -> Ir {
+fn struct_to_tuple(ir: Ir, tck: &mut typeck::Tck) -> Ir {
     let mut new_decls = vec![];
+    let mut tuplize_expr = &mut |e| tuplize_expr(e, tck);
 
     for decl in ir.decls.into_iter() {
         let res = match decl {
@@ -547,7 +583,7 @@ fn struct_to_tuple(ir: Ir, tck: &typeck::Tck) -> Ir {
                 init,
             } => {
                 let new_type = type_map(typename, &mut tuplize_type);
-                let new_init = expr_map(init, &mut tuplize_expr);
+                let new_init = expr_map(init, tuplize_expr);
                 D::Const {
                     name,
                     typename: new_type,
@@ -561,7 +597,7 @@ fn struct_to_tuple(ir: Ir, tck: &typeck::Tck) -> Ir {
             } => D::Function {
                 name,
                 signature: signature_map(signature, &mut tuplize_type),
-                body: exprs_map(body, &mut tuplize_expr),
+                body: exprs_map(body, tuplize_expr),
             },
             D::TypeDef {
                 name,
@@ -579,7 +615,7 @@ fn struct_to_tuple(ir: Ir, tck: &typeck::Tck) -> Ir {
 }
 
 /// Takes any enum typedef and values turns them into plain integers.
-fn _enum_to_int(ir: Ir, tck: &typeck::Tck) -> Ir {
+fn _enum_to_int(ir: Ir, tck: &mut typeck::Tck) -> Ir {
     let mut new_functions = vec![];
     let new_decls: Vec<D> = ir
         .decls
