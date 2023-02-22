@@ -31,6 +31,17 @@ fn baz() I32 =
     return y
 end
 
+fn bop1(x {}) {} =
+    let a fn() I32 = baz;
+    {}
+end
+
+fn bop2() {} =
+    -- This parses as a function call
+    let a {} = bop1
+    {}
+end
+
 fn main() {} =
     __println(foo())
     __println(bar())
@@ -50,5 +61,4 @@ fn main() {} =
     -aa
     __println(aa)
     __println(ab)
-    {}
 end

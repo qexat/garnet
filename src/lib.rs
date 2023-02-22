@@ -247,6 +247,10 @@ impl Type {
         Self::Named(Sym::new(&name.into()), vec![])
     }
 
+    pub fn array(t: &Type, len: usize) -> Self {
+        Self::Array(Box::new(t.clone()), len)
+    }
+
     pub fn is_integer(&self) -> bool {
         match self {
             Self::Prim(PrimType::SInt(_)) => true,
