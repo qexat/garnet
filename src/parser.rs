@@ -1439,6 +1439,16 @@ mod tests {
         assert_eq!(p.lex.peek(), None);
     }
 
+    /// And again with types
+    fn test_type_is(s: &str, f: impl Fn() -> crate::Type) {
+        let ast = f();
+        let mut p = Parser::new("unittest", s);
+        let parsed_type = p.parse_type();
+        assert_eq!(&ast, &parsed_type);
+        // Make sure we've parsed the whole string.
+        assert_eq!(p.lex.peek(), None);
+    }
+
     #[test]
     fn test_const() {
         test_decl_is("const foo I32 = -9", || ast::Decl::Const {
@@ -1882,6 +1892,44 @@ type blar = I8
     }
 
     #[test]
+    fn parse_array_constructor() {
+        test_expr_is("[4, 3, 2]", || Expr::ArrayCtor {
+            body: vec![Expr::int(4), Expr::int(3), Expr::int(2)],
+        });
+
+        // Nested arrays now
+        test_expr_is("[[4, 3, 2], [4, 3, 2], [4, 3, 2]]", || {
+            let arr = Expr::ArrayCtor {
+                body: vec![Expr::int(4), Expr::int(3), Expr::int(2)],
+            };
+            Expr::ArrayCtor {
+                body: vec![arr.clone(), arr.clone(), arr.clone()],
+            }
+        });
+    }
+
+    #[test]
+    fn parse_weird_nested_array_bug() {
+        test_expr_is(
+            "let x I32[3][3] = [[4, 3, 2], [4, 3, 2], [4, 3, 2]]",
+            || {
+                let arr = Expr::ArrayCtor {
+                    body: vec![Expr::int(4), Expr::int(3), Expr::int(2)],
+                };
+                let ty = Type::array(&Type::array(&Type::i32(), 3), 3);
+                Expr::Let {
+                    varname: Sym::new("x"),
+                    typename: Some(ty),
+                    mutable: false,
+                    init: Box::new(Expr::ArrayCtor {
+                        body: vec![arr.clone(), arr.clone(), arr.clone()],
+                    }),
+                }
+            },
+        );
+    }
+
+    #[test]
     fn parse_tuple_values() {
         test_expr_is("{}", || Expr::unit());
         test_expr_is("{1,2,3}", || Expr::TupleCtor {
@@ -1909,6 +1957,14 @@ type blar = I8
             "{Bool, {}, I32}",
         ][..];
         test_parse_with(|p| p.parse_type(), &valid_args)
+    }
+
+    #[test]
+    fn parse_array_types() {
+        test_type_is("I32[4]", || Type::array(&Type::i32(), 4));
+        test_type_is("I32[4][6]", || {
+            Type::array(&Type::array(&Type::i32(), 4), 6)
+        });
     }
 
     #[test]

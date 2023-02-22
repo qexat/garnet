@@ -938,6 +938,7 @@ fn typecheck_expr(
     expr: &hir::ExprNode,
 ) -> Result<TypeId, String> {
     use hir::Expr::*;
+    dbg!(&expr.e);
     let rettype = match &*expr.e {
         Lit { val } => {
             let lit_type = infer_lit(val);
@@ -1015,7 +1016,10 @@ fn typecheck_expr(
                     // type params are.  Then we bind those type parameters
                     // to things.
                 }
-                _ => panic!("Tried to call something not a function"),
+                other => panic!(
+                    "Tried to call something not a function, it is a {:?}",
+                    other
+                ),
             }
 
             // Synthesize what we know about the function

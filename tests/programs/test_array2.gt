@@ -1,7 +1,10 @@
 -- Compile:
 --   status: error
+--   stderr:
+--     ...
+--     ...Conflict between Ref({number})[4] and I32[5]...
+--     ...
 
-fn main() I32 =
+fn main() {} =
     let a I32[5] = [1, 2, 3, 4]
-    3
 end
