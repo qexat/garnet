@@ -476,6 +476,7 @@ fn lower_typedef(accm: &mut Vec<Decl>, name: Sym, ty: &Type, params: &[Sym]) {
         // type Y = Thing
         // TODO: What do we do with the generics...
         Type::Sum(body, generics) => {
+            println!("Lowering sum type {}", &*name.val());
             let struct_body: Vec<_> = body
                 .iter()
                 .map(|(variant_name, variant_type)| {
@@ -499,7 +500,17 @@ fn lower_typedef(accm: &mut Vec<Decl>, name: Sym, ty: &Type, params: &[Sym]) {
             let init_val = ExprNode::new(Expr::StructCtor { body: struct_body });
             let struct_typebody = body
                 .iter()
-                .map(|(variant_name, variant_type)| (*variant_name, variant_type.clone()))
+                .map(|(variant_name, variant_type)| {
+                    // The function inside the struct has the signature
+                    // `fn(variant_type) name`
+                    (
+                        *variant_name,
+                        Type::Func(
+                            vec![variant_type.clone()],
+                            Box::new(Type::Named(name, generics.clone())),
+                        ),
+                    )
+                })
                 .collect();
             let struct_type = Type::Struct(struct_typebody, generics.clone());
             let new_constdef = Const {
@@ -507,6 +518,7 @@ fn lower_typedef(accm: &mut Vec<Decl>, name: Sym, ty: &Type, params: &[Sym]) {
                 typename: struct_type,
                 init: init_val,
             };
+            //println!("Lowered to {:#?}", &new_constdef);
             accm.push(new_constdef);
         }
         // For other types, we create a constructor function to build them.
@@ -586,6 +598,10 @@ fn lower_decls(decls: &[ast::Decl]) -> Ir {
     for d in decls.iter() {
         lower_decl(&mut accm, d)
     }
+    for d in accm.iter() {
+        println!("## DECL {:#?}", d);
+    }
+
     Ir { decls: accm }
 }
 

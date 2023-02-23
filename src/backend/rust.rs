@@ -408,7 +408,9 @@ fn compile_expr(expr: &hir::ExprNode, tck: &Tck) -> String {
             accm += ")\n";
             accm
         }
-        E::StructRef { expr, elt } => {
+        E::StructRef { expr: _, elt: _ } => {
+            panic!("Should never happen, structs should always be tuples by now!");
+            /*
             // We turn our structs into Rust tuples, so we need to
             // to turn our field names into indices
             let typevar = tck.get_expr_type(expr);
@@ -428,6 +430,7 @@ fn compile_expr(expr: &hir::ExprNode, tck: &Tck) -> String {
                     compile_typename(&ty)
                 )
             }
+            */
         }
         E::TupleRef { expr, elt } => {
             // We turn our structs into Rust tuples, so we need to
@@ -438,8 +441,8 @@ fn compile_expr(expr: &hir::ExprNode, tck: &Tck) -> String {
                 format!("{}.{}", compile_expr(expr, tck), elt)
             } else {
                 panic!(
-                    "Struct wasn't actually a struct in backend, was {}.  should never happen",
-                    compile_typename(&ty)
+                    "Tuple ref wasn't actually a tuple in backend, was {:?}.  should never happen",
+                    ty
                 )
             }
         }

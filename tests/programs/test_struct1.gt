@@ -18,4 +18,5 @@ fn main() {} =
         .b = false
     })
     let f2 struct a: I32, b: Bool end = id({ .a = 3, .b = false })
+    __println(f1$.a)
 end
