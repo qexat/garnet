@@ -290,10 +290,12 @@ pub struct Tck {
 impl Tck {
     /// Save the type variable associated with the given expr
     fn set_expr_type(&mut self, expr: &hir::ExprNode, ty: TypeId) {
+        dbg!(expr);
         let res = self.types.insert(expr.id, ty);
         assert!(
             res.is_none(),
-            "Redefining known type, not suuuuure if this is bad or not.  Probably is though, since we should always be changing the meaning of an expr's associated type variable instead."
+            "Redefining known type, this is generally a bad thing.  It was: {:?}",
+            self.reconstruct(res.unwrap())
         );
     }
 
@@ -938,7 +940,6 @@ fn typecheck_expr(
     expr: &hir::ExprNode,
 ) -> Result<TypeId, String> {
     use hir::Expr::*;
-    dbg!(&expr.e);
     let rettype = match &*expr.e {
         Lit { val } => {
             let lit_type = infer_lit(val);
@@ -1235,48 +1236,61 @@ fn typecheck_expr(
             tck.set_expr_type(expr, constructed_type);
             Ok(constructed_type)
         }
-        TypeUnwrap { expr } => {
-            let mut body_type = typecheck_expr(tck, symtbl, func_rettype, expr)?;
-            loop {
-                // I guess we follow TypeInfo references the stupid way?
-                // We don't have a convenient place to recurse for this,
-                // apparently, which is already a Smell but let's see
-                // where this takes us.
-                //
-                // TODO: Make this suck less
-                let well_heck = tck.vars[&body_type].clone();
-                match well_heck.clone() {
-                    TypeInfo::Named(nm, params) => {
-                        println!("Unwrapping type {}{:?}", nm, params);
-                        let t = symtbl
-                            .get_type(nm)
-                            .expect("Named type doesn't name anything?!!");
-                        println!("Inner type is {:?}", t);
-                        // t is a concrete Type, not a TypeInfo that may have
-                        // unknowns, so we instantiate it to sub out any of its
-                        // type params with new unknowns.
-                        //
-                        // But then we have to bind those type params to
-                        // what we *know* about the type already...
-                        let type_param_names = t.collect_generic_names();
-                        let known_type_params = type_param_names
-                            .iter()
-                            .cloned()
-                            .zip(params.iter().cloned())
-                            .collect();
-                        let inst_t = tck.instantiate(&t, Some(known_type_params));
-                        //let heckin_hecker = tck.insert(well_heck);
-                        //tck.unify(symtbl, inst_t, heckin_hecker)?;
-                        tck.set_expr_type(expr, inst_t);
-                        return Ok(inst_t);
+        TypeUnwrap { expr: inner_expr } => {
+            /// Takes a typeid that should be either a Ref or a Named type, and
+            /// tries to follow it until it hits a Named type, and then looks it
+            /// up in the symtbl.  (Once; if the named type contains another named
+            /// type it will not recurse.)
+            ///
+            /// So it's a little like a weird partial `reconstruct()`, except it
+            /// also tries to look up names in the symbol table.
+            ///
+            /// TODO: This is a kinda weird level of abstraction, maybe the wrong one
+            /// since it returns some odd disconnected data.  It'd just be utility code,
+            /// but it needs to recurse.  Writing it iteratively is even more cursed.
+            fn try_resolve_named_type(
+                tck: &Tck,
+                symtbl: &Symtbl,
+                t: TypeId,
+            ) -> Result<(Sym, Vec<TypeId>), String> {
+                let tinfo = &tck.vars[&t];
+                match tinfo {
+                    // Lookup name in symbol table
+                    TypeInfo::Named(nm, params) => return Ok((*nm, params.clone())),
+                    // Follow type ref
+                    TypeInfo::Ref(id) => try_resolve_named_type(tck, symtbl, *id),
+                    other => {
+                        return Err(format!(
+                            "Can't resolve {:?} because it's not a named type!",
+                            other
+                        ))
                     }
-                    TypeInfo::Ref(other) => {
-                        body_type = other;
-                        // and loop to try again
-                    }
-                    other => panic!("Cannot unwrap non-named type {:?}", other),
                 }
             }
+
+            let body_type = typecheck_expr(tck, symtbl, func_rettype, inner_expr)?;
+            let (nm, params) = try_resolve_named_type(tck, symtbl, body_type)?;
+            let inner_type = symtbl
+                .get_type(nm)
+                .ok_or(format!("Named type {} is not known!", nm))?;
+            println!("Inner type is {:?}", inner_type);
+
+            // The inner_type  is a concrete Type, not a TypeInfo that may have
+            // unknowns, so we instantiate it to sub out any of its
+            // type params with new unknowns.
+            //
+            // But then we have to bind those type params to
+            // what we *know* about the type already...
+            let type_param_names = inner_type.collect_generic_names();
+            let known_type_params = type_param_names
+                .iter()
+                .cloned()
+                .zip(params.iter().cloned())
+                .collect();
+            let inst_t = tck.instantiate(&inner_type, Some(known_type_params));
+
+            tck.set_expr_type(expr, inst_t);
+            return Ok(inst_t);
         }
         SumCtor {
             name,

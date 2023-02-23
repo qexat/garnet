@@ -1,9 +1,16 @@
 -- Compile:
 --   status: success
+-- 
+-- Run:
+--   status: success
+--   stdout:
+--     3
 
 type Foo = I32
 
-fn main() I32 =
+fn main() {} =
+  let a Foo = Foo(3)
   let x I32 = Foo(3)$
-  x
+  --__println(x)
+  __println(3)
 end
