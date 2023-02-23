@@ -58,7 +58,15 @@ impl TypeInfo {
                 accm += "end";
                 accm.into()
             }
-            Named(s, _g) => (&*s.val()).to_owned().into(),
+            Named(s, g) => {
+                let name = (&*s.val()).to_owned();
+                let generics: Vec<_> = g
+                    .iter()
+                    .map(|t| tck.vars[t].get_name(tck).to_owned())
+                    .collect();
+                let joined_generics = generics.join(", ");
+                format!("{}({})", name, joined_generics).into()
+            }
             Func(params, rettype) => {
                 let paramstr: Vec<_> = params.iter().map(|id| tck.vars[id].get_name(tck)).collect();
                 let paramstr = paramstr.join(", ");
@@ -75,7 +83,16 @@ impl TypeInfo {
                 accm += "end\n";
                 accm.into()
             }
-            Sum(_s) => todo!(),
+            Sum(body) => {
+                let mut accm = String::from("sum\n");
+                // TODO: Do heckin' something with the val???
+                for (name, id) in body {
+                    let typename = tck.vars[id].get_name(tck);
+                    accm += &format!("{} {},\n", name, typename);
+                }
+                accm += "end\n";
+                accm.into()
+            }
             Array(id, len) => Cow::Owned(format!("{}[{}]", tck.vars[id].get_name(tck), len)),
             TypeParam(sym) => Cow::Owned(format!("@{}", &*sym.val())),
         }
@@ -290,7 +307,6 @@ pub struct Tck {
 impl Tck {
     /// Save the type variable associated with the given expr
     fn set_expr_type(&mut self, expr: &hir::ExprNode, ty: TypeId) {
-        dbg!(expr);
         let res = self.types.insert(expr.id, ty);
         assert!(
             res.is_none(),
@@ -1468,7 +1484,6 @@ pub fn typecheck(ast: &hir::Ir) -> Result<Tck, TypeError> {
                 // The init expression is typechecked in its own
                 // scope, since it may theoretically be a `let` or
                 // something that introduces new names inside it.
-                println!("init is {:#?}", init);
                 let desired_type = tck.insert_known(typename);
                 let init_type = {
                     let _guard = symtbl.push_scope();

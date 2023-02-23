@@ -49,7 +49,13 @@ fn exprs_map(exprs: Vec<ExprNode>, f: &mut dyn FnMut(ExprNode) -> ExprNode) -> V
 ///
 /// The function has to take and return an ExprNode, not an expr,
 /// because they may have to look up the type of the expression.
+///
+/// HORRIBLE NUANCE: This does a *pre-traversal*, ie, it calls the given function on the
+/// current node, and then on its sub-nodes.  This is because the function may hae
+/// to look at the unaltered values/types of the subnodes to decide what to do!
+/// I have *no idea* whether pre-traversal is always what we want!
 fn expr_map(expr: ExprNode, f: &mut dyn FnMut(ExprNode) -> ExprNode) -> ExprNode {
+    let thing = f(expr);
     let exprfn = &mut |e| match e {
         // Nodes with no recursive expressions.
         // I list all these out explicitly instead of
@@ -161,8 +167,11 @@ fn expr_map(expr: ExprNode, f: &mut dyn FnMut(ExprNode) -> ExprNode) -> ExprNode
             body: exprs_map(body, f),
         },
     };
+    /*
     let x = expr.map(exprfn);
     f(x)
+    */
+    thing.map(exprfn)
 }
 
 /*
@@ -524,49 +533,52 @@ fn tuplize_type(typ: Type) -> Type {
 ///
 /// TODO: Do something with the expr types?
 fn tuplize_expr(expr: ExprNode, tck: &mut typeck::Tck) -> ExprNode {
-    // Change the expression node's type to what it should be.
-    // Doing it up front rather than only if we have a StructCtor
-    // is kinda weird, but it makes the awkward borrowing work out.
     let expr_typeid = tck.get_expr_type(&expr);
-
+    let struct_type = tck.reconstruct(expr_typeid).expect("Should never happen?");
     let new_contents = match &*expr.e {
-        E::StructCtor { body } => {
-            let struct_type = tck.reconstruct(expr_typeid).expect("Should never happen?");
-            match &struct_type {
-                Type::Struct(type_body, _generics) => {
-                    let mut ordered_body: Vec<_> = body
-                        .into_iter()
-                        .map(|(ky, vl)| (offset_of_field(&type_body, *ky), vl))
-                        .collect();
-                    ordered_body.sort_by(|a, b| a.0.cmp(&b.0));
-                    let new_body = ordered_body
-                        .into_iter()
-                        .map(|(_i, expr)| expr.clone())
-                        .collect();
+        E::StructCtor { body } => match &struct_type {
+            Type::Struct(type_body, _generics) => {
+                let mut ordered_body: Vec<_> = body
+                    .into_iter()
+                    .map(|(ky, vl)| (offset_of_field(&type_body, *ky), vl))
+                    .collect();
+                ordered_body.sort_by(|a, b| a.0.cmp(&b.0));
+                let new_body = ordered_body
+                    .into_iter()
+                    .map(|(_i, expr)| expr.clone())
+                    .collect();
 
-                    // Change the type of the struct literal expr node to the new tuple
-                    let new_t = tuplize_type(struct_type.clone());
-                    tck.replace_expr_type(&expr, &new_t);
-                    E::TupleCtor { body: new_body }
-                }
-                _other => unreachable!("Should never happen?"),
+                E::TupleCtor { body: new_body }
             }
-        }
-        E::StructRef { expr, elt } => {
-            let struct_type = tck.reconstruct(expr_typeid).expect("Should never happen?");
+            _other => unreachable!("Should never happen?"),
+        },
+        E::StructRef {
+            expr: inner_expr,
+            elt,
+        } => {
+            let inner_typeid = tck.get_expr_type(&inner_expr);
+            let struct_type = tck.reconstruct(inner_typeid).expect("Should never happen?");
             match struct_type {
                 Type::Struct(type_body, _generics) => {
                     let offset = offset_of_field(&type_body, *elt);
                     E::TupleRef {
-                        expr: expr.clone(),
+                        expr: inner_expr.clone(),
                         elt: offset,
                     }
                 }
-                _other => unreachable!("Should never happen?"),
+                other => unreachable!(
+                    "StructRef passed type checking but expr type is {:?}.  Should never happen!",
+                    other
+                ),
             }
         }
         _other => *expr.e.clone(),
     };
+    // Change the type of the struct literal expr node to the new tuple
+    // We need to do this to any expression because its type may be a struct.
+    // And we need to do this after the above because we've changed the
+    let new_t = tuplize_type(struct_type.clone());
+    tck.replace_expr_type(&expr, &new_t);
     expr.map(&mut |_| new_contents.clone())
 }
 
