@@ -136,7 +136,7 @@ fn compile_typename(t: &Type) -> Cow<'static, str> {
                 format!("{}<{}>", sym, args).into()
             }
         }
-        other => todo!("compile_typename: {:?}", other),
+        Sum(_body, _generics) => todo!("compile_typename: sum types"),
     }
 }
 
@@ -459,6 +459,11 @@ fn compile_expr(expr: &hir::ExprNode, tck: &Tck) -> String {
         E::Deref { expr } => format!("*{}", compile_expr(expr, tck)),
         E::Ref { expr } => format!("&{}", compile_expr(expr, tck)),
         */
+        E::TypeUnwrap { expr } => {
+            // Since our typedefs compile to Rust type aliases, we don't
+            // have to do anything to unwrap them
+            compile_expr(expr, tck)
+        }
         other => todo!("{:?}", other),
     }
 }
