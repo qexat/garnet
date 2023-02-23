@@ -136,7 +136,22 @@ fn compile_typename(t: &Type) -> Cow<'static, str> {
                 format!("{}<{}>", sym, args).into()
             }
         }
-        Sum(_body, _generics) => todo!("compile_typename: sum types"),
+        Sum(_body, _generics) => {
+            /*
+            let mut accm = String::from("(");
+            for (nm, typ) in fields.iter() {
+                accm += &format!(
+                    "/* {} */
+    {}, \n",
+                    INT.fetch(*nm),
+                    compile_typename(&*typ)
+                );
+            }
+            accm += ")";
+            accm.into()
+            */
+            format!("SomeSum").into()
+        }
     }
 }
 
@@ -466,6 +481,19 @@ fn compile_expr(expr: &hir::ExprNode, tck: &Tck) -> String {
             // Since our typedefs compile to Rust type aliases, we don't
             // have to do anything to unwrap them
             compile_expr(expr, tck)
+        }
+        E::SumCtor {
+            name,
+            variant,
+            body,
+        } => {
+            // This should just be a function call, right?
+            format!(
+                "{}.{}( {} )",
+                &*name.val(),
+                &*variant.val(),
+                compile_expr(body, tck)
+            )
         }
         other => todo!("{:?}", other),
     }
