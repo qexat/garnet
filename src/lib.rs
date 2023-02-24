@@ -339,9 +339,9 @@ impl Type {
                 Cow::Owned(t)
             }
             Type::Struct(body, _generics) => {
-                let mut res = String::from("struct");
+                let mut res = String::from("struct ");
                 res += &join_vars_with_commas(body);
-                res += "end";
+                res += " end";
                 Cow::Owned(res)
             }
             Type::Sum(body, _generics) => {

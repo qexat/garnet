@@ -83,16 +83,7 @@ fn unparse_expr(e: &Expr, indent: usize, out: &mut dyn io::Write) -> io::Result<
         write!(out, " ")?;
     }
     match e {
-        E::Lit { val } => match val {
-            Literal::Integer(i) => write!(out, "{}", i),
-            Literal::SizedInteger { vl, bytes } => {
-                let size = bytes * 8;
-                write!(out, "{}i{}", vl, size)
-            }
-            Literal::Bool(b) => write!(out, "{}", b),
-            // TODO: generics??
-            Literal::EnumLit(s, _generics) => write!(out, "{}", s),
-        },
+        E::Lit { val } => write!(out, "{}", val),
         E::Var { name } => {
             let name = name.val();
             write!(out, "{}", name)
