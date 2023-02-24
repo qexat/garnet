@@ -67,7 +67,11 @@ impl PartialEq for ExprNode {
 
 impl ExprNode {
     pub fn write(&self, indent: usize, f: &mut dyn fmt::Write) -> fmt::Result {
-        self.e.write(indent, f)
+        // TODO: We can make this take a callback that gets called for each
+        // expr node, which prints out types for each node.  Will make the
+        // formatting even more horrible though.
+        self.e.write(indent, f)?;
+        Ok(())
     }
 }
 
