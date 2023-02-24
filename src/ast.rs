@@ -8,6 +8,8 @@
 //! Though code formatters have different constraints and priorities, if they have line wrapping
 //! and stuff at least.  So, it might not be a particularly great code formatter.
 
+use std::fmt;
+
 use crate::*;
 
 /// Literal value
@@ -26,6 +28,21 @@ pub enum Literal {
     Bool(bool),
     /// Enum literal
     EnumLit(Sym, Sym),
+}
+
+impl fmt::Display for Literal {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Literal::Integer(i) => write!(f, "{}", i),
+            Literal::SizedInteger { vl, bytes } => {
+                let size = bytes * 8;
+                write!(f, "{}_I{}", vl, size)
+            }
+            Literal::Bool(b) => write!(f, "{}", b),
+            // TODO: generics??
+            Literal::EnumLit(s, _generics) => write!(f, "{}", s),
+        }
+    }
 }
 
 /// Binary operation
@@ -92,6 +109,16 @@ impl Signature {
     /// Get all the generic params out of this function sig
     pub fn generic_type_names(&self) -> Vec<Sym> {
         self.to_type().collect_generic_names()
+    }
+
+    pub fn to_name(&self) -> String {
+        let names: Vec<_> = self
+            .params
+            .iter()
+            .map(|(s, t)| format!("{} {}", &*s.val(), t.get_name()))
+            .collect();
+        let args = names.join(", ");
+        format!("({}) {}", args, self.rettype.get_name())
     }
 }
 

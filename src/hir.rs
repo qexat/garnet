@@ -7,6 +7,7 @@
 //! It's mostly a layer of indirection for further stuff to happen to, so we can change
 //! the parser without changing the typechecking and codegen.
 
+use std::fmt;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use crate::ast;
@@ -61,6 +62,211 @@ impl PartialEq for ExprNode {
     /// ill-constructed nodes.)
     fn eq(&self, other: &Self) -> bool {
         self.e == other.e
+    }
+}
+
+impl ExprNode {
+    pub fn write(&self, indent: usize, f: &mut dyn fmt::Write) -> fmt::Result {
+        self.e.write(indent, f)
+    }
+}
+
+impl Expr {
+    pub fn write(&self, indent: usize, f: &mut dyn fmt::Write) -> fmt::Result {
+        use Expr::*;
+        for _ in 0..(indent * 2) {
+            write!(f, " ")?;
+        }
+        match self {
+            Lit { val } => {
+                write!(f, "{}", val)?;
+            }
+            Var { name } => write!(f, "{}", &*name.val())?,
+            BinOp { op, lhs, rhs } => {
+                write!(f, "({:?} ", op)?;
+                lhs.write(indent, f)?;
+                rhs.write(indent, f)?;
+                writeln!(f, ")")?;
+            }
+            UniOp { op, rhs } => {
+                write!(f, "({:?} ", op)?;
+                rhs.write(indent, f)?;
+                writeln!(f, ")")?;
+            }
+            Block { body } => {
+                writeln!(f, "(block")?;
+                for b in body {
+                    b.write(indent + 1, f)?;
+                }
+                writeln!(f, ")")?;
+            }
+            Let {
+                varname,
+                typename,
+                init,
+                mutable,
+            } => {
+                let m = if *mutable { " mut" } else { "" };
+                let type_str = typename
+                    .as_ref()
+                    .map(|inner| Cow::from(inner.get_name()))
+                    .unwrap_or(Cow::from(""));
+                write!(f, "(let {}{} {} = ", &*varname.val(), m, type_str)?;
+                init.write(0, f)?;
+                writeln!(f, ")")?;
+            }
+            If { cases } => {
+                writeln!(f, "(if")?;
+                for (case, arm) in cases {
+                    case.write(indent + 1, f)?;
+                    for expr in arm {
+                        expr.write(indent + 2, f)?;
+                    }
+                }
+                writeln!(f, ")")?;
+            }
+            Loop { body } => {
+                writeln!(f, "(loop")?;
+                for b in body {
+                    b.write(indent + 1, f)?;
+                }
+                writeln!(f, ")")?;
+            }
+            Lambda { signature, body } => {
+                writeln!(f, "(lambda {}", signature.to_name())?;
+                for b in body {
+                    b.write(indent + 1, f)?;
+                }
+                writeln!(f, ")")?;
+            }
+            Funcall { func, params } => {
+                write!(f, "(funcall ")?;
+                func.write(0, f)?;
+                for b in params {
+                    b.write(indent + 1, f)?;
+                    write!(f, " ")?;
+                }
+                write!(f, ")")?;
+            }
+            Break => {
+                writeln!(f, "(break)")?;
+            }
+            Return { retval } => {
+                write!(f, "(return ")?;
+                retval.write(0, f)?;
+                writeln!(f)?;
+            }
+            TupleCtor { body } => {
+                write!(f, "(tuple ")?;
+                for b in body {
+                    b.write(0, f)?;
+                    write!(f, " ")?;
+                }
+                write!(f, ")")?;
+            }
+            StructCtor { body } => {
+                writeln!(f, "(struct")?;
+                for (nm, expr) in body {
+                    write!(f, "{} =", &*nm.val())?;
+                    expr.write(0, f)?;
+                    writeln!(f)?;
+                }
+                writeln!(f, ")")?;
+            }
+            ArrayCtor { body } => {
+                writeln!(f, "(array")?;
+                for b in body {
+                    b.write(indent + 1, f)?;
+                }
+                write!(f, ")")?;
+            }
+            SumCtor {
+                name,
+                variant,
+                body,
+            } => {
+                write!(f, "(sum {} {} ", &*name.val(), &*variant.val())?;
+                body.write(0, f)?;
+                write!(f, ")")?;
+            }
+            TypeCtor {
+                name,
+                type_params: _,
+                body,
+            } => {
+                // TODO: type_params
+                write!(f, "(typector {} ", &*name.val())?;
+                body.write(0, f)?;
+                write!(f, ")")?;
+            }
+            TypeUnwrap { expr } => {
+                write!(f, "(typeunwrap ")?;
+                expr.write(0, f)?;
+                write!(f, ")")?;
+            }
+            TupleRef { expr, elt } => {
+                write!(f, "(tupleref ")?;
+                expr.write(0, f)?;
+                write!(f, " {})", elt)?;
+            }
+            StructRef { expr, elt } => {
+                write!(f, "(structref ")?;
+                expr.write(0, f)?;
+                write!(f, "{})", elt)?;
+            }
+            ArrayRef { e, idx } => {
+                write!(f, "(arrayref ")?;
+                e.write(0, f)?;
+                write!(f, " ")?;
+                idx.write(0, f)?;
+                write!(f, ")")?;
+            }
+            Assign { lhs, rhs } => {
+                write!(f, "(assign ")?;
+                lhs.write(0, f)?;
+                write!(f, " ")?;
+                rhs.write(0, f)?;
+                write!(f, ")")?;
+            }
+        }
+        Ok(())
+    }
+}
+
+impl fmt::Display for Decl {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        use crate::hir::Decl as D;
+        match self {
+            D::Function {
+                name,
+                signature,
+                body,
+            } => {
+                writeln!(f, "fn {}{} =", &*name, signature.to_name())?;
+                for e in body {
+                    e.write(1, f)?;
+                }
+                writeln!(f, "\nend")?;
+            }
+
+            D::Const {
+                name,
+                typename,
+                init,
+            } => {
+                write!(f, "const {}: {} = ", &*name, typename.get_name())?;
+                init.write(1, f)?;
+                writeln!(f)?;
+            }
+            D::TypeDef {
+                name,
+                typedecl,
+                params,
+            } => {
+                writeln!(f, "type {}({:?}) = {}", &*name, params, typedecl.get_name())?;
+            }
+        }
+        Ok(())
     }
 }
 
@@ -268,6 +474,15 @@ pub enum Decl {
 #[derive(Debug, Clone, Default)]
 pub struct Ir {
     pub decls: Vec<Decl>,
+}
+
+impl fmt::Display for Ir {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for decl in &self.decls {
+            write!(f, "{}", decl)?;
+        }
+        Ok(())
+    }
 }
 
 /// Transforms AST into HIR
@@ -598,11 +813,10 @@ fn lower_decls(decls: &[ast::Decl]) -> Ir {
     for d in decls.iter() {
         lower_decl(&mut accm, d)
     }
-    for d in accm.iter() {
-        println!("## DECL {:#?}", d);
-    }
 
-    Ir { decls: accm }
+    let i = Ir { decls: accm };
+    println!("{}", i);
+    i
 }
 
 #[cfg(test)]

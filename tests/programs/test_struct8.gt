@@ -1,0 +1,31 @@
+-- Compile:
+--   status: success
+
+-- Test struct literal syntax stuff
+const X struct
+    a: I32,
+    b: Bool
+end = {
+    .a = 12,
+    .b = false
+}
+
+/-
+-- Does it still work with function types?
+const Y struct
+    a: fn(I32) Bool,
+    b: Bool
+end = {
+    .a = fn(x: I32) Bool = false end,
+    .b = false
+}
+-/
+ 
+
+fn main() {} =
+    let a I32 = X.a
+    let b Bool = X.b
+
+
+    --let c Bool = Y.a(3)
+end

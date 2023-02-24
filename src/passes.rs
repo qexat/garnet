@@ -31,7 +31,10 @@ pub fn run_passes(ir: Ir) -> Ir {
 pub fn run_typechecked_passes(ir: Ir, tck: &mut typeck::Tck) -> Ir {
     //let passes: &[TckPass] = &[monomorphize, anon_struct_to_tuple];
     let passes: &[TckPass] = &[struct_to_tuple];
-    passes.iter().fold(ir, |prev_ir, f| f(prev_ir, tck))
+    let res = passes.iter().fold(ir, |prev_ir, f| f(prev_ir, tck));
+    println!();
+    println!("{}", res);
+    res
 }
 
 fn exprs_map(exprs: Vec<ExprNode>, f: &mut dyn FnMut(ExprNode) -> ExprNode) -> Vec<ExprNode> {
