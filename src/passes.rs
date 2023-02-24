@@ -30,7 +30,7 @@ pub fn run_passes(ir: Ir) -> Ir {
 
 pub fn run_typechecked_passes(ir: Ir, tck: &mut typeck::Tck) -> Ir {
     //let passes: &[TckPass] = &[monomorphize, anon_struct_to_tuple];
-    let passes: &[TckPass] = &[struct_to_tuple];
+    let passes: &[TckPass] = &[struct_to_tuple, enum_to_int];
     let res = passes.iter().fold(ir, |prev_ir, f| f(prev_ir, tck));
     println!();
     println!("{}", res);
@@ -466,12 +466,6 @@ fn lambda_lift(ir: Ir) -> Ir {
     }
 }
 
-//////  Turn named enums into raw integers //////
-
-fn _enum_to_int_expr(_expr: ExprNode, _output_funcs: &mut Vec<D>) -> ExprNode {
-    todo!()
-}
-
 //////  Monomorphization //////
 
 fn monomorphize(ir: Ir, _tck: &mut typeck::Tck) -> Ir {
@@ -497,19 +491,6 @@ fn offset_of_field(fields: &BTreeMap<Sym, Type>, name: Sym) -> usize {
         &*name.val()
     );
 }
-
-/*
-fn struct_fields_to_tuple(fields: &BTreeMap<Sym, Type>) -> Type {
-    // This is why structs contain a BTreeMap,
-    // so that this ordering is always consistent based
-    // on the field names.
-    let tuple_fields = fields
-        .iter()
-        .map(|(_sym, ty)| type_map(ty.clone(), &mut tuplize_type))
-        .collect();
-    Type::tuple(tuple_fields)
-}
-*/
 
 /// Takes an arbitrary type and recursively turns
 /// structs into tuples.
@@ -636,35 +617,90 @@ fn struct_to_tuple(ir: Ir, tck: &mut typeck::Tck) -> Ir {
     Ir { decls: new_decls }
 }
 
-/// Takes any enum typedef and values turns them into plain integers.
-fn _enum_to_int(ir: Ir, tck: &mut typeck::Tck) -> Ir {
-    let mut new_functions = vec![];
-    let new_decls: Vec<D> = ir
-        .decls
-        .into_iter()
-        .map(|decl| match decl {
+//////  Enum to integer transformation //////
+
+/// Takes an arbitrary type and recursively turns
+/// structs into tuples.
+fn intify_type(typ: Type) -> Type {
+    match typ {
+        Type::Enum(_fields) => Type::i32(),
+        other => other,
+    }
+}
+
+/// Take an expression and turn any enum literals into integers.
+fn intify_expr(expr: ExprNode, tck: &mut typeck::Tck) -> ExprNode {
+    let expr_typeid = tck.get_expr_type(&expr);
+    let expr_type = tck.reconstruct(expr_typeid).expect("Should never happen?");
+    let new_contents = match &*expr.e {
+        E::Lit {
+            val: hir::Literal::EnumLit(_ename, valname),
+        } => match &expr_type {
+            Type::Enum(body) => {
+                let res = body
+                    .iter()
+                    .find(|(sym, _vl)| sym == valname)
+                    .expect("Enum didn't have the field we selected, should never happen");
+                // Right now enums are always repr(i32)
+                E::Lit {
+                    val: hir::Literal::SizedInteger {
+                        vl: res.1 as i128,
+                        bytes: 4,
+                    },
+                }
+            }
+            _other => unreachable!("Should never happen?"),
+        },
+        _other => *expr.e.clone(),
+    };
+
+    let new_t = intify_type(expr_type);
+    tck.replace_expr_type(&expr, &new_t);
+    expr.map(&mut |_| new_contents.clone())
+}
+
+/// Takes any enum types or values and replaces them with integers.
+fn enum_to_int(ir: Ir, tck: &mut typeck::Tck) -> Ir {
+    let mut new_decls = vec![];
+    let intify_expr = &mut |e| intify_expr(e, tck);
+
+    for decl in ir.decls.into_iter() {
+        let res = match decl {
+            D::Const {
+                name,
+                typename,
+                init,
+            } => {
+                let new_type = type_map(typename, &mut intify_type);
+                let new_init = expr_map(init, intify_expr);
+                D::Const {
+                    name,
+                    typename: new_type,
+                    init: new_init,
+                }
+            }
             D::Function {
                 name,
                 signature,
                 body,
-            } => {
-                let new_body = body
-                    .into_iter()
-                    .map(|e| _enum_to_int_expr(e, &mut new_functions))
-                    .collect();
-                D::Function {
-                    name,
-                    signature,
-                    body: new_body,
-                }
-            }
-            x => x,
-        })
-        .collect();
-    new_functions.extend(new_decls.into_iter());
-    Ir {
-        decls: new_functions,
+            } => D::Function {
+                name,
+                signature: signature_map(signature, &mut intify_type),
+                body: exprs_map(body, intify_expr),
+            },
+            D::TypeDef {
+                name,
+                params,
+                typedecl,
+            } => D::TypeDef {
+                name,
+                params,
+                typedecl: type_map(typedecl, &mut intify_type),
+            },
+        };
+        new_decls.push(res);
     }
+    Ir { decls: new_decls }
 }
 
 /// Takes an IR containing compound types (currently just tuples)

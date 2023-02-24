@@ -629,8 +629,8 @@ fn lower_expr(expr: &ast::Expr) -> ExprNode {
         E::TypeUnwrap { expr } => Expr::TypeUnwrap {
             expr: lower_expr(expr),
         },
-        E::Deref { expr } => todo!(),
-        E::Ref { expr } => todo!(),
+        E::Deref { expr: _ } => todo!(),
+        E::Ref { expr: _ } => todo!(),
         E::Assign { lhs, rhs } => Expr::Assign {
             lhs: lower_expr(lhs),
             rhs: lower_expr(rhs),
@@ -693,7 +693,8 @@ fn lower_typedef(accm: &mut Vec<Decl>, name: Sym, ty: &Type, params: &[Sym]) {
         // Maybe also something like this???
         // type X = {}
         // type Y = Thing
-        // TODO: What do we do with the generics...
+        // TODO: What do we do with the generics...  Right now they just
+        // get stuffed into the constructor functions verbatim.
         Type::Sum(body, generics) => {
             println!("Lowering sum type {}", &*name.val());
             let struct_body: Vec<_> = body

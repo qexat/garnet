@@ -1186,7 +1186,7 @@ fn typecheck_expr(
             // that impossible?  I forget.
             let lhs_type = typecheck_expr(tck, symtbl, func_rettype, lhs)?;
             if !is_mutable_lvalue(symtbl, lhs) {
-                let s = "assignment";
+                let _s = "assignment";
                 /*
                 return Err(TypeError::Mutability {
                     expr_name: s.into(),
@@ -1362,7 +1362,7 @@ fn typecheck_expr(
             tck.set_expr_type(expr, arr_type);
             Ok(arr_type)
         }
-        ArrayRef { e, idx } => todo!(),
+        ArrayRef { e: _, idx: _ } => todo!(),
     };
     if let Err(e) = rettype {
         panic!("Error typechecking expression {:?}: {}", expr, e);

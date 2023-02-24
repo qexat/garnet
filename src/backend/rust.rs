@@ -118,6 +118,7 @@ fn compile_typename(t: &Type) -> Cow<'static, str> {
             // names together.
             // TODO: is this just silly?
             // Lowering enums to numbers first would make this easier tbh
+            // We don't know the name of the
             let mut accm = String::from("Enum");
             for (nm, _vl) in things {
                 accm += &*nm.val();
@@ -191,7 +192,7 @@ fn compile_decl(w: &mut impl Write, decl: &hir::Decl, tck: &Tck) -> io::Result<(
             init,
         } => {
             let nstr = mangle_name(&INT.fetch(*name));
-            let tstr = compile_typedef(&*typename);
+            let tstr = compile_typename(&*typename);
             let istr = compile_expr(init, tck);
             writeln!(w, "const {}: {} = {};", nstr, tstr, istr)
         }
@@ -206,16 +207,30 @@ fn compile_decl(w: &mut impl Write, decl: &hir::Decl, tck: &Tck) -> io::Result<(
             typedecl,
             params,
         } => {
-            let nstr = mangle_name(&INT.fetch(*name));
-            let tstr = compile_typedef(&*typedecl);
-            //writeln!(w, "pub struct {}({});", nstr, tstr)
-            if params.len() == 0 {
-                writeln!(w, "pub type {} = {};", nstr, tstr)
-            } else {
-                let param_strings: Vec<_> =
-                    params.iter().map(|sym| (&*sym.val()).clone()).collect();
-                let args = param_strings.join(", ");
-                writeln!(w, "pub type {}<{}> = {};", nstr, args, tstr).into()
+            match typedecl {
+                Type::Enum(_) => {
+                    // Enums just become literal integers.
+                    assert!(
+                        params.is_empty(),
+                        "Bruh you have generic params on an enum type"
+                    );
+                    writeln!(w, "pub type {} = i32;", mangle_name(&*name.val()))?;
+                    Ok(())
+                }
+                // We just make a fairly literal alias to the existing type.
+                _other => {
+                    let nstr = mangle_name(&*name.val());
+                    let tstr = compile_typename(typedecl);
+                    //writeln!(w, "pub struct {}({});", nstr, tstr)
+                    if params.len() == 0 {
+                        writeln!(w, "pub type {} = {};", nstr, tstr)
+                    } else {
+                        let param_strings: Vec<_> =
+                            params.iter().map(|sym| (&*sym.val()).clone()).collect();
+                        let args = param_strings.join(", ");
+                        writeln!(w, "pub type {}<{}> = {};", nstr, args, tstr).into()
+                    }
+                }
             }
         }
     }
@@ -425,27 +440,6 @@ fn compile_expr(expr: &hir::ExprNode, tck: &Tck) -> String {
         }
         E::StructRef { expr: _, elt: _ } => {
             panic!("Should never happen, structs should always be tuples by now!");
-            /*
-            // We turn our structs into Rust tuples, so we need to
-            // to turn our field names into indices
-            let typevar = tck.get_expr_type(expr);
-            let ty = tck.reconstruct(typevar).unwrap();
-            if let Type::Struct(body, _generics) = ty {
-                let mut nth = 9999_9999;
-                for (i, (nm, _ty)) in body.iter().enumerate() {
-                    if nm == elt {
-                        nth = i;
-                        break;
-                    }
-                }
-                format!("{}.{}", compile_expr(expr, tck), nth)
-            } else {
-                panic!(
-                    "Struct wasn't actually a struct in backend, was {}.  should never happen",
-                    compile_typename(&ty)
-                )
-            }
-            */
         }
         E::TupleRef { expr, elt } => {
             // We turn our structs into Rust tuples, so we need to

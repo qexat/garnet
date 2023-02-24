@@ -39,8 +39,7 @@ impl fmt::Display for Literal {
                 write!(f, "{}_I{}", vl, size)
             }
             Literal::Bool(b) => write!(f, "{}", b),
-            // TODO: generics??
-            Literal::EnumLit(s, _generics) => write!(f, "{}", s),
+            Literal::EnumLit(ty, vl) => write!(f, "{}.{}", &*ty.val(), &*vl.val()),
         }
     }
 }
