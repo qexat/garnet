@@ -1139,10 +1139,7 @@ fn typecheck_expr(
                 .map(|(name, expr)| {
                     // ? in map doesn't work too well...
                     println!("Checking field {} expr {:?}", name, expr);
-                    match typecheck_expr(tck, symtbl, func_rettype, expr) {
-                        Ok(t) => Ok((*name, t)),
-                        Err(s) => Err(s),
-                    }
+                    typecheck_expr(tck, symtbl, func_rettype, expr).and_then(|t| (Ok((*name, t))))
                 })
                 .collect();
             println!("Typechecking struct ctor: {:?}", body_types);

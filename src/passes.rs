@@ -649,7 +649,8 @@ fn intify_expr(expr: ExprNode, tck: &mut typeck::Tck) -> ExprNode {
                     },
                 }
             }
-            _other => unreachable!("Should never happen?"),
+            _other => unreachable!("Should never happen?  {:?}", _other),
+            //_other => *expr.e.clone(),
         },
         _other => *expr.e.clone(),
     };
