@@ -657,14 +657,24 @@ fn lower_typedef(accm: &mut Vec<Decl>, name: Sym, ty: &Type, params: &[Sym]) {
         //     .Baz = <magic unprintable thing>
         // }
         Type::Enum(ts) => {
-            // TODO: Struct ordering.  BTreemap or something else?
             let struct_body: Vec<_> = ts
                 .iter()
                 .map(|(enumname, _enumval)| {
                     // TODO: Enum vals?
                     let e = ExprNode::new(Expr::Lit {
                         val: Literal::EnumLit(name, *enumname),
+                        // val: Literal::SizedInteger {
+                        //     vl: *enumval as i128,
+                        //     bytes: 4,
+                        // },
                     });
+                    /*
+                    let e = ExprNode::new(Expr::TypeCtor {
+                        name,
+                        type_params: vec![],
+                        body: e,
+                    });
+                    */
                     (*enumname, e)
                 })
                 .collect();
