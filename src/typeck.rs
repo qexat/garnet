@@ -549,6 +549,9 @@ impl Tck {
                 }
                 self.unify(symtbl, a_o, b_o)
             }
+            // Enums are the same if their contents are the same.
+            // No need to recurse, since they're terminal types.
+            (Enum(a), Enum(b)) if a == b => Ok(()),
             (Struct(body1), Struct(body2)) => {
                 for (nm, t1) in body1.iter() {
                     let t2 = body2[nm];
@@ -843,7 +846,7 @@ fn infer_lit(lit: &ast::Literal) -> TypeInfo {
         ast::Literal::Integer(_) => TypeInfo::Prim(PrimType::UnknownInt),
         ast::Literal::SizedInteger { bytes, .. } => TypeInfo::Prim(PrimType::SInt(*bytes)),
         ast::Literal::Bool(_) => TypeInfo::Prim(PrimType::Bool),
-        ast::Literal::EnumLit(nm, _) => TypeInfo::Named(*nm, vec![]),
+        //ast::Literal::EnumLit(nm, _) => TypeInfo::Named(*nm, vec![]),
     }
 }
 
@@ -1109,6 +1112,41 @@ fn typecheck_expr(
             }
             tck.set_expr_type(expr, rettype);
             Ok(rettype)
+        }
+        EnumCtor {
+            name,
+            variant,
+            value,
+        } => {
+            let enumtype = symtbl.get_type(*name).expect("Unknown enum type!");
+            // Make sure type actually is an enum
+            // Enums are terminal types so I guess we don't need to do
+            // any inference or unification or such here?
+            match &enumtype {
+                Type::Enum(body) => {
+                    // make sure variant actually exists
+                    if !body
+                        .iter()
+                        .find(|(ky, vl)| (*ky, *vl) == (*variant, *value))
+                        .is_some()
+                    {
+                        return Err(format!(
+                            "Enum {} variant {} does not match typedef",
+                            name, variant
+                        ));
+                    }
+                }
+                other => {
+                    return Err(format!(
+                        "Expected an enum of type {}, instead got {:?}",
+                        name, other
+                    ))
+                }
+            }
+            let typeid = tck.insert_known(&enumtype);
+
+            tck.set_expr_type(expr, typeid);
+            Ok(typeid)
         }
         TupleCtor { body } => {
             let body_types: Result<Vec<_>, _> = body

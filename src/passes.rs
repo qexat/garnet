@@ -67,6 +67,7 @@ fn expr_map(expr: ExprNode, f: &mut dyn FnMut(ExprNode) -> ExprNode) -> ExprNode
         E::Lit { .. } => e,
         E::Var { .. } => e,
         E::Break => e,
+        E::EnumCtor { .. } => e,
         E::TupleCtor { body } => E::TupleCtor {
             body: exprs_map(body, f),
         },
@@ -633,23 +634,24 @@ fn intify_expr(expr: ExprNode, tck: &mut typeck::Tck) -> ExprNode {
     let expr_typeid = tck.get_expr_type(&expr);
     let expr_type = tck.reconstruct(expr_typeid).expect("Should never happen?");
     let new_contents = match &*expr.e {
-        E::Lit {
-            val: hir::Literal::EnumLit(_ename, valname),
-        } => match &expr_type {
-            Type::Enum(body) => {
-                let res = body
-                    .iter()
-                    .find(|(sym, _vl)| sym == valname)
-                    .expect("Enum didn't have the field we selected, should never happen");
-                // Right now enums are always repr(i32)
-                E::Lit {
-                    val: hir::Literal::SizedInteger {
-                        vl: res.1 as i128,
-                        bytes: 4,
-                    },
-                }
-            }
-            _other => unreachable!("Should never happen?  {:?}", _other),
+        E::EnumCtor {
+            name: _,
+            variant: _,
+            value,
+        } => E::Lit {
+            val: hir::Literal::SizedInteger {
+                vl: *value as i128,
+                bytes: 4,
+            },
+            // match &expr_type {
+            //     Type::Enum(body) => {
+            //         let res = body
+            //             .iter()
+            //             .find(|(sym, _vl)| sym == valname)
+            //             .expect("Enum didn't have the field we selected, should never happen");
+            //         // Right now enums are always repr(i32)
+            //     }
+            //     _other => unreachable!("Should never happen?  {:?}", _other),
             //_other => *expr.e.clone(),
         },
         _other => *expr.e.clone(),

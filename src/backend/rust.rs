@@ -312,11 +312,6 @@ fn compile_expr(expr: &hir::ExprNode, tck: &Tck) -> String {
             let bits = bytes * 8;
             format!("{}i{}", vl, bits)
         }
-        E::Lit {
-            val: ast::Literal::EnumLit(enm, name),
-        } => {
-            format!("{}.{}", enm, name)
-        }
         E::Var { name, .. } => mangle_name(&*INT.fetch(*name)),
         E::BinOp { op, lhs, rhs } => format!(
             "({} {} {})",
