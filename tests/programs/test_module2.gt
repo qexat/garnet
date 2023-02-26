@@ -1,15 +1,21 @@
 -- Compile:
 --   status: success
+--
+-- Run:
+--   status: success
+--   stdout:
+--     3
 
 -- Dummy type
 type String = I32
 
-type Show(@Self) = struct
-    show: fn(@Self) String
+-- TODO: Mangle "Self" since it's a keyword in Rust
+type Show(@Selff) = struct
+    show: fn(@Selff) String
 end
 
-const IntShow = Show {
-    .show = fn(x I32) String = String(0) end
+const IntShow Show(I32) = Show {
+    .show = fn(x I32) String = String(x) end
 }
 
 fn show(show Show(@T), val @T) String =
@@ -17,3 +23,8 @@ fn show(show Show(@T), val @T) String =
 end
 
 
+fn main() {} =
+    let s String = show(IntShow, 3)
+    __println(s$)
+
+end
