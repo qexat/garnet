@@ -26,8 +26,6 @@ pub enum Literal {
     },
     /// A bool literal
     Bool(bool),
-    /// Enum literal
-    EnumLit(Sym, Sym),
 }
 
 impl fmt::Display for Literal {
@@ -39,7 +37,6 @@ impl fmt::Display for Literal {
                 write!(f, "{}_I{}", vl, size)
             }
             Literal::Bool(b) => write!(f, "{}", b),
-            Literal::EnumLit(ty, vl) => write!(f, "{}.{}", &*ty.val(), &*vl.val()),
         }
     }
 }

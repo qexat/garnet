@@ -1,5 +1,11 @@
 -- Compile:
 --   status: success
+--
+-- Run:
+--   status: success
+--   stdout: 3
+
+
 
 
 type Foo = struct
