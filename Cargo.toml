@@ -5,10 +5,6 @@ authors = ["Simon Heath <icefox@dreamquest.io>"]
 edition = "2018"
 
 
-[[bin]]
-name = "garnetc"
-path = "src/main.rs"
-
 [[test]]
 name = "endtoend"
 path = "tests/endtoend.rs"
