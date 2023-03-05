@@ -488,6 +488,13 @@ fn compile_expr(expr: &hir::ExprNode, tck: &Tck) -> String {
                 compile_expr(body, tck)
             )
         }
+        E::EnumCtor {
+            name,
+            variant,
+            value,
+        } => {
+            format!("{}", value)
+        }
         other => todo!("{:?}", other),
     }
 }
