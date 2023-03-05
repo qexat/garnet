@@ -31,7 +31,7 @@ pub fn run_passes(ir: Ir) -> Ir {
 pub fn run_typechecked_passes(ir: Ir, tck: &mut typeck::Tck) -> Ir {
     // let passes: &[TckPass] = &[nameify, enum_to_int];
     //let passes: &[TckPass] = &[nameify, struct_to_tuple];
-    let passes: &[TckPass] = &[struct_to_tuple];
+    let passes: &[TckPass] = &[struct_to_tuple, monomorphize];
     let res = passes.iter().fold(ir, |prev_ir, f| f(prev_ir, tck));
     println!();
     println!("{}", res);
@@ -159,12 +159,17 @@ fn expr_map(expr: ExprNode, f: &mut dyn FnMut(ExprNode) -> ExprNode) -> ExprNode
         E::Return { retval } => E::Return {
             retval: expr_map(retval, f),
         },
-        E::Funcall { func, params } => {
+        E::Funcall {
+            func,
+            params,
+            type_params,
+        } => {
             let new_func = expr_map(func, f);
             let new_params = exprs_map(params, f);
             E::Funcall {
                 func: new_func,
                 params: new_params,
+                type_params,
             }
         }
         E::Lambda { signature, body } => E::Lambda {
@@ -482,7 +487,25 @@ fn lambda_lift(ir: Ir) -> Ir {
 
 //////  Monomorphization //////
 
+/// Ok, so what we have to do here is this:
+/// FIRST, we scan through the entire program and find
+/// all functions with generic params that are called,
+/// and figure out what their generics are.  (The expr's
+/// type should have this info.)
+///
+/// Then we have to go through and find where each of those functions
+/// is defined, which should be at the toplevel since we've done
+/// lambda-lifting.  We make a copy of them with the types
+/// substituted, with a new name.
+///
+/// Then we have to rewrite the function call names to point at the monomorphized
+/// functions.  We can do this while collecting them, since we generate the
+/// names from the signature.
 fn monomorphize(ir: Ir, _tck: &mut typeck::Tck) -> Ir {
+    let mut functioncalls: BTreeSet<(Sym, Vec<Type>)> = Default::default();
+    fn mangle_generic_name(s: Sym, tys: &[Type]) -> Sym {
+        todo!()
+    }
     ir
 }
 

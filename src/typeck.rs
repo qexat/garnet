@@ -1034,7 +1034,11 @@ fn typecheck_expr(
             tck.set_expr_type(expr, rettype);
             Ok(rettype)
         }
-        Funcall { func, params } => {
+        Funcall {
+            func,
+            params,
+            type_params,
+        } => {
             // Oh, defined generics are "easy".
             // Each time I call a function I create new type
             // vars for its generic args.
@@ -1081,7 +1085,14 @@ fn typecheck_expr(
             //
             // So we go through the generics the function declares and create
             // new type vars for each of them.
-            let heck = tck.instantiate(&actual_func_type, None);
+            //
+            // We also create type variables for any type paramss we've been
+            // given values to
+            let input_type_params = type_params
+                .iter()
+                .map(|(nm, ty)| (*nm, tck.insert_known(ty)))
+                .collect();
+            let heck = tck.instantiate(&actual_func_type, Some(input_type_params));
             tck.unify(symtbl, heck, funcall_var)?;
 
             tck.set_expr_type(expr, rettype_var);
