@@ -35,8 +35,6 @@ pub fn run_typechecked_passes(ir: Ir, tck: &mut typeck::Tck) -> Ir {
     let res = passes.iter().fold(ir, |prev_ir, f| f(prev_ir, tck));
     println!();
     println!("{}", res);
-    // let passes: &[Pass] = &[lambda_lift];
-    // passes.iter().fold(res, |prev_ir, f| f(prev_ir))
     res
 }
 

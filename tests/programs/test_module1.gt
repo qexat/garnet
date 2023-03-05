@@ -1,5 +1,8 @@
 -- Compile:
 --   status: success
+-- Run:
+--   status: success
+--   stdout: 3
 
 -- A hasher that only accepts basic integers and always returns an
 -- integer.  Implements a particular hash algorithm, with optional
@@ -9,15 +12,15 @@
 --
 -- No associated types either, so we just make it a type param for now,
 -- which surprisingly appears to work.
-type Hasher(@Self, @Out) = struct
-    write: fn(@Self, I32) @Self,
-    finish: fn(@Self) @Out,
+type Hasher(@Selff, @Out) = struct
+    write: fn(@Selff, I32) @Selff,
+    finish: fn(@Selff) @Out,
 end
 
 type DumbHashState = I32
 
 
-fn main() I32 =
+fn main() {} =
     let dumbhasher Hasher(DumbHashState, I32) = Hasher {
         .write = fn(s DumbHashState, i I32) DumbHashState = DumbHashState(i) end,
         .finish = fn(s DumbHashState) I32 = 3 end
@@ -25,5 +28,5 @@ fn main() I32 =
     let hash_state = DumbHashState(1)
     let updated_state = dumbhasher$.write(hash_state, 12)
     let hash = dumbhasher$.finish(updated_state)
-    hash
+    __println(hash)
 end

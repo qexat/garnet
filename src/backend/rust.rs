@@ -186,7 +186,7 @@ fn compile_decl(w: &mut impl Write, decl: &hir::Decl, tck: &Tck) -> io::Result<(
             let nstr = mangle_name(&*INT.fetch(*name));
             let sstr = compile_fn_signature(signature);
             let bstr = compile_exprs(body, ";\n", tck);
-            writeln!(w, "pub fn {}{} {{\n{}\n}}\n", nstr, sstr, bstr)
+            writeln!(w, "pub const fn {}{} {{\n{}\n}}\n", nstr, sstr, bstr)
         }
         hir::Decl::Const {
             name,
@@ -423,7 +423,7 @@ fn compile_expr(expr: &hir::ExprNode, tck: &Tck) -> String {
         E::TupleCtor { body } if body.len() == 0 => String::from(" ()\n"),
         E::TupleCtor { body } => {
             let contents = compile_exprs(body, ",", tck);
-            format!("({})", contents)
+            format!("({},)", contents)
         }
         // Just becomes a function call.
         // TODO someday: Make an explicit turbofish if necessary?
