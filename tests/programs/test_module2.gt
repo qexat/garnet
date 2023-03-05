@@ -3,8 +3,7 @@
 --
 -- Run:
 --   status: success
---   stdout:
---     3
+--   stdout: 3
 
 -- Dummy type
 type String = I32
