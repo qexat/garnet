@@ -1,6 +1,25 @@
 -- Compile:
 --   status: success
 
+/- BUGGO
+TFW your typechecker catches a real bug.
+Especially one you don't know how to fix.
+We lower the constructors for this type into functions,
+and then it complains that the function Option.None()
+returns Option(@T) and it has no way of knowing what
+the @T is for that function.
+
+This should technically be fine because @T is
+instantiated and figured out wherever Option.None()
+is actually called, but I don't know how to tell the
+typechecker that.
+
+Maybe we can add explicit type params to the function
+decl, and call it via something like Rust's turbofish?
+I had that once and then said "this is stupid we can
+always infer that from function args" and got rid of it.
+Welp! 
+-/
 type Option(@T) = sum
     None {},
     Some @T,

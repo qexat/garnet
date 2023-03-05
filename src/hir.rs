@@ -721,7 +721,7 @@ fn lower_typedef(accm: &mut Vec<Decl>, name: Sym, ty: &Type, params: &[Sym]) {
                     let paramname = Sym::new("x");
                     let signature = ast::Signature {
                         params: vec![(paramname, variant_type.clone())],
-                        rettype: Type::Named(name, vec![]),
+                        rettype: Type::Named(name, generics.clone()),
                     };
                     // Just return the value passed to it wrapped
                     // in a constructor of some kind...?
