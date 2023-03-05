@@ -1,5 +1,7 @@
 -- Compile:
 --   status: success
+-- Run:
+--   stdout: 12
 
 
 /- Another monad-ish attempt, this also gets called map
@@ -34,11 +36,11 @@ fn f(i Bool) I32 =
     12
 end
 
-fn main() I32 =
+fn main() {} =
     let test_cell = Cell {
         .val = true
     }
     let thing = make_cell_functor(f)
     let test_result Cell(I32) = thing$.map(test_cell)
-    0
+    __println(test_result$.val)
 end

@@ -1,5 +1,8 @@
 -- Compile:
 --   status: success
+--
+-- Run:
+--   stdout: 3
 
 -- TODO: BUGGO: This test occasionally fails to pass, *hopefully*
 -- because of HashMap ordering shenanigans.  Investigate.
@@ -32,4 +35,8 @@ fn make_cell_map(k @K, v @V) Map(Cell(@K, @V), @K, @V) =
         end
     }
     module
+end
+
+fn main() {} =
+    __println(3)
 end
