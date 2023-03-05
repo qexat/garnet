@@ -35,6 +35,8 @@ pub fn run_typechecked_passes(ir: Ir, tck: &mut typeck::Tck) -> Ir {
     let res = passes.iter().fold(ir, |prev_ir, f| f(prev_ir, tck));
     println!();
     println!("{}", res);
+    // let passes: &[Pass] = &[lambda_lift];
+    // passes.iter().fold(res, |prev_ir, f| f(prev_ir))
     res
 }
 
@@ -457,6 +459,18 @@ fn lambda_lift(ir: Ir) -> Ir {
                     name,
                     signature,
                     body: new_body,
+                }
+            }
+            D::Const {
+                name,
+                typename,
+                init,
+            } => {
+                let new_body = expr_map(init, &mut |e| lambda_lift_expr(e, &mut new_functions));
+                D::Const {
+                    name,
+                    typename,
+                    init: new_body,
                 }
             }
             x => x,
