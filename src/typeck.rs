@@ -114,6 +114,9 @@ pub enum TypeError {
     Mutability {
         expr_name: Cow<'static, str>,
     },
+    ReconstructFail {
+        tid: TypeId,
+    },
     /*
     UnknownType(Sym),
     InvalidReturn,
@@ -168,6 +171,13 @@ pub enum TypeError {
         got: Sym,
     },
     */
+    Placeholder(String),
+}
+
+impl From<String> for TypeError {
+    fn from(s: String) -> Self {
+        Self::Placeholder(s)
+    }
 }
 
 impl std::error::Error for TypeError {}
@@ -201,94 +211,98 @@ impl TypeError {
             }
             TypeError::Mutability { expr_name } => {
                 format!("Mutability mismatch in '{}' expresssion", expr_name)
+            }
+            TypeError::ReconstructFail { tid } => {
+                format!("Reconstruction failed, type ID ${} is unbound", tid.0)
             } /*
-              TypeError::UnknownType(sym) => format!("Unknown type: {}", *sym.val()),
-              TypeError::InvalidReturn => {
-                  "return expression happened somewhere that isn't in a function!".to_string()
-              }
-              TypeError::Return {
-                  fname,
-                  got,
-                  expected,
-              } => format!(
-                  "Function {} returns {} but should return {}",
-                  *fname.val(),
-                  *got.val().get_name(),
-                  *expected.val().get_name(),
-              ),
-              TypeError::BopType {
-                  bop,
-                  got1,
-                  got2,
-                  expected,
-              } => format!(
-                  "Invalid types for BOp {:?}: expected {}, got {} + {}",
-                  bop,
-                  *expected.val().get_name(),
-                  *got1.val().get_name(),
-                  *got2.val().get_name()
-              ),
-              TypeError::UopType { op, got, expected } => format!(
-                  "Invalid types for UOp {:?}: expected {}, got {}",
-                  op,
-                  *expected.val().get_name(),
-                  *got.val().get_name()
-              ),
-              TypeError::LetType {
-                  name,
-                  got,
-                  expected,
-              } => format!(
-                  "initializer for variable {}: expected {} ({:?}), got {} ({:?})",
-                  *name.val(),
-                  *expected.val().get_name(),
-                  *expected,
-                  *got.val().get_name(),
-                  *got,
-              ),
-              TypeError::IfType { expected, got } => format!(
-                  "If block return type is {}, but we thought it should be something like {}",
-                  *expected.val().get_name(),
-                  *got.val().get_name(),
-              ),
-              TypeError::Cond { got } => format!(
-                  "If expr condition is {}, not bool",
-                  *got.val().get_name(),
-              ),
-              TypeError::Param { got, expected } => format!(
-                  "Function wanted type {} in param but got type {}",
-                  *expected.val().get_name(),
-                  *got.val().get_name()
-              ),
-              TypeError::Call { got } => format!(
-                  "Tried to call function but it is not a function, it is a {}",
-                  *got.val().get_name()
-              ),
-              TypeError::TupleRef { got } => format!(
-                  "Tried to reference tuple but didn't get a tuple, got {}",
-                  *got.val().get_name()
-              ),
-              TypeError::StructRef { fieldname, got } => format!(
-                  "Tried to reference field {} of struct, but struct is {}",
-                  *fieldname.val(),
-                  *got.val().get_name(),
-              ),
-              TypeError::StructField { expected, got } => format!(
-                  "Invalid field in struct constructor: expected {:?}, but got {:?}",
-                  expected, got
-              ),
-              TypeError::EnumVariant { expected, got } => {
-                  let expected_names: Vec<String> = expected
-                      .into_iter()
-                      .map(|nm| (&**nm.val()).clone())
-                      .collect();
-                  format!(
-                      "Unknown enum variant '{}', valid ones are {:?}",
-                      *got.val(),
-                      expected_names,
-                  )
-              }
-              */
+            TypeError::UnknownType(sym) => format!("Unknown type: {}", *sym.val()),
+            TypeError::InvalidReturn => {
+            "return expression happened somewhere that isn't in a function!".to_string()
+            }
+            TypeError::Return {
+            fname,
+            got,
+            expected,
+            } => format!(
+            "Function {} returns {} but should return {}",
+             *fname.val(),
+             *got.val().get_name(),
+             *expected.val().get_name(),
+            ),
+            TypeError::BopType {
+            bop,
+            got1,
+            got2,
+            expected,
+            } => format!(
+            "Invalid types for BOp {:?}: expected {}, got {} + {}",
+            bop,
+             *expected.val().get_name(),
+             *got1.val().get_name(),
+             *got2.val().get_name()
+            ),
+            TypeError::UopType { op, got, expected } => format!(
+            "Invalid types for UOp {:?}: expected {}, got {}",
+            op,
+             *expected.val().get_name(),
+             *got.val().get_name()
+            ),
+            TypeError::LetType {
+            name,
+            got,
+            expected,
+            } => format!(
+            "initializer for variable {}: expected {} ({:?}), got {} ({:?})",
+             *name.val(),
+             *expected.val().get_name(),
+             *expected,
+             *got.val().get_name(),
+             *got,
+            ),
+            TypeError::IfType { expected, got } => format!(
+            "If block return type is {}, but we thought it should be something like {}",
+             *expected.val().get_name(),
+             *got.val().get_name(),
+            ),
+            TypeError::Cond { got } => format!(
+            "If expr condition is {}, not bool",
+             *got.val().get_name(),
+            ),
+            TypeError::Param { got, expected } => format!(
+            "Function wanted type {} in param but got type {}",
+             *expected.val().get_name(),
+             *got.val().get_name()
+            ),
+            TypeError::Call { got } => format!(
+            "Tried to call function but it is not a function, it is a {}",
+             *got.val().get_name()
+            ),
+            TypeError::TupleRef { got } => format!(
+            "Tried to reference tuple but didn't get a tuple, got {}",
+             *got.val().get_name()
+            ),
+            TypeError::StructRef { fieldname, got } => format!(
+            "Tried to reference field {} of struct, but struct is {}",
+             *fieldname.val(),
+             *got.val().get_name(),
+            ),
+            TypeError::StructField { expected, got } => format!(
+            "Invalid field in struct constructor: expected {:?}, but got {:?}",
+            expected, got
+            ),
+            TypeError::EnumVariant { expected, got } => {
+            let expected_names: Vec<String> = expected
+            .into_iter()
+            .map(|nm| (&**nm.val()).clone())
+            .collect();
+            format!(
+            "Unknown enum variant '{}', valid ones are {:?}",
+             *got.val(),
+            expected_names,
+            )
+            }
+             */
+            TypeError::Placeholder(s) => format!("Placeholder error: {}", s),
         }
     }
 }
@@ -483,7 +497,7 @@ impl Tck {
 
     /// Make the types of two type terms equivalent (or produce an error if
     /// there is a conflict between them)
-    pub fn unify(&mut self, symtbl: &Symtbl, a: TypeId, b: TypeId) -> Result<(), String> {
+    pub fn unify(&mut self, symtbl: &Symtbl, a: TypeId, b: TypeId) -> Result<(), TypeError> {
         //println!("> Unifying {:?} with {:?}", self.vars[&a], self.vars[&b]);
         // If a == b then it's a little weird but shoooooould be fine
         // as long as we don't get any mutual recursion or self-recursion
@@ -542,7 +556,7 @@ impl Tck {
             // can be trivially implemented for tuples, sum types, etc.
             (Func(a_i, a_o), Func(b_i, b_o)) => {
                 if a_i.len() != b_i.len() {
-                    return Err(String::from("Arg lists are not same length"));
+                    return Err(format!("Arg lists are not same length").into());
                 }
                 for (arg_a, arg_b) in a_i.iter().zip(b_i) {
                     self.unify(symtbl, *arg_a, arg_b)?;
@@ -592,7 +606,8 @@ impl Tck {
                     "Conflict between {} and {}",
                     a.get_name(self),
                     b.get_name(self)
-                ))
+                )
+                .into())
             }
         }
     }
@@ -600,10 +615,10 @@ impl Tck {
     /// Attempt to reconstruct a concrete type from the given type term ID. This
     /// may fail if we don't yet have enough information to figure out what the
     /// type is.
-    pub fn reconstruct(&self, id: TypeId) -> Result<Type, String> {
+    pub fn reconstruct(&self, id: TypeId) -> Result<Type, TypeError> {
         use TypeInfo::*;
         match &self.vars[&id] {
-            Unknown => Err(format!("Cannot infer type for type ID {:?}", id)),
+            Unknown => Err(TypeError::ReconstructFail { tid: id }),
             Prim(ty) => Ok(Type::Prim(ty.clone())),
             Ref(id) => self.reconstruct(*id),
             Enum(ts) => Ok(Type::Enum(ts.clone())),
@@ -613,7 +628,7 @@ impl Tck {
                 Ok(Type::Named(s.clone(), arg_types?))
             }
             Func(args, rettype) => {
-                let real_args: Result<Vec<Type>, String> =
+                let real_args: Result<Vec<Type>, TypeError> =
                     args.into_iter().map(|arg| self.reconstruct(*arg)).collect();
                 Ok(Type::Func(
                     real_args?,
@@ -622,7 +637,7 @@ impl Tck {
             }
             TypeParam(name) => Ok(Type::Generic(*name)),
             Struct(body) => {
-                let real_body: Result<BTreeMap<_, _>, String> = body
+                let real_body: Result<BTreeMap<_, _>, TypeError> = body
                     .iter()
                     .map(|(nm, t)| {
                         let new_t = self.reconstruct(*t)?;
@@ -638,7 +653,7 @@ impl Tck {
                 Ok(Type::Array(Box::new(real_body), *len))
             }
             Sum(body) => {
-                let real_body: Result<BTreeMap<_, _>, String> = body
+                let real_body: Result<BTreeMap<_, _>, TypeError> = body
                     .iter()
                     .map(|(nm, t)| {
                         let new_t = self.reconstruct(*t)?;
@@ -870,7 +885,7 @@ fn typecheck_func_body(
     symtbl: &Symtbl,
     signature: &hir::Signature,
     body: &[hir::ExprNode],
-) -> Result<TypeId, String> {
+) -> Result<TypeId, TypeError> {
     /*
     println!(
         "Typechecking function {:?} with signature {:?}",
@@ -940,7 +955,7 @@ fn typecheck_exprs(
     symtbl: &Symtbl,
     func_rettype: TypeId,
     exprs: &[hir::ExprNode],
-) -> Result<TypeId, String> {
+) -> Result<TypeId, TypeError> {
     for expr in exprs {
         typecheck_expr(tck, symtbl, func_rettype, expr)?;
     }
@@ -957,9 +972,9 @@ fn typecheck_expr(
     symtbl: &Symtbl,
     func_rettype: TypeId,
     expr: &hir::ExprNode,
-) -> Result<TypeId, String> {
+) -> Result<TypeId, TypeError> {
     use hir::Expr::*;
-    let rettype = match &*expr.e {
+    let rettype: Result<_, TypeError> = match &*expr.e {
         Lit { val } => {
             let lit_type = infer_lit(val);
             let typeid = tck.insert(lit_type);
@@ -1133,14 +1148,16 @@ fn typecheck_expr(
                         return Err(format!(
                             "Enum {} variant {} does not match typedef",
                             name, variant
-                        ));
+                        )
+                        .into());
                     }
                 }
                 other => {
                     return Err(format!(
                         "Expected an enum of type {}, instead got {:?}",
                         name, other
-                    ))
+                    )
+                    .into())
                 }
             }
             let typeid = tck.insert_known(&enumtype);
@@ -1206,13 +1223,14 @@ fn typecheck_expr(
                     let hopefully_a_struct = symtbl.get_type(s).unwrap();
                     match hopefully_a_struct {
                         Type::Struct(body, _elts) => Ok(tck.insert_known(&body[elt])),
-                        _other => Err(format!("Yeah I know this is wrong bite me")),
+                        _other => Err(format!("Yeah I know this is wrong bite me").into()),
                     }
                 }
                 other => Err(format!(
                     "Tried to get field named {} but it is an {:?}, not a struct",
                     elt, other
-                )),
+                )
+                .into()),
             }
         }
         Assign { lhs, rhs } => {
@@ -1227,7 +1245,7 @@ fn typecheck_expr(
                     expr_name: s.into(),
                 });
                 */
-                return Err(format!("Mutability mismatch in 'assignment'"));
+                return Err(format!("Mutability mismatch in 'assignment'").into());
             }
             tck.unify(symtbl, lhs_type, rhs_type)?;
             let unit = tck.insert_known(&Type::unit());
@@ -1314,7 +1332,8 @@ fn typecheck_expr(
                         return Err(format!(
                             "Can't resolve {:?} because it's not a named type!",
                             other
-                        ))
+                        )
+                        .into())
                     }
                 }
             }
