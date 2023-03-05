@@ -219,11 +219,24 @@ fn compile_decl(w: &mut impl Write, decl: &hir::Decl, tck: &Tck) -> io::Result<(
                     writeln!(w, "pub type {} = i32;", mangle_name(&*name.val()))?;
                     Ok(())
                 }
-                // We just make a fairly literal alias to the existing type.
+                Type::Sum(body, _generics) => {
+                    let nstr = mangle_name(&*name.val());
+                    let param_strings: Vec<_> =
+                        params.iter().map(|sym| (&*sym.val()).clone()).collect();
+                    let args = param_strings.join(", ");
+                    writeln!(w, "pub enum {}<{}> {{ ", nstr, args)?;
+                    for (nm, ty) in body {
+                        writeln!(w, "    {}({}),", nm, compile_typename(ty))?;
+                    }
+                    writeln!(w, "}}")?;
+                    Ok(())
+                }
+                // For everything else we just make a fairly literal alias to the existing type.
                 _other => {
                     let nstr = mangle_name(&*name.val());
                     let tstr = compile_typename(typedecl);
                     //writeln!(w, "pub struct {}({});", nstr, tstr)
+                    // TODO: <> is a valid generic param decl in Rust
                     if params.len() == 0 {
                         writeln!(w, "pub type {} = {};", nstr, tstr)
                     } else {
