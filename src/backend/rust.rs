@@ -226,7 +226,7 @@ fn compile_decl(w: &mut impl Write, decl: &hir::Decl, tck: &Tck) -> io::Result<(
                     let args = param_strings.join(", ");
                     writeln!(w, "pub enum {}<{}> {{ ", nstr, args)?;
                     for (nm, ty) in body {
-                        writeln!(w, "    {}({}),", nm, compile_typename(ty))?;
+                        writeln!(w, "    {} ({}),", nm, compile_typename(ty))?;
                     }
                     writeln!(w, "}}")?;
                     Ok(())
@@ -494,8 +494,9 @@ fn compile_expr(expr: &hir::ExprNode, tck: &Tck) -> String {
             body,
         } => {
             // This should just be a function call, right?
+            // hahahahha NO this is what has to exist INSIDE the function call.
             format!(
-                "{}.{}( {} )",
+                "{}::{}({})",
                 &*name.val(),
                 &*variant.val(),
                 compile_expr(body, tck)
