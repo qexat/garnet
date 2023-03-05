@@ -186,7 +186,7 @@ fn compile_decl(w: &mut impl Write, decl: &hir::Decl, tck: &Tck) -> io::Result<(
             let nstr = mangle_name(&*INT.fetch(*name));
             let sstr = compile_fn_signature(signature);
             let bstr = compile_exprs(body, ";\n", tck);
-            writeln!(w, "pub const fn {}{} {{\n{}\n}}\n", nstr, sstr, bstr)
+            writeln!(w, "pub fn {}{} {{\n{}\n}}\n", nstr, sstr, bstr)
         }
         hir::Decl::Const {
             name,
