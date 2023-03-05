@@ -29,8 +29,9 @@ pub fn run_passes(ir: Ir) -> Ir {
 }
 
 pub fn run_typechecked_passes(ir: Ir, tck: &mut typeck::Tck) -> Ir {
-    //let passes: &[TckPass] = &[monomorphize, anon_struct_to_tuple];
-    let passes: &[TckPass] = &[struct_to_tuple, enum_to_int];
+    // let passes: &[TckPass] = &[nameify, enum_to_int];
+    //let passes: &[TckPass] = &[nameify, struct_to_tuple];
+    let passes: &[TckPass] = &[struct_to_tuple];
     let res = passes.iter().fold(ir, |prev_ir, f| f(prev_ir, tck));
     println!();
     println!("{}", res);
@@ -471,6 +472,146 @@ fn lambda_lift(ir: Ir) -> Ir {
 
 fn monomorphize(ir: Ir, _tck: &mut typeck::Tck) -> Ir {
     ir
+}
+
+//////  Turn all anonymous types into named ones ////
+
+pub fn generate_type_name(typ: &Type) -> String {
+    match typ {
+        Type::Enum(fields) => {
+            let fieldnames: Vec<_> = fields
+                .iter()
+                .map(|(nm, vl)| format!("F{}_{}", nm, vl))
+                .collect();
+            let fieldstr = fieldnames.join("_");
+            format!("__Enum{}", fieldstr)
+        }
+        Type::Func(params, rettype) => {
+            let paramnames: Vec<String> = params.iter().map(generate_type_name).collect();
+            let paramstr = paramnames.join("_");
+            let retname = generate_type_name(rettype);
+            format!("__Func__{}__{}", paramstr, retname)
+        }
+        Type::Struct(body, _) => {
+            let fieldnames: Vec<_> = body
+                .iter()
+                .map(|(nm, ty)| format!("{}_{}", nm, generate_type_name(ty)))
+                .collect();
+            let fieldstr = fieldnames.join("_");
+            format!("__Struct__{}", fieldstr)
+        }
+        Type::Sum(body, _) => {
+            let fieldnames: Vec<_> = body
+                .iter()
+                .map(|(nm, ty)| format!("{}_{}", nm, generate_type_name(ty)))
+                .collect();
+            let fieldstr = fieldnames.join("_");
+            format!("__Sum__{}", fieldstr)
+        }
+        Type::Generic(name) => {
+            format!("G{}", name)
+        }
+        Type::Named(name, fields) => {
+            let field_names: Vec<_> = fields.iter().map(generate_type_name).collect();
+            let field_str = field_names.join("_");
+            format!("__Named{}__{}", name, field_str)
+        }
+        Type::Prim(p) => p.get_name().into_owned(),
+        Type::Array(t, len) => {
+            format!("__Arr{}__{}", generate_type_name(t), len)
+        }
+    }
+}
+
+fn type_is_anonymous(typ: &Type) -> bool {
+    match typ {
+        Type::Prim(_) | Type::Named(_, _) | Type::Array(_, _) | Type::Generic(_) => false,
+        _ => true,
+    }
+}
+
+/// Takes a type and, if it is anonymous, generates a unique name for it
+/// and inserts it into the given set of typedecls.
+/// Returns the renamed type, or the old type if it doesn't need to be altered.
+fn nameify_type(typ: Type, known_types: &mut BTreeMap<Sym, D>) -> Type {
+    if type_is_anonymous(&typ) {
+        let new_type_name = Sym::new(generate_type_name(&typ));
+        let generic_names = typ.collect_generic_names();
+        let generics: Vec<_> = generic_names.iter().map(|s| Type::Generic(*s)).collect();
+        let named_type = Type::Named(new_type_name, generics.clone());
+        // TODO: entry()
+        if !known_types.contains_key(&new_type_name) {
+            // let generics = nam
+            known_types.insert(
+                new_type_name,
+                D::TypeDef {
+                    name: new_type_name,
+                    typedecl: typ,
+                    params: generic_names,
+                },
+            );
+        }
+        named_type
+    } else {
+        typ
+    }
+}
+
+fn nameify_expr(
+    expr: ExprNode,
+    tck: &mut typeck::Tck,
+    known_types: &mut BTreeMap<Sym, D>,
+) -> ExprNode {
+    let expr_typeid = tck.get_expr_type(&expr);
+    let expr_type = tck.reconstruct(expr_typeid).expect("Should never happen?");
+    let named_type = nameify_type(expr_type, known_types);
+    tck.replace_expr_type(&expr, &named_type);
+    expr
+}
+
+fn nameify(ir: Ir, tck: &mut typeck::Tck) -> Ir {
+    let mut new_decls = vec![];
+    let known_types = &mut BTreeMap::new();
+
+    for decl in ir.decls.into_iter() {
+        let res = match decl {
+            D::Const {
+                name,
+                typename,
+                init,
+            } => {
+                // gramble gramble can't have two closures borrowing known_types at the same time
+                let new_type = type_map(typename, &mut |t| nameify_type(t, known_types));
+                let new_init = expr_map(init, &mut |e| nameify_expr(e, tck, known_types));
+                D::Const {
+                    name,
+                    typename: new_type,
+                    init: new_init,
+                }
+            }
+            D::Function {
+                name,
+                signature,
+                body,
+            } => D::Function {
+                name,
+                signature: signature_map(signature, &mut |t| nameify_type(t, known_types)),
+                body: exprs_map(body, &mut |e| nameify_expr(e, tck, known_types)),
+            },
+            D::TypeDef {
+                name,
+                params,
+                typedecl,
+            } => D::TypeDef {
+                name,
+                params,
+                typedecl: type_map(typedecl, &mut |t| nameify_type(t, known_types)),
+            },
+        };
+        new_decls.push(res);
+    }
+    new_decls.extend(known_types.into_iter().map(|(_k, v)| v.clone()));
+    Ir { decls: new_decls }
 }
 
 //////  Struct to tuple transformation //////
