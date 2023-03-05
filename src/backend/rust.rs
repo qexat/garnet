@@ -92,7 +92,7 @@ fn compile_typename(t: &Type) -> Cow<'static, str> {
             accm.into()
         }
         //Named(sym) => (&*INT.fetch(*sym)).clone().into(),
-        Struct(fields, _generics) => {
+        Struct(_fields, _generics) => {
             // We compile our structs into Rust tuples.
             // Our fields are always ordered via BTreeMap etc,
             // so it's okay
@@ -101,29 +101,31 @@ fn compile_typename(t: &Type) -> Cow<'static, str> {
                 todo!("Figure out type thingies");
             }
             */
-            let mut accm = String::from("(");
-            for (nm, typ) in fields.iter() {
-                accm += &format!(
-                    "/* {} */
-    {}, \n",
-                    INT.fetch(*nm),
-                    compile_typename(&*typ)
-                );
-            }
-            accm += ")";
-            accm.into()
+            //         let mut accm = String::from("(");
+            //         for (nm, typ) in fields.iter() {
+            //             accm += &format!(
+            //                 "/* {} */
+            // {}, \n",
+            //                 INT.fetch(*nm),
+            //                 compile_typename(&*typ)
+            //             );
+            //         }
+            //         accm += ")";
+            //         accm.into()
+            passes::generate_type_name(t).into()
         }
-        Enum(things) => {
+        Enum(_things) => {
             // Construct names for anonymous enums by concat'ing the member
             // names together.
             // TODO: is this just silly?
             // Lowering enums to numbers first would make this easier tbh
             // We don't know the name of the
-            let mut accm = String::from("Enum");
-            for (nm, _vl) in things {
-                accm += &*nm.val();
-            }
-            accm.into()
+            // let mut accm = String::from("Enum");
+            // for (nm, _vl) in things {
+            //     accm += &*nm.val();
+            // }
+            // accm.into()
+            passes::generate_type_name(t).into()
         }
         Generic(s) => mangle_name(&*s.val()).into(),
         Array(t, len) => format!("[{};{}]", compile_typename(t), len).into(),
@@ -384,7 +386,8 @@ fn compile_expr(expr: &hir::ExprNode, tck: &Tck) -> String {
             // Should this happen in an IR lowering step?  idk.
             let nstr = compile_expr(func, tck);
             let pstr = compile_exprs(params, ", ", tck);
-            format!("{{ let __dummy = {}; __dummy({}) }}", nstr, pstr)
+            //format!("{{ let __dummy = {}; __dummy({}) }}", nstr, pstr)
+            format!("{}({})", nstr, pstr)
         }
         E::Break => "break;".to_string(),
         E::Return { retval } => {
@@ -433,8 +436,9 @@ fn compile_expr(expr: &hir::ExprNode, tck: &Tck) -> String {
             accm += ")\n";
             accm
         }
-        E::StructRef { expr: _, elt: _ } => {
-            panic!("Should never happen, structs should always be tuples by now!");
+        E::StructRef { expr, elt } => {
+            // panic!("Should never happen, structs should always be tuples by now!");
+            format!("{}.{}", compile_expr(expr, tck), elt)
         }
         E::TupleRef { expr, elt } => {
             // We turn our structs into Rust tuples, so we need to
