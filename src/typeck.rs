@@ -1363,10 +1363,8 @@ fn typecheck_expr(
             // This might be wrong, we can probably do it the other way around
             // like we do with TypeUnwrap: start by checking the inner expr type and make
             // sure it matches what we expect.  Generics might require that.
-            //
-            // TODO: Generics
             match named_type.clone() {
-                Type::Sum(sum_body, _generics) => {
+                Type::Sum(sum_body, generics) => {
                     let variant_type = &sum_body[variant];
                     let variant_typeid = tck.insert_known(variant_type);
                     let body_type = typecheck_expr(tck, symtbl, func_rettype, body)?;
@@ -1376,7 +1374,7 @@ fn typecheck_expr(
                     // sum type we conjure up
                     // TODO: Might be easier to have our compiler generate
                     // the TypeCtor for it?
-                    let rettype = tck.insert_known(&Type::Named(name.clone(), vec![]));
+                    let rettype = tck.insert_known(&Type::Named(name.clone(), generics));
                     tck.set_expr_type(expr, rettype);
                     Ok(rettype)
                 }
@@ -1532,10 +1530,16 @@ pub fn typecheck(ast: &hir::Ir) -> Result<Tck, TypeError> {
         }
     }
     // Print out toplevel symbols
-    /*
     for (name, id) in &symtbl.frames.borrow().last().unwrap().symbols {
-        println!("value {} type is {:?}", name, tck.reconstruct(*id));
+        println!(
+            "value {} type is {:?}",
+            name,
+            tck.reconstruct(id.0).map(|t| t.get_name())
+        );
     }
-    */
+    println!("Type variables:");
+    for (id, info) in &tck.vars {
+        println!("  ${} = {info:?}", id.0);
+    }
     Ok(t)
 }

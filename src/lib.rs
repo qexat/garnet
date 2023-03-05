@@ -345,9 +345,9 @@ impl Type {
                 Cow::Owned(res)
             }
             Type::Sum(body, _generics) => {
-                let mut res = String::from("sum");
+                let mut res = String::from("sum ");
                 res += &join_vars_with_commas(body);
-                res += "end";
+                res += " end";
                 Cow::Owned(res)
             }
             Type::Array(body, len) => {

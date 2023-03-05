@@ -356,10 +356,10 @@ fn types_map(typs: Vec<Type>, f: &mut dyn FnMut(Type) -> Type) -> Vec<Type> {
 
 /// Recursion scheme to turn one type into another.
 fn type_map(typ: Type, f: &mut dyn FnMut(Type) -> Type) -> Type {
-    // Really this is only here to be cute, it's used a grand total of twice.
-    // There's probably some horrible combinator chain we could use to make
-    // it generic over any iterator, if we want to make life even harder for
-    // ourself.
+    /// Really this is only here to be cute, it's used a grand total of twice.
+    /// There's probably some horrible combinator chain we could use to make
+    /// it generic over any iterator, if we want to make life even harder for
+    /// ourself.
     fn types_map_btree<K>(
         typs: BTreeMap<K, Type>,
         f: &mut dyn FnMut(Type) -> Type,
@@ -372,13 +372,13 @@ fn type_map(typ: Type, f: &mut dyn FnMut(Type) -> Type) -> Type {
             .collect()
     }
     let res = match typ {
-        Type::Struct(fields, _generics) => {
+        Type::Struct(fields, generics) => {
             let fields = types_map_btree(fields, f);
-            Type::Struct(fields, _generics)
+            Type::Struct(fields, generics)
         }
-        Type::Sum(fields, _generics) => {
+        Type::Sum(fields, generics) => {
             let new_fields = types_map_btree(fields, f);
-            Type::Sum(new_fields, _generics)
+            Type::Sum(new_fields, generics)
         }
         Type::Array(ty, len) => Type::Array(Box::new(type_map(*ty, f)), len),
         Type::Func(args, rettype) => {
@@ -671,10 +671,12 @@ fn tuplize_type(typ: Type) -> Type {
 ///
 /// TODO: Do something with the expr types?
 fn tuplize_expr(expr: ExprNode, tck: &mut typeck::Tck) -> ExprNode {
+    println!("Tuplizing expr {:?}", expr);
     let expr_typeid = tck.get_expr_type(&expr);
     let struct_type = tck.reconstruct(expr_typeid).expect("Should never happen?");
     let new_contents = match &*expr.e {
         E::StructCtor { body } => match &struct_type {
+            // TODO: Generics?
             Type::Struct(type_body, _generics) => {
                 let mut ordered_body: Vec<_> = body
                     .into_iter()
