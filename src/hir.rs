@@ -143,9 +143,18 @@ impl Expr {
                 }
                 writeln!(f, ")")?;
             }
-            Funcall { func, params } => {
+            Funcall {
+                func,
+                params,
+                type_params,
+            } => {
                 write!(f, "(funcall ")?;
                 func.write(0, f)?;
+                write!(f, "[")?;
+                for (nm, ty) in type_params {
+                    write!(f, "{}={},", nm, ty.get_name())?;
+                }
+                write!(f, "] ")?;
                 for b in params {
                     b.write(indent + 1, f)?;
                     write!(f, " ")?;
@@ -358,6 +367,12 @@ pub enum Expr {
     Funcall {
         func: ExprNode,
         params: Vec<ExprNode>,
+        /// Explicit type parameters, specified a la Rust's turbofish.
+        /// We don't actually have a syntax for this yet, certain functions
+        /// have these generated during lowering passes.
+        /// If a type param is not specified, the type checker will
+        /// attempt to infer it.
+        type_params: BTreeMap<Sym, Type>,
     },
     Break,
     Return {
@@ -604,6 +619,7 @@ fn lower_expr(expr: &ast::Expr) -> ExprNode {
             Funcall {
                 func: nfunc,
                 params: nparams,
+                type_params: Default::default(),
             }
         }
         E::Break => Break,

@@ -21,12 +21,12 @@ always infer that from function args" and got rid of it.
 Welp! 
 -/
 type Option(@T) = sum
-    None {},
     Some @T,
+    None {},
 end
 
 fn main() {} =
-    let x = Option.None {}
-    let y = Option.Some(12)
+    let x Option(I32) = Option.None {}
+    let y Option(I32) = Option.Some(12)
 end
 
