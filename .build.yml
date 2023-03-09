@@ -12,14 +12,16 @@ tasks:
     curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs > rustup.sh
     chmod +x ./rustup.sh
     ./rustup.sh -y
-    source "$HOME/.cargo/env"
  - build: |
+    source "$HOME/.cargo/env"
     cd garnet
     cargo build
  - test: |
+    source "$HOME/.cargo/env"
     cd garnet
     cargo test
  - coverage: |
+    source "$HOME/.cargo/env"
     # A somewhat hacky setup to use a cargo-tarpaulin binary
     # Someday we'll have a debian package for it, but it's non-trivial
     # to make; see https://todo.sr.ht/~icefox/garnet/2
