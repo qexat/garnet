@@ -3,12 +3,15 @@ packages:
  - pkg-config
  - curl
  - libssl-dev
- - cargo
 secrets:
  - 3a468e17-bc01-4c2b-b6fd-d20691b54278
 sources:
  - hg+https://hg.sr.ht/~icefox/garnet
 tasks:
+ - setup: |
+    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs > rustup.sh
+    ./rustup.sh -y
+    rustup update
  - build: |
     cd garnet
     cargo build
