@@ -57,6 +57,8 @@ fn compile_rust(input_file: &Path, exe_name: &Path) -> io::Result<PathBuf> {
     let res = Command::new("rustc")
         .stdin(Stdio::null())
         .stdout(Stdio::inherit())
+        .arg("-C")
+        .arg("opt-level=3")
         .arg("-o")
         .arg(&exe_name)
         .arg(&rust_file)
