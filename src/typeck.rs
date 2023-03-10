@@ -7,6 +7,8 @@ use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
 use std::rc::Rc;
 
+use log::*;
+
 use crate::*;
 
 use crate::hir;
@@ -670,7 +672,7 @@ impl Tck {
         let mut vars_report: Vec<_> = self.vars.iter().collect();
         vars_report.sort_by(|(k1, _), (k2, _)| k1.cmp(k2));
         for (k, v) in vars_report.iter() {
-            print!("  ${} => {:?}\n", k.0, v);
+            trace!("  ${} => {:?}\n", k.0, v);
         }
     }
 
@@ -1191,9 +1193,11 @@ fn typecheck_expr(
             typecheck_expr(tck, symtbl, func_rettype, e)?;
             let tuple_type = tck.get_expr_type(e);
             let field_type = tck.get_tuple_field_type(symtbl, tuple_type, *elt);
-            println!(
+            trace!(
                 "Heckin tuple ref...  Type of {:?}.{} is {:?}",
-                e, elt, field_type
+                e,
+                elt,
+                field_type
             );
             tck.set_expr_type(expr, field_type);
 
@@ -1204,11 +1208,11 @@ fn typecheck_expr(
                 .iter()
                 .map(|(name, expr)| {
                     // ? in map doesn't work too well...
-                    println!("Checking field {} expr {:?}", name, expr);
+                    trace!("Checking field {} expr {:?}", name, expr);
                     typecheck_expr(tck, symtbl, func_rettype, expr).and_then(|t| (Ok((*name, t))))
                 })
                 .collect();
-            println!("Typechecking struct ctor: {:?}", body_types);
+            trace!("Typechecking struct ctor: {:?}", body_types);
             let body_types = body_types?;
             let struct_type = TypeInfo::Struct(body_types);
             let typeid = tck.insert(struct_type);
@@ -1221,9 +1225,11 @@ fn typecheck_expr(
             // struct_type is the type of the struct... but the
             // type of this structref expr is the type of the *field in the struct*.
             let struct_field_type = tck.get_struct_field_type(symtbl, struct_type, *elt);
-            println!(
+            trace!(
                 "Heckin struct ref...  Type of {:?}.{} is {:?}",
-                expr, elt, struct_field_type
+                expr,
+                elt,
+                struct_field_type
             );
             tck.set_expr_type(expr, struct_field_type);
 
@@ -1289,7 +1295,7 @@ fn typecheck_expr(
             body,
         } => {
             let named_type = symtbl.get_type(*name).expect("Unknown type constructor");
-            println!("Got type named {}: is {:?}", name, named_type);
+            trace!("Got type named {}: is {:?}", name, named_type);
             // Ok if we have declared type params we gotta instantiate them
             // to match the type's generics.
             //let type_param_names = named_type.get_generic_args();
@@ -1303,13 +1309,13 @@ fn typecheck_expr(
                 type_params
             );
             let tid = tck.instantiate(&named_type, None);
-            println!("Instantiated {:?} into {:?}", named_type, tid);
+            trace!("Instantiated {:?} into {:?}", named_type, tid);
 
             //let tid = tck.insert_known(&named_type);
             let body_type = typecheck_expr(tck, symtbl, func_rettype, body)?;
-            println!("Expected type is {:?}, body type is {:?}", tid, body_type);
+            trace!("Expected type is {:?}, body type is {:?}", tid, body_type);
             tck.unify(symtbl, tid, body_type)?;
-            println!("Done unifying type ctor");
+            trace!("Done unifying type ctor");
             // The type the expression returns
             let constructed_type =
                 tck.insert_known(&Type::Named(name.clone(), type_params.clone()));
@@ -1354,7 +1360,7 @@ fn typecheck_expr(
             let inner_type = symtbl
                 .get_type(nm)
                 .ok_or(format!("Named type {} is not known!", nm))?;
-            println!("Inner type is {:?}", inner_type);
+            trace!("Inner type is {:?}", inner_type);
 
             // The inner_type  is a concrete Type, not a TypeInfo that may have
             // unknowns, so we instantiate it to sub out any of its
@@ -1511,7 +1517,7 @@ pub fn typecheck(ast: &hir::Ir) -> Result<Tck, TypeError> {
             } => {
                 let t = typecheck_func_body(Some(*name), tck, symtbl, signature, body);
                 t.unwrap_or_else(|e| {
-                    eprintln!("Error, type context is:");
+                    error!("Error, type context is:");
                     tck.print_types();
                     panic!("Error while typechecking function {}:\n{}", name, e)
                 });
@@ -1561,15 +1567,15 @@ pub fn typecheck(ast: &hir::Ir) -> Result<Tck, TypeError> {
     }
     // Print out toplevel symbols
     for (name, id) in &symtbl.frames.borrow().last().unwrap().symbols {
-        println!(
+        info!(
             "value {} type is {:?}",
             name,
             tck.reconstruct(id.0).map(|t| t.get_name())
         );
     }
-    println!("Type variables:");
+    trace!("Type variables:");
     for (id, info) in &tck.vars {
-        println!("  ${} = {info:?}", id.0);
+        trace!("  ${} = {info:?}", id.0);
     }
     Ok(t)
 }

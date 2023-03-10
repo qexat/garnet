@@ -4,6 +4,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 use argh::FromArgs;
+use pretty_env_logger;
 
 use garnet::backend::Backend;
 
@@ -72,6 +73,7 @@ fn compile_rust(input_file: &Path, exe_name: &Path) -> io::Result<PathBuf> {
 }
 
 fn main() -> std::io::Result<()> {
+    pretty_env_logger::init();
     let opt: Opt = argh::from_env();
 
     let exe_name = if let Some(out) = &opt.out {

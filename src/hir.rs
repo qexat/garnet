@@ -730,7 +730,7 @@ fn lower_typedef(accm: &mut Vec<Decl>, name: Sym, ty: &Type, params: &[Sym]) {
         // TODO: What do we do with the generics...  Right now they just
         // get stuffed into the constructor functions verbatim.
         Type::Sum(body, generics) => {
-            println!("Lowering sum type {}", name);
+            trace!("Lowering sum type {}", name);
             let struct_body: Vec<_> = body
                 .iter()
                 .map(|(variant_name, variant_type)| {
@@ -778,7 +778,7 @@ fn lower_typedef(accm: &mut Vec<Decl>, name: Sym, ty: &Type, params: &[Sym]) {
         // For other types, we create a constructor function to build them.
         other => {
             let s = Sym::new("x");
-            println!("Lowering params {:?}", params);
+            trace!("Lowering params {:?}", params);
             let type_params: Vec<_> = params.iter().map(|s| Type::Generic(*s)).collect();
             let signature = ast::Signature {
                 params: vec![(s, other.clone())],
@@ -854,7 +854,6 @@ fn lower_decls(decls: &[ast::Decl]) -> Ir {
     }
 
     let i = Ir { decls: accm };
-    println!("{}", i);
     i
 }
 

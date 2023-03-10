@@ -6,6 +6,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::sync::Arc;
 
+use log::*;
+
 pub mod ast;
 pub mod backend;
 pub mod format;
@@ -185,7 +187,7 @@ impl Type {
         }
         let mut accm = vec![];
         helper(self, &mut accm);
-        println!("Found type params for {:?}: {:?}", self, accm);
+        trace!("Found type params for {:?}: {:?}", self, accm);
         accm
     }
 
@@ -465,9 +467,11 @@ pub fn try_compile(
         parser.parse()
     };
     let hir = hir::lower(&ast);
+    info!("HIR from AST lowering:\n{}", &hir);
     let hir = passes::run_passes(hir);
     let tck = &mut typeck::typecheck(&hir)?;
     let hir = passes::run_typechecked_passes(hir, tck);
+    info!("HIR after transform passes:\n{}", &hir);
     Ok(backend::output(backend, &hir, tck))
 }
 
