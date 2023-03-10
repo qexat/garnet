@@ -14,6 +14,8 @@
 //!
 //! TODO also: monomorphization
 
+use log::*;
+
 use crate::hir::{Decl as D, Expr as E, ExprNode, Ir};
 use crate::*;
 
@@ -33,8 +35,6 @@ pub fn run_typechecked_passes(ir: Ir, tck: &mut typeck::Tck) -> Ir {
     //let passes: &[TckPass] = &[nameify, struct_to_tuple];
     let passes: &[TckPass] = &[struct_to_tuple, monomorphize];
     let res = passes.iter().fold(ir, |prev_ir, f| f(prev_ir, tck));
-    println!();
-    println!("{}", res);
     res
 }
 
@@ -694,7 +694,7 @@ fn tuplize_type(typ: Type) -> Type {
 ///
 /// TODO: Do something with the expr types?
 fn tuplize_expr(expr: ExprNode, tck: &mut typeck::Tck) -> ExprNode {
-    println!("Tuplizing expr {:?}", expr);
+    trace!("Tuplizing expr {:?}", expr);
     let expr_typeid = tck.get_expr_type(&expr);
     let struct_type = tck.reconstruct(expr_typeid).expect("Should never happen?");
     let new_contents = match &*expr.e {
@@ -919,7 +919,7 @@ mod tests {
     #[test]
     fn test_expr_map() {
         fn swap_binop_args(expr: ExprNode) -> ExprNode {
-            println!("Swapping {:?}", expr);
+            trace!("Swapping {:?}", expr);
             expr.map(&mut |e| match e {
                 E::BinOp { op, lhs, rhs } => E::BinOp {
                     op,

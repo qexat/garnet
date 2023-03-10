@@ -11,6 +11,8 @@
 use std::borrow::Cow;
 use std::io::{self, Write};
 
+use log::*;
+
 use crate::hir;
 use crate::typeck::Tck;
 use crate::*;
@@ -60,7 +62,7 @@ fn compile_typename(t: &Type) -> Cow<'static, str> {
         }
         Prim(PrimType::Bool) => "bool".into(),
         Named(s, types) if s == &Sym::new("Tuple") => {
-            println!("Compiling tuple {:?}...", t);
+            trace!("Compiling tuple {:?}...", t);
             let mut accm = String::from("(");
             for typ in types {
                 accm += &compile_typename(&*typ);
@@ -349,7 +351,7 @@ fn compile_expr(expr: &hir::ExprNode, tck: &Tck) -> String {
             // TODO: Someday this should just be filled in by a lowering pass
             let type_id = tck.get_expr_type(init);
             let typ = tck.reconstruct(type_id).expect("Passed typechecking but failed to reconstruct during codegen, should never happen!");
-            println!("Type for let statement is {:?}", typ);
+            trace!("Type for let statement is {:?}", typ);
             let tstr = compile_typename(&typ);
             let istr = compile_expr(init, tck);
             if *mutable {
