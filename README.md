@@ -59,7 +59,7 @@ working on that in earnest.
 
 # Code example
 
-```rust
+```
 fn fib(x: I32): I32 =
     if x < 2 then x
     else fib(x-1) + fib(x - 2)
@@ -67,6 +67,7 @@ fn fib(x: I32): I32 =
 end
 
 -- {} is an empty tuple, "unit"
+-- __println() is for now just a compiler builtin.
 fn main(): {} =
     __println(fib(40))
 end
@@ -89,10 +90,10 @@ Realistic language goals:
 
  * [✓] Technically Turing complete
  * [✓] Basic structs/tuples (did a proof of concept, now rewriting it)
- * [⛭] Generics and specialization
+ * [✓] Arrays, sum types, other useful basic types
+ * [⛭] Generics and type inference
  * [⛭] Full ML-y modules
  * [?] Move semantics, references and borrowing
- * [?] Arrays and slices
  * [?] Stdlib of some kind
  * [ ] Pattern matching
  * [ ] Function properties (`const`, `pure`, `noalloc`, etc)
@@ -288,25 +289,17 @@ reasonably fast.
 
  * rustc
  * `logos` lexer
- * custom parser (recursive descent + Pratt)
+ * handrolled parser (recursive descent + Pratt)
  * output Rust, just to make things work.
  * `argh` for command line opts
  * `codespan` for error reporting
+ * `lang_tester` for integration tests
 
 Things to consider:
 
  * rustyline (for repl)
- * lasso or `string-interner` (for string interning)
  * `ryu` for parsing floats
-
-Programs-as-separate-files tests:
-
- * Roll our own, prolly not that hard
- * `test-generator` generates Rust code and recompiles if files are
-   changed, demonstrated here:
-   https://github.com/devsnek/scratchc/blob/main/tests/out.rs
- * `goldentests` crate
- * http://insta.rs/
+ * `tree-sitter` for parsing/formatting tooling (someday?)
 
 ## Backend thoughts
 
@@ -319,7 +312,7 @@ Goals:
  * Not huge
  * Operates pretty fast
  * Outputs pretty good/fast/small code
- * Doesn't require binding to C/C++ code
+ * Doesn't require binding to C++ code (pure C may be acceptable)
  * Produces `x86_64`, ideally also Aarch64 and WASM, SPIR-V would be a
    nice bonus
 
@@ -366,41 +359,4 @@ the implementation's optimizer.
 # License
 
 MIT
-
-# References and design notes
-
-Moved to <https://man.sr.ht/~icefox/garnet/>
-
-# On Motivation
-
-A quote from Graydon, original creator of Rust, from
-<https://github.com/graydon/rust-prehistory>:
-
-While reading this -- if you're foolish enough to try -- keep in mind
-that I was balanced between near-total disbelief that it would ever come
-to anything and miniscule hope that if I kept at experiments and
-fiddling long enough, maybe I could do a thing.
-
-I had been criticizing, picking apart, ranting about other languages for
-years, and making doodles and marginalia notes about how to do one "right"
-or "differently" to myself for almost as long.  This lineage representes
-the very gradual coaxing-into-belief that I could actually make
-something that runs
-
-As such, there are long periods of nothing, lots of revisions of
-position, long periods of just making notes, arguing with myself,
-several false starts, digressions into minutiae that seem completely
-absurd from today's vantage point (don't get me started on how long I
-spent learning x86 mod r/m bytes and PE import table structures, why?)
-and self-important frippery.
-
-The significant thing here is that I had to get to the point of
-convincing myself that there was something *there* before bothering to
-show anyone; the uptick in work in mid-to-late 2009 is when Mozilla
-started funding me on the clock to work on it, but it's significant that
-there were years and years of just puttering around in circles, the kind
-of snowball-rolling that's necessary to go from nothing to "well...
-maybe..."
-
-I'd encourage reading it in this light: Delusional dreams very gradually
-coming into focus, not any sort of grand plan being executed.
+ 
