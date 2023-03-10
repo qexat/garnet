@@ -26,10 +26,6 @@ logos = "0.12"
 
 
 [dev-dependencies]
-# Use wasmtime to evaluate results of end-to-end tests.
-#wasmtime = "0.16"
-#wasmprinter = "0.2"
 tempfile = "3"
-#libloading = "0.7"
 lang_tester = "0.7"
 criterion = "0.3"
