@@ -13,11 +13,11 @@ fn gen_dumb_test_code(count: usize) -> String {
     for i in 0..count {
         buf += &format!(
             r#"
-fn rand{i}(x: I32): I32 =
+fn rand{i}(x I32) I32 =
     32767 * x * 17 + 4000100 - 50
 end
 
-fn collatz{i}(x: I32): I32 =
+fn collatz{i}(x I32) I32 =
     if x % 2 == 0 then
         collatz{i}(x / 2)
     else
@@ -25,39 +25,39 @@ fn collatz{i}(x: I32): I32 =
     end
 end
 
-fn squared{i}(x: I32): I32 =
-    let y: I32 = x
-    let z: I32 = x
+fn squared{i}(x I32) I32 =
+    let y I32 = x
+    let z I32 = x
     y * z
 end
 
 
-fn foo{i}(x: I32): I32 =
+fn foo{i}(x I32) I32 =
     squared{i}(x) + squared{i}(x)
 end
 
-fn bar{i}(x: I32): I32 =
+fn bar{i}(x I32) I32 =
     rand{i}(collatz{i}(x))
 end
 
-fn baz{i}(x: I32, y: I32, z: I32): I32 =
-    let a: I32 = bar{i}(x * y)
-    let b: I32 = rand{i}(z)
-    let c: I32 = foo{i}(y)
+fn baz{i}(x I32, y I32, z I32) I32 =
+    let a I32 = bar{i}(x * y)
+    let b I32 = rand{i}(z)
+    let c I32 = foo{i}(y)
     a + b + c
 end
         "#,
             i = i
         );
     }
-    buf += "fn main(): {} =\n";
+    buf += "fn main() {} =\n";
     for i in 0..count {
         buf += &format!(
             r#"
-        let quux{i}: I32 = 10002
-        let xyzzy{i}: I32 = 26391
-        let quuz{i}: I32 = foo{i}(quux{i})
-        baz{i}(quux{i}, xyzzy{i}, quuz{i})
+        let quux{i} I32 = 10002
+        let xyzzy{i} I32 = 26391
+        let quuz{i} I32 = foo{i}(quux{i})
+        baz{i}(quux{i}, xyzzy{i}, quuz{i});
         "#,
             i = i
         );
@@ -71,21 +71,39 @@ fn criterion_benchmark(c: &mut Criterion) {
     let lines = code.lines().count();
     let name = format!("compile {}ish lines", lines);
     c.bench_function(&name, |b| {
-        b.iter(|| garnet::compile("criterion.gt", black_box(&code)))
+        b.iter(|| {
+            garnet::compile(
+                "criterion.gt",
+                black_box(&code),
+                garnet::backend::Backend::Rust,
+            )
+        })
     });
 
     let code = gen_dumb_test_code(103 * 8);
     let lines = code.lines().count();
     let name = format!("compile {}ish lines", lines);
     c.bench_function(&name, |b| {
-        b.iter(|| garnet::compile("criterion.gt", black_box(&code)))
+        b.iter(|| {
+            garnet::compile(
+                "criterion.gt",
+                black_box(&code),
+                garnet::backend::Backend::Rust,
+            )
+        })
     });
 
     let code = gen_dumb_test_code(103 * 16);
     let lines = code.lines().count();
     let name = format!("compile {}ish lines", lines);
     c.bench_function(&name, |b| {
-        b.iter(|| garnet::compile("criterion.gt", black_box(&code)))
+        b.iter(|| {
+            garnet::compile(
+                "criterion.gt",
+                black_box(&code),
+                garnet::backend::Backend::Rust,
+            )
+        })
     });
 }
 
