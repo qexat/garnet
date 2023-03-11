@@ -8,11 +8,14 @@
 -- Dummy type
 type String = I32
 
--- TODO: Mangle "Self" since it's a keyword in Rust
+-- TODO: Make the compiler mangle "Self" since it's a keyword in Rust
+-- Also "self" and "impl"
 type Show(@Selff) = struct
     show: fn(@Selff) String
 end
 
+-- To make this work we need monomorphization, 'cause Rust refuses to
+-- call a function pointer in a const function
 const IntShow Show(I32) = Show {
     .show = fn(x I32) String = String(x) end
 }

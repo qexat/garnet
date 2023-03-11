@@ -4,9 +4,6 @@
 -- Run:
 --   stdout: 3
 
--- TODO: BUGGO: This test occasionally fails to pass, *hopefully*
--- because of HashMap ordering shenanigans.  Investigate.
-
 -- A generic functional map from a key to a value
 type Map(@T, @K, @V) = struct
     get: fn(@T, @K) @V,
