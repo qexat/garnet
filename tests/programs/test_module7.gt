@@ -7,6 +7,8 @@
 /- Another monad-ish attempt, this also gets called map
 From modular implicits paper section 3.4
 
+To make this work we need closures that capture their scope properly.
+
 module type Functor = sig
   type + 'a t
   val map : ('a -> 'b) -> 'a t -> 'b t
@@ -23,24 +25,30 @@ type Cell(@V) = struct
 end
 
 fn make_cell_functor(f fn(@A) @B) Functor(Cell(@A), Cell(@B)) =
-    Functor {
-        .map = fn(cell Cell(@A)) Cell(@B) =
-            Cell {
-                .val = f(cell$.val)
-            }
-        end
-    }
+    let m = fn(c Cell(@A)) Cell(@B) =
+        Cell({
+            .val = f(c$.val)
+        })
+    end
+    Functor({
+        .map = m,
+    })
 end
 
+/-
 fn f(i Bool) I32 =
     12
 end
+-/
 
 fn main() {} =
-    let test_cell = Cell {
+    {}
+    /-
+    let test_cell Cell(Bool) = Cell {
         .val = true
     }
     let thing = make_cell_functor(f)
     let test_result Cell(I32) = thing$.map(test_cell)
     __println(test_result$.val)
+    -/
 end

@@ -6,8 +6,8 @@
 
 -- Fine let's try something simpler.
 
-type Eq(@Self) = struct
-    eq: fn(@Self, @Self) Bool,
+type Eq(@Selff) = struct
+    eq: fn(@Selff, @Selff) Bool,
 end
 
 -- The name here has to be something other than Eq(I32) 'cause we
@@ -17,25 +17,25 @@ end
 -- To ponder: What if we did attach names to types, or had
 -- specialization?  The latter evokes the Instance Problem, the former
 -- I suppose is a way around it.
-const IntEq Eq = Eq {
+const IntEq Eq(I32) = Eq {
     .eq = fn(lhs I32, rhs I32) Bool =
         true
     end,
 }
 
-type Ord(@Self) = struct
-    cmp: fn(@Self, @Self) I32,
+type Ord(@Selff) = struct
+    cmp: fn(@Selff, @Selff) I32,
 end
 
-const IntOrd Ord = Ord {
+const IntOrd Ord(I32) = Ord {
     .cmp = fn(lhs I32, rhs I32) I32 =
         0
     end,
 }
 
 
-type From(@Self, @In) = struct
-    from: fn(@In) @Self
+type From(@Selff, @In) = struct
+    from: fn(@In) @Selff
 end
 
 const BoolFromInt From(Bool, I32) = From {
@@ -47,21 +47,21 @@ type List(@T) = struct
 end
 
 
-type Idx(@Self, @Output) = struct
-    idx: fn(@Self, I32) @Output,
+type Idx(@Selff, @Output) = struct
+    idx: fn(@Selff, I32) @Output,
 end
 
-type Len(@Self) = struct
-    len: fn(@Self) I32,
+type Len(@Selff) = struct
+    len: fn(@Selff) I32,
 end
 
 const ListLen Len(List(@T)) = Len {
-    .len = fn(self List(@T)) I32 = 0 end
+    .len = fn(selff List(@T)) I32 = 0 end
 }
 
-fn module_len(impl Len(@T), l @T) I32 =
+fn module_len(impll Len(@T), l @T) I32 =
     let total I32 = 0
-    impl$.len(l)
+    impll$.len(l)
 end
 
 -- Specialize it just to make sure everything fits together...
@@ -69,8 +69,8 @@ fn list_len(l List(@T)) I32 =
     module_len(ListLen, l)
 end
 
-const ListIdx Idx(List(@T)) = Idx {
-    .idx = fn(self List(@T), i I32) @T = self$.dummy_data end
+const ListIdx Idx(List(@T), @T) = Idx {
+    .idx = fn(selff List(@T), i I32) @T = selff$.dummy_data end
 }
 
 -- Generalized thingy...
@@ -80,8 +80,8 @@ fn idx(l List(@T)) @T =
 end
 
 -- Can we make another instance for a more specialized type?
-const IntListIdx Idx(List(I32)) = Idx {
-    .idx = fn(self List(I32), i I32) I32 = self$.dummy_data end
+const IntListIdx Idx(List(I32), I32) = Idx {
+    .idx = fn(selff List(I32), i I32) I32 = selff$.dummy_data end
 }
 
 fn main() {} =
