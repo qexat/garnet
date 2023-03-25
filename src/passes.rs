@@ -26,6 +26,12 @@ type Pass = fn(Ir) -> Ir;
 type TckPass = fn(Ir, &mut typeck::Tck) -> Ir;
 
 pub fn run_passes(ir: Ir) -> Ir {
+    // TODO: It may be more efficient to compose passes rather than fold them?
+    // That way they don't need to build the full intermediate IR each time.
+    // You can use the recursion scheme pattern for this.
+    // That will take some nontrivial restructuring of expr_map though, will also need
+    // a decl_map or something that can compose multiple passes together.
+    // Probably not *difficult*, but tricksy.
     let passes: &[Pass] = &[lambda_lift];
     passes.iter().fold(ir, |prev_ir, f| f(prev_ir))
 }
@@ -177,16 +183,12 @@ fn expr_map(expr: ExprNode, f: &mut dyn FnMut(ExprNode) -> ExprNode) -> ExprNode
             body: exprs_map(body, f),
         },
     };
-    /*
-    let x = expr.map(exprfn);
-    f(x)
-    */
     thing.map(exprfn)
 }
 
 /*
 /// A pure version of the expr_map() that takes and returns state explicitly.
-///     Seems to be strictly more of a pain in the ass than smuggling a closure
+/// Seems to be strictly more of a pain in the ass than smuggling a closure
 /// into expr_map(), so probably not worth the trouble.
 fn expr_fold<S>(expr: ExprNode, state: S, f: &dyn Fn(E, S) -> (E, S)) -> (ExprNode, S)
 where
@@ -501,6 +503,9 @@ fn lambda_lift(ir: Ir) -> Ir {
 /// Then we have to rewrite the function call names to point at the monomorphized
 /// functions.  We can do this while collecting them, since we generate the
 /// names from the signature.
+///
+/// That probably won't get us *all* of the way there, we still will have
+/// generic type constructors in structs and stuff.  But it's a start.
 fn monomorphize(ir: Ir, _tck: &mut typeck::Tck) -> Ir {
     let mut functioncalls: BTreeSet<(Sym, Vec<Type>)> = Default::default();
     fn mangle_generic_name(s: Sym, tys: &[Type]) -> Sym {
@@ -558,6 +563,7 @@ pub fn generate_type_name(typ: &Type) -> String {
     }
 }
 
+/// Whether or not something is an anonymous tuple or struct or such.
 fn type_is_anonymous(typ: &Type) -> bool {
     match typ {
         Type::Prim(_) | Type::Named(_, _) | Type::Array(_, _) | Type::Generic(_) => false,
@@ -576,7 +582,6 @@ fn nameify_type(typ: Type, known_types: &mut BTreeMap<Sym, D>) -> Type {
         let named_type = Type::Named(new_type_name, generics.clone());
         // TODO: entry()
         if !known_types.contains_key(&new_type_name) {
-            // let generics = nam
             known_types.insert(
                 new_type_name,
                 D::TypeDef {
