@@ -271,7 +271,7 @@ impl fmt::Display for Decl {
 
             D::Const {
                 name,
-                typename,
+                typ: typename,
                 init,
             } => {
                 write!(f, "const {}: {} = ", name, typename.get_name())?;
@@ -489,7 +489,7 @@ pub enum Decl {
     },
     Const {
         name: Sym,
-        typename: Type,
+        typ: Type,
         init: ExprNode,
     },
     TypeDef {
@@ -712,7 +712,7 @@ fn lower_typedef(accm: &mut Vec<Decl>, name: Sym, ty: &Type, params: &[Sym]) {
             let init_type = Type::Struct(struct_signature, vec![]);
             let new_constdef = Const {
                 name,
-                typename: init_type,
+                typ: init_type,
                 init: init_val,
             };
             accm.push(new_constdef);
@@ -769,7 +769,7 @@ fn lower_typedef(accm: &mut Vec<Decl>, name: Sym, ty: &Type, params: &[Sym]) {
             let struct_type = Type::Struct(struct_typebody, generics.clone());
             let new_constdef = Const {
                 name: name.to_owned(),
-                typename: struct_type,
+                typ: struct_type,
                 init: init_val,
             };
             //println!("Lowered to {:#?}", &new_constdef);
@@ -826,7 +826,7 @@ fn lower_decl(accm: &mut Vec<Decl>, decl: &ast::Decl) {
             ..
         } => accm.push(Decl::Const {
             name: *name,
-            typename: typename.clone(),
+            typ: typename.clone(),
             init: lower_expr(init),
         }),
         // this needs to generate the typedef AND the type constructor
