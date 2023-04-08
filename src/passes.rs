@@ -12,7 +12,9 @@
 //! scope vanishes, for example, and anything potentially
 //! ambiguous becomes unambiguous.
 //!
-//! TODO also: monomorphization
+//! TODO: Passes that need to be done still:
+//!  * Closure conversion
+//!  * Monomorphization
 
 use log::*;
 
@@ -39,7 +41,8 @@ pub fn run_passes(ir: Ir) -> Ir {
 pub fn run_typechecked_passes(ir: Ir, tck: &mut typeck::Tck) -> Ir {
     // let passes: &[TckPass] = &[nameify, enum_to_int];
     //let passes: &[TckPass] = &[nameify, struct_to_tuple];
-    let passes: &[TckPass] = &[struct_to_tuple, monomorphize];
+    let passes: &[TckPass] = &[struct_to_tuple];
+    //, monomorphize];
     let res = passes.iter().fold(ir, |prev_ir, f| f(prev_ir, tck));
     res
 }
@@ -48,13 +51,20 @@ fn exprs_map(exprs: Vec<ExprNode>, f: &mut dyn FnMut(ExprNode) -> ExprNode) -> V
     exprs.into_iter().map(|e| expr_map(e, f)).collect()
 }
 
+/// This is the core recusion scheme that takes a function and applies
+/// it to an expression, and all its subexpressions.
+/// The function is `&mut FnMut` so if it needs to have access to more
+/// data between calls besides the expression itself, just smuggle it
+/// into the closure.  Trying to make this generic over different funcs
+/// signatures is probably not worth the effort
+///
 /// To handle multiple expressions this will turn more into a fold()
 /// than a map(), it will take an accumulator that gets threaded through
 /// everything...  That gets *very weird* though and I manage to pour
 /// my coffee on my cat this morning so let's give that a miss for now.
 /// As it is, this can only transform subtrees into other subtrees.
 ///
-/// We don't need a version of this for decls, 'cause decls
+/// We don't really need a version of this for decls, 'cause decls
 /// can't be nested.
 ///
 /// The function has to take and return an ExprNode, not an expr,
@@ -338,24 +348,42 @@ where
 }
 */
 
-/*
-/// Takes a decl and applies the given expr transformer to any expression in it.
-/// ...Not suuuuuuuure it is worth it since we often(?) want to know or change
-/// something about the decl as well.
-fn decl_map_expr(decl: D, f: &mut dyn FnMut(Expr) -> Expr) -> Decl {
+/// Takes a decl and applies the given expr and type transformers to any
+/// expression in it.
+///
+/// Technically not very necessary, since decls can't contain othe decls,
+/// but happens often enough that it's worth having.
+fn decl_map(
+    decl: D,
+    fe: &mut dyn FnMut(ExprNode) -> ExprNode,
+    ft: &mut dyn FnMut(Type) -> Type,
+) -> D {
     match decl {
-        D::Function { name, signature, body } => {
-            D::Function
+        D::Function {
+            name,
+            signature,
+            body,
+        } => D::Function {
+            name,
+            signature: signature_map(signature, ft),
+            body: exprs_map(body, fe),
         },
-        D::Const { name, typename, init } => {
-
+        D::Const { name, typ, init } => D::Const {
+            name,
+            typ: type_map(typ, ft),
+            init: expr_map(init, fe),
         },
-        D::TypeDef { name, params, typedecl } => {
-
-        }
+        D::TypeDef {
+            name,
+            params,
+            typedecl,
+        } => D::TypeDef {
+            name,
+            params,
+            typedecl: type_map(typedecl, ft),
+        },
     }
 }
-*/
 
 fn types_map(typs: Vec<Type>, f: &mut dyn FnMut(Type) -> Type) -> Vec<Type> {
     typs.into_iter().map(|t| type_map(t, f)).collect()
@@ -453,32 +481,12 @@ fn lambda_lift(ir: Ir) -> Ir {
     let new_decls: Vec<D> = ir
         .decls
         .into_iter()
-        .map(|decl| match decl {
-            D::Function {
-                name,
-                signature,
-                body,
-            } => {
-                let new_body = exprs_map(body, &mut |e| lambda_lift_expr(e, &mut new_functions));
-                D::Function {
-                    name,
-                    signature,
-                    body: new_body,
-                }
-            }
-            D::Const {
-                name,
-                typ: typename,
-                init,
-            } => {
-                let new_body = expr_map(init, &mut |e| lambda_lift_expr(e, &mut new_functions));
-                D::Const {
-                    name,
-                    typ: typename,
-                    init: new_body,
-                }
-            }
-            x => x,
+        .map(|decl| {
+            decl_map(
+                decl,
+                &mut |e| lambda_lift_expr(e, &mut new_functions),
+                &mut |t| t,
+            )
         })
         .collect();
     new_functions.extend(new_decls.into_iter());
@@ -516,7 +524,7 @@ fn monomorphize_expr(expr: ExprNode, tck: &mut typeck::Tck) -> ExprNode {
         }
         _ => e,
     };
-    expr.map(&mut new_expr)
+    expr.clone().map(&mut new_expr)
 }
 
 /// Ok, so what we have to do here is this:
@@ -550,7 +558,7 @@ fn monomorphize(ir: Ir, _tck: &mut typeck::Tck) -> Ir {
         Sym::new(new_str)
     }
 
-    for decl in ir.decls {
+    for decl in ir.decls.clone() {
         match decl {
             D::Function {
                 name,
@@ -710,6 +718,11 @@ fn nameify(ir: Ir, tck: &mut typeck::Tck) -> Ir {
                 typedecl: type_map(typedecl, &mut |t| nameify_type(t, known_types)),
             },
         };
+        // Can't do this 'cause borrowing known_types twice is no bueno
+        // Sad.
+        // let res = decl_map(decl, &mut |e| nameify_expr(e, tck, known_types), &mut |t| {
+        //     nameify_type(t, known_types)
+        // });
         new_decls.push(res);
     }
     new_decls.extend(known_types.into_iter().map(|(_k, v)| v.clone()));
@@ -825,39 +838,7 @@ fn struct_to_tuple(ir: Ir, tck: &mut typeck::Tck) -> Ir {
     let tuplize_expr = &mut |e| tuplize_expr(e, tck);
 
     for decl in ir.decls.into_iter() {
-        let res = match decl {
-            D::Const {
-                name,
-                typ: typename,
-                init,
-            } => {
-                let new_type = type_map(typename, &mut tuplize_type);
-                let new_init = expr_map(init, tuplize_expr);
-                D::Const {
-                    name,
-                    typ: new_type,
-                    init: new_init,
-                }
-            }
-            D::Function {
-                name,
-                signature,
-                body,
-            } => D::Function {
-                name,
-                signature: signature_map(signature, &mut tuplize_type),
-                body: exprs_map(body, tuplize_expr),
-            },
-            D::TypeDef {
-                name,
-                params,
-                typedecl,
-            } => D::TypeDef {
-                name,
-                params,
-                typedecl: type_map(typedecl, &mut tuplize_type),
-            },
-        };
+        let res = decl_map(decl, tuplize_expr, &mut tuplize_type);
         new_decls.push(res);
     }
     Ir { decls: new_decls }
@@ -913,39 +894,7 @@ fn enum_to_int(ir: Ir, tck: &mut typeck::Tck) -> Ir {
     let intify_expr = &mut |e| intify_expr(e, tck);
 
     for decl in ir.decls.into_iter() {
-        let res = match decl {
-            D::Const {
-                name,
-                typ: typename,
-                init,
-            } => {
-                let new_type = type_map(typename, &mut intify_type);
-                let new_init = expr_map(init, intify_expr);
-                D::Const {
-                    name,
-                    typ: new_type,
-                    init: new_init,
-                }
-            }
-            D::Function {
-                name,
-                signature,
-                body,
-            } => D::Function {
-                name,
-                signature: signature_map(signature, &mut intify_type),
-                body: exprs_map(body, intify_expr),
-            },
-            D::TypeDef {
-                name,
-                params,
-                typedecl,
-            } => D::TypeDef {
-                name,
-                params,
-                typedecl: type_map(typedecl, &mut intify_type),
-            },
-        };
+        let res = decl_map(decl, intify_expr, &mut intify_type);
         new_decls.push(res);
     }
     Ir { decls: new_decls }
