@@ -509,8 +509,8 @@ fn compile_expr(expr: &hir::ExprNode, tck: &Tck) -> String {
             )
         }
         E::EnumCtor {
-            name,
-            variant,
+            name: _,
+            variant: _,
             value,
         } => {
             format!("{}", value)

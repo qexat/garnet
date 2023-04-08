@@ -41,8 +41,7 @@ pub fn run_passes(ir: Ir) -> Ir {
 pub fn run_typechecked_passes(ir: Ir, tck: &mut typeck::Tck) -> Ir {
     // let passes: &[TckPass] = &[nameify, enum_to_int];
     //let passes: &[TckPass] = &[nameify, struct_to_tuple];
-    let passes: &[TckPass] = &[struct_to_tuple];
-    //, monomorphize];
+    let passes: &[TckPass] = &[struct_to_tuple, monomorphize];
     let res = passes.iter().fold(ir, |prev_ir, f| f(prev_ir, tck));
     res
 }
@@ -497,12 +496,15 @@ fn lambda_lift(ir: Ir) -> Ir {
 
 //////  Monomorphization //////
 
-fn monomorphize_expr(expr: ExprNode, tck: &mut typeck::Tck) -> ExprNode {
-    let mut functioncalls: BTreeSet<(Sym, Vec<Type>)> = Default::default();
+fn monomorphize_expr(
+    expr: ExprNode,
+    tck: &mut typeck::Tck,
+    functioncalls: &mut BTreeSet<(Sym, Vec<Type>)>,
+) -> ExprNode {
     let mut new_expr = |e| match &e {
         E::Funcall {
             func,
-            params,
+            params: _,
             type_params,
         } => {
             // Figure out what types the function has been called with
@@ -510,21 +512,41 @@ fn monomorphize_expr(expr: ExprNode, tck: &mut typeck::Tck) -> ExprNode {
             let ftype = tck
                 .reconstruct(ftypeid)
                 .expect("Should never fail, 'cause typechecking succeeded if we got here");
+            dbg!(&ftype);
             let generics = ftype.collect_generic_names();
+            dbg!(&generics);
             if generics.len() > 0 {
-                let funcname = match &*func.e {
-                    E::Var { name } => name,
-                    _ => unreachable!("Function calls should always be named 'cause we've done lambda lifting, right?   Right?")
-                };
-                todo!()
+                match &*func.e {
+                    E::Var { name } => {
+                        let substs: Vec<_> = type_params.values().cloned().collect();
+                        let new_func_name = mangle_generic_name(*name, &substs);
+                        functioncalls.insert((*name, substs.clone()));
+                        E::Var { name: new_func_name }
+                    },
+                    _ => unreachable!("Function calls should always be named 'cause we've done lambda lifting, right?   Right?  Nope, but we gotta start somewhere.")
+                }
             } else {
                 // No generics in the function call, nothing to monomorphize
+                // TODO: Sort your shit out with type_params
                 e
             }
         }
         _ => e,
     };
     expr.clone().map(&mut new_expr)
+}
+
+/// takes a symbol S and type params listed and generates a new symbol
+/// for it.
+/// Someday we should probably make a real name mangling scheme that
+/// we have actually thought about.
+fn mangle_generic_name(s: Sym, tys: &[Type]) -> Sym {
+    let mut new_str = format!("__mono_{}_", s);
+    for t in tys {
+        new_str += &generate_type_name(t);
+        new_str += "_";
+    }
+    Sym::new(new_str)
 }
 
 /// Ok, so what we have to do here is this:
@@ -544,22 +566,22 @@ fn monomorphize_expr(expr: ExprNode, tck: &mut typeck::Tck) -> ExprNode {
 ///
 /// That probably won't get us *all* of the way there, we still will have
 /// generic type constructors in structs and stuff.  But it's a start.
-fn monomorphize(ir: Ir, _tck: &mut typeck::Tck) -> Ir {
-    let mut functioncalls: BTreeSet<(Sym, Vec<Type>)> = Default::default();
-    // takes a symbol S and type params listed and generates a new symbol
-    // for it.
-    // Someday we should probably make a real
-    fn mangle_generic_name(s: Sym, tys: &[Type]) -> Sym {
-        let mut new_str = format!("__mono_{}_", s);
-        for t in tys {
-            new_str += &generate_type_name(t);
-            new_str += "_";
-        }
-        Sym::new(new_str)
-    }
+///
+/// ...ok so what do we do if we have:
+/// foo.baz = some_func
+/// foo.baz()
+/// We need to change the `some_func`, not the `foo.baz()`.
+/// So...  every function call has some list of type substitutions
+/// stuck into it.  So we don't monomorphize just function calls, we have
+/// to do it to every function object, with the types we figure out at
+/// the call...  Our type-checking should have that info, does it?
+fn monomorphize(ir: Ir, tck: &mut typeck::Tck) -> Ir {
+    let functioncalls: &mut BTreeSet<(Sym, Vec<Type>)> = &mut Default::default();
+    let mut functions_to_mono: BTreeSet<Sym> = Default::default();
 
-    for decl in ir.decls.clone() {
-        match decl {
+    let mut new_decls = vec![];
+    for decl in ir.decls.into_iter() {
+        let res = match decl.clone() {
             D::Function {
                 name,
                 signature,
@@ -568,20 +590,47 @@ fn monomorphize(ir: Ir, _tck: &mut typeck::Tck) -> Ir {
                 let sigtype = signature.to_type();
                 let sig_generics = sigtype.collect_generic_names();
                 if sig_generics.len() > 0 {
-                    todo!()
+                    // This function is a candidate for monomorph
+                    functions_to_mono.insert(name);
+                }
+                let new_body = exprs_map(body, &mut |e| monomorphize_expr(e, tck, functioncalls));
+                D::Function {
+                    name,
+                    signature,
+                    body: new_body,
                 }
             }
-            D::Const { name, typ, init } => {
+            D::Const {
+                name: _,
+                typ: _,
+                init: _,
+            } => {
+                decl
+
+                //unimplemented!("We cannot monomorphize a const expr!");
+                /*
                 let generics = typ.collect_generic_names();
                 if generics.len() > 0 {
-                    todo!()
+                    D::Const {
+                        name,
+                        typ,
+                        init: monomorphize_expr(init, tck),
+                    }
+                } else {
+                    D::Const {
+                        name,
+                        typ,
+                        init: init,
+                    }
                 }
+                */
             }
             // No need to touch anything here, huzzah
-            D::TypeDef { .. } => (),
-        }
+            D::TypeDef { .. } => decl,
+        };
+        new_decls.push(res);
     }
-    ir
+    Ir { decls: new_decls }
 }
 
 //////  Turn all anonymous types into named ones //////
