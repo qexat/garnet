@@ -51,6 +51,10 @@ impl PrimType {
 }
 
 /// A concrete type that has been fully inferred
+///
+/// TODO someday: We should make a consistent and very good
+/// name-mangling scheme for this, will make some backend stuff
+/// simpler.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Type {
     Prim(PrimType),

@@ -1484,7 +1484,7 @@ fn predeclare_decls(tck: &mut Tck, symtbl: &mut Symtbl, decls: &[hir::Decl]) {
             }
             Const {
                 name,
-                typename,
+                typ: typename,
                 init: _,
             } => {
                 // We don't try typechecking the body yet.
@@ -1547,7 +1547,7 @@ pub fn typecheck(ast: &hir::Ir) -> Result<Tck, TypeError> {
             }
             Const {
                 name: _,
-                typename,
+                typ: typename,
                 init,
             } => {
                 // The init expression is typechecked in its own

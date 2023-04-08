@@ -468,13 +468,13 @@ fn lambda_lift(ir: Ir) -> Ir {
             }
             D::Const {
                 name,
-                typename,
+                typ: typename,
                 init,
             } => {
                 let new_body = expr_map(init, &mut |e| lambda_lift_expr(e, &mut new_functions));
                 D::Const {
                     name,
-                    typename,
+                    typ: typename,
                     init: new_body,
                 }
             }
@@ -488,6 +488,36 @@ fn lambda_lift(ir: Ir) -> Ir {
 }
 
 //////  Monomorphization //////
+
+fn monomorphize_expr(expr: ExprNode, tck: &mut typeck::Tck) -> ExprNode {
+    let mut functioncalls: BTreeSet<(Sym, Vec<Type>)> = Default::default();
+    let mut new_expr = |e| match &e {
+        E::Funcall {
+            func,
+            params,
+            type_params,
+        } => {
+            // Figure out what types the function has been called with
+            let ftypeid = tck.get_expr_type(&expr);
+            let ftype = tck
+                .reconstruct(ftypeid)
+                .expect("Should never fail, 'cause typechecking succeeded if we got here");
+            let generics = ftype.collect_generic_names();
+            if generics.len() > 0 {
+                let funcname = match &*func.e {
+                    E::Var { name } => name,
+                    _ => unreachable!("Function calls should always be named 'cause we've done lambda lifting, right?   Right?")
+                };
+                todo!()
+            } else {
+                // No generics in the function call, nothing to monomorphize
+                e
+            }
+        }
+        _ => e,
+    };
+    expr.map(&mut new_expr)
+}
 
 /// Ok, so what we have to do here is this:
 /// FIRST, we scan through the entire program and find
@@ -508,13 +538,45 @@ fn lambda_lift(ir: Ir) -> Ir {
 /// generic type constructors in structs and stuff.  But it's a start.
 fn monomorphize(ir: Ir, _tck: &mut typeck::Tck) -> Ir {
     let mut functioncalls: BTreeSet<(Sym, Vec<Type>)> = Default::default();
+    // takes a symbol S and type params listed and generates a new symbol
+    // for it.
+    // Someday we should probably make a real
     fn mangle_generic_name(s: Sym, tys: &[Type]) -> Sym {
-        todo!()
+        let mut new_str = format!("__mono_{}_", s);
+        for t in tys {
+            new_str += &generate_type_name(t);
+            new_str += "_";
+        }
+        Sym::new(new_str)
+    }
+
+    for decl in ir.decls {
+        match decl {
+            D::Function {
+                name,
+                signature,
+                body,
+            } => {
+                let sigtype = signature.to_type();
+                let sig_generics = sigtype.collect_generic_names();
+                if sig_generics.len() > 0 {
+                    todo!()
+                }
+            }
+            D::Const { name, typ, init } => {
+                let generics = typ.collect_generic_names();
+                if generics.len() > 0 {
+                    todo!()
+                }
+            }
+            // No need to touch anything here, huzzah
+            D::TypeDef { .. } => (),
+        }
     }
     ir
 }
 
-//////  Turn all anonymous types into named ones ////
+//////  Turn all anonymous types into named ones //////
 
 pub fn generate_type_name(typ: &Type) -> String {
     match typ {
@@ -617,7 +679,7 @@ fn nameify(ir: Ir, tck: &mut typeck::Tck) -> Ir {
         let res = match decl {
             D::Const {
                 name,
-                typename,
+                typ: typename,
                 init,
             } => {
                 // gramble gramble can't have two closures borrowing known_types at the same time
@@ -625,7 +687,7 @@ fn nameify(ir: Ir, tck: &mut typeck::Tck) -> Ir {
                 let new_init = expr_map(init, &mut |e| nameify_expr(e, tck, known_types));
                 D::Const {
                     name,
-                    typename: new_type,
+                    typ: new_type,
                     init: new_init,
                 }
             }
@@ -766,14 +828,14 @@ fn struct_to_tuple(ir: Ir, tck: &mut typeck::Tck) -> Ir {
         let res = match decl {
             D::Const {
                 name,
-                typename,
+                typ: typename,
                 init,
             } => {
                 let new_type = type_map(typename, &mut tuplize_type);
                 let new_init = expr_map(init, tuplize_expr);
                 D::Const {
                     name,
-                    typename: new_type,
+                    typ: new_type,
                     init: new_init,
                 }
             }
@@ -854,14 +916,14 @@ fn enum_to_int(ir: Ir, tck: &mut typeck::Tck) -> Ir {
         let res = match decl {
             D::Const {
                 name,
-                typename,
+                typ: typename,
                 init,
             } => {
                 let new_type = type_map(typename, &mut intify_type);
                 let new_init = expr_map(init, intify_expr);
                 D::Const {
                     name,
-                    typename: new_type,
+                    typ: new_type,
                     init: new_init,
                 }
             }

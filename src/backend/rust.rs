@@ -192,7 +192,7 @@ fn compile_decl(w: &mut impl Write, decl: &hir::Decl, tck: &Tck) -> io::Result<(
         }
         hir::Decl::Const {
             name,
-            typename,
+            typ: typename,
             init,
         } => {
             let nstr = mangle_name(&INT.fetch(*name));
