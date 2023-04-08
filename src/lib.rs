@@ -28,7 +28,7 @@ static INT: Lazy<Cx> = Lazy::new(Cx::new);
 
 /// A primitive type.  All primitives are basically atomic
 /// and can't contain other types, so.
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum PrimType {
     SInt(u8),
     UnknownInt,
@@ -55,7 +55,7 @@ impl PrimType {
 /// TODO someday: We should make a consistent and very good
 /// name-mangling scheme for this, will make some backend stuff
 /// simpler.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Type {
     Prim(PrimType),
     /// A C-like enum.
