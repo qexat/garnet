@@ -1,10 +1,12 @@
 //! Transformation/optimization passes that function on the IR.
 //! May happen before or after typechecking, either way.
-//! For now each is a function from `IR -> IR`, rather than
-//! having a visitor and mutating stuff or anything like that,
-//! which may be less efficient but is IMO simpler to think about.
-//! But also maybe more tedious to write.  A proper recursion scheme
-//! seems like the thing to do, but
+//! For now each is a function from `IR -> IR`, with some recursion
+//! scheme helper functions.  There's two types of passes, one that
+//! happens before type checking and one that happens after.
+//!
+//! It could probably be more efficient, especially with
+//! IR nodes flattened into a vec, but that doesn't matter for now.
+//! We just allocate our way to happiness.
 //!
 //! TODO: A pass that might be useful would be "alpha renaming".
 //! Essentially you walk through your entire compilation unit and
@@ -487,7 +489,7 @@ pub fn generate_type_name(typ: &Type) -> String {
             format!("__Sum__{}", fieldstr)
         }
         Type::Generic(name) => {
-            format!("G{}", name)
+            format!("__G{}", name)
         }
         Type::Named(name, fields) => {
             let field_names: Vec<_> = fields.iter().map(generate_type_name).collect();
