@@ -363,6 +363,76 @@ impl Type {
             Type::Generic(name) => Cow::Owned(format!("@{}", name)),
         }
     }
+
+    /// Takes another type and substitutes any generics
+    /// in the current type with the types from the other type.
+    /// Panics if non-generic types don't match.
+    ///
+    /// Takes a map of known substitutions for generic names.
+    ///
+    /// TODO someday: passes::type_map()?  Not sure how to make
+    /// that walk over two types.
+    pub fn substitute(&self, other: &Type, substitutions: &mut BTreeMap<Sym, Type>) -> Type {
+        match (self, other) {
+            // Types are identical, noop.
+            (s, o) if s == o => s.clone(),
+            (Type::Named(_n1, _args1), Type::Named(_n2, _args2)) => {
+                todo!()
+            }
+            (Type::Func(params1, rettype1), Type::Func(params2, rettype2)) => {
+                if params1.len() != params2.len() {
+                    panic!("subst for function had incorrect param length")
+                }
+                let new_params = params1
+                    .iter()
+                    .zip(params2)
+                    .map(|(p1, p2)| p1.substitute(p2, substitutions))
+                    .collect();
+                let new_rettype = rettype1.substitute(rettype2, substitutions);
+                Type::Func(new_params, Box::new(new_rettype))
+            }
+            (Type::Struct(_, _), Type::Struct(_, _)) => todo!(),
+            (Type::Sum(_, _), Type::Sum(_, _)) => todo!(),
+            (Type::Array(_, _), Type::Array(_, _)) => todo!(),
+            (Type::Generic(nm), p2) => {
+                // If we have an existing substitution, does it conflict?
+                // Not 100% sure this handles generics right, but should work
+                // for now.
+                if let Some(other_ty) = substitutions.get(nm) {
+                    if other_ty != p2 {
+                        panic!("Conflicting subtitution");
+                    }
+                } else {
+                    substitutions.insert(*nm, p2.clone());
+                }
+                p2.clone()
+            }
+            // Types are not identical, panic
+            _ => panic!("Cannot substitute {:?} into {:?}", other, self),
+        }
+    }
+
+    pub fn apply_substitutions(&self, substitutions: &BTreeMap<Sym, Type>) -> Type {
+        match self {
+            Type::Func(params1, rettype1) => {
+                let new_params = params1
+                    .iter()
+                    .map(|p1| p1.apply_substitutions(substitutions))
+                    .collect();
+                let new_rettype = rettype1.apply_substitutions(substitutions);
+                Type::Func(new_params, Box::new(new_rettype))
+            }
+            Type::Named(_n1, _args1) => {
+                todo!()
+            }
+            Type::Struct(_, _) => todo!(),
+            Type::Sum(_, _) => todo!(),
+            Type::Array(_, _) => todo!(),
+            Type::Generic(nm) => substitutions.get(&nm).unwrap().to_owned(),
+            Type::Prim(_) => self.clone(),
+            Type::Enum(_) => self.clone(),
+        }
+    }
 }
 
 /// An interned string of some kind, any kind.

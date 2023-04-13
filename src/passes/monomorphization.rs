@@ -1,41 +1,69 @@
 //!  Monomorphization
 
+use std::collections::{BTreeMap, BTreeSet};
+
 use crate::passes::*;
 use crate::*;
+
+/// A map from function name to all the
+/// specializations we have found for it.
+/// Operates as a set, so adding the same
+/// specializations for it multiple times is a no-op.
+#[derive(Default, Debug)]
+struct FunctionSpecs {
+    specializations: BTreeMap<Sym, BTreeSet<BTreeMap<Sym, Type>>>,
+}
+
+impl FunctionSpecs {
+    fn insert(&mut self, s: Sym, substs: BTreeMap<Sym, Type>) {
+        self.specializations.entry(s).or_default().insert(substs);
+    }
+}
 
 fn monomorphize_expr(
     expr: ExprNode,
     tck: &mut typeck::Tck,
-    functioncalls: &mut BTreeSet<(Sym, Vec<Type>)>,
+    functioncalls: &mut FunctionSpecs,
 ) -> ExprNode {
     let mut new_expr = |e| match &e {
         E::Funcall {
             func,
-            params: _,
+            params,
             type_params,
         } => {
-            // Figure out what types the function has been called with
-            let ftypeid = tck.get_expr_type(&expr);
-            let ftype = tck
-                .reconstruct(ftypeid)
-                .expect("Should never fail, 'cause typechecking succeeded if we got here");
-            dbg!(&ftype);
-            let generics = ftype.collect_generic_names();
-            dbg!(&generics);
-            if generics.len() > 0 {
-                match &*func.e {
-                    E::Var { name } => {
-                        let substs: Vec<_> = type_params.values().cloned().collect();
-                        let new_func_name = mangle_generic_name(*name, &substs);
-                        functioncalls.insert((*name, substs.clone()));
-                        E::Var { name: new_func_name }
-                    },
-                    _ => unreachable!("Function calls should always be named 'cause we've done lambda lifting, right?   Right?  Nope, but we gotta start somewhere.")
+            match &*func.e {
+                E::Var { name } => {
+                    // Get the type we know of the function expression
+                    let ftypeid = tck.get_expr_type(func);
+                    let ftype = tck
+                        .reconstruct(ftypeid)
+                        .expect("Should never fail, 'cause typechecking succeeded if we got here");
+
+                    // Figure out what types the function has been called with
+                    let param_types: Vec<_> = params
+                        .iter()
+                        .map(|p| tck.reconstruct(tck.get_expr_type(p)).unwrap())
+                        .collect();
+                    // Get this expr's return type
+                    let rettype = tck.reconstruct(tck.get_expr_type(&expr)).unwrap();
+                    let called_type = Type::Func(param_types, Box::new(rettype));
+                    let substitutions = &mut Default::default();
+                    // Do our substitution of generics to real types
+                    let _concrete_type = ftype.substitute(&called_type, substitutions);
+                    functioncalls.insert(*name, substitutions.clone());
+
+                    // Ok we replace the var being called with a reference to
+                    // the substituted function's name
+                    let new_name = mangle_generic_name(*name, &substitutions);
+                    let new_call = func.clone().map(&mut |_func| E::Var { name: new_name });
+                    E::Funcall {
+                        func: new_call,
+                        params: params.clone(),
+                        type_params: type_params.clone(),
+                    }
                 }
-            } else {
-                // No generics in the function call, nothing to monomorphize
-                // TODO: Sort your shit out with type_params
-                e
+                // what the shit how the fuck do I tell if this is a local var or not
+                _ => todo!("How the hell do we know what function to monomorphize here???"),
             }
         }
         _ => e,
@@ -47,11 +75,13 @@ fn monomorphize_expr(
 /// for it.
 /// Someday we should probably make a real name mangling scheme that
 /// we have actually thought about.
-fn mangle_generic_name(s: Sym, tys: &[Type]) -> Sym {
-    let mut new_str = format!("__mono_{}_", s);
-    for t in tys {
-        new_str += &generate_type_name(t);
+fn mangle_generic_name(s: Sym, substs: &BTreeMap<Sym, Type>) -> Sym {
+    let mut new_str = format!("__mono_{}", s);
+    for (nm, ty) in substs.iter() {
+        new_str += "__";
+        new_str += &*nm.val();
         new_str += "_";
+        new_str += &generate_type_name(ty);
     }
     Sym::new(new_str)
 }
@@ -83,7 +113,7 @@ fn mangle_generic_name(s: Sym, tys: &[Type]) -> Sym {
 /// to do it to every function object, with the types we figure out at
 /// the call...  Our type-checking should have that info, does it?
 pub(super) fn monomorphize(ir: Ir, tck: &mut typeck::Tck) -> Ir {
-    let functioncalls: &mut BTreeSet<(Sym, Vec<Type>)> = &mut Default::default();
+    let functioncalls: &mut FunctionSpecs = &mut Default::default();
     let mut functions_to_mono: BTreeSet<Sym> = Default::default();
 
     let mut new_decls = vec![];
@@ -138,5 +168,46 @@ pub(super) fn monomorphize(ir: Ir, tck: &mut typeck::Tck) -> Ir {
         };
         new_decls.push(res);
     }
+    // Now we actually create the new functions
+    for (nm, specs) in &functioncalls.specializations {
+        trace!("Specializing {}", nm);
+        let old_func = new_decls
+            .iter()
+            .find(|d| matches!(d, D::Function { name, .. } if name == nm))
+            .unwrap()
+            .clone();
+        for subst in specs {
+            let mangled_name = mangle_generic_name(*nm, subst);
+            trace!("  Specialized name: {}", mangled_name);
+            match &old_func {
+                D::Function {
+                    name: _,
+                    signature: old_sig,
+                    body: old_body,
+                } => {
+                    let sig_type = old_sig.to_type();
+                    let new_sig_type = sig_type.apply_substitutions(subst);
+                    let new_sig = old_sig.map_type(&new_sig_type);
+                    let new_decl = D::Function {
+                        name: mangled_name,
+                        signature: new_sig,
+                        // I don't think we have to actually change
+                        // any of the contents...
+                        // Maybe we do if there's type annotations?
+                        // ...yep, yep we totally do.
+                        //
+                        // We shouldn't have to typecheck though, since
+                        // we know we're generating valid code.
+                        // Nope, nope, wait, we totally do, because
+                        // our codegen relies on having types for everything.
+                        body: old_body.clone(),
+                    };
+                    new_decls.push(new_decl);
+                }
+                _ => unreachable!(),
+            }
+        }
+    }
+    // TODO: Typecheck whole program with new Tck, I suppose.
     Ir { decls: new_decls }
 }
