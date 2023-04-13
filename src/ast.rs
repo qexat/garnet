@@ -116,6 +116,33 @@ impl Signature {
         let args = names.join(", ");
         format!("({}) {}", args, self.rettype.get_name())
     }
+
+    /// Transforms this signature into a new type.
+    ///
+    /// Panics if the types are not compatible,
+    /// ie, the given type is not a function with the
+    /// same number of params.
+    pub fn map_type(&self, new_type: &Type) -> Self {
+        match new_type {
+            Type::Func(params, rettype) => {
+                if self.params.len() != params.len() {
+                    panic!("given type has wrong number of params");
+                }
+                let new_params = self
+                    .params
+                    .iter()
+                    .zip(params)
+                    .map(|((nm, _t1), t2)| (*nm, t2.clone()))
+                    .collect();
+                let new_rettype = rettype.clone();
+                Self {
+                    params: new_params,
+                    rettype: *new_rettype,
+                }
+            }
+            _ => panic!("Not a function type: {:?}", new_type),
+        }
+    }
 }
 
 /// Any expression.
