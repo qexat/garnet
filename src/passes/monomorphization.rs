@@ -19,6 +19,45 @@ impl FunctionSpecs {
         self.specializations.entry(s).or_default().insert(substs);
     }
 }
+/// Take any type annotations with generics in them and
+/// replaces them with different (hopefully concrete) types.
+///
+/// This generates new, non-typechecked expressions, since we've
+/// changed their types!
+fn subst_expr(expr: ExprNode, substs: &BTreeMap<Sym, Type>) -> ExprNode {
+    let e = *expr.e;
+    let ne = ExprNode::new(e.clone());
+
+    match e {
+        // Nodes with no recursive expressions.
+        // I list all these out explicitly instead of
+        // using a catchall so it doesn't fuck up if we change
+        // the type of Expr.
+        E::Lit { .. } => ne,
+        E::Var { .. } => ne,
+        E::Break => ne,
+        E::EnumCtor { .. } => ne,
+        E::Let {
+            varname,
+            typename,
+            init,
+            mutable,
+        } => {
+            if let Some(Type::Generic(nm)) = typename {
+                let new_t = substs.get(&nm).unwrap();
+                ExprNode::new(E::Let {
+                    varname,
+                    typename: Some(new_t.clone()),
+                    init,
+                    mutable,
+                })
+            } else {
+                ne
+            }
+        }
+        _other => todo!(),
+    }
+}
 
 fn monomorphize_expr(
     expr: ExprNode,
@@ -38,6 +77,11 @@ fn monomorphize_expr(
                     let ftype = tck
                         .reconstruct(ftypeid)
                         .expect("Should never fail, 'cause typechecking succeeded if we got here");
+                    // If the function in question has no generics,
+                    // bail early.
+                    if ftype.collect_generic_names().len() == 0 {
+                        return e;
+                    }
 
                     // Figure out what types the function has been called with
                     let param_types: Vec<_> = params
@@ -171,6 +215,7 @@ pub(super) fn monomorphize(ir: Ir, tck: &mut typeck::Tck) -> Ir {
     // Now we actually create the new functions
     for (nm, specs) in &functioncalls.specializations {
         trace!("Specializing {}", nm);
+        dbg!(nm);
         let old_func = new_decls
             .iter()
             .find(|d| matches!(d, D::Function { name, .. } if name == nm))
@@ -188,6 +233,7 @@ pub(super) fn monomorphize(ir: Ir, tck: &mut typeck::Tck) -> Ir {
                     let sig_type = old_sig.to_type();
                     let new_sig_type = sig_type.apply_substitutions(subst);
                     let new_sig = old_sig.map_type(&new_sig_type);
+                    let new_body = exprs_map(old_body.clone(), &mut |e| subst_expr(e, subst));
                     let new_decl = D::Function {
                         name: mangled_name,
                         signature: new_sig,
@@ -200,7 +246,7 @@ pub(super) fn monomorphize(ir: Ir, tck: &mut typeck::Tck) -> Ir {
                         // we know we're generating valid code.
                         // Nope, nope, wait, we totally do, because
                         // our codegen relies on having types for everything.
-                        body: old_body.clone(),
+                        body: new_body,
                     };
                     new_decls.push(new_decl);
                 }
@@ -209,5 +255,9 @@ pub(super) fn monomorphize(ir: Ir, tck: &mut typeck::Tck) -> Ir {
         }
     }
     // TODO: Typecheck whole program with new Tck, I suppose.
-    Ir { decls: new_decls }
+    let new_ir = Ir { decls: new_decls };
+    let new_tck =
+        typeck::typecheck(&new_ir).expect("Generated monomorphized IR that doesn't typecheck");
+    *tck = new_tck;
+    new_ir
 }
