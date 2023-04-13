@@ -70,19 +70,18 @@ fn monomorphize_expr(
             params,
             type_params,
         } => {
+            // Get the type we know of the function expression
+            let ftypeid = tck.get_expr_type(func);
+            let ftype = tck
+                .reconstruct(ftypeid)
+                .expect("Should never fail, 'cause typechecking succeeded if we got here");
+            // If the function in question has no generics,
+            // bail early.
+            if ftype.collect_generic_names().len() == 0 {
+                return e;
+            }
             match &*func.e {
                 E::Var { name } => {
-                    // Get the type we know of the function expression
-                    let ftypeid = tck.get_expr_type(func);
-                    let ftype = tck
-                        .reconstruct(ftypeid)
-                        .expect("Should never fail, 'cause typechecking succeeded if we got here");
-                    // If the function in question has no generics,
-                    // bail early.
-                    if ftype.collect_generic_names().len() == 0 {
-                        return e;
-                    }
-
                     // Figure out what types the function has been called with
                     let param_types: Vec<_> = params
                         .iter()
