@@ -1,9 +1,14 @@
 -- Compile:
 --   status: success
+-- Run:
+--   status: success
+--   stdout:
+--     1
+--     2
 
--- Test case for monomorphization of functions.
 
 fn identity(i @T) @T =
+    -- Does it work properly when we have a declared type for our var?
     let y @T = i
     y
 end
@@ -11,4 +16,7 @@ end
 
 fn main() {} =
     let a I32 = identity(1)
+    let b I64 = identity(2_I64)
+    __println(a)
+    __println_i64(b)
 end
