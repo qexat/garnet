@@ -29,14 +29,8 @@ fn subst_expr(expr: ExprNode, substs: &BTreeMap<Sym, Type>) -> ExprNode {
     let ne = ExprNode::new(e.clone());
 
     match e {
-        // Nodes with no recursive expressions.
-        // I list all these out explicitly instead of
-        // using a catchall so it doesn't fuck up if we change
-        // the type of Expr.
-        E::Lit { .. } => ne,
-        E::Var { .. } => ne,
-        E::Break => ne,
-        E::EnumCtor { .. } => ne,
+        // We only care about nodes that can have a type named
+        // in them somewhere.
         E::Let {
             varname,
             typename,
@@ -55,7 +49,38 @@ fn subst_expr(expr: ExprNode, substs: &BTreeMap<Sym, Type>) -> ExprNode {
                 ne
             }
         }
-        _other => todo!(),
+        E::Funcall {
+            func,
+            params,
+            type_params,
+        } => {
+            let new_type_params = type_params
+                .into_iter()
+                .map(|(nm, t)| (nm, t.apply_substitutions(substs)))
+                .collect();
+            ExprNode::new(E::Funcall {
+                func,
+                params,
+                type_params: new_type_params,
+            })
+        }
+        E::TypeCtor {
+            name,
+            type_params,
+            body,
+        } => {
+            let new_type_params = type_params
+                .into_iter()
+                .map(|t| t.apply_substitutions(substs))
+                .collect();
+            ExprNode::new(E::TypeCtor {
+                name,
+                type_params: new_type_params,
+                body,
+            })
+        }
+        E::Lambda { .. } => unreachable!("These have all been lambda-lifted away"),
+        _other => ne,
     }
 }
 
@@ -157,7 +182,6 @@ fn mangle_generic_name(s: Sym, substs: &BTreeMap<Sym, Type>) -> Sym {
 /// the call...  Our type-checking should have that info, does it?
 pub(super) fn monomorphize(ir: Ir, tck: &mut typeck::Tck) -> Ir {
     let functioncalls: &mut FunctionSpecs = &mut Default::default();
-    let mut functions_to_mono: BTreeSet<Sym> = Default::default();
 
     let mut new_decls = vec![];
     for decl in ir.decls.into_iter() {
@@ -167,12 +191,8 @@ pub(super) fn monomorphize(ir: Ir, tck: &mut typeck::Tck) -> Ir {
                 signature,
                 body,
             } => {
-                let sigtype = signature.to_type();
-                let sig_generics = sigtype.collect_generic_names();
-                if sig_generics.len() > 0 {
-                    // This function is a candidate for monomorph
-                    functions_to_mono.insert(name);
-                }
+                //let sigtype = signature.to_type();
+                //let sig_generics = sigtype.collect_generic_names();
                 let new_body = exprs_map(body, &mut |e| monomorphize_expr(e, tck, functioncalls));
                 D::Function {
                     name,
@@ -253,7 +273,10 @@ pub(super) fn monomorphize(ir: Ir, tck: &mut typeck::Tck) -> Ir {
             }
         }
     }
-    // TODO: Typecheck whole program with new Tck, I suppose.
+    // Typecheck whole program with new Tck, I suppose.
+    // This feels slightly insane but works for the moment.
+    // We need the type info for the code we've generated
+    // so that we can output it correctly.
     let new_ir = Ir { decls: new_decls };
     let new_tck =
         typeck::typecheck(&new_ir).expect("Generated monomorphized IR that doesn't typecheck");
