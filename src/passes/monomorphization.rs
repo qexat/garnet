@@ -56,7 +56,7 @@ fn subst_expr(expr: ExprNode, substs: &BTreeMap<Sym, Type>) -> ExprNode {
         } => {
             let new_type_params = type_params
                 .into_iter()
-                .map(|(nm, t)| (nm, t.apply_substitutions(substs)))
+                .map(|(nm, t)| (nm, t.apply_substs(substs)))
                 .collect();
             ExprNode::new(E::Funcall {
                 func,
@@ -71,7 +71,7 @@ fn subst_expr(expr: ExprNode, substs: &BTreeMap<Sym, Type>) -> ExprNode {
         } => {
             let new_type_params = type_params
                 .into_iter()
-                .map(|t| t.apply_substitutions(substs))
+                .map(|t| t.apply_substs(substs))
                 .collect();
             ExprNode::new(E::TypeCtor {
                 name,
@@ -121,7 +121,8 @@ fn monomorphize_expr(
                         "Finding substitutions to turn {:?} into {:?}",
                         ftype, &called_type
                     );
-                    ftype.substitute(&called_type, substitutions);
+                    ftype.find_substs(&called_type, substitutions);
+                    trace!("Subst for {} is {:?}", name, substitutions);
                     functioncalls.insert(*name, substitutions.clone());
 
                     // Ok we replace the var being called with a reference to
@@ -242,8 +243,9 @@ pub(super) fn monomorphize(ir: Ir, tck: &mut typeck::Tck) -> Ir {
         let old_func = new_decls
             .iter()
             .find(|d| matches!(d, D::Function { name, .. } if name == nm))
-            .unwrap()
+            .expect("Can't happen, this function name had to come from somewhere.")
             .clone();
+        dbg!(&specs);
         for subst in specs {
             let mangled_name = mangle_generic_name(*nm, subst);
             trace!("  Specialized name: {}", mangled_name);
@@ -254,7 +256,7 @@ pub(super) fn monomorphize(ir: Ir, tck: &mut typeck::Tck) -> Ir {
                     body: old_body,
                 } => {
                     let sig_type = old_sig.to_type();
-                    let new_sig_type = sig_type.apply_substitutions(subst);
+                    let new_sig_type = sig_type.apply_substs(subst);
                     let new_sig = old_sig.map_type(&new_sig_type);
                     let new_body = exprs_map(old_body.clone(), &mut |e| subst_expr(e, subst));
                     let new_decl = D::Function {

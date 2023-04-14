@@ -372,13 +372,13 @@ impl Type {
     ///
     /// TODO someday: refactor with passes::type_map()?  Not sure how to make
     /// that walk over two types.
-    pub fn substitute(&self, other: &Type, substitutions: &mut BTreeMap<Sym, Type>) {
+    pub fn find_substs(&self, other: &Type, substitutions: &mut BTreeMap<Sym, Type>) {
         match (self, other) {
             // Types are identical, noop.
             (s, o) if s == o => (),
             (Type::Named(n1, args1), Type::Named(n2, args2)) if n1 == n2 => {
                 for (p1, p2) in args1.iter().zip(args2) {
-                    p1.substitute(p2, substitutions);
+                    p1.find_substs(p2, substitutions);
                 }
             }
             (Type::Func(params1, rettype1), Type::Func(params2, rettype2)) => {
@@ -386,13 +386,38 @@ impl Type {
                     panic!("subst for function had incorrect param length")
                 }
                 for (p1, p2) in params1.iter().zip(params2) {
-                    p1.substitute(p2, substitutions);
+                    p1.find_substs(p2, substitutions);
                 }
-                rettype1.substitute(rettype2, substitutions);
+                rettype1.find_substs(rettype2, substitutions);
             }
-            (Type::Struct(_, _), Type::Struct(_, _)) => todo!(),
-            (Type::Sum(_, _), Type::Sum(_, _)) => todo!(),
-            (Type::Array(_, _), Type::Array(_, _)) => todo!(),
+            (Type::Struct(_, _), Type::Struct(_, _)) => {
+                unreachable!("Actually can't happen I think, 'cause we tuple-ify everything first?")
+            } /*
+            (Type::Struct(body1, generics1), Type::Struct(body2, generics2)) => {
+            if body1.len() != body2.len() || generics1.len() != generics2.len() {
+            panic!("subst for function had incorrect body or generics length")
+            }
+            if
+            }
+             */
+            (Type::Sum(body1, generics1), Type::Sum(body2, generics2)) => {
+                if body1.len() != body2.len() || generics1.len() != generics2.len() {
+                    panic!("subst for sum type had non-matching body or generics length")
+                }
+                if !body1.keys().eq(body2.keys()) {
+                    panic!("subst for sum type had non-matching keys")
+                }
+                for ((_nm1, t1), (_nm2, t2)) in body1.iter().zip(body2) {
+                    t1.find_substs(t2, substitutions);
+                }
+
+                for (p1, p2) in generics1.iter().zip(generics2) {
+                    p1.find_substs(p2, substitutions);
+                }
+            }
+            (Type::Array(t1, len1), Type::Array(t2, len2)) if len1 == len2 => {
+                t1.find_substs(t2, substitutions);
+            }
             (Type::Generic(nm), p2) => {
                 // If we have an existing substitution, does it conflict?
                 // Not 100% sure this handles generics right, but should work
@@ -413,28 +438,34 @@ impl Type {
     /// Takes a type and a map of substitutions and swaps out any generics
     /// with the substituted types.
     ///
+    /// Panics if a generic type has no substitution.
+    ///
     /// TODO someday: refactor with passes::type_map()?
-    pub fn apply_substitutions(&self, substitutions: &BTreeMap<Sym, Type>) -> Type {
+    pub fn apply_substs(&self, substs: &BTreeMap<Sym, Type>) -> Type {
         match self {
             Type::Func(params1, rettype1) => {
-                let new_params = params1
-                    .iter()
-                    .map(|p1| p1.apply_substitutions(substitutions))
-                    .collect();
-                let new_rettype = rettype1.apply_substitutions(substitutions);
+                let new_params = params1.iter().map(|p1| p1.apply_substs(substs)).collect();
+                let new_rettype = rettype1.apply_substs(substs);
                 Type::Func(new_params, Box::new(new_rettype))
             }
             Type::Named(n1, args1) => {
-                let new_args = args1
-                    .iter()
-                    .map(|p1| p1.apply_substitutions(substitutions))
-                    .collect();
+                let new_args = args1.iter().map(|p1| p1.apply_substs(substs)).collect();
                 Type::Named(*n1, new_args)
             }
-            Type::Struct(_, _) => todo!(),
-            Type::Sum(_, _) => todo!(),
-            Type::Array(_, _) => todo!(),
-            Type::Generic(nm) => substitutions.get(&nm).unwrap().to_owned(),
+            Type::Struct(_, _) => unreachable!("see other unreachable in substitute()"),
+            Type::Sum(body, generics) => {
+                let new_body = body
+                    .iter()
+                    .map(|(nm, ty)| (*nm, ty.apply_substs(substs)))
+                    .collect();
+                let new_generics = generics.iter().map(|p1| p1.apply_substs(substs)).collect();
+                Type::Sum(new_body, new_generics)
+            }
+            Type::Array(body, len) => Type::Array(Box::new(body.apply_substs(substs)), *len),
+            Type::Generic(nm) => substs
+                .get(&nm)
+                .unwrap_or_else(|| panic!("No substitution found for generic named {}!", nm))
+                .to_owned(),
             Type::Prim(_) => self.clone(),
             Type::Enum(_) => self.clone(),
         }
