@@ -364,18 +364,18 @@ impl Type {
         }
     }
 
-    /// Takes another type and substitutes any generics
-    /// in the current type with the types from the other type.
+    /// Takes two types and creates/adds to a map of substitutions
+    /// from generics in the first type to the corresponding concrete
+    /// types in the second types.
+    ///
     /// Panics if non-generic types don't match.
     ///
-    /// Takes a map of known substitutions for generic names.
-    ///
-    /// TODO someday: passes::type_map()?  Not sure how to make
+    /// TODO someday: refactor with passes::type_map()?  Not sure how to make
     /// that walk over two types.
-    pub fn substitute(&self, other: &Type, substitutions: &mut BTreeMap<Sym, Type>) -> Type {
+    pub fn substitute(&self, other: &Type, substitutions: &mut BTreeMap<Sym, Type>) {
         match (self, other) {
             // Types are identical, noop.
-            (s, o) if s == o => s.clone(),
+            (s, o) if s == o => (),
             (Type::Named(_n1, _args1), Type::Named(_n2, _args2)) => {
                 todo!()
             }
@@ -383,13 +383,10 @@ impl Type {
                 if params1.len() != params2.len() {
                     panic!("subst for function had incorrect param length")
                 }
-                let new_params = params1
-                    .iter()
-                    .zip(params2)
-                    .map(|(p1, p2)| p1.substitute(p2, substitutions))
-                    .collect();
-                let new_rettype = rettype1.substitute(rettype2, substitutions);
-                Type::Func(new_params, Box::new(new_rettype))
+                for (p1, p2) in params1.iter().zip(params2) {
+                    p1.substitute(p2, substitutions);
+                }
+                rettype1.substitute(rettype2, substitutions);
             }
             (Type::Struct(_, _), Type::Struct(_, _)) => todo!(),
             (Type::Sum(_, _), Type::Sum(_, _)) => todo!(),
@@ -405,13 +402,16 @@ impl Type {
                 } else {
                     substitutions.insert(*nm, p2.clone());
                 }
-                p2.clone()
             }
             // Types are not identical, panic
             _ => panic!("Cannot substitute {:?} into {:?}", other, self),
         }
     }
 
+    /// Takes a type and a map of substitutions and swaps out any generics
+    /// with the substituted types.
+    ///
+    /// TODO someday: refactor with passes::type_map()?
     pub fn apply_substitutions(&self, substitutions: &BTreeMap<Sym, Type>) -> Type {
         match self {
             Type::Func(params1, rettype1) => {
@@ -454,6 +454,7 @@ impl From<Sym> for usize {
 }
 
 impl Sym {
+    /// Intern a new string.
     pub fn new(s: impl AsRef<str>) -> Self {
         INT.intern(s)
     }
@@ -475,6 +476,7 @@ impl fmt::Display for Sym {
     }
 }
 
+/*
 /// A path of modules/structs/whatever
 /// `foo.bar.bop`
 pub struct Path {
@@ -484,6 +486,7 @@ pub struct Path {
     /// TODO: Whether this must be absolute or could be relative is currently undefined.
     pub path: Vec<Sym>,
 }
+*/
 
 /// Interner context.
 ///
@@ -527,10 +530,10 @@ impl Cx {
 
 /// Main driver function.
 /// Compile a given source string to Rust source code, or return an error.
-/// TODO: Parser errors?
+/// TODO: Better parser errors with locations
 ///
 /// Parse -> lower to IR -> run transformation passes
-/// -> typecheck -> compile to wasm
+/// -> typecheck -> more passes -> codegen
 pub fn try_compile(
     filename: &str,
     src: &str,
