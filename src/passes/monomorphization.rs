@@ -117,7 +117,11 @@ fn monomorphize_expr(
                     let called_type = Type::Func(param_types, Box::new(rettype));
                     let substitutions = &mut Default::default();
                     // Do our substitution of generics to real types
-                    let _concrete_type = ftype.substitute(&called_type, substitutions);
+                    info!(
+                        "Finding substitutions to turn {:?} into {:?}",
+                        ftype, &called_type
+                    );
+                    ftype.substitute(&called_type, substitutions);
                     functioncalls.insert(*name, substitutions.clone());
 
                     // Ok we replace the var being called with a reference to

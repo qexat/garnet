@@ -17,15 +17,7 @@ fn main() {} =
         .a = 3_I32,
         .b = false
     })
-
-    /- TODO: This passes type checking but then fails
-    codegen, make a test to pin it down.
-    let f1 = id(Foo {
-        .a = 3,
-        .b = false
-    })
-    -/
-
+ 
     let f2 = id(Foo {
         .a = true,
         .b = false
