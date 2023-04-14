@@ -73,7 +73,9 @@ fn tuplize_expr(expr: ExprNode, tck: &mut typeck::Tck) -> ExprNode {
 
                 E::TupleCtor { body: new_body }
             }
-            _other => unreachable!("Should never happen?"),
+            _other => {
+                unreachable!("StructCtor expression type is not a struct, should never happen")
+            }
         },
         E::StructRef {
             expr: inner_expr,
@@ -101,6 +103,10 @@ fn tuplize_expr(expr: ExprNode, tck: &mut typeck::Tck) -> ExprNode {
     // We need to do this to any expression because its type may be a struct.
     // And we need to do this after the above because we've changed the
     let new_t = tuplize_type(struct_type.clone());
+    if new_t != struct_type {
+        info!("Replaced struct type {:?} with {:?}", struct_type, new_t);
+        trace!("Expression was rewritten into {:?}", new_contents);
+    }
     tck.replace_expr_type(&expr, &new_t);
     expr.map(&mut |_| new_contents.clone())
 }
@@ -121,7 +127,20 @@ pub(super) fn struct_to_tuple(ir: Ir, tck: &mut typeck::Tck) -> Ir {
         let res = decl_map(decl, tuplize_expr, &mut tuplize_type);
         new_decls.push(res);
     }
-    Ir { decls: new_decls }
+    let new_ir = Ir { decls: new_decls };
+    // TODO BUGGO: shiiiiit our replace_expr_type() call in tuplize_expr()
+    // doesn't work correctly in all cases.
+    // For example if we have a function call with a struct as an arg,
+    // it will rewrite the struct's type correctly, but the type of the
+    // function will not get rewritten.  I have *no idea* how to fix this
+    // in the general case, it might involve having a version of
+    // passes::expr_map that does a post-traversal instead of a pre-traversal?
+    //
+    // So for now we just throw away all type info and regenerate it!
+    let new_tck =
+        typeck::typecheck(&new_ir).expect("Generated monomorphized IR that doesn't typecheck");
+    *tck = new_tck;
+    new_ir
 }
 
 /* I'm just gonna stash the unused anonymous-to-named struct

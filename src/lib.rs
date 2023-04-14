@@ -376,8 +376,10 @@ impl Type {
         match (self, other) {
             // Types are identical, noop.
             (s, o) if s == o => (),
-            (Type::Named(_n1, _args1), Type::Named(_n2, _args2)) => {
-                todo!()
+            (Type::Named(n1, args1), Type::Named(n2, args2)) if n1 == n2 => {
+                for (p1, p2) in args1.iter().zip(args2) {
+                    p1.substitute(p2, substitutions);
+                }
             }
             (Type::Func(params1, rettype1), Type::Func(params2, rettype2)) => {
                 if params1.len() != params2.len() {
@@ -422,8 +424,12 @@ impl Type {
                 let new_rettype = rettype1.apply_substitutions(substitutions);
                 Type::Func(new_params, Box::new(new_rettype))
             }
-            Type::Named(_n1, _args1) => {
-                todo!()
+            Type::Named(n1, args1) => {
+                let new_args = args1
+                    .iter()
+                    .map(|p1| p1.apply_substitutions(substitutions))
+                    .collect();
+                Type::Named(*n1, new_args)
             }
             Type::Struct(_, _) => todo!(),
             Type::Sum(_, _) => todo!(),
