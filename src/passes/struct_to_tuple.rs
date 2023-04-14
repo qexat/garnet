@@ -57,13 +57,27 @@ fn tuplize_expr(expr: ExprNode, tck: &mut typeck::Tck) -> ExprNode {
     trace!("Tuplizing expr {:?}", expr);
     let expr_typeid = tck.get_expr_type(&expr);
     let struct_type = tck.reconstruct(expr_typeid).expect("Should never happen?");
-    let new_contents = match &*expr.e {
+    let new_contents = match (*expr.e).clone() {
+        E::Let {
+            varname,
+            typename: Some(t),
+            init,
+            mutable,
+        } => {
+            let new_type = tuplize_type(t.clone());
+            E::Let {
+                varname,
+                init,
+                mutable,
+                typename: Some(new_type),
+            }
+        }
         E::StructCtor { body } => match &struct_type {
             // TODO: Generics?
             Type::Struct(type_body, _generics) => {
                 let mut ordered_body: Vec<_> = body
                     .into_iter()
-                    .map(|(ky, vl)| (offset_of_field(&type_body, *ky), vl))
+                    .map(|(ky, vl)| (offset_of_field(&type_body, ky), vl))
                     .collect();
                 ordered_body.sort_by(|a, b| a.0.cmp(&b.0));
                 let new_body = ordered_body
@@ -85,7 +99,7 @@ fn tuplize_expr(expr: ExprNode, tck: &mut typeck::Tck) -> ExprNode {
             let struct_type = tck.reconstruct(inner_typeid).expect("Should never happen?");
             match struct_type {
                 Type::Struct(type_body, _generics) => {
-                    let offset = offset_of_field(&type_body, *elt);
+                    let offset = offset_of_field(&type_body, elt);
                     E::TupleRef {
                         expr: inner_expr.clone(),
                         elt: offset,
@@ -97,7 +111,7 @@ fn tuplize_expr(expr: ExprNode, tck: &mut typeck::Tck) -> ExprNode {
                 ),
             }
         }
-        _other => *expr.e.clone(),
+        other => other,
     };
     // Change the type of the struct literal expr node to the new tuple
     // We need to do this to any expression because its type may be a struct.
