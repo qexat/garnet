@@ -70,24 +70,6 @@ fn compile_rust(input_file: &Path, exe_name: &Path) -> io::Result<PathBuf> {
         panic!("Generated Rust code that could not be compiled");
     }
 
-    // Call rustfmt to make inspecting generated code simpler.
-    // OPT: This is technically redundant unless we have the compiler
-    // actually save the intermediate code, but fuckit.
-    //
-    // We only do this after rustc finishes successfully,
-    // so if something outputs malformed code then rustfmt won't
-    // also die.
-    let res = Command::new("rustfmt")
-        .stdin(Stdio::null())
-        .stdout(Stdio::inherit())
-        .arg(&rust_file)
-        .output()
-        .expect("Failed to execute rustc");
-    if !res.status.success() {
-        dbg!(&res);
-        panic!("Generated Rust code that compiled but rustfmt doesn't like it, which seems impossible, but here we are.");
-    }
-
     Ok(rust_file)
 }
 
@@ -111,6 +93,18 @@ fn main() -> std::io::Result<()> {
     // delete intermediate files if we want to
     if !opt.save {
         std::fs::remove_file(output_file).unwrap();
+    } else {
+        // otherwise run rustfmt on it to make inspecting generated code simpler.
+        let res = Command::new("rustfmt")
+            .stdin(Stdio::null())
+            .stdout(Stdio::inherit())
+            .arg(&output_file)
+            .output()
+            .expect("Failed to execute rustfmt");
+        if !res.status.success() {
+            dbg!(&res);
+            panic!("Generated Rust code that compiled but rustfmt doesn't like it, which seems impossible, but here we are.");
+        }
     }
 
     // Run output program if we want to
