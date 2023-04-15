@@ -188,8 +188,8 @@ fn mangle_generic_name(s: Sym, substs: &BTreeMap<Sym, Type>) -> Sym {
 pub(super) fn monomorphize(ir: Ir, tck: &mut typeck::Tck) -> Ir {
     let functioncalls: &mut FunctionSpecs = &mut Default::default();
 
-    let mut new_ir = Ir::default();
-    for decl in ir.into_all_decls() {
+    let mut new_decls = vec![];
+    for decl in ir.decls.into_iter() {
         let res = match decl.clone() {
             D::Function {
                 name,
@@ -234,15 +234,17 @@ pub(super) fn monomorphize(ir: Ir, tck: &mut typeck::Tck) -> Ir {
             // No need to touch anything here, huzzah
             D::TypeDef { .. } => decl,
         };
-        new_ir.add_decl(&res);
+        new_decls.push(res);
     }
     // Now we actually create the new functions
     for (nm, specs) in &functioncalls.specializations {
         trace!("Specializing {}", nm);
         dbg!(nm);
-        let old_func = new_ir
-            .get_function(*nm)
-            .expect("Can't happen, this function name had to come from somewhere.");
+        let old_func = new_decls
+            .iter()
+            .find(|d| matches!(d, D::Function { name, .. } if name == nm))
+            .expect("Can't happen, this function name had to come from somewhere.")
+            .clone();
         dbg!(&specs);
         for subst in specs {
             let mangled_name = mangle_generic_name(*nm, subst);
@@ -271,7 +273,7 @@ pub(super) fn monomorphize(ir: Ir, tck: &mut typeck::Tck) -> Ir {
                         // our codegen relies on having types for everything.
                         body: new_body,
                     };
-                    new_ir.add_decl(&new_decl);
+                    new_decls.push(new_decl);
                 }
                 _ => unreachable!(),
             }
@@ -281,6 +283,7 @@ pub(super) fn monomorphize(ir: Ir, tck: &mut typeck::Tck) -> Ir {
     // This feels slightly insane but works for the moment.
     // We need the type info for the code we've generated
     // so that we can output it correctly.
+    let new_ir = Ir { decls: new_decls };
     let new_tck =
         typeck::typecheck(&new_ir).expect("Generated monomorphized IR that doesn't typecheck");
     *tck = new_tck;

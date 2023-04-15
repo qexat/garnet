@@ -45,22 +45,18 @@ fn lambda_lift_expr(expr: ExprNode, output_funcs: &mut Vec<D>) -> ExprNode {
 pub(super) fn lambda_lift(ir: Ir) -> Ir {
     let mut new_functions = vec![];
     let new_decls: Vec<D> = ir
-        .all_decls()
+        .decls
         .into_iter()
         .map(|decl| {
             decl_map(
-                decl.clone(),
+                decl,
                 &mut |e| lambda_lift_expr(e, &mut new_functions),
                 &mut |t| t,
             )
         })
         .collect();
-    let mut new_ir = Ir::default();
-    for f in new_functions {
-        new_ir.add_decl(&f);
+    new_functions.extend(new_decls.into_iter());
+    Ir {
+        decls: new_functions,
     }
-    for f in new_decls {
-        new_ir.add_decl(&f);
-    }
-    new_ir
 }
