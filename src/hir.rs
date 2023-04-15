@@ -257,18 +257,6 @@ impl fmt::Display for Decl {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         use crate::hir::Decl as D;
         match self {
-            D::Function {
-                name,
-                signature,
-                body,
-            } => {
-                writeln!(f, "fn {}{} =", name, signature.to_name())?;
-                for e in body {
-                    e.write(1, f)?;
-                }
-                writeln!(f, "\nend")?;
-            }
-
             D::Const {
                 name,
                 typ: typename,
@@ -482,11 +470,6 @@ impl ExprNode {
 /// Like ExprNode, contains a type annotation.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Decl {
-    Function {
-        name: Sym,
-        signature: Signature,
-        body: Vec<ExprNode>,
-    },
     Const {
         name: Sym,
         typ: Type,
@@ -499,45 +482,60 @@ pub enum Decl {
     },
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct Function {
+    pub name: Sym,
+    pub signature: Signature,
+    pub body: Vec<ExprNode>,
+}
+
+impl fmt::Display for Function {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        writeln!(f, "fn {}{} =", self.name, self.signature.to_name())?;
+        for e in self.body {
+            e.write(1, f)?;
+        }
+        writeln!(f, "\nend")
+    }
+}
+
 /// A compilable chunk of IR.
 ///
 /// Currently, basically a compilation unit.
 #[derive(Debug, Clone, Default)]
 pub struct Ir {
-    pub fns: Vec<Decl>,
+    pub fns: Vec<Function>,
     pub consts: Vec<Decl>,
     pub types: Vec<Decl>,
 }
 
 impl Ir {
-    fn add_fn(&mut self, f: &Decl) {
-        self.fns.push(f.clone());
+    pub fn add_fn(&mut self, f: Function) {
+        self.fns.push(f);
     }
-    fn add_type(&mut self, f: &Decl) {
-        self.types.push(f.clone());
+    pub fn add_type(&mut self, f: Decl) {
+        self.types.push(f);
     }
-    fn add_const(&mut self, f: &Decl) {
-        self.consts.push(f.clone());
+    pub fn add_const(&mut self, f: Decl) {
+        self.consts.push(f);
     }
 
     pub fn add_decl(&mut self, d: &Decl) {
         match d {
-            Decl::Const { .. } => self.add_const(d),
-            Decl::Function { .. } => self.add_fn(d),
-            Decl::TypeDef { .. } => self.add_type(d),
+            Decl::Const { .. } => self.add_const(d.clone()),
+            Decl::TypeDef { .. } => self.add_type(d.clone()),
         }
     }
 
-    pub fn get_function(&mut self, name: Sym) -> Option<Decl> {
+    pub fn get_function(&mut self, name: Sym) -> Option<Function> {
         self.fns
             .iter()
-            .find(|d| matches!(d, Decl::Function { name: nm, .. } if name == *nm))
+            .find(|d| matches!(d, Function { name: nm, .. } if name == *nm))
             .cloned()
     }
 
     pub fn all_decls(&self) -> Vec<&Decl> {
         let mut ds = vec![];
-        ds.extend(self.fns.iter());
         ds.extend(self.consts.iter());
         ds.extend(self.types.iter());
         ds
@@ -545,7 +543,6 @@ impl Ir {
 
     pub fn into_all_decls(self) -> Vec<Decl> {
         let mut ds = vec![];
-        ds.extend(self.fns.into_iter());
         ds.extend(self.consts.into_iter());
         ds.extend(self.types.into_iter());
         ds
@@ -850,7 +847,7 @@ fn lower_typedef(accm: &mut Ir, name: Sym, ty: &Type, params: &[Sym]) {
                 signature,
                 body,
             };
-            accm.add_decl(&new_fundecl);
+            accm.add_fn(new_fundecl);
         }
     }
 }
@@ -867,7 +864,7 @@ fn lower_decl(accm: &mut Ir, decl: &ast::Decl) {
             signature,
             body,
             ..
-        } => accm.fns.push(Decl::Function {
+        } => accm.fns.push(Function {
             name: *name,
             signature: lower_signature(signature),
             body: lower_exprs(body),
