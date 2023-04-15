@@ -1439,7 +1439,7 @@ fn typecheck_expr(
     rettype
 }
 
-fn predeclare_decls(tck: &mut Tck, symtbl: &mut Symtbl, decls: &[&hir::Decl]) {
+fn predeclare_decls(tck: &mut Tck, symtbl: &mut Symtbl, decls: &[hir::Decl]) {
     use hir::Decl::*;
     for d in decls {
         match d {
@@ -1500,13 +1500,13 @@ fn predeclare_decls(tck: &mut Tck, symtbl: &mut Symtbl, decls: &[&hir::Decl]) {
 /// terms to each of your nodes with whatever information you have available. You
 /// will also need to call `engine.unify(x, y)` when you know two nodes have the
 /// same type, such as in the statement `x = y;`."
-pub fn typecheck(ir: &hir::Ir) -> Result<Tck, TypeError> {
+pub fn typecheck(ast: &hir::Ir) -> Result<Tck, TypeError> {
     let mut t = Tck::default();
     let tck = &mut t;
     let symtbl = &mut Symtbl::default();
     symtbl.add_builtins(tck);
-    predeclare_decls(tck, symtbl, ir.all_decls().as_slice());
-    for decl in &ir.all_decls() {
+    predeclare_decls(tck, symtbl, &ast.decls);
+    for decl in &ast.decls {
         use hir::Decl::*;
 
         match decl {

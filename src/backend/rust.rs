@@ -160,19 +160,10 @@ fn compile_typename(t: &Type) -> Cow<'static, str> {
     }
 }
 
-pub(super) fn output(ir: &hir::Ir, tck: &Tck) -> Vec<u8> {
+pub(super) fn output(lir: &hir::Ir, tck: &Tck) -> Vec<u8> {
     let mut output = Vec::new();
     output.extend(prelude().as_bytes());
-    for decl in ir.types.iter() {
-        compile_decl(&mut output, decl, tck)
-            .expect("IO error writing output code.  Out of memory???");
-    }
-
-    for decl in ir.consts.iter() {
-        compile_decl(&mut output, decl, tck)
-            .expect("IO error writing output code.  Out of memory???");
-    }
-    for decl in ir.fns.iter() {
+    for decl in lir.decls.iter() {
         compile_decl(&mut output, decl, tck)
             .expect("IO error writing output code.  Out of memory???");
     }
