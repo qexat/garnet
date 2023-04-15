@@ -504,14 +504,67 @@ pub enum Decl {
 /// Currently, basically a compilation unit.
 #[derive(Debug, Clone, Default)]
 pub struct Ir {
-    pub decls: Vec<Decl>,
+    pub fns: Vec<Decl>,
+    pub consts: Vec<Decl>,
+    pub types: Vec<Decl>,
+}
+
+impl Ir {
+    fn add_fn(&mut self, f: &Decl) {
+        self.fns.push(f.clone());
+    }
+    fn add_type(&mut self, f: &Decl) {
+        self.types.push(f.clone());
+    }
+    fn add_const(&mut self, f: &Decl) {
+        self.consts.push(f.clone());
+    }
+
+    pub fn add_decl(&mut self, d: &Decl) {
+        match d {
+            Decl::Const { .. } => self.add_const(d),
+            Decl::Function { .. } => self.add_fn(d),
+            Decl::TypeDef { .. } => self.add_type(d),
+        }
+    }
+
+    pub fn get_function(&mut self, name: Sym) -> Option<Decl> {
+        self.fns
+            .iter()
+            .find(|d| matches!(d, Decl::Function { name: nm, .. } if name == *nm))
+            .cloned()
+    }
+
+    pub fn all_decls(&self) -> Vec<&Decl> {
+        let mut ds = vec![];
+        ds.extend(self.fns.iter());
+        ds.extend(self.consts.iter());
+        ds.extend(self.types.iter());
+        ds
+    }
+
+    pub fn into_all_decls(self) -> Vec<Decl> {
+        let mut ds = vec![];
+        ds.extend(self.fns.into_iter());
+        ds.extend(self.consts.into_iter());
+        ds.extend(self.types.into_iter());
+        ds
+    }
 }
 
 impl fmt::Display for Ir {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        for decl in &self.decls {
+        for decl in &self.types {
             write!(f, "{}", decl)?;
         }
+        for decl in &self.consts {
+            write!(f, "{}", decl)?;
+        }
+
+        for decl in &self.fns {
+            write!(f, "{}", decl)?;
+        }
+
         Ok(())
     }
 }
@@ -674,7 +727,7 @@ fn lower_expr(expr: &ast::Expr) -> ExprNode {
 fn lower_exprs(exprs: &[ast::Expr]) -> Vec<ExprNode> {
     exprs.iter().map(|e| lower_expr(e)).collect()
 }
-fn lower_typedef(accm: &mut Vec<Decl>, name: Sym, ty: &Type, params: &[Sym]) {
+fn lower_typedef(accm: &mut Ir, name: Sym, ty: &Type, params: &[Sym]) {
     use Decl::*;
     match ty {
         // For `type Foo = enum Foo, Bar, Baz end`
@@ -715,7 +768,7 @@ fn lower_typedef(accm: &mut Vec<Decl>, name: Sym, ty: &Type, params: &[Sym]) {
                 typ: init_type,
                 init: init_val,
             };
-            accm.push(new_constdef);
+            accm.add_decl(&new_constdef);
         }
         // For `type Foo = sum X {}, Y Thing end`
         // synthesize
@@ -773,7 +826,7 @@ fn lower_typedef(accm: &mut Vec<Decl>, name: Sym, ty: &Type, params: &[Sym]) {
                 init: init_val,
             };
             //println!("Lowered to {:#?}", &new_constdef);
-            accm.push(new_constdef);
+            accm.add_decl(&new_constdef);
         }
         // For other types, we create a constructor function to build them.
         other => {
@@ -797,7 +850,7 @@ fn lower_typedef(accm: &mut Vec<Decl>, name: Sym, ty: &Type, params: &[Sym]) {
                 signature,
                 body,
             };
-            accm.push(new_fundecl);
+            accm.add_decl(&new_fundecl);
         }
     }
 }
@@ -806,7 +859,7 @@ fn lower_typedef(accm: &mut Vec<Decl>, name: Sym, ty: &Type, params: &[Sym]) {
 ///
 /// Is there a more elegant way of doing this than passing an accumulator?
 /// Returning a vec is lame.  Return an iterator?  Sounds like work.
-fn lower_decl(accm: &mut Vec<Decl>, decl: &ast::Decl) {
+fn lower_decl(accm: &mut Ir, decl: &ast::Decl) {
     use ast::Decl as D;
     match decl {
         D::Function {
@@ -814,7 +867,7 @@ fn lower_decl(accm: &mut Vec<Decl>, decl: &ast::Decl) {
             signature,
             body,
             ..
-        } => accm.push(Decl::Function {
+        } => accm.fns.push(Decl::Function {
             name: *name,
             signature: lower_signature(signature),
             body: lower_exprs(body),
@@ -824,7 +877,7 @@ fn lower_decl(accm: &mut Vec<Decl>, decl: &ast::Decl) {
             typename,
             init,
             ..
-        } => accm.push(Decl::Const {
+        } => accm.consts.push(Decl::Const {
             name: *name,
             typ: typename.clone(),
             init: lower_expr(init),
@@ -838,7 +891,7 @@ fn lower_decl(accm: &mut Vec<Decl>, decl: &ast::Decl) {
             params,
         } => {
             lower_typedef(accm, *name, typedecl, &params);
-            accm.push(Decl::TypeDef {
+            accm.types.push(Decl::TypeDef {
                 name: *name,
                 params: params.clone(),
                 typedecl: typedecl.clone(),
@@ -848,13 +901,12 @@ fn lower_decl(accm: &mut Vec<Decl>, decl: &ast::Decl) {
 }
 
 fn lower_decls(decls: &[ast::Decl]) -> Ir {
-    let mut accm = Vec::with_capacity(decls.len() * 2);
+    let mut accm = Ir::default();
     for d in decls.iter() {
         lower_decl(&mut accm, d)
     }
 
-    let i = Ir { decls: accm };
-    i
+    accm
 }
 
 #[cfg(test)]
