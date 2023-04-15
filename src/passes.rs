@@ -29,7 +29,7 @@ mod lambda_lift;
 mod monomorphization;
 mod struct_to_tuple;
 
-use crate::hir::{Decl as D, Expr as E, ExprNode, Function, Ir};
+use crate::hir::{Decl as D, Expr as E, ExprNode, Ir};
 use crate::*;
 
 type Pass = fn(Ir) -> Ir;
@@ -396,44 +396,6 @@ fn decl_map(
             typedecl: type_map(typedecl, ft),
         },
     }
-}
-
-fn ir_map(
-    ir: Ir,
-    fe: &mut dyn FnMut(ExprNode) -> ExprNode,
-    ft: &mut dyn FnMut(Type) -> Type,
-) -> Ir {
-    let mut new_ir = Ir::default();
-    let new_fns = ir
-        .fns
-        .into_iter()
-        .map(|f| Function {
-            name: f.name,
-            signature: signature_map(f.signature, ft),
-            body: exprs_map(f.body, fe),
-        })
-        .collect();
-    ir.fns = new_fns;
-
-    for decl in ir.consts {
-        new_ir.add_const(match decl {
-            D::Const { name, typ, init } => D::Const {
-                name,
-                typ: type_map(typ, ft),
-                init: expr_map(init, fe),
-            },
-            D::TypeDef {
-                name,
-                params,
-                typedecl,
-            } => D::TypeDef {
-                name,
-                params,
-                typedecl: type_map(typedecl, ft),
-            },
-        })
-    }
-    new_ir
 }
 
 fn types_map(typs: Vec<Type>, f: &mut dyn FnMut(Type) -> Type) -> Vec<Type> {
