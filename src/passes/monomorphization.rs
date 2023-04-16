@@ -1,9 +1,11 @@
 //!  Monomorphization
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use crate::passes::*;
 use crate::*;
+
+type Specialization = (Sym, BTreeMap<Sym, Type>);
 
 /// A map from function name to all the
 /// specializations we have found for it.
@@ -12,11 +14,17 @@ use crate::*;
 #[derive(Default, Debug)]
 struct FunctionSpecs {
     specializations: BTreeMap<Sym, BTreeSet<BTreeMap<Sym, Type>>>,
+
+    specs: BTreeSet<Specialization>,
 }
 
 impl FunctionSpecs {
     fn insert(&mut self, s: Sym, substs: BTreeMap<Sym, Type>) {
-        self.specializations.entry(s).or_default().insert(substs);
+        self.specializations
+            .entry(s)
+            .or_default()
+            .insert(substs.clone());
+        self.specs.insert((s, substs));
     }
 }
 /// Take any type annotations with generics in them and
@@ -144,6 +152,87 @@ fn monomorphize_expr(
     expr.clone().map(&mut new_expr)
 }
 
+fn monomorphize2_expr(
+    expr: ExprNode,
+    tck: &mut typeck::Tck,
+    functions: &BTreeMap<Sym, hir::Decl>,
+    specs: &mut FunctionSpecs,
+) -> ExprNode {
+    let mut new_expr = |e| match &e {
+        // After lambda-lifting,
+        // All function calls will end up with a variable name somewhere.
+        // So to find the types of functions we just look up the
+        // types of these variables.
+        E::Var { name } => {
+            let expr_type = tck.reconstruct(tck.get_expr_type(&expr)).unwrap();
+            if matches!(&expr_type, Type::Func(_, _)) {
+                // Lookup the generic func
+                let generic_function = functions.get(name).unwrap();
+                let generic_function_sig = match generic_function {
+                    D::Function { signature, .. } => signature.clone(),
+                    _ => unreachable!(),
+                };
+                let generic_function_type = generic_function_sig.to_type();
+                if generic_function_type.collect_generic_names().len() == 0 {
+                    // Not calling a generic function, bail
+                    return e;
+                }
+                info!(
+                    "Finding substitutions to turn {:?} into {:?}",
+                    generic_function_type, expr_type
+                );
+                let substitutions = &mut Default::default();
+                generic_function_type.find_substs(&expr_type, substitutions);
+                // Ok we replace the var being called with a reference to
+                // the substituted function's name
+                let new_name = mangle_generic_name(*name, &substitutions);
+                let new_var = E::Var { name: new_name };
+                new_var
+            } else {
+                e
+            }
+        }
+        _ => e,
+    };
+    /*
+                        // Figure out what types the function has been called with
+                        let param_types: Vec<_> = params
+                            .iter()
+                            .map(|p| tck.reconstruct(tck.get_expr_type(p)).unwrap())
+                            .collect();
+                        // Get this expr's return type
+                        let rettype = tck.reconstruct(tck.get_expr_type(&expr)).unwrap();
+                        let called_type = Type::Func(param_types, Box::new(rettype));
+                        let substitutions = &mut Default::default();
+                        // Do our substitution of generics to real types
+                        info!(
+                            "Finding substitutions to turn {:?} into {:?}",
+                            ftype, &called_type
+                        );
+                        ftype.find_substs(&called_type, substitutions);
+                        trace!("Subst for {} is {:?}", name, substitutions);
+                        functioncalls.insert(*name, substitutions.clone());
+
+                        // Ok we replace the var being called with a reference to
+                        // the substituted function's name
+                        let new_name = mangle_generic_name(*name, &substitutions);
+                        let new_call = func.clone().map(&mut |_func| E::Var { name: new_name });
+                        E::Funcall {
+                            func: new_call,
+                            params: params.clone(),
+                            type_params: type_params.clone(),
+                        }
+                    }
+                    // what the shit how the fuck do I tell if this is a local var or not
+                    _ => todo!("How the hell do we know what function to monomorphize here???"),
+                }
+            }
+            _ => e,
+        };
+    */
+    expr.clone().map(&mut new_expr)
+}
+
 /// takes a symbol S and type params listed and generates a new symbol
 /// for it.
 /// Someday we should probably make a real name mangling scheme that
@@ -185,8 +274,66 @@ fn mangle_generic_name(s: Sym, substs: &BTreeMap<Sym, Type>) -> Sym {
 /// stuck into it.  So we don't monomorphize just function calls, we have
 /// to do it to every function object, with the types we figure out at
 /// the call...  Our type-checking should have that info, does it?
+///
+/// ...ok, this is gonna have to get a little more radical, 'cause
+/// if we have a generic function foo(A, B) and it is called from
+/// another generic function bar(B) like foo(true, B), and then bar()
+/// is called like bar(some_concrete_type), then we have to chain
+/// the specializations down from the source.  
+/// So to do this I suppose we just have to walk the entire program
+/// in order.
 pub(super) fn monomorphize(ir: Ir, tck: &mut typeck::Tck) -> Ir {
     let functioncalls: &mut FunctionSpecs = &mut Default::default();
+    // A function and type param substitutions
+    type Specialization = (Sym, BTreeMap<Sym, Type>);
+    // The specializations we have yet to deal with.
+    // We may add things to this as we walk our program and discover
+    // new things that need instantiation.
+    let worklist: &mut VecDeque<Specialization> = &mut VecDeque::new();
+    // We put finished specializations here so we can quickly check
+    // whether they are duplicates.
+    let donelist: &mut BTreeSet<Specialization> = &mut Default::default();
+
+    let new_functions: &mut Vec<D> = &mut vec![];
+
+    let functions: &mut BTreeMap<Sym, hir::Decl> = &mut Default::default();
+    for decl in ir.decls.iter() {
+        match decl {
+            D::Function {
+                name,
+                signature: _,
+                body: _,
+            } => {
+                functions.insert(*name, decl.clone());
+            }
+            _ => (),
+        }
+    }
+
+    // We start from the entry point and just walk the call tree.
+    worklist.push_front((Sym::new("main"), BTreeMap::default()));
+    while !worklist.is_empty() {
+        let (current_name, current_substs) = worklist.pop_back().unwrap();
+        let current_func = functions.get(&current_name).unwrap();
+        let substitutions: &mut BTreeMap<Sym, Type> = &mut Default::default();
+        // Ok now we go through the body of the function and, for each
+        // function call we make:
+        //  * Check if it is generic
+        //  * Get the arg types and construct a substitution for it
+        //  * Check if it's in the donelist.
+        //  * If not, add it to the worklist
+        // ...or something fml
+
+        match current_func {
+            D::Function {
+                name,
+                signature,
+                body,
+            } => for expr in body {},
+            _ => unreachable!(),
+        }
+        donelist.insert((current_name, current_substs));
+    }
 
     let mut new_decls = vec![];
     for decl in ir.decls.into_iter() {
@@ -239,13 +386,11 @@ pub(super) fn monomorphize(ir: Ir, tck: &mut typeck::Tck) -> Ir {
     // Now we actually create the new functions
     for (nm, specs) in &functioncalls.specializations {
         trace!("Specializing {}", nm);
-        dbg!(nm);
         let old_func = new_decls
             .iter()
             .find(|d| matches!(d, D::Function { name, .. } if name == nm))
             .expect("Can't happen, this function name had to come from somewhere.")
             .clone();
-        dbg!(&specs);
         for subst in specs {
             let mangled_name = mangle_generic_name(*nm, subst);
             trace!("  Specialized name: {}", mangled_name);
