@@ -9,17 +9,18 @@
 -- Do we successfully follow monomorphizations through
 -- multiple generic functions?
 
-fn thing1(i I32, x @A) {I32, @A} =
-    {i, x}
-end
-
-fn thing2(x @A) {I32, @A} =
-    thing1(3, x)
-end
-
 fn main() {} =
     let x = false
     let y = thing2(x)
     __println(y.0)
     __println_bool(y.1)
 end
+
+fn thing2(x @A) {I32, @A} =
+    thing1(3, x)
+end
+
+fn thing1(i I32, x @A) {I32, @A} =
+    {i, x}
+end
+

@@ -106,7 +106,6 @@ impl Signature {
     pub fn generic_type_names(&self) -> Vec<Sym> {
         self.to_type().collect_generic_names()
     }
-
     pub fn to_name(&self) -> String {
         let names: Vec<_> = self
             .params
