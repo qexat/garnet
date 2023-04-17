@@ -284,6 +284,10 @@ pub enum Decl {
         typedecl: Type,
         doc_comment: Vec<String>,
     },
+    Import {
+        name: Sym,
+        rename: Option<Sym>,
+    },
 }
 
 /// A compilable chunk of AST.

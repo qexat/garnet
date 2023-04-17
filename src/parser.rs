@@ -165,6 +165,10 @@ pub enum TokenKind {
     Enum,
     #[token("sum")]
     Sum,
+    #[token("import")]
+    Import,
+    #[token("as")]
+    As,
 
     // Punctuation
     #[token("(")]
@@ -545,20 +549,21 @@ impl<'input> Parser<'input> {
     /// Returns None on EOF.
     fn parse_decl(&mut self) -> Option<ast::Decl> {
         fn parse_decl_inner(p: &mut Parser, doc_comments: Vec<String>) -> Option<ast::Decl> {
-            match p.next() {
-                Some(Token {
-                    kind: T::DocComment(s),
-                    ..
-                }) => {
-                    let mut dcs = doc_comments;
-                    dcs.push(s);
-                    parse_decl_inner(p, dcs)
+            if let Some(tok) = p.next() {
+                match &tok.kind {
+                    T::DocComment(s) => {
+                        let mut dcs = doc_comments;
+                        dcs.push(s.clone());
+                        parse_decl_inner(p, dcs)
+                    }
+                    T::Const => Some(p.parse_const(doc_comments)),
+                    T::Fn => Some(p.parse_fn(doc_comments)),
+                    T::Type => Some(p.parse_typedef(doc_comments)),
+                    T::Import => Some(p.parse_import(doc_comments)),
+                    _other => p.error("start of decl", Some(tok)),
                 }
-                Some(Token { kind: T::Const, .. }) => Some(p.parse_const(doc_comments)),
-                Some(Token { kind: T::Fn, .. }) => Some(p.parse_fn(doc_comments)),
-                Some(Token { kind: T::Type, .. }) => Some(p.parse_typedef(doc_comments)),
-                Some(other) => p.error("start of decl", Some(other)),
-                None => None,
+            } else {
+                None
             }
         }
         parse_decl_inner(self, vec![])
@@ -626,6 +631,19 @@ impl<'input> Parser<'input> {
             typedecl: ty,
             doc_comment,
         }
+    }
+
+    fn parse_import(&mut self, doc_comment: Vec<String>) -> ast::Decl {
+        if doc_comment.len() != 0 {
+            panic!("We have a doc comment for an import statement, which seems valid but is... kinda weird.")
+        }
+        let name = self.expect_ident();
+        let rename = if self.peek_expect(T::As.discr()) {
+            Some(self.expect_ident())
+        } else {
+            None
+        };
+        ast::Decl::Import { name, rename }
     }
 
     /*

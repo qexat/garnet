@@ -285,6 +285,9 @@ impl fmt::Display for Decl {
             } => {
                 writeln!(f, "type {}({:?}) = {}", name, params, typedecl.get_name())?;
             }
+            D::Import { name, localname } => {
+                writeln!(f, "import {} as {}", name, localname)?;
+            }
         }
         Ok(())
     }
@@ -496,6 +499,10 @@ pub enum Decl {
         name: Sym,
         params: Vec<Sym>,
         typedecl: Type,
+    },
+    Import {
+        name: Sym,
+        localname: Sym,
     },
 }
 
@@ -844,6 +851,7 @@ fn lower_decl(accm: &mut Vec<Decl>, decl: &ast::Decl) {
                 typedecl: typedecl.clone(),
             });
         }
+        D::Import { name: _, rename: _ } => todo!(),
     }
 }
 

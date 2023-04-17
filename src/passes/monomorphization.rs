@@ -380,6 +380,7 @@ pub(super) fn monomorphize(ir: Ir, tck: &mut typeck::Tck) -> Ir {
             }
             // No need to touch anything here, huzzah
             D::TypeDef { .. } => decl,
+            D::Import { .. } => todo!(),
         };
         new_decls.push(res);
     }
