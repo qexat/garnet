@@ -26,7 +26,12 @@ impl FunctionSpecs {
             .insert(substs.clone());
         self.specs.insert((s, substs));
     }
+
+    fn exists(&self, s: &Specialization) -> bool {
+        self.specs.contains(s)
+    }
 }
+
 /// Take any type annotations with generics in them and
 /// replaces them with different (hopefully concrete) types.
 ///
@@ -157,11 +162,12 @@ fn monomorphize2_expr(
     tck: &mut typeck::Tck,
     functions: &BTreeMap<Sym, hir::Decl>,
     specs: &mut FunctionSpecs,
+    worklist: &mut VecDeque<Specialization>,
 ) -> ExprNode {
     let mut new_expr = |e| match &e {
         // After lambda-lifting,
         // All function calls will end up with a variable name somewhere.
-        // So to find the types of functions we just look up the
+        // So to find the types of functions that are called we just look up the
         // types of these variables.
         E::Var { name } => {
             let expr_type = tck.reconstruct(tck.get_expr_type(&expr)).unwrap();
@@ -169,25 +175,29 @@ fn monomorphize2_expr(
                 // Lookup the generic func
                 let generic_function = functions.get(name).unwrap();
                 let generic_function_sig = match generic_function {
-                    D::Function { signature, .. } => signature.clone(),
+                    D::Function { signature, .. } => signature,
                     _ => unreachable!(),
                 };
                 let generic_function_type = generic_function_sig.to_type();
                 if generic_function_type.collect_generic_names().len() == 0 {
-                    // Not calling a generic function, bail
+                    // Not calling a generic function, bail with expression
+                    // unchanged.
                     return e;
                 }
                 info!(
                     "Finding substitutions to turn {:?} into {:?}",
                     generic_function_type, expr_type
                 );
-                let substitutions = &mut Default::default();
-                generic_function_type.find_substs(&expr_type, substitutions);
-                // Ok we replace the var being called with a reference to
-                // the substituted function's name
+                let mut substitutions = Default::default();
+                generic_function_type.find_substs(&expr_type, &mut substitutions);
+                // Ok we register this as a new substitution that needs to
+                // be instantiated.
                 let new_name = mangle_generic_name(*name, &substitutions);
-                let new_var = E::Var { name: new_name };
-                new_var
+                worklist.push_back((*name, substitutions));
+
+                // And we replace the var with one containing
+                // the substituted function
+                E::Var { name: new_name }
             } else {
                 e
             }
@@ -283,7 +293,7 @@ fn mangle_generic_name(s: Sym, substs: &BTreeMap<Sym, Type>) -> Sym {
 /// So to do this I suppose we just have to walk the entire program
 /// in order.
 pub(super) fn monomorphize(ir: Ir, tck: &mut typeck::Tck) -> Ir {
-    let functioncalls: &mut FunctionSpecs = &mut Default::default();
+    let specializations: &mut FunctionSpecs = &mut Default::default();
     // A function and type param substitutions
     type Specialization = (Sym, BTreeMap<Sym, Type>);
     // The specializations we have yet to deal with.
@@ -296,6 +306,8 @@ pub(super) fn monomorphize(ir: Ir, tck: &mut typeck::Tck) -> Ir {
 
     let new_functions: &mut Vec<D> = &mut vec![];
 
+    // A map from name to decl for all of our functions, so we can
+    // do random access lookups more easily to walk the call tree.
     let functions: &mut BTreeMap<Sym, hir::Decl> = &mut Default::default();
     for decl in ir.decls.iter() {
         match decl {
@@ -313,25 +325,37 @@ pub(super) fn monomorphize(ir: Ir, tck: &mut typeck::Tck) -> Ir {
     // We start from the entry point and just walk the call tree.
     worklist.push_front((Sym::new("main"), BTreeMap::default()));
     while !worklist.is_empty() {
-        let (current_name, current_substs) = worklist.pop_back().unwrap();
-        let current_func = functions.get(&current_name).unwrap();
-        let substitutions: &mut BTreeMap<Sym, Type> = &mut Default::default();
-        // Ok now we go through the body of the function and, for each
-        // function call we make:
-        //  * Check if it is generic
-        //  * Get the arg types and construct a substitution for it
-        //  * Check if it's in the donelist.
-        //  * If not, add it to the worklist
-        // ...or something fml
+        // Get a function to work on and grab its definition
+        let current_subst = worklist.pop_back().unwrap();
+        // Make sure this isn't a subst that already exists.
+        // We just fill the worklist up with all the functions and then
+        // skip duplicates, rather than checking for duplicates when inserting
+        // new work items.  Not sure which is better, so just sticking with this.
+        if donelist.contains(&current_subst) {
+            continue;
+        }
 
+        let (current_name, current_substs) = current_subst;
+        let current_func = functions.get(&current_name).unwrap();
+        // Ok now we go through the body of the function and, for each
+        // function variable it contains:
+        //  * Check if its definition is generic.  If so,
+        //  * Get the arg types and construct a substitution for it
+        //  * Check if the instantiation has already been done
+        //  * If not, add it to the worklist
         match current_func {
             D::Function {
                 name,
                 signature,
                 body,
-            } => for expr in body {},
+            } => {
+                let substed_body = exprs_map(body.clone(), &mut |e| {
+                    monomorphize2_expr(e, tck, functions, specializations, worklist)
+                });
+            }
             _ => unreachable!(),
         }
+
         donelist.insert((current_name, current_substs));
     }
 
@@ -345,7 +369,7 @@ pub(super) fn monomorphize(ir: Ir, tck: &mut typeck::Tck) -> Ir {
             } => {
                 //let sigtype = signature.to_type();
                 //let sig_generics = sigtype.collect_generic_names();
-                let new_body = exprs_map(body, &mut |e| monomorphize_expr(e, tck, functioncalls));
+                let new_body = exprs_map(body, &mut |e| monomorphize_expr(e, tck, specializations));
                 D::Function {
                     name,
                     signature,
@@ -385,7 +409,7 @@ pub(super) fn monomorphize(ir: Ir, tck: &mut typeck::Tck) -> Ir {
         new_decls.push(res);
     }
     // Now we actually create the new functions
-    for (nm, specs) in &functioncalls.specializations {
+    for (nm, specs) in &specializations.specializations {
         trace!("Specializing {}", nm);
         let old_func = new_decls
             .iter()
