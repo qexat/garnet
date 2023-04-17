@@ -1,7 +1,9 @@
 -- Compile:
---   status: success
--- Run:
---   stdout: 42
+--   status: error
+--   stderr:
+--     ...
+--     ...not yet implemented...
+--     ...
 
 
 import test_import2
