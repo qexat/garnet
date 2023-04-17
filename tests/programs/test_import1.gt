@@ -1,0 +1,11 @@
+-- Compile:
+--   status: success
+-- Run:
+--   stdout: 42
+
+
+import test_import2
+
+fn main() {} =
+    test_import2.foo()
+end
