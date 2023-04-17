@@ -395,6 +395,7 @@ fn decl_map(
             params,
             typedecl: type_map(typedecl, ft),
         },
+        D::Import { .. } => decl,
     }
 }
 

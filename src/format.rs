@@ -45,6 +45,13 @@ fn unparse_decl(d: &Decl, out: &mut dyn io::Write) -> io::Result<()> {
             writeln!(out)
         }
         Decl::TypeDef { .. } => todo!(),
+        Decl::Import { name, rename } => {
+            if let Some(re) = rename {
+                writeln!(out, "import {} as {}", name.val(), re.val())
+            } else {
+                writeln!(out, "import {}", name.val())
+            }
+        }
     }
 }
 
