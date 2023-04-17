@@ -851,7 +851,10 @@ fn lower_decl(accm: &mut Vec<Decl>, decl: &ast::Decl) {
                 typedecl: typedecl.clone(),
             });
         }
-        D::Import { name: _, rename: _ } => todo!(),
+        D::Import { name, rename } => accm.push(Decl::Import {
+            name: *name,
+            localname: rename.unwrap_or(*name),
+        }),
     }
 }
 
