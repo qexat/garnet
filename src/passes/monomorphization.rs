@@ -157,6 +157,9 @@ fn monomorphize_expr(
     expr.clone().map(&mut new_expr)
 }
 
+/// This walks through an expression and, for any variables that have
+/// a generic function type, translates them to concrete function calls
+/// based on the given substitutions in the FunctionSpecs.
 fn monomorphize2_expr(
     expr: ExprNode,
     tck: &mut typeck::Tck,
@@ -169,34 +172,42 @@ fn monomorphize2_expr(
         // All function calls will end up with a variable name somewhere.
         // So to find the types of functions that are called we just look up the
         // types of these variables.
+        //
+        // ....FAK no we have to specialize *at the call site* because the
+        // function variable is *instantiated* there aaaaaaaaaaa
         E::Var { name } => {
+            info!("Rewriting var {}", name);
             let expr_type = tck.reconstruct(tck.get_expr_type(&expr)).unwrap();
             if matches!(&expr_type, Type::Func(_, _)) {
-                // Lookup the generic func
-                let generic_function = functions.get(name).unwrap();
-                let generic_function_sig = match generic_function {
+                // Lookup the function's definition
+                let func_definition = functions.get(name).unwrap();
+                let func_definition_sig = match func_definition {
                     D::Function { signature, .. } => signature,
                     _ => unreachable!(),
                 };
-                let generic_function_type = generic_function_sig.to_type();
-                if generic_function_type.collect_generic_names().len() == 0 {
+                // Check if the function's definition is generic
+                let func_definition_type = func_definition_sig.to_type();
+                if func_definition_type.collect_generic_names().len() == 0 {
                     // Not calling a generic function, bail with expression
                     // unchanged.
                     return e;
                 }
+                // Find the differences between the definition's type
+                // and what args it has actually been called with
                 info!(
                     "Finding substitutions to turn {:?} into {:?}",
-                    generic_function_type, expr_type
+                    func_definition_type, expr_type
                 );
                 let mut substitutions = Default::default();
-                generic_function_type.find_substs(&expr_type, &mut substitutions);
-                // Ok we register this as a new substitution that needs to
+                func_definition_type.find_substs(&expr_type, &mut substitutions);
+                // Ok we register that as a new substitution that needs to
                 // be instantiated.
                 let new_name = mangle_generic_name(*name, &substitutions);
                 worklist.push_back((*name, substitutions));
 
                 // And we replace the var with one containing
                 // the substituted function
+                // Its type is the same, so we are gucci
                 E::Var { name: new_name }
             } else {
                 e
@@ -204,42 +215,6 @@ fn monomorphize2_expr(
         }
         _ => e,
     };
-    /*
-                        // Figure out what types the function has been called with
-                        let param_types: Vec<_> = params
-                            .iter()
-                            .map(|p| tck.reconstruct(tck.get_expr_type(p)).unwrap())
-                            .collect();
-                        // Get this expr's return type
-                        let rettype = tck.reconstruct(tck.get_expr_type(&expr)).unwrap();
-                        let called_type = Type::Func(param_types, Box::new(rettype));
-                        let substitutions = &mut Default::default();
-                        // Do our substitution of generics to real types
-                        info!(
-                            "Finding substitutions to turn {:?} into {:?}",
-                            ftype, &called_type
-                        );
-                        ftype.find_substs(&called_type, substitutions);
-                        trace!("Subst for {} is {:?}", name, substitutions);
-                        functioncalls.insert(*name, substitutions.clone());
-
-                        // Ok we replace the var being called with a reference to
-                        // the substituted function's name
-                        let new_name = mangle_generic_name(*name, &substitutions);
-                        let new_call = func.clone().map(&mut |_func| E::Var { name: new_name });
-                        E::Funcall {
-                            func: new_call,
-                            params: params.clone(),
-                            type_params: type_params.clone(),
-                        }
-                    }
-                    // what the shit how the fuck do I tell if this is a local var or not
-                    _ => todo!("How the hell do we know what function to monomorphize here???"),
-                }
-            }
-            _ => e,
-        };
-    */
     expr.clone().map(&mut new_expr)
 }
 
@@ -291,11 +266,10 @@ fn mangle_generic_name(s: Sym, substs: &BTreeMap<Sym, Type>) -> Sym {
 /// is called like bar(some_concrete_type), then we have to chain
 /// the specializations down from the source.  
 /// So to do this I suppose we just have to walk the entire program
-/// in order.
+/// in order of calls, starting from the entry point.
 pub(super) fn monomorphize(ir: Ir, tck: &mut typeck::Tck) -> Ir {
+    let mut ir = ir;
     let specializations: &mut FunctionSpecs = &mut Default::default();
-    // A function and type param substitutions
-    type Specialization = (Sym, BTreeMap<Sym, Type>);
     // The specializations we have yet to deal with.
     // We may add things to this as we walk our program and discover
     // new things that need instantiation.
@@ -321,6 +295,31 @@ pub(super) fn monomorphize(ir: Ir, tck: &mut typeck::Tck) -> Ir {
             _ => (),
         }
     }
+    // Oop heck we gotta include builtins too fuuuuuuuck
+    {
+        let builtins = vec![
+            ("__println", Type::i32()),
+            ("__println_i16", Type::i16()),
+            ("__println_i64", Type::i64()),
+            ("__println_bool", Type::bool()),
+        ];
+        for (name, argtype) in builtins.into_iter() {
+            let nm = Sym::new(name);
+            let sig = ast::Signature {
+                params: vec![(Sym::new("x"), argtype)],
+                rettype: Type::unit(),
+            };
+            let body = vec![];
+            functions.insert(
+                nm,
+                D::Function {
+                    name: nm,
+                    signature: sig,
+                    body,
+                },
+            );
+        }
+    }
 
     // We start from the entry point and just walk the call tree.
     worklist.push_front((Sym::new("main"), BTreeMap::default()));
@@ -328,30 +327,57 @@ pub(super) fn monomorphize(ir: Ir, tck: &mut typeck::Tck) -> Ir {
         // Get a function to work on and grab its definition
         let current_subst = worklist.pop_back().unwrap();
         // Make sure this isn't a subst that already exists.
-        // We just fill the worklist up with all the functions and then
-        // skip duplicates, rather than checking for duplicates when inserting
+        // We just fill the worklist up with all the functions we
+        // need to specialize and then skip duplicates, rather than checking
+        // for duplicates when inserting
         // new work items.  Not sure which is better, so just sticking with this.
+        // They're both technically O(nlogn) when the btreeset lookup is
+        // logn, so neither is *way* more horrible?
         if donelist.contains(&current_subst) {
             continue;
         }
 
         let (current_name, current_substs) = current_subst;
         let current_func = functions.get(&current_name).unwrap();
-        // Ok now we go through the body of the function and, for each
-        // function variable it contains:
-        //  * Check if its definition is generic.  If so,
-        //  * Get the arg types and construct a substitution for it
-        //  * Check if the instantiation has already been done
-        //  * If not, add it to the worklist
         match current_func {
             D::Function {
                 name,
                 signature,
                 body,
             } => {
+                // Ok now we go through the body of the function we are working on and, for each function variable it contains:
+                //  * Check if the variable's definition has type params.  If so,
+                //  * Get the arg types the variable is actually called with and construct a substitution for it
+                //  * Rename the variable to what the instantiated function will be called
                 let substed_body = exprs_map(body.clone(), &mut |e| {
-                    monomorphize2_expr(e, tck, functions, specializations, worklist)
+                    //monomorphize2_expr(e, tck, functions, specializations, worklist)
+                    monomorphize_expr(e, tck, specializations)
                 });
+
+                let old_sig_type = signature.to_type();
+                let new_sig_type = old_sig_type.apply_substs(&current_substs);
+                let new_sig = signature.map_type(&new_sig_type);
+                let new_function = D::Function {
+                    // Name has already been mangled before being put into
+                    // the worklist
+                    name: *name,
+                    signature: new_sig,
+                    body: substed_body,
+                };
+                //new_functions.push(new_function.clone());
+                ir.decls.push(new_function.clone());
+                functions.insert(*name, new_function);
+                println!("{}", &ir);
+                // TODO: Hmmm, we also need to typecheck the new function we have
+                // just generated.
+                // To do that we need to save the symbol table for it too!
+                // So that will need some refactoring.
+                // For now we just YOLO and re-typecheck everything.
+                /*
+                let new_tck = typeck::typecheck(&ir)
+                    .expect("Generated monomorphized IR that doesn't typecheck");
+                *tck = new_tck;
+                */
             }
             _ => unreachable!(),
         }
@@ -359,6 +385,7 @@ pub(super) fn monomorphize(ir: Ir, tck: &mut typeck::Tck) -> Ir {
         donelist.insert((current_name, current_substs));
     }
 
+    /*
     let mut new_decls = vec![];
     for decl in ir.decls.into_iter() {
         let res = match decl.clone() {
@@ -454,6 +481,8 @@ pub(super) fn monomorphize(ir: Ir, tck: &mut typeck::Tck) -> Ir {
     // We need the type info for the code we've generated
     // so that we can output it correctly.
     let new_ir = Ir { decls: new_decls };
+    */
+    let new_ir = ir;
     let new_tck =
         typeck::typecheck(&new_ir).expect("Generated monomorphized IR that doesn't typecheck");
     *tck = new_tck;
