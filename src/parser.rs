@@ -255,6 +255,7 @@ impl TokenKind {
     }
 }
 
+/// Token with contents and source debug info
 #[derive(Debug, PartialEq, Clone)]
 pub struct Token {
     pub kind: TokenKind,
@@ -267,6 +268,7 @@ impl Token {
     }
 }
 
+/// Turns a token into an AST binop
 fn bop_for(t: &TokenKind) -> Option<ast::BOp> {
     match t {
         T::Plus => Some(ast::BOp::Add),
@@ -289,9 +291,9 @@ fn bop_for(t: &TokenKind) -> Option<ast::BOp> {
     }
 }
 
+/// Turns a token into an AST uni-op
 fn uop_for(t: &TokenKind) -> Option<ast::UOp> {
     match t {
-        //T::Plus => Some(ast::UOp::Plus),
         T::Minus => Some(ast::UOp::Neg),
         T::Not => Some(ast::UOp::Not),
         T::Carat => Some(ast::UOp::Deref),
@@ -312,6 +314,7 @@ struct ErrorReporter {
 }
 
 impl ErrorReporter {
+    /// takes the name of the file being parsed and its contents.
     fn new(filename: &str, src: &str) -> Self {
         use codespan_reporting::files::SimpleFiles;
         let mut files = SimpleFiles::new();
@@ -324,7 +327,12 @@ impl ErrorReporter {
         }
     }
 
+    /// Panic with a simple error message.
     fn error(&self, _diag: &Diagnostic<usize>) -> ! {
+        // Disable fancy diagnostics in unit tests 'cause they get spammy
+        // and the default test runner truncates 'em anyway.  Leave this
+        // the way it is 'cause the lang_tester tests are set up to look
+        // for specific strings on failure.
         #[cfg(not(test))]
         {
             use codespan_reporting::term::termcolor::{ColorChoice, StandardStream};
@@ -334,6 +342,27 @@ impl ErrorReporter {
         }
         panic!("Error somewhere in parser")
     }
+}
+
+/// Helper to parse a delimited list of separated items, such as this pattern:
+/// `"(" [sig {"," sig} [","]] ")"`
+/// Assumes the starting token has already been consumed, put a block containing
+/// your `sig` parser code in it, and it will run it in a loop and search for
+/// the given `$tokenkind` such as `TokenKind::RParen` between each run of it.
+/// You can break or return from the loop as normal.
+///
+/// This could be a function that takes a closure, but a macro is slightly easier
+/// to work with 'cause you can just write a code block that breaks directly.
+macro_rules! parse_delimited {
+    ($parser: expr, $tokenkind: path, $body: block) => {{
+        loop {
+            $body
+            if $parser.peek_expect($tokenkind.discr()) {
+            } else {
+                break;
+            }
+        }
+    }};
 }
 
 /// The core parser struct.  It provides basic methods for
@@ -396,6 +425,8 @@ impl<'input> Parser<'input> {
         }
     }
 
+    /// Panics with a semi-descriptive error.
+    ///
     /// Takes a string describing what it expected, and a token that is what
     /// it actually got.
     fn error(&self, expected: &str, token_or_eof: Option<Token>) -> ! {
@@ -425,7 +456,7 @@ impl<'input> Parser<'input> {
         self.next();
     }
 
-    /// Consume a token that doesn't return anything
+    /// Consume a particular token that doesn't return anything
     fn expect(&mut self, expected: TokenKind) {
         match self.next() {
             Some(t) if t.kind == expected => (),
@@ -457,14 +488,8 @@ impl<'input> Parser<'input> {
     }
 
     /// Returns whether the next token in the stream is what is expected.
-    ///
-    /// Basically, we can't (easily) pass in a strongly-typed enum discriminant
-    /// and have only that checked, we have to pass the full enum.
-    /// Ironically, this is exactly the sort of thing I want Garnet to be
-    /// able to do nicely.
-    ///
-    /// ...double ironically, the above paragraph is incorrect as of 1.21,
-    /// because std::mem::discriminant() is better than I thought.
+    /// Use `Token::discr()` so you don't have to create a dummy ident or
+    /// something like that.
     fn peek_is(&mut self, expected: Discr<TokenKind>) -> bool {
         if let Some(got) = self.peek() {
             std::mem::discriminant(&got.kind) == expected
@@ -487,7 +512,6 @@ impl<'input> Parser<'input> {
     }
 
     /// Consume an identifier and return its interned symbol.
-    /// Note this returns a Sym, not a Type...
     fn expect_ident(&mut self) -> Sym {
         match self.next() {
             Some(Token {
@@ -515,6 +539,9 @@ impl<'input> Parser<'input> {
     }
 
     /// Consumes a number and returns it.
+    ///
+    /// Returns an i128, which is safely bigger than any integer type we currently
+    /// support.
     fn expect_int(&mut self) -> i128 {
         match self.next() {
             Some(Token {
@@ -546,8 +573,9 @@ impl<'input> Parser<'input> {
         }
     }
 
-    /// Returns None on EOF.
+    /// Parse a top-level declaration. Returns None on EOF.
     fn parse_decl(&mut self) -> Option<ast::Decl> {
+        // Helper to collect multiple lines of doc comments
         fn parse_decl_inner(p: &mut Parser, doc_comments: Vec<String>) -> Option<ast::Decl> {
             if let Some(tok) = p.next() {
                 match &tok.kind {
@@ -584,17 +612,6 @@ impl<'input> Parser<'input> {
 
     fn parse_fn(&mut self, doc_comment: Vec<String>) -> ast::Decl {
         let name = self.expect_ident();
-        /*
-        let type_vars = if self.peek_expect(T::LBracket.discr()) {
-            self.parse_generic_signature()
-        } else {
-            vec![]
-        };
-        let signature = ast::Signature {
-            generics: type_vars,
-            ..self.parse_fn_signature()
-        };
-        */
         let signature = self.parse_fn_signature();
         self.expect(T::Equals);
         let body = self.parse_exprs();
@@ -612,14 +629,15 @@ impl<'input> Parser<'input> {
         let name = self.expect_ident();
         let mut params = vec![];
         if self.peek_expect(T::LParen.discr()) {
-            while !self.peek_is(T::RParen.discr()) {
-                self.expect(T::At);
-                let name = self.expect_ident();
-                params.push(name);
-                if !self.peek_expect(T::Comma.discr()) {
+            parse_delimited!(self, T::Comma, {
+                if self.peek_is(T::RParen.discr()) {
                     break;
+                } else {
+                    self.expect(T::At);
+                    let name = self.expect_ident();
+                    params.push(name);
                 }
-            }
+            });
             self.expect(T::RParen);
         }
 
@@ -646,22 +664,6 @@ impl<'input> Parser<'input> {
         ast::Decl::Import { name, rename }
     }
 
-    /*
-    /// structdef = ident "{" [struct_field]* "}"
-    fn parse_structdef(&mut self, doc_comment: Vec<String>) -> ast::Decl {
-        let name = self.expect_ident();
-        self.expect(T::LBrace);
-        let (fields, typefields) = self.parse_struct_fields();
-        self.expect(T::RBrace);
-        ast::Decl::StructDef {
-            name,
-            fields,
-            typefields,
-            doc_comment,
-        }
-    }
-    */
-
     /// signature = fn_args [":" typename]
     fn parse_fn_signature(&mut self) -> ast::Signature {
         // TODO: Elide trailing unit type?
@@ -670,78 +672,22 @@ impl<'input> Parser<'input> {
         ast::Signature { params, rettype }
     }
 
-    /*
-    /// generic_signature = "[" [ident {"," ident} [","]] "]"
-    ///
-    /// Expects the first bracket to already be consumed
-    ///
-    /// Returns a vec of type var names
-    fn parse_generic_signature(&mut self) -> Vec<Sym> {
-        let mut body = vec![];
-        while !self.peek_is(T::RBracket.discr()) {
-            let t = self.expect_ident();
-            body.push(t);
-            if self.peek_expect(T::Comma.discr()) {
-            } else {
-                break;
-            }
-        }
-        self.expect(T::RBracket);
-        body
-    }
-    */
-
-    /*
-    /// Helper to parse a delimited list of separated items, such as this pattern:
-    /// Assumes the starting token has already been consumed, it reads things until
-    /// the ending token and allows trailing separators.
-    /// "(" [sig {"," sig} [","]] ")"
-    ///
-    /// TODO: Implement
-    fn _parse_delimited_helper(&mut self, ending_token: (), separator_token: (), body: ()) {
-        todo!("Implement me")
-        /*
-        while let Some(expr) = self.parse_expr(0) {
-            params.push(expr);
-            if !self.peek_is(T::Comma.discr()) {
-                break;
-            }
-            self.expect(T::Comma);
-        }
-            */
-
-        /*
-        while let Some((T::Ident(_i), _span)) = self.lex.peek() {
-            let name = self.expect_ident();
-            self.expect(T::Colon);
-            let tname = self.parse_type();
-            args.push((name, tname));
-
-            if self.peek_expect(T::Comma.discr()) {
-            } else {
-                break;
-            }
-        }
-             */
-    }
-    */
-
-    /// sig = ident ":" typename
+    /// sig = ident typename
     /// fn_args = "(" [sig {"," sig} [","]] ")"
     fn parse_fn_args(&mut self) -> Vec<(Sym, Type)> {
         let mut args = vec![];
         self.expect(T::LParen);
 
-        while let Some((T::Ident(_i), _span)) = self.lex.peek() {
-            let name = self.expect_ident();
-            let tname = self.parse_type();
-            args.push((name, tname));
-
-            if self.peek_expect(T::Comma.discr()) {
+        parse_delimited!(self, T::Comma, {
+            if let Some((T::Ident(_i), _span)) = self.lex.peek() {
+                //if self.peek_is(T::Ident.discr()) {
+                let name = self.expect_ident();
+                let tname = self.parse_type();
+                args.push((name, tname));
             } else {
                 break;
             }
-        }
+        });
         self.expect(T::RParen);
         args
     }
@@ -751,15 +697,14 @@ impl<'input> Parser<'input> {
         let mut args = vec![];
         self.expect(T::LParen);
 
-        while !self.peek_is(T::RParen.discr()) {
-            let tname = self.parse_type();
-            args.push(tname);
-
-            if self.peek_expect(T::Comma.discr()) {
+        parse_delimited!(self, T::Comma, {
+            if !self.peek_is(T::RParen.discr()) {
+                let tname = self.parse_type();
+                args.push(tname);
             } else {
                 break;
             }
-        }
+        });
         self.expect(T::RParen);
         args
     }
@@ -770,29 +715,13 @@ impl<'input> Parser<'input> {
         Type::Func(params, Box::new(rettype))
     }
 
-    fn parse_fn_type_args(&mut self) -> Vec<Type> {
-        let mut args = vec![];
-        self.expect(T::LParen);
-
-        while !self.peek_is(T::RParen.discr()) {
-            let tname = self.parse_type();
-            args.push(tname);
-
-            if self.peek_expect(T::Comma.discr()) {
-            } else {
-                break;
-            }
-        }
-        self.expect(T::RParen);
-        args
-    }
-
+    /// Parse the fields for a struct *type decl*
     fn parse_struct_fields(&mut self) -> (BTreeMap<Sym, Type>, BTreeSet<Sym>) {
         let mut fields = BTreeMap::new();
         let typefields = BTreeSet::new();
 
         // TODO someday: Doc comments on struct fields
-        loop {
+        parse_delimited!(self, T::Comma, {
             match self.lex.peek() {
                 Some((T::Ident(_i), _span)) => {
                     let name = self.expect_ident();
@@ -800,33 +729,17 @@ impl<'input> Parser<'input> {
                     let tname = self.parse_type();
                     fields.insert(name, tname);
                 }
-                /*
-                Some((T::Type, _span)) => {
-                    self.expect(T::Type);
-                    let name = self.expect_ident();
-                    typefields.insert(name);
-                }
-                */
                 _ => break,
             }
-
-            // TODO: Figure out how to not make this comma parsing jank af
-            // maybe
-            // {term ","} [term [","]]
-            // or
-            // [THING { "," THING } [","]]
-            if self.peek_expect(T::Comma.discr()) {
-            } else {
-                break;
-            }
-        }
+        });
         (fields, typefields)
     }
 
+    /// Parse the fields for a struct *type literal*
     fn parse_struct_lit_fields(&mut self) -> BTreeMap<Sym, ast::Expr> {
         let mut fields = BTreeMap::default();
 
-        loop {
+        parse_delimited!(self, T::Comma, {
             if self.peek_expect(T::Period.discr()) {
                 let name = self.expect_ident();
                 self.expect(T::Equals);
@@ -835,12 +748,7 @@ impl<'input> Parser<'input> {
             } else {
                 break;
             }
-
-            if self.peek_expect(T::Comma.discr()) {
-            } else {
-                break;
-            }
-        }
+        });
         fields
     }
 
@@ -849,7 +757,7 @@ impl<'input> Parser<'input> {
         let mut variants = vec![];
 
         // TODO someday: Doc comments on enum fields
-        loop {
+        parse_delimited!(self, T::Comma, {
             match self.lex.peek() {
                 Some((T::Ident(_i), _span)) => {
                     let id = self.expect_ident();
@@ -861,17 +769,7 @@ impl<'input> Parser<'input> {
                 }
                 _ => break,
             }
-
-            // TODO: Figure out how to not make this comma parsing jank af
-            // maybe
-            // {term ","} [term [","]]
-            // or
-            // [THING { "," THING } [","]]
-            if self.peek_expect(T::Comma.discr()) {
-            } else {
-                break;
-            }
-        }
+        });
         // Make sure we don't have any duplicates.
         let mut seen = std::collections::HashMap::new();
         for (name, vl) in variants.iter() {
@@ -888,14 +786,12 @@ impl<'input> Parser<'input> {
 
     fn parse_tuple_type(&mut self) -> Type {
         let mut body = vec![];
-        while !self.peek_is(T::RBrace.discr()) {
-            let t = self.parse_type();
-            body.push(t);
-            if self.peek_expect(T::Comma.discr()) {
-            } else {
-                break;
+        parse_delimited!(self, T::Comma, {
+            if !self.peek_is(T::RBrace.discr()) {
+                let t = self.parse_type();
+                body.push(t);
             }
-        }
+        });
         self.expect(T::RBrace);
         Type::tuple(body)
     }
@@ -915,19 +811,16 @@ impl<'input> Parser<'input> {
     /// isomorphic-ish with parse_type_list()
     fn parse_sum_type(&mut self) -> Type {
         let mut fields = BTreeMap::default();
-        while !self.peek_is(T::End.discr()) {
-            let field = self.expect_ident();
-            let ty = self.parse_type();
-            fields.insert(field, ty);
-
-            if self.peek_expect(T::Comma.discr()) {
-            } else {
-                break;
+        parse_delimited!(self, T::Comma, {
+            if !self.peek_is(T::End.discr()) {
+                let field = self.expect_ident();
+                let ty = self.parse_type();
+                fields.insert(field, ty);
             }
-        }
+        });
         self.expect(T::End);
         // Pull any @Foo types out of the structure's
-        // declared types, again just like parse_struct_type above.
+        // declared types,
         let generic_names: Vec<_> = fields
             .iter()
             .map(|(_nm, ty)| ty.get_type_params())
@@ -941,10 +834,12 @@ impl<'input> Parser<'input> {
         let mut exprs = vec![];
         let tok = self.peek();
         while let Some(e) = self.parse_expr(0) {
-            // Hey and if we have a semicolon after an expr we can just eat it
+            // if we have a semicolon after an expr we can just eat it
             self.peek_expect(T::Semicolon.discr());
             exprs.push(e);
         }
+        // TODO: I think this was necessary for sanity's sake at some point
+        // but I don't think it is anymore, figure it out.
         if exprs.is_empty() {
             self.error(
                 "non-empty expression block, must have at least one value.",
@@ -958,7 +853,9 @@ impl<'input> Parser<'input> {
     /// which usually means the end of a block or such.
     ///
     /// This departs from pure recursive descent and uses a Pratt
-    /// parser to parse math expressions and such.
+    /// parser to parse math expressions and such.  It's a big chonky
+    /// boi of a function, but really just tries a bunch of matches
+    /// in sequence.
     fn parse_expr(&mut self, min_bp: usize) -> Option<ast::Expr> {
         let t = self.peek()?;
         let token = &t.kind;
@@ -982,13 +879,6 @@ impl<'input> Parser<'input> {
             T::Ident(_) => {
                 let ident = self.expect_ident();
                 ast::Expr::Var { name: ident }
-                /*
-                if self.peek_is(TokenKind::LBrace.discr()) {
-                    self.parse_struct_literal(ident)
-                } else {
-                    ast::Expr::Var { name: ident }
-                }
-                */
             }
             T::Let => self.parse_let(),
             T::If => self.parse_if(),
@@ -1139,13 +1029,13 @@ impl<'input> Parser<'input> {
     fn parse_function_args(&mut self) -> Vec<ast::Expr> {
         let mut params = vec![];
         self.expect(T::LParen);
-        while let Some(expr) = self.parse_expr(0) {
-            params.push(expr);
-            if !self.peek_is(T::Comma.discr()) {
+        parse_delimited!(self, T::Comma, {
+            if let Some(expr) = self.parse_expr(0) {
+                params.push(expr);
+            } else {
                 break;
             }
-            self.expect(T::Comma);
-        }
+        });
         self.expect(T::RParen);
         params
     }
@@ -1266,6 +1156,7 @@ impl<'input> Parser<'input> {
     }
 
     /// tuple constructor = "{" [expr {"," expr} [","] "}"
+    /// struct constructor = "{" ["." id "=" expr {"," "." id "=" expr}]  [","] "}"
     fn parse_constructor(&mut self) -> ast::Expr {
         self.expect(T::LBrace);
         if self.peek_is(T::Period.discr()) {
@@ -1285,14 +1176,13 @@ impl<'input> Parser<'input> {
     /// tuple constructor = "{" [expr {"," expr} [","] "}"
     fn parse_tuple_literal(&mut self) -> ast::Expr {
         let mut body = vec![];
-        while let Some(expr) = self.parse_expr(0) {
-            body.push(expr);
-
-            if self.peek_expect(T::Comma.discr()) {
+        parse_delimited!(self, T::Comma, {
+            if let Some(expr) = self.parse_expr(0) {
+                body.push(expr);
             } else {
                 break;
             }
-        }
+        });
         self.expect(T::RBrace);
         ast::Expr::TupleCtor { body }
     }
@@ -1300,14 +1190,13 @@ impl<'input> Parser<'input> {
     fn parse_array_constructor(&mut self) -> ast::Expr {
         self.expect(T::LBracket);
         let mut body = vec![];
-        while let Some(expr) = self.parse_expr(0) {
-            body.push(expr);
-
-            if self.peek_expect(T::Comma.discr()) {
+        parse_delimited!(self, T::Comma, {
+            if let Some(expr) = self.parse_expr(0) {
+                body.push(expr);
             } else {
                 break;
             }
-        }
+        });
         self.expect(T::RBracket);
         ast::Expr::ArrayCtor { body }
     }
@@ -1364,6 +1253,8 @@ impl<'input> Parser<'input> {
 /// Panics on invalid token, which should never happen
 /// since we always know what kind of expression we're parsing
 /// from the get-go with prefix operators.
+///
+/// TODO: Can we make better sure that no binding powers ever match?
 fn prefix_binding_power(op: &TokenKind) -> ((), usize) {
     match op {
         T::Plus | T::Minus | T::Not => ((), 110),
