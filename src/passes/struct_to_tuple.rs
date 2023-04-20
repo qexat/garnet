@@ -9,7 +9,6 @@
 //! in Rust.
 
 use crate::passes::*;
-use crate::*;
 
 /// Takes a struct and a field name and returns what tuple
 /// offset the field should correspond to.

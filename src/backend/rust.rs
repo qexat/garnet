@@ -38,12 +38,7 @@ fn __println_i16(x: i16) {
 "#
 }
 
-/// Compiles a `TypeDef` into a declaration statement.
-fn compile_typedef(td: &Type) -> Cow<'static, str> {
-    compile_typename(td)
-}
-
-/// Similar to `compile_typedef` but only gets names, not full definitions.
+/// Compiles a `Type` into a a valid Rust type.
 ///
 /// Needed for when we do `let x: Foo = ...` rather than `struct Foo { ... }`
 fn compile_typename(t: &Type) -> Cow<'static, str> {
