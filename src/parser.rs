@@ -22,7 +22,6 @@ use crate::*;
 /// of bits.
 fn bounds_check(val: i128, int_size: u8) -> Option<(i128, u8)> {
     let bound = 2_i128.pow(int_size as u32 * 8);
-    //dbg!(val, bound, bound / 2 - 1);
     if val > (bound / 2) - 1 || val <= -(bound / 2) {
         None
     } else {
@@ -197,6 +196,8 @@ pub enum TokenKind {
     Dollar,
     #[token("@")]
     At,
+    #[token("|")]
+    Bar,
 
     // Operators
     #[token("+")]
@@ -673,14 +674,14 @@ impl<'input> Parser<'input> {
     }
 
     /// sig = ident typename
-    /// fn_args = "(" [sig {"," sig} [","]] ")"
+    /// fn_args = "(" [sig {"," sig} [","]] ["|" types...] ")"
     fn parse_fn_args(&mut self) -> Vec<(Sym, Type)> {
         let mut args = vec![];
+        let mut typeargs = vec![];
         self.expect(T::LParen);
 
         parse_delimited!(self, T::Comma, {
-            if let Some((T::Ident(_i), _span)) = self.lex.peek() {
-                //if self.peek_is(T::Ident.discr()) {
+            if let Some((T::Ident(_), _span)) = self.lex.peek() {
                 let name = self.expect_ident();
                 let tname = self.parse_type();
                 args.push((name, tname));
@@ -688,6 +689,16 @@ impl<'input> Parser<'input> {
                 break;
             }
         });
+        if self.peek_expect(T::Bar.discr()) {
+            parse_delimited!(self, T::Comma, {
+                if !self.peek_is(T::RParen.discr()) {
+                    let ty = self.parse_type();
+                    typeargs.push(ty);
+                } else {
+                    break;
+                }
+            });
+        }
         self.expect(T::RParen);
         args
     }
@@ -1581,9 +1592,13 @@ type blar = I8
 
     #[test]
     fn parse_fn_decls() {
-        //let valid_args = vec!["fn foo1(f I32) I32 = f end", "fn foo2(f @T) @T = f end"];
-        //let valid_args = vec!["fn foo2(f @T) @T = f end"];
-        let valid_args = vec!["fn foo1(f I32) I32 = f end"];
+        let valid_args = vec![
+            "fn foo1(f I32) I32 = f end",
+            "fn foo2(f I32 | @T) I32 = f end",
+            "fn foo3(| @T) {} = f end",
+            "fn foo4(f @T) @T = f end",
+            "fn foo5(f I32, g Bool, | @T, @T2, ) I32 = f end",
+        ];
         test_parse_with(|p| p.parse_decl().unwrap(), &valid_args);
     }
 
