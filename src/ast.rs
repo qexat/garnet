@@ -93,6 +93,8 @@ pub struct Signature {
     pub params: Vec<(Sym, Type)>,
     /// Return type
     pub rettype: Type,
+    /// Type parameter names
+    pub typeparams: Vec<Sym>,
 }
 
 impl Signature {
@@ -187,6 +189,7 @@ pub enum Expr {
     Funcall {
         func: Box<Expr>,
         params: Vec<Expr>,
+        typeparams: Vec<Type>,
     },
     Break,
     Return {

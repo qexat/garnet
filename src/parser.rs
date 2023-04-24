@@ -668,14 +668,18 @@ impl<'input> Parser<'input> {
     /// signature = fn_args [":" typename]
     fn parse_fn_signature(&mut self) -> ast::Signature {
         // TODO: Elide trailing unit type?
-        let params = self.parse_fn_args();
+        let (params, typeparams) = self.parse_fn_args();
         let rettype = self.parse_type();
-        ast::Signature { params, rettype }
+        ast::Signature {
+            params,
+            rettype,
+            typeparams,
+        }
     }
 
     /// sig = ident typename
     /// fn_args = "(" [sig {"," sig} [","]] ["|" types...] ")"
-    fn parse_fn_args(&mut self) -> Vec<(Sym, Type)> {
+    fn parse_fn_args(&mut self) -> (Vec<(Sym, Type)>, Vec<Sym>) {
         let mut args = vec![];
         let mut typeargs = vec![];
         self.expect(T::LParen);
@@ -692,7 +696,7 @@ impl<'input> Parser<'input> {
         if self.peek_expect(T::Bar.discr()) {
             parse_delimited!(self, T::Comma, {
                 if !self.peek_is(T::RParen.discr()) {
-                    let ty = self.parse_type();
+                    let ty = self.expect_ident();
                     typeargs.push(ty);
                 } else {
                     break;
@@ -700,7 +704,7 @@ impl<'input> Parser<'input> {
             });
         }
         self.expect(T::RParen);
-        args
+        (args, typeargs)
     }
 
     /// type_list = "(" [type {"," type} [","] ")"
@@ -934,10 +938,11 @@ impl<'input> Parser<'input> {
                 // TODO: Figure out some kind of turbofish for function calls???
                 lhs = match op_token {
                     T::LParen => {
-                        let params = self.parse_function_args();
+                        let (params, typeparams) = self.parse_function_args();
                         ast::Expr::Funcall {
                             func: Box::new(lhs),
                             params,
+                            typeparams,
                         }
                     }
                     // If we see `foo {bar}`
@@ -948,6 +953,7 @@ impl<'input> Parser<'input> {
                         ast::Expr::Funcall {
                             func: Box::new(lhs),
                             params: vec![params],
+                            typeparams: vec![],
                         }
                     }
                     T::Dollar => {
@@ -960,11 +966,12 @@ impl<'input> Parser<'input> {
                         self.expect(T::Colon);
                         let ident = self.expect_ident();
                         let ident_expr = ast::Expr::Var { name: ident };
-                        let mut params = self.parse_function_args();
+                        let (mut params, typeparams) = self.parse_function_args();
                         params.insert(0, lhs);
                         ast::Expr::Funcall {
                             func: Box::new(ident_expr),
                             params,
+                            typeparams,
                         }
                     }
                     T::Period => {
@@ -1037,8 +1044,9 @@ impl<'input> Parser<'input> {
         Some(lhs)
     }
 
-    fn parse_function_args(&mut self) -> Vec<ast::Expr> {
+    fn parse_function_args(&mut self) -> (Vec<ast::Expr>, Vec<Type>) {
         let mut params = vec![];
+        let mut typeparams = vec![];
         self.expect(T::LParen);
         parse_delimited!(self, T::Comma, {
             if let Some(expr) = self.parse_expr(0) {
@@ -1047,8 +1055,18 @@ impl<'input> Parser<'input> {
                 break;
             }
         });
+        if self.peek_expect(T::Bar.discr()) {
+            parse_delimited!(self, T::Comma, {
+                if !self.peek_is(T::RParen.discr()) {
+                    let ty = self.parse_type();
+                    typeparams.push(ty);
+                } else {
+                    break;
+                }
+            });
+        }
         self.expect(T::RParen);
-        params
+        (params, typeparams)
     }
 
     /// let = "let" ident ":" typename "=" expr
@@ -1391,6 +1409,7 @@ mod tests {
                 signature: ast::Signature {
                     params: vec![(Sym::new("x"), i32_t.clone())],
                     rettype: i32_t,
+                    typeparams: vec![],
                 },
                 body: vec![Expr::int(9)],
                 doc_comment: vec![],
@@ -1615,6 +1634,7 @@ type blar = I8
                 name: Sym::new("y"),
             }),
             params: vec![Expr::int(1), Expr::int(2), Expr::int(3)],
+            typeparams: vec![],
         });
 
         test_expr_is("foo(0, bar(1 * 2), 3)", || Expr::Funcall {
@@ -1632,13 +1652,23 @@ type blar = I8
                         lhs: Box::new(Expr::int(1)),
                         rhs: Box::new(Expr::int(2)),
                     }],
+                    typeparams: vec![],
                 },
                 Expr::int(3),
             ],
+            typeparams: vec![],
         });
 
         test_expr_is("(1)", || Expr::int(1));
         test_expr_is("(((1)))", || Expr::int(1));
+
+        test_expr_is("y(1, | I32)", || Expr::Funcall {
+            func: Box::new(Expr::Var {
+                name: Sym::new("y"),
+            }),
+            params: vec![Expr::int(1)],
+            typeparams: vec![Type::i32()],
+        });
     }
 
     #[test]
@@ -1731,12 +1761,14 @@ type blar = I8
                 name: Sym::new("x"),
             }),
             params: vec![],
+            typeparams: vec![],
         });
         test_expr_is("(x())", || Expr::Funcall {
             func: Box::new(Expr::Var {
                 name: Sym::new("x"),
             }),
             params: vec![],
+            typeparams: vec![],
         });
 
         test_expr_is("(1+2)*3", || Expr::BinOp {
