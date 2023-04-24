@@ -190,12 +190,23 @@ fn unparse_expr(e: &Expr, indent: usize, out: &mut dyn io::Write) -> io::Result<
             writeln!(out)?;
             writeln!(out, "end")
         }
-        E::Funcall { func, params } => {
+        E::Funcall {
+            func,
+            params,
+            typeparams,
+        } => {
             unparse_expr(func, 0, out)?;
             write!(out, "(")?;
             for e in params {
                 unparse_expr(e, 0, out)?;
                 write!(out, ", ")?;
+            }
+            if typeparams.len() > 0 {
+                write!(out, "| ")?;
+                for t in typeparams {
+                    let tname = t.get_name();
+                    write!(out, "{}, ", tname)?;
+                }
             }
             write!(out, ")")
         }

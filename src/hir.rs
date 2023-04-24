@@ -620,13 +620,18 @@ fn lower_expr(expr: &ast::Expr) -> ExprNode {
                 body: nbody,
             }
         }
-        E::Funcall { func, params } => {
+        E::Funcall {
+            func,
+            params,
+            typeparams,
+        } => {
             let nfunc = lower_expr(func);
             let nparams = lower_exprs(params);
+            let ntypeparams = Default::default();
             Funcall {
                 func: nfunc,
                 params: nparams,
-                type_params: Default::default(),
+                type_params: ntypeparams,
             }
         }
         E::Break => Break,
