@@ -679,7 +679,7 @@ impl<'input> Parser<'input> {
 
     /// sig = ident typename
     /// fn_args = "(" [sig {"," sig} [","]] ["|" types...] ")"
-    fn parse_fn_args(&mut self) -> (Vec<(Sym, Type)>, Vec<Sym>) {
+    fn parse_fn_args(&mut self) -> (Vec<(Sym, Type)>, Vec<Type>) {
         let mut args = vec![];
         let mut typeargs = vec![];
         self.expect(T::LParen);
@@ -696,7 +696,7 @@ impl<'input> Parser<'input> {
         if self.peek_expect(T::Bar.discr()) {
             parse_delimited!(self, T::Comma, {
                 if !self.peek_is(T::RParen.discr()) {
-                    let ty = self.expect_ident();
+                    let ty = self.parse_type();
                     typeargs.push(ty);
                 } else {
                     break;
@@ -724,10 +724,38 @@ impl<'input> Parser<'input> {
         args
     }
 
+    /// type_list_with_typeparams = "(" [type {"," type} [","] ["|" types...] ")"
+    fn parse_type_list_with_typeparams(&mut self) -> (Vec<Type>, Vec<Type>) {
+        let mut args = vec![];
+        let mut typeparams = vec![];
+        self.expect(T::LParen);
+
+        parse_delimited!(self, T::Comma, {
+            if !self.peek_is(T::RParen.discr()) {
+                let tname = self.parse_type();
+                args.push(tname);
+            } else {
+                break;
+            }
+        });
+        if self.peek_expect(T::Bar.discr()) {
+            parse_delimited!(self, T::Comma, {
+                if !self.peek_is(T::RParen.discr()) {
+                    let tname = self.parse_type();
+                    typeparams.push(tname);
+                } else {
+                    break;
+                }
+            });
+        }
+        self.expect(T::RParen);
+        (args, typeparams)
+    }
+
     fn parse_fn_type(&mut self) -> Type {
-        let params = self.parse_type_list();
+        let (params, typeparams) = self.parse_type_list_with_typeparams();
         let rettype = self.parse_type();
-        Type::Func(params, Box::new(rettype))
+        Type::Func(params, Box::new(rettype), typeparams)
     }
 
     /// Parse the fields for a struct *type decl*

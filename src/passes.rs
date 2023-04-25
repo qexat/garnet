@@ -12,7 +12,8 @@
 //! Essentially you walk through your entire compilation unit and
 //! rename everything to a globally unique name.  This means that
 //! scope vanishes, for example, and anything potentially
-//! ambiguous becomes unambiguous.
+//! ambiguous becomes unambiguous.  It can come after typechecking tho.
+//!
 //!
 //! TODO: Passes that need to be done still:
 //!  * Closure conversion
@@ -431,10 +432,11 @@ fn type_map(typ: Type, f: &mut dyn FnMut(Type) -> Type) -> Type {
             Type::Sum(new_fields, generics)
         }
         Type::Array(ty, len) => Type::Array(Box::new(type_map(*ty, f)), len),
-        Type::Func(args, rettype) => {
+        Type::Func(args, rettype, typeparams) => {
             let new_args = types_map(args, f);
             let new_rettype = type_map(*rettype, f);
-            Type::Func(new_args, Box::new(new_rettype))
+            let new_typeparams = types_map(typeparams, f);
+            Type::Func(new_args, Box::new(new_rettype), new_typeparams)
         }
         // Not super sure whether this is necessary, but can't hurt.
         Type::Named(nm, tys) => Type::Named(nm, types_map(tys, f)),
@@ -455,6 +457,7 @@ fn signature_map(sig: hir::Signature, f: &mut dyn FnMut(Type) -> Type) -> hir::S
     hir::Signature {
         params: new_params,
         rettype: type_map(sig.rettype, f),
+        typeparams: types_map(sig.typeparams, f),
     }
 }
 
@@ -468,11 +471,13 @@ pub fn generate_type_name(typ: &Type) -> String {
             let fieldstr = fieldnames.join("_");
             format!("__Enum{}", fieldstr)
         }
-        Type::Func(params, rettype) => {
+        Type::Func(params, rettype, typeparams) => {
             let paramnames: Vec<String> = params.iter().map(generate_type_name).collect();
             let paramstr = paramnames.join("_");
             let retname = generate_type_name(rettype);
-            format!("__Func__{}__{}", paramstr, retname)
+            let tparamnames: Vec<String> = typeparams.iter().map(generate_type_name).collect();
+            let tparamstr = tparamnames.join("_");
+            format!("__Func__{}__{}_{}", paramstr, retname, tparamstr)
         }
         Type::Struct(body, _) => {
             let fieldnames: Vec<_> = body

@@ -93,15 +93,19 @@ pub struct Signature {
     pub params: Vec<(Sym, Type)>,
     /// Return type
     pub rettype: Type,
-    /// Type parameter names
-    pub typeparams: Vec<Sym>,
+    /// Type parameters
+    pub typeparams: Vec<Type>,
 }
 
 impl Signature {
     /// Returns a lambda typedef representing the signature
     pub fn to_type(&self) -> Type {
         let paramtypes = self.params.iter().map(|(_nm, ty)| ty.clone()).collect();
-        Type::Func(paramtypes, Box::new(self.rettype.clone()))
+        Type::Func(
+            paramtypes,
+            Box::new(self.rettype.clone()),
+            self.typeparams.clone(),
+        )
     }
 
     /// Get all the generic params out of this function sig
@@ -125,9 +129,12 @@ impl Signature {
     /// same number of params.
     pub fn map_type(&self, new_type: &Type) -> Self {
         match new_type {
-            Type::Func(params, rettype) => {
+            Type::Func(params, rettype, typeparams) => {
                 if self.params.len() != params.len() {
                     panic!("given type has wrong number of params");
+                }
+                if self.typeparams.len() != typeparams.len() {
+                    panic!("Given type has wrong number of type params");
                 }
                 let new_params = self
                     .params
@@ -136,9 +143,11 @@ impl Signature {
                     .map(|((nm, _t1), t2)| (*nm, t2.clone()))
                     .collect();
                 let new_rettype = rettype.clone();
+                let new_type_params = typeparams.clone();
                 Self {
                     params: new_params,
                     rettype: *new_rettype,
+                    typeparams: new_type_params,
                 }
             }
             _ => panic!("Not a function type: {:?}", new_type),
