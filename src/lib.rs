@@ -66,7 +66,8 @@ pub enum Type {
     /// Not sure how I feel about this.
     Enum(Vec<(Sym, i32)>),
     Named(Sym, Vec<Type>),
-    Func(Vec<Type>, Box<Type>),
+    /// param types, return types, type parameters
+    Func(Vec<Type>, Box<Type>, Vec<Type>),
     /// The vec is the name of any generic type bindings in there
     /// 'cause we need to keep track of those apparently.
     Struct(BTreeMap<Sym, Type>, Vec<Type>),
@@ -93,9 +94,13 @@ impl Type {
                         helper(t, accm);
                     }
                 }
-                Type::Func(args, rettype) => {
+                Type::Func(args, rettype, typeparams) => {
                     for t in args {
                         helper(t, accm);
+                    }
+                    // Just like structs
+                    for ty in typeparams {
+                        helper(ty, accm);
                     }
                     helper(rettype, accm)
                 }
@@ -153,7 +158,7 @@ impl Type {
                         helper(g, accm);
                     }
                 }
-                Type::Func(args, rettype) => {
+                Type::Func(args, rettype, typeparams) => {
                     for t in args {
                         helper(t, accm);
                     }
@@ -333,10 +338,15 @@ impl Type {
                 };
                 Cow::Owned(result)
             }
-            Type::Func(params, rettype) => {
+            Type::Func(params, rettype, typeparams) => {
                 let mut t = String::from("fn");
                 t += "(";
                 t += &join_types_with_commas(params);
+
+                if typeparams.len() > 0 {
+                    t += "| ";
+                    t += &join_types_with_commas(typeparams);
+                }
 
                 t += ")";
                 let rettype_str = rettype.get_name();
@@ -381,9 +391,18 @@ impl Type {
                     p1.find_substs(p2, substitutions);
                 }
             }
-            (Type::Func(params1, rettype1), Type::Func(params2, rettype2)) => {
+            (
+                Type::Func(params1, rettype1, typeparams1),
+                Type::Func(params2, rettype2, typeparams2),
+            ) => {
                 if params1.len() != params2.len() {
                     panic!("subst for function had incorrect param length")
+                }
+                if typeparams1.len() != typeparams2.len() {
+                    panic!("subst for function had incorrect typeparam length")
+                }
+                if typeparams1.len() > 0 {
+                    todo!()
                 }
                 for (p1, p2) in params1.iter().zip(params2) {
                     p1.find_substs(p2, substitutions);
@@ -443,10 +462,13 @@ impl Type {
     /// TODO someday: refactor with passes::type_map()?
     pub fn apply_substs(&self, substs: &BTreeMap<Sym, Type>) -> Type {
         match self {
-            Type::Func(params1, rettype1) => {
+            Type::Func(params1, rettype1, typeparams1) => {
                 let new_params = params1.iter().map(|p1| p1.apply_substs(substs)).collect();
                 let new_rettype = rettype1.apply_substs(substs);
-                Type::Func(new_params, Box::new(new_rettype))
+                if typeparams1.len() > 0 {
+                    todo!("Hsfjkdslfjs");
+                }
+                Type::Func(new_params, Box::new(new_rettype), vec![])
             }
             Type::Named(n1, args1) => {
                 let new_args = args1.iter().map(|p1| p1.apply_substs(substs)).collect();
@@ -601,7 +623,7 @@ mod tests {
     #[test]
     fn check_name_format() {
         let args = vec![Type::i32(), Type::bool()];
-        let def = Type::Func(args, Box::new(Type::i32()));
+        let def = Type::Func(args, Box::new(Type::i32()), vec![]);
         let gotten_name = def.get_name();
         let desired_name = "fn(I32, Bool): I32";
         assert_eq!(&gotten_name, desired_name);

@@ -33,7 +33,7 @@ pub enum TypeInfo {
     /// or List(T)
     Named(Sym, Vec<TypeId>),
     /// This type term is definitely a function
-    Func(Vec<TypeId>, TypeId),
+    Func(Vec<TypeId>, TypeId, Vec<TypeId>),
     /// This is definitely some kind of struct
     Struct(BTreeMap<Sym, TypeId>),
     /// Definitely a sum type
@@ -69,11 +69,16 @@ impl TypeInfo {
                 let joined_generics = generics.join(", ");
                 format!("{}({})", name, joined_generics).into()
             }
-            Func(params, rettype) => {
+            Func(params, rettype, typeparams) => {
                 let paramstr: Vec<_> = params.iter().map(|id| tck.vars[id].get_name(tck)).collect();
                 let paramstr = paramstr.join(", ");
                 let rettypestr = tck.vars[rettype].get_name(tck);
-                format!("fn({}) {}", paramstr, rettypestr).into()
+                let tparamstr: Vec<_> = typeparams
+                    .iter()
+                    .map(|id| tck.vars[id].get_name(tck))
+                    .collect();
+                let tparamstr = tparamstr.join(", ");
+                format!("fn({} | {}) {}", paramstr, tparamstr, rettypestr).into()
             }
             Struct(body) => {
                 let mut accm = String::from("struct\n");
@@ -371,10 +376,11 @@ impl Tck {
                 let new_args = args.iter().map(|t| self.insert_known(t)).collect();
                 TypeInfo::Named(s.clone(), new_args)
             }
-            Type::Func(args, rettype) => {
+            Type::Func(args, rettype, typeparams) => {
                 let new_args = args.iter().map(|t| self.insert_known(t)).collect();
                 let new_rettype = self.insert_known(rettype);
-                TypeInfo::Func(new_args, new_rettype)
+                let new_typeparams = typeparams.iter().map(|t| self.insert_known(t)).collect();
+                TypeInfo::Func(new_args, new_rettype, new_typeparams)
             }
             Type::Generic(s) => TypeInfo::TypeParam(*s),
             Type::Array(ty, len) => {
@@ -556,14 +562,23 @@ impl Tck {
             }
             // When unifying complex types, we must check their sub-types. This
             // can be trivially implemented for tuples, sum types, etc.
-            (Func(a_i, a_o), Func(b_i, b_o)) => {
+            (Func(a_i, a_o, a_params), Func(b_i, b_o, b_params)) => {
                 if a_i.len() != b_i.len() {
                     return Err(format!("Arg lists are not same length").into());
                 }
                 for (arg_a, arg_b) in a_i.iter().zip(b_i) {
                     self.unify(symtbl, *arg_a, arg_b)?;
                 }
-                self.unify(symtbl, a_o, b_o)
+                self.unify(symtbl, a_o, b_o)?;
+
+                if a_params.len() == b_params.len() {
+                    for (arg1, arg2) in a_params.iter().zip(b_params.iter()) {
+                        self.unify(symtbl, *arg1, *arg2)?;
+                    }
+                } else {
+                    return Err(format!("Type param lists are not same length!").into());
+                }
+                Ok(())
             }
             // Enums are the same if their contents are the same.
             // No need to recurse, since they're terminal types.
@@ -629,12 +644,16 @@ impl Tck {
                     args.iter().map(|x| self.reconstruct(*x)).collect();
                 Ok(Type::Named(s.clone(), arg_types?))
             }
-            Func(args, rettype) => {
+            Func(args, rettype, typeparams) => {
                 let real_args: Result<Vec<Type>, TypeError> =
                     args.into_iter().map(|arg| self.reconstruct(*arg)).collect();
+                let type_param_types: Result<Vec<Type>, _> =
+                    typeparams.iter().map(|x| self.reconstruct(*x)).collect();
+
                 Ok(Type::Func(
                     real_args?,
                     Box::new(self.reconstruct(*rettype)?),
+                    type_param_types?,
                 ))
             }
             TypeParam(name) => Ok(Type::Generic(*name)),
@@ -706,11 +725,15 @@ impl Tck {
                         panic!("Referred to unknown generic named {}", s);
                     }
                 }
-                Type::Func(args, rettype) => {
+                Type::Func(args, rettype, typeparams) => {
                     let inst_args: Vec<_> =
                         args.iter().map(|t| helper(tck, named_types, t)).collect();
                     let inst_ret = helper(tck, named_types, rettype);
-                    TypeInfo::Func(inst_args, inst_ret)
+                    let inst_type_params: Vec<_> = typeparams
+                        .iter()
+                        .map(|t| helper(tck, named_types, t))
+                        .collect();
+                    TypeInfo::Func(inst_args, inst_ret, inst_type_params)
                 }
                 Type::Struct(body, _names) => {
                     let inst_body = body
@@ -795,19 +818,19 @@ impl Drop for ScopeGuard {
 
 impl Symtbl {
     fn add_builtins(&self, tck: &mut Tck) {
-        let println_sig = Type::Func(vec![Type::i32()], Box::new(Type::unit()));
+        let println_sig = Type::Func(vec![Type::i32()], Box::new(Type::unit()), vec![]);
         let println_ty = tck.insert_known(&println_sig);
         self.add_var(Sym::new("__println"), println_ty, false);
 
-        let println_sig = Type::Func(vec![Type::i16()], Box::new(Type::unit()));
+        let println_sig = Type::Func(vec![Type::i16()], Box::new(Type::unit()), vec![]);
         let println_ty = tck.insert_known(&println_sig);
         self.add_var(Sym::new("__println_i16"), println_ty, false);
 
-        let println_sig = Type::Func(vec![Type::i64()], Box::new(Type::unit()));
+        let println_sig = Type::Func(vec![Type::i64()], Box::new(Type::unit()), vec![]);
         let println_ty = tck.insert_known(&println_sig);
         self.add_var(Sym::new("__println_i64"), println_ty, false);
 
-        let println_sig = Type::Func(vec![Type::bool()], Box::new(Type::unit()));
+        let println_sig = Type::Func(vec![Type::bool()], Box::new(Type::unit()), vec![]);
         let println_ty = tck.insert_known(&println_sig);
         self.add_var(Sym::new("__println_bool"), println_ty, false);
     }
@@ -907,7 +930,12 @@ fn typecheck_func_body(
         TypeInfo::Func(params.clone(), rettype.clone())
     );
     */
-    let f = tck.insert(TypeInfo::Func(params, rettype));
+    let tparams = signature
+        .typeparams
+        .iter()
+        .map(|p| tck.insert_known(p))
+        .collect();
+    let f = tck.insert(TypeInfo::Func(params, rettype, tparams));
 
     // If we have a name (ie, are not a lambda), bind the function's type to its name
     // A gensym might make this easier/nicer someday, but this works for now.
@@ -1050,18 +1078,19 @@ fn typecheck_expr(
             // We know this will work because we require full function signatures
             // on our functions.
             let actual_func_type = tck.reconstruct(func_type)?;
-            match &actual_func_type {
-                Type::Func(_args, _rettype) => {
+            let actual_func_type_params = match &actual_func_type {
+                Type::Func(_args, _rettype, typeparams) => {
                     //println!("Calling function {:?} is {:?}", func, actual_func_type);
                     // So when we call a function we need to know what its
                     // type params are.  Then we bind those type parameters
                     // to things.
+                    typeparams
                 }
                 other => panic!(
                     "Tried to call something not a function, it is a {:?}",
                     other
                 ),
-            }
+            };
 
             // Synthesize what we know about the function
             // from the call.
@@ -1075,7 +1104,12 @@ fn typecheck_expr(
             // is yet; we make a type var that will get resolved when the enclosing
             // expression is.
             let rettype_var = tck.insert(TypeInfo::Unknown);
-            let funcall_var = tck.insert(TypeInfo::Func(params_list.clone(), rettype_var));
+            let type_param_vars: Vec<_> = type_params.iter().map(|t| tck.insert_known(t)).collect();
+            let funcall_var = tck.insert(TypeInfo::Func(
+                params_list.clone(),
+                rettype_var,
+                type_param_vars.clone(),
+            ));
 
             // Now I guess this is where we make a copy of the function
             // with new generic types.
@@ -1090,9 +1124,15 @@ fn typecheck_expr(
             //
             // We also create type variables for any type paramss we've been
             // given values to
-            let input_type_params = type_params
+            let input_type_params = type_param_vars
                 .iter()
-                .map(|(nm, ty)| (*nm, tck.insert_known(ty)))
+                .zip(actual_func_type_params.iter())
+                .filter_map(
+                    |(given_type_param, fnexpr_type_param)| match fnexpr_type_param {
+                        Type::Generic(nm) => Some((*nm, given_type_param.clone())),
+                        _ => None,
+                    },
+                )
                 .collect();
             let heck = tck.instantiate(&actual_func_type, Some(input_type_params));
             tck.unify(symtbl, heck, funcall_var)?;
@@ -1455,7 +1495,12 @@ fn predeclare_decls(tck: &mut Tck, symtbl: &mut Symtbl, decls: &[hir::Decl]) {
                     params.push(p);
                 }
                 let rettype = tck.insert_known(&signature.rettype);
-                let f = tck.insert(TypeInfo::Func(params, rettype));
+                let typeparams = signature
+                    .typeparams
+                    .iter()
+                    .map(|t| tck.insert_known(t))
+                    .collect();
+                let f = tck.insert(TypeInfo::Func(params, rettype, typeparams));
                 symtbl.add_var(*name, f, false);
             }
             TypeDef {

@@ -150,14 +150,13 @@ impl Expr {
             } => {
                 write!(f, "(funcall ")?;
                 func.write(0, f)?;
-                write!(f, "[")?;
-                for (nm, ty) in type_params {
-                    write!(f, "{}={},", nm, ty.get_name())?;
-                }
-                write!(f, "] ")?;
                 for b in params {
                     b.write(indent + 1, f)?;
                     write!(f, " ")?;
+                }
+                write!(f, "|")?;
+                for ty in type_params {
+                    write!(f, "{},", ty.get_name())?;
                 }
                 write!(f, ")")?;
             }
@@ -370,12 +369,7 @@ pub enum Expr {
     Funcall {
         func: ExprNode,
         params: Vec<ExprNode>,
-        /// Explicit type parameters, specified a la Rust's turbofish.
-        /// We don't actually have a syntax for this yet, certain functions
-        /// have these generated during lowering passes.
-        /// If a type param is not specified, the type checker will
-        /// attempt to infer it.
-        type_params: BTreeMap<Sym, Type>,
+        type_params: Vec<Type>,
     },
     Break,
     Return {
@@ -627,11 +621,10 @@ fn lower_expr(expr: &ast::Expr) -> ExprNode {
         } => {
             let nfunc = lower_expr(func);
             let nparams = lower_exprs(params);
-            let ntypeparams = Default::default();
             Funcall {
                 func: nfunc,
                 params: nparams,
-                type_params: ntypeparams,
+                type_params: typeparams.clone(),
             }
         }
         E::Break => Break,
@@ -750,6 +743,7 @@ fn lower_typedef(accm: &mut Vec<Decl>, name: Sym, ty: &Type, params: &[Sym]) {
                     let signature = ast::Signature {
                         params: vec![(paramname, variant_type.clone())],
                         rettype: Type::Named(name, generics.clone()),
+                        typeparams: generics.clone(),
                     };
                     // Just return the value passed to it wrapped
                     // in a constructor of some kind...?
@@ -774,6 +768,7 @@ fn lower_typedef(accm: &mut Vec<Decl>, name: Sym, ty: &Type, params: &[Sym]) {
                         Type::Func(
                             vec![variant_type.clone()],
                             Box::new(Type::Named(name, generics.clone())),
+                            generics.clone(),
                         ),
                     )
                 })
@@ -795,6 +790,7 @@ fn lower_typedef(accm: &mut Vec<Decl>, name: Sym, ty: &Type, params: &[Sym]) {
             let signature = ast::Signature {
                 params: vec![(s, other.clone())],
                 rettype: Type::Named(name.to_owned(), type_params.clone()),
+                typeparams: type_params.clone(),
             };
             // The generated function just returns the value passed to it wrapped
             // in a type constructor
