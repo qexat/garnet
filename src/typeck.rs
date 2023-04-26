@@ -1095,17 +1095,59 @@ fn typecheck_expr(
 
             // Synthesize what we know about the function
             // from the call.
+            /*
             let mut params_list = vec![];
             for param in params {
                 typecheck_expr(tck, symtbl, func_rettype, param)?;
                 let param_type = tck.get_expr_type(param);
                 params_list.push(param_type);
             }
+            */
+            let params_list: Result<Vec<_>, _> = params
+                .iter()
+                .map(|param| typecheck_expr(tck, symtbl, func_rettype, param))
+                .collect();
+            let params_list = params_list?;
+            // Also synthesize what we know about the generics passed, if any,
+            // or if there aren't any then figure them out from the params that
+            // are passed.
+            let type_param_vars = match (type_params.len(), actual_func_type_params.len()) {
+                // all is good, no inference needed
+                (0, 0) => vec![],
+                // Infer type params from function call
+                //
+                // TODO: Should this be Ref(expected) rather than
+                // Unknown?  For now let's just infer it from nothing
+                // and see what happens.
+                (0, _expected) => actual_func_type_params
+                    .iter()
+                    .map(|_| tck.insert(TypeInfo::Unknown))
+                    .collect(),
+                // Map the given type params to the ones the function expects.
+                (given, expected) if given == expected => {
+                    /*
+                        let type_mapping: BTreeMap<_, _> = actual_func_type_params
+                            .iter()
+                            .zip(type_params.iter())
+                            .collect();
+                    */
+                    type_params.iter().map(|t| tck.insert_known(t)).collect()
+                }
+                // Wrong number of type params given.
+                (given, expected) => {
+                    let errmsg = format!(
+                        "Tried to call func with {} type parameters but it expects {} of them!",
+                        given, expected
+                    );
+                    return Err(errmsg.into());
+                }
+            };
             // We don't know what the expected return type of the function call
             // is yet; we make a type var that will get resolved when the enclosing
             // expression is.
             let rettype_var = tck.insert(TypeInfo::Unknown);
-            let type_param_vars: Vec<_> = type_params.iter().map(|t| tck.insert_known(t)).collect();
+            // So this is now the inferred type that the function has been
+            // called with.
             let funcall_var = tck.insert(TypeInfo::Func(
                 params_list.clone(),
                 rettype_var,
@@ -1132,20 +1174,16 @@ fn typecheck_expr(
             // that is fine, if we call id(false) then we need to infer the
             // Bool there. We require either all or no type params for these
             // functions, so it's actually possible.
-            let input_type_params = if type_param_vars.len() == 0 {
-                type_param_vars.clone()
-            } else {
-                type_param_vars
-                    .iter()
-                    .zip(actual_func_type_params.iter())
-                    .filter_map(
-                        |(given_type_param, fnexpr_type_param)| match fnexpr_type_param {
-                            Type::Generic(nm) => Some((*nm, given_type_param.clone())),
-                            _ => None,
-                        },
-                    )
-                    .collect();
-            };
+            let input_type_params = type_param_vars
+                .iter()
+                .zip(actual_func_type_params.iter())
+                .filter_map(
+                    |(given_type_param, fnexpr_type_param)| match fnexpr_type_param {
+                        Type::Generic(nm) => Some((*nm, given_type_param.clone())),
+                        _ => None,
+                    },
+                )
+                .collect();
             let heck = tck.instantiate(&actual_func_type, Some(input_type_params));
             tck.unify(symtbl, heck, funcall_var)?;
 

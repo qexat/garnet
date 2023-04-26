@@ -1,0 +1,38 @@
+-- Compile:
+--   status: success
+
+
+type Foo(@Thing) = struct
+    a: @Thing,
+    b: Bool
+end
+
+fn id(x @T | @T) @T =
+    x
+end
+
+
+fn main() {} =
+    let f1 = id(Foo {
+        .a = 3_I32,
+        .b = false
+    } | I32)
+ 
+/-
+    let f2 = id(Foo {
+        .a = true,
+        .b = false
+    } | Bool)
+
+    let f3 = id(Foo {
+        .a = 3_I32,
+        .b = false
+    } )
+ 
+    let f4 = id(Foo {
+        .a = true,
+        .b = false
+    } )
+-/
+
+end
