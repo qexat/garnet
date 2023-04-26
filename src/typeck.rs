@@ -576,6 +576,7 @@ impl Tck {
                         self.unify(symtbl, *arg1, *arg2)?;
                     }
                 } else {
+                    trace!("oops: {:?} {:?}", a, b);
                     return Err(format!("Type param lists are not same length!").into());
                 }
                 Ok(())
@@ -691,7 +692,7 @@ impl Tck {
         let mut vars_report: Vec<_> = self.vars.iter().collect();
         vars_report.sort_by(|(k1, _), (k2, _)| k1.cmp(k2));
         for (k, v) in vars_report.iter() {
-            trace!("  ${} => {:?}\n", k.0, v);
+            trace!("  ${} => {:?}", k.0, v);
         }
     }
 
@@ -1123,17 +1124,28 @@ fn typecheck_expr(
             // new type vars for each of them.
             //
             // We also create type variables for any type paramss we've been
-            // given values to
-            let input_type_params = type_param_vars
-                .iter()
-                .zip(actual_func_type_params.iter())
-                .filter_map(
-                    |(given_type_param, fnexpr_type_param)| match fnexpr_type_param {
-                        Type::Generic(nm) => Some((*nm, given_type_param.clone())),
-                        _ => None,
-                    },
-                )
-                .collect();
+            // given values to.
+            //
+            // Ok we *also* need to see if we can infer type params on function
+            // calls that haven't been passed them explicitly.
+            // like, if we have id(thing @T | @T) @T and we call id(false | Bool)
+            // that is fine, if we call id(false) then we need to infer the
+            // Bool there. We require either all or no type params for these
+            // functions, so it's actually possible.
+            let input_type_params = if type_param_vars.len() == 0 {
+                type_param_vars.clone()
+            } else {
+                type_param_vars
+                    .iter()
+                    .zip(actual_func_type_params.iter())
+                    .filter_map(
+                        |(given_type_param, fnexpr_type_param)| match fnexpr_type_param {
+                            Type::Generic(nm) => Some((*nm, given_type_param.clone())),
+                            _ => None,
+                        },
+                    )
+                    .collect();
+            };
             let heck = tck.instantiate(&actual_func_type, Some(input_type_params));
             tck.unify(symtbl, heck, funcall_var)?;
 
