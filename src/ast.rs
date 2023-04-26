@@ -119,7 +119,10 @@ impl Signature {
             .map(|(s, t)| format!("{} {}", &*s.val(), t.get_name()))
             .collect();
         let args = names.join(", ");
-        format!("({}) {}", args, self.rettype.get_name())
+
+        let typenames: Vec<_> = self.typeparams.iter().map(|t| t.get_name()).collect();
+        let typeargs = typenames.join(", ");
+        format!("({} | {}) {}", args, typeargs, self.rettype.get_name())
     }
 
     /// Transforms this signature into a new type.

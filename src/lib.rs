@@ -162,6 +162,9 @@ impl Type {
                     for t in args {
                         helper(t, accm);
                     }
+                    for t in typeparams {
+                        helper(t, accm);
+                    }
                     helper(rettype, accm)
                 }
                 Type::Struct(body, generics) => {
