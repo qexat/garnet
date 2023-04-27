@@ -56,7 +56,7 @@ fn compile_typename(t: &Type) -> Cow<'static, str> {
             unreachable!("Backend got an integer of unknown size, should never happen!")
         }
         Prim(PrimType::Bool) => "bool".into(),
-        Prim(PrimType::AnyPtr) => format!("*mut u8").into(),
+        Prim(PrimType::AnyPtr) => format!("*const u8").into(),
         Named(s, types) if s == &Sym::new("Tuple") => {
             trace!("Compiling tuple {:?}...", t);
             let mut accm = String::from("(");
@@ -314,9 +314,30 @@ fn compile_uop(op: hir::UOp) -> &'static str {
     }
 }
 
+fn contains_anyptr(t: &Type) -> bool {
+    use Type::*;
+    fn list_contains_anyptr<'a>(ts: &mut impl Iterator<Item = &'a Type>) -> bool {
+        ts.any(contains_anyptr)
+    }
+    match t {
+        Prim(PrimType::AnyPtr) => true,
+        Enum(body) => todo!(),
+        Named(_, body) => list_contains_anyptr(&mut body.iter()),
+        Func(args, rettype, generics) => {
+            trace!("Finding anyptrs in {:?}", &t);
+            contains_anyptr(&*rettype)
+        }
+        Struct(body, generics) => todo!(),
+        Sum(body, generics) => todo!(),
+        Array(t, _) => contains_anyptr(t),
+        Generic(_) => unreachable!(),
+        _ => false,
+    }
+}
+
 fn compile_expr(expr: &hir::ExprNode, tck: &Tck) -> String {
     use hir::Expr as E;
-    match &*expr.e {
+    let expr_str = match &*expr.e {
         E::Lit {
             val: ast::Literal::Integer(i),
         } => format!("{}", i),
@@ -516,5 +537,19 @@ fn compile_expr(expr: &hir::ExprNode, tck: &Tck) -> String {
             format!("{}", value)
         }
         other => todo!("{:?}", other),
+    };
+    // We need to look at subexpressions.
+    // If the return type of that subexpression is AnyPtr,
+    // we need to cast it to what the current expression
+    // actually expects.
+    // If this is a function or constructor that is taking
+    // an AnyPtr as an arg,
+    let expr_rettypeid = tck.get_expr_type(expr);
+    let expr_rettype = tck.reconstruct(expr_rettypeid).expect("Shouldn't happen");
+    trace!("Checking if anyptr is in {:?}\n{:?}", expr_rettype, expr);
+    if contains_anyptr(&expr_rettype) {
+        format!("((&{}) as *const _ as *const u8)", expr_str)
+    } else {
+        expr_str
     }
 }
