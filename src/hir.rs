@@ -75,183 +75,6 @@ impl ExprNode {
     }
 }
 
-impl Expr {
-    pub fn write(&self, indent: usize, f: &mut dyn fmt::Write) -> fmt::Result {
-        use Expr::*;
-        for _ in 0..(indent * 2) {
-            write!(f, " ")?;
-        }
-        match self {
-            Lit { val } => {
-                write!(f, "{}", val)?;
-            }
-            Var { name } => write!(f, "{}", name)?,
-            BinOp { op, lhs, rhs } => {
-                write!(f, "({:?} ", op)?;
-                lhs.write(indent, f)?;
-                rhs.write(indent, f)?;
-                writeln!(f, ")")?;
-            }
-            UniOp { op, rhs } => {
-                write!(f, "({:?} ", op)?;
-                rhs.write(indent, f)?;
-                writeln!(f, ")")?;
-            }
-            Block { body } => {
-                writeln!(f, "(block")?;
-                for b in body {
-                    b.write(indent + 1, f)?;
-                }
-                writeln!(f, ")")?;
-            }
-            Let {
-                varname,
-                typename,
-                init,
-                mutable,
-            } => {
-                let m = if *mutable { " mut" } else { "" };
-                let type_str = typename
-                    .as_ref()
-                    .map(|inner| Cow::from(inner.get_name()))
-                    .unwrap_or(Cow::from(""));
-                write!(f, "(let {}{} {} = ", &*varname.val(), m, type_str)?;
-                init.write(0, f)?;
-                writeln!(f, ")")?;
-            }
-            If { cases } => {
-                writeln!(f, "(if")?;
-                for (case, arm) in cases {
-                    case.write(indent + 1, f)?;
-                    for expr in arm {
-                        expr.write(indent + 2, f)?;
-                    }
-                }
-                writeln!(f, ")")?;
-            }
-            Loop { body } => {
-                writeln!(f, "(loop")?;
-                for b in body {
-                    b.write(indent + 1, f)?;
-                }
-                writeln!(f, ")")?;
-            }
-            Lambda { signature, body } => {
-                writeln!(f, "(lambda {}", signature.to_name())?;
-                for b in body {
-                    b.write(indent + 1, f)?;
-                }
-                writeln!(f, ")")?;
-            }
-            Funcall {
-                func,
-                params,
-                type_params,
-            } => {
-                write!(f, "(funcall ")?;
-                func.write(0, f)?;
-                for b in params {
-                    b.write(indent + 1, f)?;
-                    write!(f, " ")?;
-                }
-                write!(f, "|")?;
-                for ty in type_params {
-                    write!(f, "{},", ty.get_name())?;
-                }
-                write!(f, ")")?;
-            }
-            Break => {
-                writeln!(f, "(break)")?;
-            }
-            Return { retval } => {
-                write!(f, "(return ")?;
-                retval.write(0, f)?;
-                writeln!(f)?;
-            }
-            EnumCtor {
-                name,
-                variant,
-                value,
-            } => {
-                write!(f, "(enumval {} {} {})", name, &*variant.val(), value)?;
-            }
-            TupleCtor { body } => {
-                write!(f, "(tuple ")?;
-                for b in body {
-                    b.write(0, f)?;
-                    write!(f, " ")?;
-                }
-                write!(f, ")")?;
-            }
-            StructCtor { body } => {
-                writeln!(f, "(struct")?;
-                for (nm, expr) in body {
-                    write!(f, "{} = ", &*nm.val())?;
-                    expr.write(0, f)?;
-                    writeln!(f)?;
-                }
-                writeln!(f, ")")?;
-            }
-            ArrayCtor { body } => {
-                writeln!(f, "(array")?;
-                for b in body {
-                    b.write(indent + 1, f)?;
-                }
-                write!(f, ")")?;
-            }
-            SumCtor {
-                name,
-                variant,
-                body,
-            } => {
-                write!(f, "(sum {} {} ", name, &*variant.val())?;
-                body.write(0, f)?;
-                write!(f, ")")?;
-            }
-            TypeCtor {
-                name,
-                type_params: _,
-                body,
-            } => {
-                // TODO: type_params
-                write!(f, "(typector {} ", name)?;
-                body.write(0, f)?;
-                write!(f, ")")?;
-            }
-            TypeUnwrap { expr } => {
-                write!(f, "(typeunwrap ")?;
-                expr.write(0, f)?;
-                write!(f, ")")?;
-            }
-            TupleRef { expr, elt } => {
-                write!(f, "(tupleref ")?;
-                expr.write(0, f)?;
-                write!(f, " {})", elt)?;
-            }
-            StructRef { expr, elt } => {
-                write!(f, "(structref ")?;
-                expr.write(0, f)?;
-                write!(f, " {})", elt)?;
-            }
-            ArrayRef { e, idx } => {
-                write!(f, "(arrayref ")?;
-                e.write(0, f)?;
-                write!(f, " ")?;
-                idx.write(0, f)?;
-                write!(f, ")")?;
-            }
-            Assign { lhs, rhs } => {
-                write!(f, "(assign ")?;
-                lhs.write(0, f)?;
-                write!(f, " ")?;
-                rhs.write(0, f)?;
-                write!(f, ")")?;
-            }
-        }
-        Ok(())
-    }
-}
-
 impl fmt::Display for Decl {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         use crate::hir::Decl as D;
@@ -452,6 +275,181 @@ impl Expr {
     /// Shortcut function for making literal unit
     pub const fn unit() -> Self {
         Self::TupleCtor { body: vec![] }
+    }
+
+    pub fn write(&self, indent: usize, f: &mut dyn fmt::Write) -> fmt::Result {
+        use Expr::*;
+        for _ in 0..(indent * 2) {
+            write!(f, " ")?;
+        }
+        match self {
+            Lit { val } => {
+                write!(f, "{}", val)?;
+            }
+            Var { name } => write!(f, "{}", name)?,
+            BinOp { op, lhs, rhs } => {
+                write!(f, "({:?} ", op)?;
+                lhs.write(indent, f)?;
+                rhs.write(indent, f)?;
+                writeln!(f, ")")?;
+            }
+            UniOp { op, rhs } => {
+                write!(f, "({:?} ", op)?;
+                rhs.write(indent, f)?;
+                writeln!(f, ")")?;
+            }
+            Block { body } => {
+                writeln!(f, "(block")?;
+                for b in body {
+                    b.write(indent + 1, f)?;
+                }
+                writeln!(f, ")")?;
+            }
+            Let {
+                varname,
+                typename,
+                init,
+                mutable,
+            } => {
+                let m = if *mutable { " mut" } else { "" };
+                let type_str = typename
+                    .as_ref()
+                    .map(|inner| Cow::from(inner.get_name()))
+                    .unwrap_or(Cow::from(""));
+                write!(f, "(let {}{} {} = ", &*varname.val(), m, type_str)?;
+                init.write(0, f)?;
+                writeln!(f, ")")?;
+            }
+            If { cases } => {
+                writeln!(f, "(if")?;
+                for (case, arm) in cases {
+                    case.write(indent + 1, f)?;
+                    for expr in arm {
+                        expr.write(indent + 2, f)?;
+                    }
+                }
+                writeln!(f, ")")?;
+            }
+            Loop { body } => {
+                writeln!(f, "(loop")?;
+                for b in body {
+                    b.write(indent + 1, f)?;
+                }
+                writeln!(f, ")")?;
+            }
+            Lambda { signature, body } => {
+                writeln!(f, "(lambda {}", signature.to_name())?;
+                for b in body {
+                    b.write(indent + 1, f)?;
+                }
+                writeln!(f, ")")?;
+            }
+            Funcall {
+                func,
+                params,
+                type_params,
+            } => {
+                write!(f, "(funcall ")?;
+                func.write(0, f)?;
+                for b in params {
+                    b.write(indent + 1, f)?;
+                    write!(f, " ")?;
+                }
+                write!(f, "|")?;
+                for ty in type_params {
+                    write!(f, "{},", ty.get_name())?;
+                }
+                write!(f, ")")?;
+            }
+            Break => {
+                writeln!(f, "(break)")?;
+            }
+            Return { retval } => {
+                write!(f, "(return ")?;
+                retval.write(0, f)?;
+                writeln!(f)?;
+            }
+            EnumCtor {
+                name,
+                variant,
+                value,
+            } => {
+                write!(f, "(enumval {} {} {})", name, &*variant.val(), value)?;
+            }
+            TupleCtor { body } => {
+                write!(f, "(tuple ")?;
+                for b in body {
+                    b.write(0, f)?;
+                    write!(f, " ")?;
+                }
+                write!(f, ")")?;
+            }
+            StructCtor { body } => {
+                writeln!(f, "(struct")?;
+                for (nm, expr) in body {
+                    write!(f, "{} = ", &*nm.val())?;
+                    expr.write(0, f)?;
+                    writeln!(f)?;
+                }
+                writeln!(f, ")")?;
+            }
+            ArrayCtor { body } => {
+                writeln!(f, "(array")?;
+                for b in body {
+                    b.write(indent + 1, f)?;
+                }
+                write!(f, ")")?;
+            }
+            SumCtor {
+                name,
+                variant,
+                body,
+            } => {
+                write!(f, "(sum {} {} ", name, &*variant.val())?;
+                body.write(0, f)?;
+                write!(f, ")")?;
+            }
+            TypeCtor {
+                name,
+                type_params: _,
+                body,
+            } => {
+                // TODO: type_params
+                write!(f, "(typector {} ", name)?;
+                body.write(0, f)?;
+                write!(f, ")")?;
+            }
+            TypeUnwrap { expr } => {
+                write!(f, "(typeunwrap ")?;
+                expr.write(0, f)?;
+                write!(f, ")")?;
+            }
+            TupleRef { expr, elt } => {
+                write!(f, "(tupleref ")?;
+                expr.write(0, f)?;
+                write!(f, " {})", elt)?;
+            }
+            StructRef { expr, elt } => {
+                write!(f, "(structref ")?;
+                expr.write(0, f)?;
+                write!(f, " {})", elt)?;
+            }
+            ArrayRef { e, idx } => {
+                write!(f, "(arrayref ")?;
+                e.write(0, f)?;
+                write!(f, " ")?;
+                idx.write(0, f)?;
+                write!(f, ")")?;
+            }
+            Assign { lhs, rhs } => {
+                write!(f, "(assign ")?;
+                lhs.write(0, f)?;
+                write!(f, " ")?;
+                rhs.write(0, f)?;
+                write!(f, ")")?;
+            }
+        }
+        Ok(())
     }
 }
 

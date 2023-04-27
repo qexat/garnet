@@ -2,7 +2,7 @@
 //#![deny(missing_docs)]
 
 use std::borrow::Cow;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::fmt;
 use std::sync::Arc;
 
@@ -173,6 +173,10 @@ impl Type {
     /// Shortcut for getting the type symbol for I32
     pub fn i32() -> Self {
         Self::isize(4)
+    }
+
+    pub fn anyptr() -> Self {
+        Self::Prim(PrimType::AnyPtr)
     }
 
     /// Shortcut for getting the type symbol for I16
