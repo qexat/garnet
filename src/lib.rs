@@ -83,68 +83,6 @@ pub enum Type {
 }
 
 impl Type {
-    /// Search through the type and return any generic types in it.
-    fn collect_generic_names(&self) -> Vec<Sym> {
-        fn helper(t: &Type, accm: &mut Vec<Sym>) {
-            match t {
-                Type::Prim(_) => (),
-                Type::Enum(_ts) => (),
-                Type::Named(_, ts) => {
-                    for t in ts {
-                        helper(t, accm);
-                    }
-                }
-                Type::Func(args, rettype, typeparams) => {
-                    for t in args {
-                        helper(t, accm);
-                    }
-                    // Just like structs
-                    for ty in typeparams {
-                        helper(ty, accm);
-                    }
-                    helper(rettype, accm)
-                }
-                Type::Struct(body, generics) => {
-                    for (_, ty) in body {
-                        helper(ty, accm);
-                    }
-                    // This makes me a little uneasy
-                    // 'cause I thiiiink the whole point of the names on
-                    // the struct is to list *all* the generic names in it...
-                    // but we could have nested definitions
-                    // like Foo(@T) ( Bar(@G) ( {@T, @G} ) )
-                    for ty in generics {
-                        helper(ty, accm);
-                    }
-                }
-                // Just like structs
-                Type::Sum(body, generics) => {
-                    for (_, ty) in body {
-                        helper(ty, accm);
-                    }
-                    for ty in generics {
-                        helper(ty, accm);
-                    }
-                }
-                Type::Array(ty, _size) => {
-                    helper(ty, accm);
-                }
-                Type::Generic(s) => {
-                    // Deduplicating these things while maintaining ordering
-                    // is kinda screwy.
-                    // This works, it's just, yanno, also O(n^2)
-                    // Could use a set to check membership , but fuckit for now.
-                    if !accm.contains(s) {
-                        accm.push(s.clone());
-                    }
-                }
-            }
-        }
-        let mut accm = vec![];
-        helper(self, &mut accm);
-        accm
-    }
-
     /// Returns the type parameters *specified by the toplevel type*.
     /// Does *not* recurse to all types below it!
     /// ...except for function args apparently.
@@ -191,7 +129,9 @@ impl Type {
                     // is kinda screwy.
                     // This works, it's just, yanno, also O(n^2)
                     // Could use a set to check membership , but fuckit for now.
-                    if !accm.contains(s) {
+                    if accm.contains(s) {
+                        //todo!("This is probably always wrong 'cause type param names will shadow each other, but, uh...")
+                    } else {
                         accm.push(*s)
                     }
                 }

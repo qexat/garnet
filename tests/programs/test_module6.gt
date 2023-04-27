@@ -5,18 +5,18 @@
 --   stdout: 3
 
 -- A generic functional map from a key to a value
-type Map(@T, @K, @V) = struct
+type Map(@T, @K, @V) = struct(@T, @K, @V)
     get: fn(@T, @K) @V,
     set: fn(@T, @K, @V) @T
 end
 
 -- Implement Map for a cell type
-type Cell(@K, @V) = struct
+type Cell(@K, @V) = struct(@K, @V)
     key: @K,
     val: @V
 end
 
-fn make_cell_map(k @K, v @V) Map(Cell(@K, @V), @K, @V) =
+fn make_cell_map(k @K, v @V | @K, @V) Map(Cell(@K, @V), @K, @V) =
     let module = Map {
         -- I guess we pretend this always succeeds,
         -- since I don't really feel like implementing if's
