@@ -85,7 +85,11 @@ pub enum Type {
 impl Type {
     /// Returns the type parameters *specified by the toplevel type*.
     /// Does *not* recurse to all types below it!
-    /// ...except for function args apparently.
+    /// ...except for function args apparently.  And some other things.
+    /// TODO:
+    /// this is still a little cursed 'cause we infer type params in some places
+    /// and it's actually really nice.  And also fiddly af so touching it
+    /// breaks lots of things that currently work.
     fn get_type_params(&self) -> Vec<Sym> {
         fn helper(t: &Type, accm: &mut Vec<Sym>) {
             match t {
