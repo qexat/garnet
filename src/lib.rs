@@ -33,6 +33,8 @@ pub enum PrimType {
     SInt(u8),
     UnknownInt,
     Bool,
+    /// erased type
+    AnyPtr,
 }
 
 impl PrimType {
@@ -46,6 +48,7 @@ impl PrimType {
             PrimType::SInt(s) => panic!("Undefined integer size {}!", s),
             PrimType::UnknownInt => Cow::Borrowed("{number}"),
             PrimType::Bool => Cow::Borrowed("Bool"),
+            PrimType::AnyPtr => Cow::Borrowed("AnyPtr"),
         }
     }
 }

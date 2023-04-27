@@ -56,6 +56,7 @@ fn compile_typename(t: &Type) -> Cow<'static, str> {
             unreachable!("Backend got an integer of unknown size, should never happen!")
         }
         Prim(PrimType::Bool) => "bool".into(),
+        Prim(PrimType::AnyPtr) => format!("*mut u8").into(),
         Named(s, types) if s == &Sym::new("Tuple") => {
             trace!("Compiling tuple {:?}...", t);
             let mut accm = String::from("(");
