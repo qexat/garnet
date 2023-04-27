@@ -13,16 +13,20 @@ end
 
 
 fn main() {} =
+    let f1 = id(Foo({
+        .a = 3_I32,
+        .b = false
+    } | I32) | Foo(I32))
+
     let f1 = id(Foo {
         .a = 3_I32,
         .b = false
-    } | I32)
+    } | Foo(I32))
  
-/-
     let f2 = id(Foo {
         .a = true,
         .b = false
-    } | Bool)
+    } | Foo(Bool))
 
     let f3 = id(Foo {
         .a = 3_I32,
@@ -33,6 +37,5 @@ fn main() {} =
         .a = true,
         .b = false
     } )
--/
 
 end
