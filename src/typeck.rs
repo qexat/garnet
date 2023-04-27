@@ -1458,7 +1458,7 @@ fn typecheck_expr(
             //
             // But then we have to bind those type params to
             // what we *know* about the type already...
-            let type_param_names = inner_type.collect_generic_names();
+            let type_param_names = inner_type.get_type_params();
             let known_type_params = type_param_names
                 .iter()
                 .cloned()
@@ -1560,8 +1560,7 @@ fn predeclare_decls(tck: &mut Tck, symtbl: &mut Symtbl, decls: &[hir::Decl]) {
             } => {
                 // Make sure that there are no unbound generics in the typedef
                 // that aren't mentioned in the params.
-                let generic_names: BTreeSet<Sym> =
-                    typedecl.collect_generic_names().into_iter().collect();
+                let generic_names: BTreeSet<Sym> = typedecl.get_type_params().into_iter().collect();
                 let param_names: BTreeSet<Sym> = params.iter().cloned().collect();
                 let difference: Vec<_> = generic_names.symmetric_difference(&param_names).collect();
                 if difference.len() != 0 {
@@ -1626,8 +1625,7 @@ pub fn typecheck(ast: &hir::Ir) -> Result<Tck, TypeError> {
                 // TODO: Handle recursive types properly?  Somehow.
                 // Make sure that there are no unbound generics in the typedef
                 // that aren't mentioned in the params.
-                let generic_names: BTreeSet<Sym> =
-                    typedecl.collect_generic_names().into_iter().collect();
+                let generic_names: BTreeSet<Sym> = typedecl.get_type_params().into_iter().collect();
                 let param_names: BTreeSet<Sym> = params.iter().cloned().collect();
                 let difference: Vec<_> = generic_names.symmetric_difference(&param_names).collect();
                 if difference.len() != 0 {

@@ -19,14 +19,21 @@ decl, and call it via something like Rust's turbofish?
 I had that once and then said "this is stupid we can
 always infer that from function args" and got rid of it.
 Welp! 
+
+Added explicit type args to sum types and function,
+but leaving this note here for now just in case
+it pops up again later.
 -/
-type Option(@T) = sum
+type Option(@T) = sum(@T)
     Some @T,
     None {},
 end
 
 fn main() {} =
-    let x Option(I32) = Option.None {}
-    let y Option(I32) = Option.Some(12)
+    let x Option(I32) = Option.None({} | I32)
+    let y Option(I32) = Option.Some(12 | I32)
+
+    let a Option(I32) = Option.None({})
+    let b Option(I32) = Option.Some(12)
 end
 

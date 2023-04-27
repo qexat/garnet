@@ -489,8 +489,8 @@ impl<'input> Parser<'input> {
     }
 
     /// Returns whether the next token in the stream is what is expected.
-    /// Use `Token::discr()` so you don't have to create a dummy ident or
-    /// something like that.
+    /// Use `Token::discr()` so you don't have to create a dummy value for
+    /// an Ident or something like that.
     fn peek_is(&mut self, expected: Discr<TokenKind>) -> bool {
         if let Some(got) = self.peek() {
             std::mem::discriminant(&got.kind) == expected
@@ -759,9 +759,22 @@ impl<'input> Parser<'input> {
     }
 
     /// Parse the fields for a struct *type decl*
-    fn parse_struct_fields(&mut self) -> (BTreeMap<Sym, Type>, BTreeSet<Sym>) {
+    fn parse_struct_fields(&mut self) -> (BTreeMap<Sym, Type>, Vec<Type>) {
         let mut fields = BTreeMap::new();
-        let typefields = BTreeSet::new();
+        let mut generics = vec![];
+        if self.peek_expect(T::LParen.discr()) {
+            trace!("Parsing type params for struct type");
+            // parse type params
+            parse_delimited!(self, T::Comma, {
+                if !self.peek_expect(T::RParen.discr()) {
+                    let ty = self.parse_type();
+                    generics.push(ty);
+                } else {
+                    break;
+                }
+            });
+            self.expect(T::RParen);
+        }
 
         // TODO someday: Doc comments on struct fields
         parse_delimited!(self, T::Comma, {
@@ -775,7 +788,7 @@ impl<'input> Parser<'input> {
                 _ => break,
             }
         });
-        (fields, typefields)
+        (fields, generics)
     }
 
     /// Parse the fields for a struct *type literal*
@@ -840,9 +853,9 @@ impl<'input> Parser<'input> {
     }
 
     fn parse_struct_type(&mut self) -> Type {
-        let (fields, _typefields) = self.parse_struct_fields();
+        let (fields, type_params) = self.parse_struct_fields();
         self.expect(T::End);
-        Type::Struct(fields, vec![])
+        Type::Struct(fields, type_params)
     }
 
     fn parse_enum_type(&mut self) -> Type {
@@ -854,7 +867,22 @@ impl<'input> Parser<'input> {
     /// isomorphic-ish with parse_type_list()
     fn parse_sum_type(&mut self) -> Type {
         let mut fields = BTreeMap::default();
+        let mut generics = vec![];
+        if self.peek_expect(T::LParen.discr()) {
+            trace!("Parsing type params for sum type");
+            // parse type params
+            parse_delimited!(self, T::Comma, {
+                if !self.peek_expect(T::RParen.discr()) {
+                    let ty = self.parse_type();
+                    generics.push(ty);
+                } else {
+                    break;
+                }
+            });
+            self.expect(T::RParen);
+        }
         parse_delimited!(self, T::Comma, {
+            trace!("Parsing body for sum type");
             if !self.peek_is(T::End.discr()) {
                 let field = self.expect_ident();
                 let ty = self.parse_type();
@@ -862,6 +890,7 @@ impl<'input> Parser<'input> {
             }
         });
         self.expect(T::End);
+        /*
         // Pull any @Foo types out of the structure's
         // declared types,
         let generic_names: Vec<_> = fields
@@ -870,7 +899,8 @@ impl<'input> Parser<'input> {
             .flatten()
             .map(|ty| Type::Generic(ty))
             .collect();
-        Type::Sum(fields, generic_names)
+        */
+        Type::Sum(fields, generics)
     }
 
     fn parse_exprs(&mut self) -> Vec<ast::Expr> {
