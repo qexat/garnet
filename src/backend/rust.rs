@@ -547,8 +547,9 @@ fn compile_expr(expr: &hir::ExprNode, tck: &Tck) -> String {
     let expr_rettypeid = tck.get_expr_type(expr);
     let expr_rettype = tck.reconstruct(expr_rettypeid).expect("Shouldn't happen");
     trace!("Checking if anyptr is in {:?}\n{:?}", expr_rettype, expr);
-    if contains_anyptr(&expr_rettype) {
+    if expr_rettype == Type::anyptr() {
         format!("((&{}) as *const _ as *const u8)", expr_str)
+        //expr_str
     } else {
         expr_str
     }
