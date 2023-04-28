@@ -28,9 +28,9 @@
 //mod enum_to_int;
 mod handle_imports;
 mod lambda_lift;
-//mod monomorphization;
+mod monomorphization;
 mod struct_to_tuple;
-mod type_erasure;
+//mod type_erasure;
 use crate::hir::{Decl as D, Expr as E, ExprNode, Ir};
 use crate::*;
 
@@ -56,8 +56,8 @@ pub fn run_typechecked_passes(ir: Ir, tck: &mut typeck::Tck) -> Ir {
     //let passes: &[TckPass] = &[nameify, struct_to_tuple];
     let passes: &[TckPass] = &[
         struct_to_tuple::struct_to_tuple,
-        //monomorphization::monomorphize,
-        type_erasure::type_erasure,
+        monomorphization::monomorphize,
+        //type_erasure::type_erasure,
     ];
     let res = passes.iter().fold(ir, |prev_ir, f| f(prev_ir, tck));
     res
@@ -207,6 +207,10 @@ fn expr_map(expr: ExprNode, f: &mut dyn FnMut(ExprNode) -> ExprNode) -> ExprNode
         E::Lambda { signature, body } => E::Lambda {
             signature,
             body: exprs_map(body, f),
+        },
+        E::Typecast { e, to } => E::Typecast {
+            e: expr_map(e, f),
+            to,
         },
     };
     thing.map(exprfn)

@@ -25,6 +25,8 @@ type Cell(@V) = struct
 end
 
 fn make_cell_functor(f fn(@A) @B) Functor(Cell(@A), Cell(@B)) =
+    -- to work this needs closures, 'cause it
+    -- captures f()
     let m = fn(c Cell(@A)) Cell(@B) =
         Cell({
             .val = f(c$.val)

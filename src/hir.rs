@@ -247,6 +247,10 @@ pub enum Expr {
         lhs: ExprNode,
         rhs: ExprNode,
     },
+    Typecast {
+        e: ExprNode,
+        to: Type,
+    },
     /*
     Deref {
         expr: ExprNode,
@@ -446,6 +450,11 @@ impl Expr {
                 lhs.write(0, f)?;
                 write!(f, " ")?;
                 rhs.write(0, f)?;
+                write!(f, ")")?;
+            }
+            Typecast { e, to } => {
+                write!(f, "(cast {} ", to.get_name())?;
+                e.write(0, f)?;
                 write!(f, ")")?;
             }
         }

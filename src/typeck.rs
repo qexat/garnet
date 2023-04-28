@@ -1522,6 +1522,7 @@ fn typecheck_expr(
             Ok(arr_type)
         }
         ArrayRef { e: _, idx: _ } => todo!(),
+        Typecast { e: _, to: _ } => todo!(),
     };
     if let Err(e) = rettype {
         panic!("Error typechecking expression {:?}: {}", expr, e);
