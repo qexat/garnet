@@ -47,20 +47,11 @@ work](https://github.com/apple/swift/blob/01c22b718cfc80a10feaefaf598aa1087f3766
 is not on the cards; I think there's a lot of potential for a language
 that does this sort of thing, but Garnet is not that language.
 
-Right now the project as a whole is rough around the edges 'cause I've
-spent a lot of time going in circles trying to learn how to write a type
-checker that works the way I want it to.  I'm still not done (if
-anything I feel like I've moved backwards), but I consider the language
-itself maybe like 75% decided on.  The main design hole right now is in
-fact lifetimes and borrowing; my original plan was to just implement
-lexical lifetimes a la Rust 1.0, then sit down and have a good hard
-think about that, but I frankly haven't gotten far enough to start
-working on that in earnest.
 
 # Code example
 
 ```
-fn fib(x: I32): I32 =
+fn fib(x I32) I32 =
     if x < 2 then x
     else fib(x-1) + fib(x - 2)
     end
@@ -68,17 +59,20 @@ end
 
 -- {} is an empty tuple, "unit"
 -- __println() is for now just a compiler builtin.
-fn main(): {} =
+fn main() {} =
     __println(fib(40))
 end
 ```
 
-There’s a bunch of small programs in its test suite here: <https://hg.sr.ht/~icefox/garnet/browse/tests/programs?rev=12ee941c3da958f037ba0a9509d0ebc00c6c0465>
 
-And some slightly-more-interesting-but-often-still-hypothetical bits of programs here: <https://hg.sr.ht/~icefox/garnet/browse/gt?rev=12ee941c3da958f037ba0a9509d0ebc00c6c0465>
+There’s a bunch of small programs in its test suite here: <https://hg.sr.ht/~icefox/garnet/browse/tests/programs>
+And some slightly-more-interesting-but-often-still-hypothetical bits of programs here: <https://hg.sr.ht/~icefox/garnet/browse/gt>
+Syntax is *mostly* fixed but there's plenty of details that can still be a WIP.
 
 # Current state
 
+As of spring 2023 he typechecker seems to more or less work but some backend work needs to happen before some sorts of generic type code can be actually compiled.
+ 
 Just to make sure people have some realistic expectations.
 
  * [✓] = done
@@ -91,12 +85,12 @@ Realistic language goals:
  * [✓] Technically Turing complete
  * [✓] Basic structs/tuples (did a proof of concept, now rewriting it)
  * [✓] Arrays, sum types, other useful basic types
- * [⛭] Generics and type inference
+ * [✓] Generics and type inference
  * [⛭] Full ML-y modules
  * [?] Move semantics, references and borrowing
  * [?] Stdlib of some kind
  * [ ] Pattern matching
- * [ ] Function properties (`const`, `pure`, `noalloc`, etc)
+ * [?] Function properties (`const`, `pure`, `noalloc`, etc)
  * [ ] Lots of little ergonomic things
 
 Giant scary tooling goals necessary for Real Use:
@@ -110,8 +104,7 @@ Giant scary tooling goals necessary for Real Use:
  * [ ] ABI spec
  * [ ] Documentation generator
  * [ ] Semver checker
- * [ ] GOOD backend.  Not sure how to best achieve this.  LLVM is slow,
-   QBE left a bad taste in my mouth but might be worth another look.
+ * [ ] GOOD backend.
  * [ ] Backend support: Webassembly
  * [ ] Backend support: Actual CPU's
 
@@ -136,12 +129,12 @@ change with time.
  * Simplicity over runtime performance -- Rust and Go are very different
    places on this spectrum, but I think OCaml demonstrates you should be
    able to have a bunch of both.  There needs to be more points on this
-   spectrum.  Investigate more.
+   spectrum.  There haven't been many innovative new low-level languages
+   designed since the 1980's.
  * Fast compiler -- This is a pain point for Rust for various reasons,
    and one of those things where having it work well is real nice.
  * Simplicity of compiler -- I'd rather have a GOOD compiler in 50k
-   lines than a FANTASTIC compiler in 500k lines; investigate
-   [qbe](https://c9x.me/compile/) for example.
+   lines than a FANTASTIC compiler in 500k lines
  * I feel like these two things together should combine to (eventually)
    make compiler-as-library more of a thing, which seems like an
    overlooked field of study.  It can be useful to aid JIT,
@@ -171,6 +164,7 @@ change with time.
  * Simple and universal ABI for every platform -- easy for higher level
    stuff to call it, easy for it to call arbitrary stuff.
  * Compiles fast
+ * Everything interoperates with it via FFI
 
 Another way to think about it is "Garnet wants to be the Lua of system
 programming languages".  Small, flexible, made of a few powerful parts
@@ -208,17 +202,21 @@ reasonably fast.
  * Syntax inconsistencies/nuisances: Fiddly match blocks, <>'s for
    generics (though the turbofish is wonderful), i32 is both a type and
    a module, -> and => being different is a PITA, you declare values
-   with `=` in let statements but `:` in struct constructors,
+   with `=` in let statements but `:` in struct constructors, piddly 
+   stuff like that.
  * Tail call optimization is not guarenteed -- Drop impl's get in the
    way, but it should be possible to avoid that, or at least make it so
-   the compiler gives a warning if it can't guarentee that
+   the compiler gives a warning if it can't guarentee TCO.
  * Lack of construct-on-heap is occasionally kinda awful, though far
    more often totally unnoticable.
  * Rather mediocre support for data type reflection at either compile or
    run time, such as RTTI in general.  Also bites us in trying to make
    C-like enums, separate enum discriminants from enums or vice versa
    (which makes them awkward to compose),
- * Rust's closures are awful.
+ * Rust's closures are awful when you try to use them like you would
+   use closures in other functional languages.  Passing them down the
+   stack usually works ok, but passing them up the stack or stuffing 
+   them into structures is a giant `Box`-y PITA.
  * On the note of boilerplate-y stuff, see
    <https://github.com/rustwasm/walrus/blob/121340d3113e0102707b2b07cab3e764cea1ed6b/crates/macro/src/lib.rs>
    for an example of a giant, complex, heavy proc macro that is used
@@ -227,8 +225,10 @@ reasonably fast.
    macro for it, but it's kinda less good that you need to.
  * No function currying is rather a pain sometimes, especially when it's
    really just syntactic sugar for a trivial closure.
- * Rust's trait orphan rules are annoying, but may be too hard to be
-   worth trying to solve.
+ * Rust's trait orphan rules are annoying.  Getting around them with
+   modules solves that problem but brings up new ones, so we will 
+   just have to try it out and see at scale whether the new ones are 
+   worse.
  * Heckin gorram `->` vs `=>` still bleedin' trips me up after five
    years
 
@@ -248,7 +248,6 @@ reasonably fast.
 ## Functionality we sacrificed for simplicity
 
  * match blocks on function params, like Erlang -- just syntactic sugar
- * Monomorphized generics -- for now?
  * Cool arbitrary/rational number types -- can be a lib.
  * Though it is tempting, we will NOT do arbitrary-precision integer
    types such as being able to define an integer via an arbitrary range
@@ -281,9 +280,10 @@ reasonably fast.
 
 ## Antigoals
 
- * Async, promises, other fanciness for nonblocking I/O
+ * Async, promises, other fanciness for nonblocking I/O or stack juggling
  * Ultimate max performance in all circumstances
  * Anything requiring a proof solver as part of the type system
+ * Anything that is an active research project
 
 # Toolchain
 
@@ -331,10 +331,10 @@ Options:
    bindings"
  * Cranelift -- Might actually be a good choice, but word on the street
    (as of early 2020) is it's poorly documented and unstable.
-   Investigate more.
- * QBE -- Fails at "doesn't require C bindings", but initially looks
-   good for everything else.  Its Aarch64 unit tests have some failures
-   though, and it doesn't output wasm.  Probably my top pick currently.
+   Investigate more.  As of 2023 might be in an ok place?
+ * QBE -- Fails at "doesn't require C compiler", but initially looks
+   good for everything else.  Played around with it a little and it
+   left a bad taste in my mouth for some reasons, but worth revisiting.
  * WASM -- Just output straight-up WASM and use wasmtime to run it.
    Cool idea in the short term, WASM is easy to output and doesn't need
    us to optimize it much in theory, and would work well enough to let
@@ -353,8 +353,8 @@ not-super-sophisticated backend that outputs many targets seems
 semi-reasonable.  Outputting WASM is probably the simplest low-level
 thing to get started with, but is a little weird since it is kinda an IR
 itself, so to turn an SSA IR into wasm you need a step such as LLVM's
-"relooper".  So one might end up with non-optimized WASM that leans on
-the implementation's optimizer.
+"relooper".  Outputting C is similarly fine in the short term and has
+Problems in the longer term.
 
 # License
 
