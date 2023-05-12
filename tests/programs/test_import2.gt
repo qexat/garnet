@@ -1,6 +1,6 @@
 
 
-/- submodule imported by test_import1 -/
-fn foo() =
+-- submodule imported by test_import1
+fn foo() {} =
     __println(42)
 end
