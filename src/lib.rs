@@ -479,7 +479,7 @@ impl Sym {
 
 impl fmt::Debug for Sym {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Sym({}, {:?})", self.0, self.val())
+        write!(f, "Sym({:?})", self.val())
     }
 }
 
@@ -541,6 +541,15 @@ impl Cx {
     }
 }
 
+pub fn load_to_hir(filename: &str, src: &str) -> hir::Ir {
+    let ast = {
+        let mut parser = parser::Parser::new(filename, src);
+        parser.parse()
+    };
+    let hir = hir::lower(&ast);
+    hir
+}
+
 /// Main driver function.
 /// Compile a given source string to Rust source code, or return an error.
 /// TODO: Better parser errors with locations
@@ -552,11 +561,7 @@ pub fn try_compile(
     src: &str,
     backend: backend::Backend,
 ) -> Result<Vec<u8>, typeck::TypeError> {
-    let ast = {
-        let mut parser = parser::Parser::new(filename, src);
-        parser.parse()
-    };
-    let hir = hir::lower(&ast);
+    let hir = load_to_hir(filename, src);
     info!("HIR from AST lowering:\n{}", &hir);
     let hir = passes::run_passes(hir);
     let tck = &mut typeck::typecheck(&hir)?;
