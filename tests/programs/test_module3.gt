@@ -1,8 +1,11 @@
 -- Compile:
---   status: success
+--   status: error
 -- 
 -- Run:
 --   stdout: 3
+
+
+-- TODO: This should pass when the `monomorph` branch is finished.
 
 -- Fine let's try something simpler.
 

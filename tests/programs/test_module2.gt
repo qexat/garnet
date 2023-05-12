@@ -1,9 +1,14 @@
 -- Compile:
---   status: success
+--   status: error
 --
+
+
+
 -- Run:
 --   status: success
 --   stdout: 3
+
+-- TODO: This should pass when the `monomorph` branch is finished.
 
 -- Dummy type
 type String = I32

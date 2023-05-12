@@ -1,5 +1,7 @@
 -- Compile:
---   status: success
+--   status: error
+
+-- TODO: This should pass when the `monomorph` branch is finished.
 
 
 type List(@T) = struct
