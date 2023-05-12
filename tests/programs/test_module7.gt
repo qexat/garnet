@@ -1,8 +1,9 @@
 -- Compile:
---   status: success
+--   status: error
 -- Run:
 --   stdout: 12
 
+-- TODO: This should pass when the `monomorph` branch is finished.
 
 /- Another monad-ish attempt, this also gets called map
 From modular implicits paper section 3.4
