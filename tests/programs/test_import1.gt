@@ -9,5 +9,5 @@
 import test_import2
 
 fn main() {} =
-    test_import2.foo()
+    _test_import2_foo()
 end

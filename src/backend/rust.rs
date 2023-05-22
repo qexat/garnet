@@ -249,7 +249,7 @@ fn compile_decl(w: &mut impl Write, decl: &hir::Decl, tck: &Tck) -> io::Result<(
                 }
             }
         }
-        hir::Decl::Import { .. } => todo!(),
+        hir::Decl::Import { .. } => Ok(()),
     }
 }
 

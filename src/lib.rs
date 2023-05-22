@@ -564,6 +564,7 @@ pub fn try_compile(
     let hir = load_to_hir(filename, src);
     info!("HIR from AST lowering:\n{}", &hir);
     let hir = passes::run_passes(hir);
+    info!("HIR after pre-typecheck passes:\n{}", &hir);
     let tck = &mut typeck::typecheck(&hir)?;
     let hir = passes::run_typechecked_passes(hir, tck);
     info!("HIR after transform passes:\n{}", &hir);
