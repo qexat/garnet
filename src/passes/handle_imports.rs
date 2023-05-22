@@ -21,6 +21,23 @@ impl From<Sym> for Path {
     }
 }
 
+/// Useful for testing
+impl From<&str> for Path {
+    fn from(other: &str) -> Self {
+        Path(vec![Sym::new(other)])
+    }
+}
+
+/// Useful for testing
+impl From<&[&str]> for Path {
+    fn from(other: &[&str]) -> Self {
+        let v = other.iter()
+            .map(|s| Sym::new(s))
+            .collect();
+        Path(v)
+    }
+}
+
 /// All the symbols and such in a particular file
 #[derive(Debug, Clone)]
 struct Package {
@@ -61,6 +78,8 @@ fn import_package(g: &mut GlobalSymtbl, f: FilePath) {}
 
 /// Takes an `Ir` and scans through it finding what all its exported values/types
 /// are.  Does not recurse.
+///
+/// TODO REFACTOR: This feels a lot like the typeck predeclare function...
 fn construct_package(ir: &Ir, path: Path, file: FilePath) -> Package {
     let mut pk = Package::new(path, file.clone());
     for decl in &ir.decls {
@@ -85,8 +104,6 @@ fn construct_package(ir: &Ir, path: Path, file: FilePath) -> Package {
 
 /// For now, all imports are absolute, we have no relative
 /// imports.
-///
-/// TODO: Make sure this is sane
 fn path_to_filename(path: &Path) -> FilePath {
     let mut accm = String::from(".");
     for sym in &path.0 {
@@ -98,9 +115,12 @@ fn path_to_filename(path: &Path) -> FilePath {
 }
 
 pub fn handle_imports(ir: Ir) -> Ir {
+    // Our "new things to handle" and "things we've already handled"
+    // sets, so we don't do the same import twice.
     let mut new_imports: BTreeSet<Path> = Default::default();
     let mut handled_imports: BTreeSet<Path> = Default::default();
     // Construct toplevel package
+    // TODO: We need the package name and path to be part of the Ir for this
     let path = Path::from(Sym::new("TODO"));
     let file = FilePath::from("TODO");
     let mut current_package = construct_package(&ir, path.clone(), file);
@@ -128,7 +148,7 @@ pub fn handle_imports(ir: Ir) -> Ir {
         if let Some(path) = new_imports.pop_first() {
             // Find the appropriate file for that path
             let file = path_to_filename(&path);
-            let file_str = format!("TODO: fixme {:?}", file);
+            let file_str = file.to_str().expect("module path turned into invalid filename string, aieeee");
             let src = std::fs::read_to_string(&file).unwrap();
             // Parse and lower it to HIR
             let ir = crate::load_to_hir(&file_str, &src);
@@ -146,4 +166,19 @@ pub fn handle_imports(ir: Ir) -> Ir {
     // to go through them and transform all local names into fully-
     // qualified names.
     ir
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn test_path_to_filename() {
+        let paths = vec![
+            (Path::from("foo"), FilePath::from("./foo.gt")),
+            (Path::from(&["foo", "bar", "baz"][..]), FilePath::from("./foo/bar/baz.gt")),
+        ];
+        for (p, fp) in paths.iter() {
+            assert_eq!(&path_to_filename(p), fp);
+        }
+    }
 }
