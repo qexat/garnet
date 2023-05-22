@@ -119,14 +119,6 @@ fn merge_packages<'a>(packages: impl Iterator<Item = &'a Package>) -> Ir {
     Ir { decls: new_decls }
 }
 
-/*
-struct GlobalSymtbl {
-    packages: BTreeMap<Path, Package>,
-}
-
-fn import_package(g: &mut GlobalSymtbl, f: FilePath) {}
-*/
-
 /// Takes an `Ir` and scans through it finding what all its exported values/types
 /// are.  Does not recurse.
 ///
@@ -156,6 +148,9 @@ fn construct_package(ir: Ir, path: Path, file: FilePath) -> Package {
 /// There might be more interner- or allocator-friendly ways
 // to handle this, but eh
 fn path_to_literal_name(package: &Path, sym: Sym) -> Sym {
+    if sym == Sym::new("main") {
+        return sym;
+    }
     let mut accm = String::new();
     for symbol in &package.0 {
         // Path names always start with a dot, I suppose.
