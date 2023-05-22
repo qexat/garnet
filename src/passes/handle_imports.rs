@@ -38,6 +38,7 @@ impl From<&[&str]> for Path {
     }
 }
 
+
 /// All the symbols and such in a particular file
 #[derive(Debug, Clone)]
 struct Package {
@@ -100,6 +101,20 @@ fn construct_package(ir: &Ir, path: Path, file: FilePath) -> Package {
         }
     }
     pk
+}
+
+/// There might be more interner- or allocator-friendly ways 
+// to handle this, but eh
+fn path_to_literal_name(package: &Path, sym: Sym) -> Sym {
+    let mut accm = String::new();
+    for symbol in path.0 {
+        // Path names always start with a dot, I suppose.
+        // Handy!
+        accm += ".";
+        accm += &*symbol.val();
+    }
+    accm += &*sym.val();
+    Sym::new(&accm)
 }
 
 /// For now, all imports are absolute, we have no relative
@@ -165,6 +180,8 @@ pub fn handle_imports(ir: Ir) -> Ir {
     // TODO: Ok, now that we have all our packages loaded, we need
     // to go through them and transform all local names into fully-
     // qualified names.
+    // We don't even really need to turn them into Path's, we just
+    // rename them into literal strings.
     ir
 }
 
