@@ -513,6 +513,8 @@ pub enum Decl {
 #[derive(Debug, Clone, Default)]
 pub struct Ir {
     pub decls: Vec<Decl>,
+    pub filename: String,
+    pub modulename: String,
 }
 
 impl fmt::Display for Ir {
@@ -526,7 +528,17 @@ impl fmt::Display for Ir {
 
 /// Transforms AST into HIR
 pub fn lower(ast: &ast::Ast) -> Ir {
-    lower_decls(&ast.decls)
+    let mut accm = Vec::with_capacity(ast.decls.len() * 2);
+    for d in ast.decls.iter() {
+        lower_decl(&mut accm, d)
+    }
+
+    let i = Ir {
+        decls: accm,
+        filename: ast.filename.clone(),
+        modulename: ast.modulename.clone(),
+    };
+    i
 }
 
 fn lower_lit(lit: &ast::Literal) -> Literal {
@@ -864,16 +876,6 @@ fn lower_decl(accm: &mut Vec<Decl>, decl: &ast::Decl) {
             localname: rename.unwrap_or(*name),
         }),
     }
-}
-
-fn lower_decls(decls: &[ast::Decl]) -> Ir {
-    let mut accm = Vec::with_capacity(decls.len() * 2);
-    for d in decls.iter() {
-        lower_decl(&mut accm, d)
-    }
-
-    let i = Ir { decls: accm };
-    i
 }
 
 #[cfg(test)]
