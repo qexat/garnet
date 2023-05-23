@@ -140,7 +140,10 @@ pub(super) fn struct_to_tuple(ir: Ir, tck: &mut typeck::Tck) -> Ir {
         let res = decl_map(decl, tuplize_expr, &mut tuplize_type);
         new_decls.push(res);
     }
-    let new_ir = Ir { decls: new_decls };
+    let new_ir = Ir {
+        decls: new_decls,
+        ..ir
+    };
     // TODO BUGGO: shiiiiit our replace_expr_type() call in tuplize_expr()
     // doesn't work correctly in all cases.
     // For example if we have a function call with a struct as an arg,

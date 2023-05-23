@@ -311,4 +311,6 @@ pub enum Decl {
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Ast {
     pub decls: Vec<Decl>,
+    pub filename: String,
+    pub modulename: String,
 }

@@ -20,21 +20,21 @@ tasks:
     source "$HOME/.cargo/env"
     cd garnet
     cargo test
- - coverage: |
-    source "$HOME/.cargo/env"
-    # A somewhat hacky setup to use a cargo-tarpaulin binary
-    # Someday we'll have a debian package for it, but it's non-trivial
-    # to make; see https://todo.sr.ht/~icefox/garnet/2
-    curl -o ~/cargo-tarpaulin https://alopex.li/ci/common/cargo-tarpaulin.stripped
-    # We set this here rather than downloading it from the server
-    # so if the server gets compromised we don't execute arbitrary
-    # programs.
-    # If the hg repo is compromised though... well, it compromises the
-    # ci account on the server, but that's all.
-    echo '9f0462d0400aa15cf888aae2f74ade53570a9a8ccd7551cd0cffb3c518aef5d2063e2ee0c96bcc939a9bba0cf33801a78604ee1c0de6226c1d7703fcca8feef9 cargo-tarpaulin' > ~/cargo-tarpaulin.sha512
-    sha512sum -c ~/cargo-tarpaulin.sha512
-    chmod +x ~/cargo-tarpaulin
-    cd garnet
-    ~/cargo-tarpaulin tarpaulin -o Html
-    scp -o StrictHostKeyChecking=no tarpaulin-report.html ci@roc.alopex.li:htdocs/garnet/tarpaulin-report.html
+ # - coverage: |
+ #    source "$HOME/.cargo/env"
+ #    # A somewhat hacky setup to use a cargo-tarpaulin binary
+ #    # Someday we'll have a debian package for it, but it's non-trivial
+ #    # to make; see https://todo.sr.ht/~icefox/garnet/2
+ #    curl -o ~/cargo-tarpaulin https://alopex.li/ci/common/cargo-tarpaulin.stripped
+ #    # We set this here rather than downloading it from the server
+ #    # so if the server gets compromised we don't execute arbitrary
+ #    # programs.
+ #    # If the hg repo is compromised though... well, it compromises the
+ #    # ci account on the server, but that's all.
+ #    echo '9f0462d0400aa15cf888aae2f74ade53570a9a8ccd7551cd0cffb3c518aef5d2063e2ee0c96bcc939a9bba0cf33801a78604ee1c0de6226c1d7703fcca8feef9 cargo-tarpaulin' > ~/cargo-tarpaulin.sha512
+ #    sha512sum -c ~/cargo-tarpaulin.sha512
+ #    chmod +x ~/cargo-tarpaulin
+ #    cd garnet
+ #    ~/cargo-tarpaulin tarpaulin -o Html
+ #    scp -o StrictHostKeyChecking=no tarpaulin-report.html ci@roc.alopex.li:htdocs/garnet/tarpaulin-report.html
 

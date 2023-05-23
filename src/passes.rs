@@ -28,7 +28,7 @@
 //mod enum_to_int;
 mod handle_imports;
 mod lambda_lift;
-mod monomorphization;
+//mod monomorphization;
 mod struct_to_tuple;
 //mod type_erasure;
 use crate::hir::{Decl as D, Expr as E, ExprNode, Ir};
@@ -56,7 +56,7 @@ pub fn run_typechecked_passes(ir: Ir, tck: &mut typeck::Tck) -> Ir {
     //let passes: &[TckPass] = &[nameify, struct_to_tuple];
     let passes: &[TckPass] = &[
         struct_to_tuple::struct_to_tuple,
-        monomorphization::monomorphize,
+        //monomorphization::monomorphize,
         //type_erasure::type_erasure,
     ];
     let res = passes.iter().fold(ir, |prev_ir, f| f(prev_ir, tck));

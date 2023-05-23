@@ -58,5 +58,6 @@ pub(super) fn lambda_lift(ir: Ir) -> Ir {
     new_functions.extend(new_decls.into_iter());
     Ir {
         decls: new_functions,
+        ..ir
     }
 }

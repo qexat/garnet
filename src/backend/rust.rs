@@ -314,6 +314,7 @@ fn compile_uop(op: hir::UOp) -> &'static str {
     }
 }
 
+/*
 fn contains_anyptr(t: &Type) -> bool {
     use Type::*;
     fn list_contains_anyptr<'a>(ts: &mut impl Iterator<Item = &'a Type>) -> bool {
@@ -321,19 +322,20 @@ fn contains_anyptr(t: &Type) -> bool {
     }
     match t {
         Prim(PrimType::AnyPtr) => true,
-        Enum(body) => todo!(),
+        Enum(_body) => todo!(),
         Named(_, body) => list_contains_anyptr(&mut body.iter()),
-        Func(args, rettype, generics) => {
+        Func(_args, rettype, _generics) => {
             trace!("Finding anyptrs in {:?}", &t);
             contains_anyptr(&*rettype)
         }
-        Struct(body, generics) => todo!(),
-        Sum(body, generics) => todo!(),
+        Struct(_body, _generics) => todo!(),
+        Sum(_body, _generics) => todo!(),
         Array(t, _) => contains_anyptr(t),
         Generic(_) => unreachable!(),
         _ => false,
     }
 }
+    */
 
 fn compile_expr(expr: &hir::ExprNode, tck: &Tck) -> String {
     use hir::Expr as E;

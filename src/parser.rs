@@ -390,7 +390,14 @@ impl<'input> Parser<'input> {
         while let Some(d) = self.parse_decl() {
             decls.push(d);
         }
-        ast::Ast { decls }
+        let filename = self.err.files.get(self.err.file_id).unwrap().name();
+        // TODO: Handle paths and shit better
+        let modulename = filename.replacen(".gt", "", 1).replace("/", ".");
+        ast::Ast {
+            decls,
+            filename: filename.clone(),
+            modulename,
+        }
     }
 
     /// Returns the next token, with span.
@@ -1404,7 +1411,7 @@ mod tests {
     /// AST is actually something that you want, or anything at all.
     fn test_parse_with<T>(f: impl Fn(&mut Parser) -> T, strs: &[&str]) {
         for s in strs {
-            let mut p = Parser::new("unittest", s);
+            let mut p = Parser::new("unittest.gt", s);
             f(&mut p);
             // Make sure we've parsed the whole string.
             assert_eq!(p.lex.peek(), None);
@@ -1418,7 +1425,7 @@ mod tests {
     /// For now it's just for expr's, since that's most of the language.
     fn test_expr_is(s: &str, f: impl Fn() -> Expr) {
         let ast = f();
-        let mut p = Parser::new("unittest", s);
+        let mut p = Parser::new("unittest.gt", s);
         let parsed_expr = p.parse_expr(0).unwrap();
         assert_eq!(&ast, &parsed_expr);
         // Make sure we've parsed the whole string.
@@ -1428,7 +1435,7 @@ mod tests {
     /// Same as test_expr_is but with decl's
     fn test_decl_is(s: &str, f: impl Fn() -> ast::Decl) {
         let ast = f();
-        let mut p = Parser::new("unittest", s);
+        let mut p = Parser::new("unittest.gt", s);
         let parsed_decl = p.parse_decl().unwrap();
         assert_eq!(&ast, &parsed_decl);
         // Make sure we've parsed the whole string.
@@ -1438,7 +1445,7 @@ mod tests {
     /// And again with types
     fn test_type_is(s: &str, f: impl Fn() -> crate::Type) {
         let ast = f();
-        let mut p = Parser::new("unittest", s);
+        let mut p = Parser::new("unittest.gt", s);
         let parsed_type = p.parse_type();
         assert_eq!(&ast, &parsed_type);
         // Make sure we've parsed the whole string.
@@ -1504,7 +1511,7 @@ const bar  Bool = 4
 const baz  {} = {}
 type blar = I8
 "#;
-        let p = &mut Parser::new("unittest", s);
+        let p = &mut Parser::new("unittest.gt", s);
         let foosym = Sym::new("foo");
         let barsym = Sym::new("bar");
         let bazsym = Sym::new("baz");
@@ -1517,6 +1524,8 @@ type blar = I8
         assert_eq!(
             d,
             ast::Ast {
+                filename: String::from("unittest.gt"),
+                modulename: String::from("unittest"),
                 decls: vec![
                     ast::Decl::Const {
                         name: foosym,
@@ -1853,7 +1862,7 @@ type blar = I8
             ("9_I128", 9, 16),
         ];
         for (s, expected_int, expected_bytes) in tests {
-            let mut p = Parser::new("unittest", s);
+            let mut p = Parser::new("unittest.gt", s);
             assert_eq!(
                 p.next().unwrap().kind,
                 TokenKind::IntegerSize((*expected_int, *expected_bytes))
@@ -1879,7 +1888,7 @@ type blar = I8
             "999_999_I16",
         ];
         for s in tests {
-            let mut p = Parser::new("unittest", s);
+            let mut p = Parser::new("unittest.gt", s);
             assert_eq!(p.next().unwrap().kind, TokenKind::Error);
             assert!(p.next().is_none());
         }
