@@ -478,6 +478,14 @@ fn compile_expr(expr: &hir::ExprNode, tck: &Tck) -> String {
             accm += ")\n";
             accm
         }
+        E::ArrayRef { expr, idx } => {
+            // TODO: We don't actually have usize types yet, so...
+            format!(
+                "{}[{} as usize]",
+                compile_expr(expr, tck),
+                compile_expr(idx, tck)
+            )
+        }
         E::StructRef { expr, elt } => {
             // panic!("Should never happen, structs should always be tuples by now!");
             format!("{}.{}", compile_expr(expr, tck), elt)
