@@ -38,7 +38,7 @@ pub enum TypeInfo {
     Struct(BTreeMap<Sym, TypeId>),
     /// Definitely a sum type
     Sum(BTreeMap<Sym, TypeId>),
-    Array(TypeId, usize),
+    Array(TypeId, Option<usize>),
     /// This is some generic type that has a name like @A
     /// AKA a type parameter.
     TypeParam(Sym),
@@ -100,7 +100,7 @@ impl TypeInfo {
                 accm += "end\n";
                 accm.into()
             }
-            Array(id, len) => Cow::Owned(format!("{}[{}]", tck.vars[id].get_name(tck), len)),
+            Array(id, len) => Cow::Owned(format!("{}[{:?}]", tck.vars[id].get_name(tck), len)),
             TypeParam(sym) => Cow::Owned(format!("@{}", &*sym.val())),
         }
     }
@@ -385,7 +385,7 @@ impl Tck {
             Type::Generic(s) => TypeInfo::TypeParam(*s),
             Type::Array(ty, len) => {
                 let new_body = self.insert_known(&ty);
-                TypeInfo::Array(new_body, *len)
+                TypeInfo::Array(new_body, Some(*len))
             }
             // TODO: Generics?
             Type::Struct(body, _names) => {
@@ -613,6 +613,17 @@ impl Tck {
             (Array(body1, len1), Array(body2, len2)) if len1 == len2 => {
                 self.unify(symtbl, body1, body2)
             }
+            (Array(body1, None), Array(body2, Some(_len2))) => {
+                self.unify(symtbl, body1, body2)?;
+                todo!("propegate array lengths")
+            }
+            (Array(body1, Some(_len1)), Array(body2, None)) => {
+                self.unify(symtbl, body1, body2)?;
+                todo!("propegate array lengths")
+            }
+            (Array(body1, len1), Array(body2, len2)) if len1 == len2 => {
+                self.unify(symtbl, body1, body2)
+            }
             // For declared type parameters like @T they match if their names match.
             // TODO: And if they have been declared?  Not sure we can ever get to
             // here if that's the case.
@@ -672,7 +683,7 @@ impl Tck {
             }
             Array(ty, len) => {
                 let real_body = self.reconstruct(*ty)?;
-                Ok(Type::Array(Box::new(real_body), *len))
+                Ok(Type::Array(Box::new(real_body), len.unwrap()))
             }
             Sum(body) => {
                 let real_body: Result<BTreeMap<_, _>, TypeError> = body
@@ -745,7 +756,7 @@ impl Tck {
                 }
                 Type::Array(ty, len) => {
                     let inst_ty = helper(tck, named_types, &*ty);
-                    TypeInfo::Array(inst_ty, *len)
+                    TypeInfo::Array(inst_ty, Some(*len))
                 }
                 Type::Sum(body, _names) => {
                     let inst_body = body
@@ -1517,11 +1528,24 @@ fn typecheck_expr(
                 let expr_type = typecheck_expr(tck, symtbl, func_rettype, expr)?;
                 tck.unify(symtbl, body_type, expr_type)?;
             }
-            let arr_type = tck.insert(TypeInfo::Array(body_type, len));
+            let arr_type = tck.insert(TypeInfo::Array(body_type, Some(len)));
             tck.set_expr_type(expr, arr_type);
             Ok(arr_type)
         }
-        ArrayRef { e: _, idx: _ } => todo!(),
+        ArrayRef {
+            expr: arr_expr,
+            idx,
+        } => {
+            let expr_type = typecheck_expr(tck, symtbl, func_rettype, arr_expr)?;
+            let idx_type = typecheck_expr(tck, symtbl, func_rettype, idx)?;
+            let elt_type = tck.insert(TypeInfo::Unknown);
+            let expected_expr_type = tck.insert(TypeInfo::Array(elt_type, None));
+            let expected_idx_type = tck.insert(TypeInfo::Prim(PrimType::UnknownInt));
+            tck.unify(symtbl, expr_type, expected_expr_type)?;
+            tck.unify(symtbl, idx_type, expected_idx_type)?;
+            tck.set_expr_type(expr, elt_type);
+            Ok(elt_type)
+        }
         Typecast { e: _, to: _ } => todo!(),
     };
     if let Err(e) = rettype {

@@ -233,6 +233,12 @@ fn unparse_expr(e: &Expr, indent: usize, out: &mut dyn io::Write) -> io::Result<
             }
             write!(out, "}}")
         }
+        E::ArrayRef { expr, idx } => {
+            unparse_expr(&*expr, indent, out)?;
+            write!(out, "[")?;
+            unparse_expr(&*idx, 0, out)?;
+            write!(out, "]")
+        }
         E::TupleRef { expr, elt } => {
             unparse_expr(&*expr, indent, out)?;
             write!(out, ".{}", elt)

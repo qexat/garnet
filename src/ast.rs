@@ -217,6 +217,11 @@ pub enum Expr {
     ArrayCtor {
         body: Vec<Expr>,
     },
+    /// Array element reference
+    ArrayRef {
+        expr: Box<Expr>,
+        idx: Box<Expr>,
+    },
     /// Tuple element reference
     TupleRef {
         expr: Box<Expr>,
