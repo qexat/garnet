@@ -1021,6 +1021,15 @@ impl<'input> Parser<'input> {
                             typeparams: vec![],
                         }
                     }
+                    T::LBracket => {
+                        self.expect(T::LBracket);
+                        let param = self.parse_expr(0)?;
+                        self.expect(T::RBracket);
+                        ast::Expr::ArrayRef {
+                            expr: Box::new(lhs),
+                            idx: Box::new(param),
+                        }
+                    }
                     T::Dollar => {
                         self.expect(T::Dollar);
                         ast::Expr::TypeUnwrap {
@@ -1369,6 +1378,8 @@ fn postfix_binding_power(op: &TokenKind) -> Option<(usize, ())> {
         T::LBrace => Some((119, ())),
         // ":" universal function call syntax
         T::Colon => Some((115, ())),
+        // "[" array index
+        T::LBracket => Some((114, ())),
         // "^" for pointer derefs.  TODO: Check precedence?
         // This gets a little weird since it's postfix, not used
         // to thinking about it.  So it's like...

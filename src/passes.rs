@@ -143,8 +143,8 @@ fn expr_map(expr: ExprNode, f: &mut dyn FnMut(ExprNode) -> ExprNode) -> ExprNode
             expr: expr_map(expr, f),
             elt,
         },
-        E::ArrayRef { e, idx } => E::ArrayRef {
-            e: expr_map(e, f),
+        E::ArrayRef { expr, idx } => E::ArrayRef {
+            expr: expr_map(expr, f),
             idx,
         },
         E::Assign { lhs, rhs } => E::Assign {
