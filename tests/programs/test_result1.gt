@@ -1,0 +1,19 @@
+-- Compile:
+--   status: success
+-- Run:
+--   status: success
+--   stdout:
+--     false
+
+type Result(@T, @E) = sum
+    Ok @T,
+    Err @E,
+end
+
+fn main() {} =
+    let x = Result.Ok 42
+    let y = Result.Err true
+    --let res = x == y 
+    --__println_bool(res)
+    {}
+end
