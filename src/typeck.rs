@@ -100,7 +100,14 @@ impl TypeInfo {
                 accm += "end\n";
                 accm.into()
             }
-            Array(id, len) => Cow::Owned(format!("{}[{:?}]", tck.vars[id].get_name(tck), len)),
+            Array(id, len) => {
+                // Output something intelligible if we don't know the
+                // length of the array.
+                let len_str = len
+                    .map(|l| format!("{}", l))
+                    .unwrap_or_else(|| format!("unknown"));
+                Cow::Owned(format!("{}[{}]", tck.vars[id].get_name(tck), len_str))
+            }
             TypeParam(sym) => Cow::Owned(format!("@{}", &*sym.val())),
         }
     }
@@ -598,8 +605,8 @@ impl Tck {
                 }
                 Ok(())
             }
+            // Same as struct types
             (Sum(body1), Sum(body2)) => {
-                // Same as struct types
                 for (nm, t1) in body1.iter() {
                     let t2 = body2[nm];
                     self.unify(symtbl, *t1, t2)?;
@@ -610,16 +617,20 @@ impl Tck {
                 }
                 Ok(())
             }
+            // Either both array lengths are the same or both are
+            // unknown.  The latter might need to be an error, we will see.
             (Array(body1, len1), Array(body2, len2)) if len1 == len2 => {
                 self.unify(symtbl, body1, body2)
             }
             (Array(body1, None), Array(body2, Some(_len2))) => {
-                self.unify(symtbl, body1, body2)?;
-                todo!("propegate array lengths")
+                self.vars.insert(a, TypeInfo::Ref(b));
+                self.unify(symtbl, body1, body2)
+                //todo!("propegate array lengths")
             }
             (Array(body1, Some(_len1)), Array(body2, None)) => {
-                self.unify(symtbl, body1, body2)?;
-                todo!("propegate array lengths")
+                self.vars.insert(b, TypeInfo::Ref(a));
+                self.unify(symtbl, body1, body2)
+                // todo!("propegate array lengths")
             }
             (Array(body1, len1), Array(body2, len2)) if len1 == len2 => {
                 self.unify(symtbl, body1, body2)
