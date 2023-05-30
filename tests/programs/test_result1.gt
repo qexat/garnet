@@ -1,9 +1,5 @@
 -- Compile:
---   status: success
--- Run:
---   status: success
---   stdout:
---     false
+--   status: error
 
 type Result(@T, @E) = sum
     Ok @T,
@@ -15,4 +11,5 @@ fn main() {} =
     let y = Result.Err true
     let res = x == y 
     __println_bool(res)
+    {}
 end
