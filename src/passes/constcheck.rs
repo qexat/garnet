@@ -7,3 +7,6 @@
 //!
 //! We might need to do things like make sure we mark main() and
 //! println functions as non-const somehow, we will see.
+//!
+//! Is this a Pass or a TckPass?  We need to be able to do name lookups
+//! to see whether a function we are calling is const or not... hmmm.
