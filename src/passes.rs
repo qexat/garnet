@@ -26,6 +26,7 @@
 // oh well.
 
 //mod enum_to_int;
+mod constcheck;
 mod handle_imports;
 mod lambda_lift;
 //mod monomorphization;
@@ -55,6 +56,7 @@ pub fn run_typechecked_passes(ir: Ir, tck: &mut typeck::Tck) -> Ir {
     // let passes: &[TckPass] = &[nameify, enum_to_int];
     //let passes: &[TckPass] = &[nameify, struct_to_tuple];
     let passes: &[TckPass] = &[
+        constcheck::constcheck,
         struct_to_tuple::struct_to_tuple,
         //monomorphization::monomorphize,
         //type_erasure::type_erasure,
@@ -63,8 +65,31 @@ pub fn run_typechecked_passes(ir: Ir, tck: &mut typeck::Tck) -> Ir {
     res
 }
 
-fn exprs_map(exprs: Vec<ExprNode>, f: &mut dyn FnMut(ExprNode) -> ExprNode) -> Vec<ExprNode> {
-    exprs.into_iter().map(|e| expr_map(e, f)).collect()
+fn exprs_map(
+    exprs: Vec<ExprNode>,
+    f_pre: &mut dyn FnMut(ExprNode) -> ExprNode,
+    f_post: &mut dyn FnMut(ExprNode) -> ExprNode,
+) -> Vec<ExprNode> {
+    exprs
+        .into_iter()
+        .map(|e| expr_map(e, f_pre, f_post))
+        .collect()
+}
+
+/// Handy do-nothing combinator
+fn id<T>(thing: T) -> T {
+    thing
+}
+
+fn exprs_map_pre(exprs: Vec<ExprNode>, f: &mut dyn FnMut(ExprNode) -> ExprNode) -> Vec<ExprNode> {
+    let f_post = &mut |e| e;
+    exprs_map(exprs, f, f_post)
+    //exprs.into_iter().map(|e| expr_map(e, f, f_post)).collect()
+}
+
+fn exprs_map_post(exprs: Vec<ExprNode>, f: &mut dyn FnMut(ExprNode) -> ExprNode) -> Vec<ExprNode> {
+    exprs_map(exprs, &mut id, f)
+    //exprs.into_iter().map(|e| expr_map(e, f, f_post)).collect()
 }
 
 /// This is the core recusion scheme that takes a function and applies
@@ -86,12 +111,17 @@ fn exprs_map(exprs: Vec<ExprNode>, f: &mut dyn FnMut(ExprNode) -> ExprNode) -> V
 /// The function has to take and return an ExprNode, not an expr,
 /// because they may have to look up the type of the expression.
 ///
-/// HORRIBLE NUANCE: This does a *pre-traversal*, ie, it calls the given function on the
-/// current node, and then on its sub-nodes.  This is because the function may hae
-/// to look at the unaltered values/types of the subnodes to decide what to do!
-/// I have *no idea* whether pre-traversal is always what we want!
-fn expr_map(expr: ExprNode, f: &mut dyn FnMut(ExprNode) -> ExprNode) -> ExprNode {
-    let thing = f(expr);
+/// This can take a function to call to transform the current node
+/// before descending into sub-expressions
+/// sub-nodes, and one to call after.  Use expr_map_pre()
+/// and expr_map_post() to just do a pre-traversal or a post-traversal
+/// specifically.
+fn expr_map(
+    expr: ExprNode,
+    f_pre: &mut dyn FnMut(ExprNode) -> ExprNode,
+    f_post: &mut dyn FnMut(ExprNode) -> ExprNode,
+) -> ExprNode {
+    let thing = f_pre(expr);
     let exprfn = &mut |e| match e {
         // Nodes with no recursive expressions.
         // I list all these out explicitly instead of
@@ -102,12 +132,12 @@ fn expr_map(expr: ExprNode, f: &mut dyn FnMut(ExprNode) -> ExprNode) -> ExprNode
         E::Break => e,
         E::EnumCtor { .. } => e,
         E::TupleCtor { body } => E::TupleCtor {
-            body: exprs_map(body, f),
+            body: exprs_map_pre(body, f_pre),
         },
         E::StructCtor { body } => {
             let new_body = body
                 .into_iter()
-                .map(|(sym, vl)| (sym, expr_map(vl, f)))
+                .map(|(sym, vl)| (sym, expr_map_pre(vl, f_pre)))
                 .collect();
             E::StructCtor { body: new_body }
         }
@@ -118,7 +148,7 @@ fn expr_map(expr: ExprNode, f: &mut dyn FnMut(ExprNode) -> ExprNode) -> ExprNode
         } => E::TypeCtor {
             name,
             type_params,
-            body: expr_map(body, f),
+            body: expr_map_pre(body, f_pre),
         },
         E::SumCtor {
             name,
@@ -127,41 +157,41 @@ fn expr_map(expr: ExprNode, f: &mut dyn FnMut(ExprNode) -> ExprNode) -> ExprNode
         } => E::SumCtor {
             name,
             variant,
-            body: expr_map(body, f),
+            body: expr_map_pre(body, f_pre),
         },
         E::ArrayCtor { body } => E::ArrayCtor {
-            body: exprs_map(body, f),
+            body: exprs_map_pre(body, f_pre),
         },
         E::TypeUnwrap { expr } => E::TypeUnwrap {
-            expr: expr_map(expr, f),
+            expr: expr_map_pre(expr, f_pre),
         },
         E::TupleRef { expr, elt } => E::TupleRef {
-            expr: expr_map(expr, f),
+            expr: expr_map_pre(expr, f_pre),
             elt,
         },
         E::StructRef { expr, elt } => E::StructRef {
-            expr: expr_map(expr, f),
+            expr: expr_map_pre(expr, f_pre),
             elt,
         },
         E::ArrayRef { expr, idx } => E::ArrayRef {
-            expr: expr_map(expr, f),
+            expr: expr_map_pre(expr, f_pre),
             idx,
         },
         E::Assign { lhs, rhs } => E::Assign {
-            lhs: expr_map(lhs, f), // TODO: Think real hard about lvalues
-            rhs: expr_map(rhs, f),
+            lhs: expr_map_pre(lhs, f_pre), // TODO: Think real hard about lvalues
+            rhs: expr_map_pre(rhs, f_pre),
         },
         E::BinOp { op, lhs, rhs } => E::BinOp {
             op,
-            lhs: expr_map(lhs, f),
-            rhs: expr_map(rhs, f),
+            lhs: expr_map_pre(lhs, f_pre),
+            rhs: expr_map_pre(rhs, f_pre),
         },
         E::UniOp { op, rhs } => E::UniOp {
             op,
-            rhs: expr_map(rhs, f),
+            rhs: expr_map_pre(rhs, f_pre),
         },
         E::Block { body } => E::Block {
-            body: exprs_map(body, f),
+            body: exprs_map_pre(body, f_pre),
         },
         E::Let {
             varname,
@@ -171,33 +201,33 @@ fn expr_map(expr: ExprNode, f: &mut dyn FnMut(ExprNode) -> ExprNode) -> ExprNode
         } => E::Let {
             varname,
             typename,
-            init: expr_map(init, f),
+            init: expr_map_pre(init, f_pre),
             mutable,
         },
         E::If { cases } => {
             let new_cases = cases
                 .into_iter()
                 .map(|(test, case)| {
-                    let new_test = expr_map(test, f);
-                    let new_cases = exprs_map(case, f);
+                    let new_test = expr_map_pre(test, f_pre);
+                    let new_cases = exprs_map_pre(case, f_pre);
                     (new_test, new_cases)
                 })
                 .collect();
             E::If { cases: new_cases }
         }
         E::Loop { body } => E::Loop {
-            body: exprs_map(body, f),
+            body: exprs_map_pre(body, f_pre),
         },
         E::Return { retval } => E::Return {
-            retval: expr_map(retval, f),
+            retval: expr_map_pre(retval, f_pre),
         },
         E::Funcall {
             func,
             params,
             type_params,
         } => {
-            let new_func = expr_map(func, f);
-            let new_params = exprs_map(params, f);
+            let new_func = expr_map_pre(func, f_pre);
+            let new_params = exprs_map_pre(params, f_pre);
             E::Funcall {
                 func: new_func,
                 params: new_params,
@@ -206,176 +236,50 @@ fn expr_map(expr: ExprNode, f: &mut dyn FnMut(ExprNode) -> ExprNode) -> ExprNode
         }
         E::Lambda { signature, body } => E::Lambda {
             signature,
-            body: exprs_map(body, f),
+            body: exprs_map_pre(body, f_pre),
         },
         E::Typecast { e, to } => E::Typecast {
-            e: expr_map(e, f),
+            e: expr_map_pre(e, f_pre),
             to,
         },
     };
-    thing.map(exprfn)
+    let post_thing = thing.map(exprfn);
+    f_post(post_thing)
 }
 
-/*
-/// A pure version of the expr_map() that takes and returns state explicitly.
-/// Seems to be strictly more of a pain in the ass than smuggling a closure
-/// into expr_map(), so probably not worth the trouble.
-fn expr_fold<S>(expr: ExprNode, state: S, f: &dyn Fn(E, S) -> (E, S)) -> (ExprNode, S)
-where
-    S: Clone,
-{
-    let res = |e, state: S| {
-        let mut st = state;
-        // TODO: Packing our mutable state away in a closure and just using
-        // expr_map is in fact way more convenient than mongling it explicitly.
-        // The cost is requiring that S is cloned on each node.  We could
-        // probably do all the state-mongling ourself and change `expr_map()`
-        // to be implemented in terms of `expr_fold()`, but that really doesn't
-        // sound like much fun.
-        let newfun = &mut |e| {
-            let (new_expr, new_state) = f(e, st.clone());
-            st = new_state;
-            new_expr
-        };
-        let res = match e {
-            // Nodes with no recursive expressions.
-            // I list all these out explicitly instead of
-            // using a catchall so it doesn't fuck up if we change
-            // the type of Expr.
-            E::Lit { .. } => e,
-            E::Var { .. } => e,
-            E::Break => e,
-            E::TupleCtor { body } => E::TupleCtor {
-                body: exprs_map(body, newfun),
-            },
-            E::StructCtor { body } => {
-                let new_body = body
-                    .into_iter()
-                    .map(|(sym, vl)| (sym, expr_map(vl, newfun)))
-                    .collect();
-                E::StructCtor { body: new_body }
-            }
-            E::TypeCtor {
-                name,
-                type_params,
-                body,
-            } => E::TypeCtor {
-                name,
-                type_params,
-                body: expr_map(body, newfun),
-            },
-            E::SumCtor {
-                name,
-                variant,
-                body,
-            } => E::SumCtor {
-                name,
-                variant,
-                body: expr_map(body, newfun),
-            },
-            E::ArrayCtor { body } => E::ArrayCtor {
-                body: exprs_map(body, newfun),
-            },
-            E::TypeUnwrap { expr } => E::TypeUnwrap {
-                expr: expr_map(expr, newfun),
-            },
-            E::TupleRef { expr, elt } => E::TupleRef {
-                expr: expr_map(expr, newfun),
-                elt,
-            },
-            E::StructRef { expr, elt } => E::StructRef {
-                expr: expr_map(expr, newfun),
-                elt,
-            },
-            E::ArrayRef { e, idx } => E::ArrayRef {
-                e: expr_map(e, newfun),
-                idx,
-            },
-            E::Assign { lhs, rhs } => E::Assign {
-                lhs: expr_map(lhs, newfun), // TODO: Think real hard about lvalues
-                rhs: expr_map(rhs, newfun),
-            },
-            E::BinOp { op, lhs, rhs } => E::BinOp {
-                op,
-                lhs: expr_map(lhs, newfun),
-                rhs: expr_map(rhs, newfun),
-            },
-            E::UniOp { op, rhs } => E::UniOp {
-                op,
-                rhs: rhs.map(newfun),
-            },
-            E::Block { body } => E::Block {
-                body: exprs_map(body, newfun),
-            },
-            E::Let {
-                varname,
-                typename,
-                init,
-                mutable,
-            } => E::Let {
-                varname,
-                typename,
-                init: expr_map(init, newfun),
-                mutable,
-            },
-            E::If { cases } => {
-                let new_cases = cases
-                    .into_iter()
-                    .map(|(test, case)| {
-                        let new_test = expr_map(test, newfun);
-                        let new_cases = exprs_map(case, newfun);
-                        (new_test, new_cases)
-                    })
-                    .collect();
-                E::If { cases: new_cases }
-            }
-            E::Loop { body } => E::Loop {
-                body: exprs_map(body, newfun),
-            },
-            E::Return { retval } => E::Return {
-                retval: expr_map(retval, newfun),
-            },
-            E::Funcall { func, params } => {
-                let new_func = expr_map(func, newfun);
-                let new_params = exprs_map(params, newfun);
-                E::Funcall {
-                    func: new_func,
-                    params: new_params,
-                }
-            }
-            E::Lambda { signature, body } => E::Lambda {
-                signature,
-                body: exprs_map(body, newfun),
-            },
-        };
-        f(res, st)
-    };
-    expr.fold(state, &res)
+fn expr_map_pre(expr: ExprNode, f: &mut dyn FnMut(ExprNode) -> ExprNode) -> ExprNode {
+    expr_map(expr, f, &mut id)
 }
 
-fn exprs_fold<S>(exprs: Vec<ExprNode>, state: S, f: &dyn Fn(E, S) -> (E, S)) -> (Vec<ExprNode>, S)
-where
-    S: Clone,
-{
-    let mut res = vec![];
-    let mut new_state = state;
-    for e in exprs {
-        let (new_e, new_s) = expr_fold(e, new_state, f);
-        new_state = new_s;
-        res.push(new_e);
-    }
-    (res, new_state)
+fn expr_map_post(expr: ExprNode, f: &mut dyn FnMut(ExprNode) -> ExprNode) -> ExprNode {
+    expr_map(expr, &mut id, f)
 }
-*/
+
+fn decl_map_pre(
+    decl: D,
+    fe: &mut dyn FnMut(ExprNode) -> ExprNode,
+    ft: &mut dyn FnMut(Type) -> Type,
+) -> D {
+    decl_map(decl, fe, &mut id, ft)
+}
+
+fn decl_map_post(
+    decl: D,
+    fe: &mut dyn FnMut(ExprNode) -> ExprNode,
+    ft: &mut dyn FnMut(Type) -> Type,
+) -> D {
+    decl_map(decl, &mut id, fe, ft)
+}
 
 /// Takes a decl and applies the given expr and type transformers to any
 /// expression in it.
 ///
-/// Technically not very necessary, since decls can't contain othe decls,
+/// Technically not very necessary, since decls can't contain other decls,
 /// but happens often enough that it's worth having.
 fn decl_map(
     decl: D,
-    fe: &mut dyn FnMut(ExprNode) -> ExprNode,
+    fe_pre: &mut dyn FnMut(ExprNode) -> ExprNode,
+    fe_post: &mut dyn FnMut(ExprNode) -> ExprNode,
     ft: &mut dyn FnMut(Type) -> Type,
 ) -> D {
     match decl {
@@ -386,12 +290,12 @@ fn decl_map(
         } => D::Function {
             name,
             signature: signature_map(signature, ft),
-            body: exprs_map(body, fe),
+            body: exprs_map(body, fe_pre, fe_post),
         },
         D::Const { name, typ, init } => D::Const {
             name,
             typ: type_map(typ, ft),
-            init: expr_map(init, fe),
+            init: expr_map(init, fe_pre, fe_post),
         },
         D::TypeDef {
             name,
@@ -542,7 +446,7 @@ mod tests {
             lhs: ExprNode::int(4),
             rhs: ExprNode::int(3),
         });
-        let out = expr_map(inp, &mut swap_binop_args);
+        let out = expr_map_pre(inp, &mut swap_binop_args);
         assert_eq!(out, desired);
 
         // Make sure it recurses properly for deeper trees.
@@ -564,7 +468,7 @@ mod tests {
                 rhs: ExprNode::int(100),
             }),
         });
-        let out2 = expr_map(inp2, &mut swap_binop_args);
+        let out2 = expr_map_pre(inp2, &mut swap_binop_args);
         assert_eq!(out2, desired2);
     }
 }

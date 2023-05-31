@@ -1,5 +1,11 @@
 -- Compile:
---   status: error
+--   status: success
+-- Run:
+--   status: success
+--   stdout:
+--     false
+--     true
+
 
 type Eq(@T) = struct
     eq: fn(@T, @T) Bool,

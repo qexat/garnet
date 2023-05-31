@@ -1,6 +1,7 @@
 //! Typechecking and other semantic checking.
 //! Operates on the HIR.
 //!
+//! TODO: Actually check whether the body of const decls is const
 
 use std::borrow::Cow;
 use std::cell::RefCell;
