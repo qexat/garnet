@@ -281,6 +281,13 @@ fn compile_fn_signature(sig: &ast::Signature) -> String {
     }
     accm += ") -> ";
     accm += &compile_typename(&sig.rettype);
+    if generics.len() > 0 {
+        accm += " where ";
+        for generic in generics.iter() {
+            accm += &mangle_name(&*generic.val());
+            accm += ": Copy,";
+        }
+    }
     accm
 }
 
