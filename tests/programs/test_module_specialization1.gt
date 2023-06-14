@@ -1,7 +1,9 @@
 -- Compile:
---   status: error
-
--- TODO: This should pass when the `monomorph` branch is finished.
+--   status: success
+-- Run:
+--   status: success
+--   stdout:
+--     4
 
 
 type List(@T) = struct
@@ -9,12 +11,18 @@ type List(@T) = struct
 end
 
 
-type Idx(@Self, @Output) = struct
-    idx: fn(@Self, I32) @Output,
+type Idx(@Selff, @Output) = struct
+    idx: fn(@Selff, I32) @Output,
 end
 
 -- Can we make an instance for a specialization of List(T)?
-const IntListIdx = Idx {
-    .idx = fn(self List(I32), i I32) I32 = self$.dummy_data end
+const IntListIdx Idx(List(I32), I32) = Idx {
+    .idx = fn(selff List(I32), i I32) I32 = selff$.dummy_data end
 }
 
+fn main() {} =
+    let x = List { .dummy_data = 4_I32 }
+    let y = IntListIdx$.idx(x, 3)
+    __println(y); -- gfd parser ambiguity
+    {}
+end

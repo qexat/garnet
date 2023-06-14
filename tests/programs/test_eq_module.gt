@@ -1,5 +1,11 @@
 -- Compile:
---   status: error
+--   status: success
+-- Run:
+--   status: success
+--   stdout:
+--     false
+--     true
+
 
 type Eq(@T) = struct
     eq: fn(@T, @T) Bool,
@@ -26,7 +32,8 @@ end
 
 fn main() {} =
 	let t1 = all(IntEq, 3, [1, 2, 3])                -- returns false
-	let t2 = all(BoolEq, true, [true, true, true])   -- returns true
+	let t2 = all(IntEq, 3, [3, 3, 3])                -- returns true
+	let t3 = all(BoolEq, true, [true, true, true])   -- returns true
 	__println_bool(t1)
 	__println_bool(t2)
 end

@@ -1357,35 +1357,38 @@ impl<'input> Parser<'input> {
 /// since we always know what kind of expression we're parsing
 /// from the get-go with prefix operators.
 ///
-/// TODO: Can we make better sure that no binding powers ever match?
+/// Binding power of prefix operators < infix operators < postfix operators.
+/// That way `-x + y[3]` parses to `-(x + (y[3]))`
 fn prefix_binding_power(op: &TokenKind) -> ((), usize) {
     match op {
-        T::Plus | T::Minus | T::Not => ((), 110),
+        T::Plus | T::Minus | T::Not => ((), 10),
         x => unreachable!("{:?} is not a prefix op, should never happen!", x),
     }
 }
 
 /// Specifies binding power of postfix operators.
+/// All postfix operators can have the same binding power 'cause
+/// you can't really intermix them, but we
+/// need a real value for them 'cause they can intermix
+/// with prefix and infix operators.
 fn postfix_binding_power(op: &TokenKind) -> Option<(usize, ())> {
     match op {
         // "." for tuple/struct references.
-        T::Period => Some((130, ())),
+        T::Period |
         // "$" type unwrap operator
-        T::Dollar => Some((121, ())),
+        T::Dollar |
         // "(" opening function call args
-        T::LParen => Some((120, ())),
+        T::LParen |
         // "{" opening single-struct function call args
-        T::LBrace => Some((119, ())),
+        T::LBrace |
         // ":" universal function call syntax
-        T::Colon => Some((115, ())),
+        T::Colon |
         // "[" array index
-        T::LBracket => Some((114, ())),
-        // "^" for pointer derefs.  TODO: Check precedence?
-        // This gets a little weird since it's postfix, not used
-        // to thinking about it.  So it's like...
-        // (-foo)^ vs -(foo^)
-        T::Carat => Some((105, ())),
-        T::Ampersand => Some((105, ())),
+        T::LBracket |
+        // "^" for pointer derefs.  
+        T::Carat |
+        // "&" for pointer refs.  
+        T::Ampersand => Some((300, ())),
         _x => None,
     }
 }
@@ -1397,15 +1400,15 @@ fn infix_binding_power(op: &TokenKind) -> Option<(usize, usize)> {
     // Right associations are slightly more powerful so we always produce
     // a deterministic tree.
     match op {
-        T::Mul | T::Div | T::Mod => Some((100, 101)),
-        T::Plus | T::Minus => Some((90, 91)),
-        T::Lt | T::Gt | T::Lte | T::Gte => Some((80, 81)),
-        T::Equal | T::NotEqual => Some((70, 71)),
-        T::And => Some((60, 61)),
+        T::Mul | T::Div | T::Mod => Some((200, 201)),
+        T::Plus | T::Minus => Some((190, 191)),
+        T::Lt | T::Gt | T::Lte | T::Gte => Some((180, 181)),
+        T::Equal | T::NotEqual => Some((170, 171)),
+        T::And => Some((160, 161)),
         // Logical xor has same precedence as or, I guess?  It's sorta an odd duck.
-        T::Or | T::Xor => Some((50, 51)),
+        T::Or | T::Xor => Some((150, 151)),
         // Assignment
-        T::Equals => Some((10, 11)),
+        T::Equals => Some((110, 111)),
 
         _ => None,
     }
