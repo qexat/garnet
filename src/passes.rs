@@ -26,7 +26,7 @@
 // oh well.
 
 //mod enum_to_int;
-mod constcheck;
+mod constinfer;
 mod handle_imports;
 mod lambda_lift;
 //mod monomorphization;
@@ -56,7 +56,7 @@ pub fn run_typechecked_passes(ir: Ir, tck: &mut typeck::Tck) -> Ir {
     // let passes: &[TckPass] = &[nameify, enum_to_int];
     //let passes: &[TckPass] = &[nameify, struct_to_tuple];
     let passes: &[TckPass] = &[
-        constcheck::constcheck,
+        constinfer::constinfer,
         struct_to_tuple::struct_to_tuple,
         //monomorphization::monomorphize,
         //type_erasure::type_erasure,
