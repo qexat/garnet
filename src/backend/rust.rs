@@ -70,7 +70,7 @@ fn compile_typename(t: &Type) -> Cow<'static, str> {
         }
         Func(params, rettype, typeparams) => {
             if typeparams.len() > 0 {
-                todo!();
+                todo!("Function pointer types containing generics need monomorph to work");
             }
             let mut accm = String::from("fn ");
             // TODO: ...make sure this actually works.
