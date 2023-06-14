@@ -1399,8 +1399,9 @@ fn typecheck_expr(
             let t = typecheck_expr(tck, symtbl, func_rettype, retval)?;
             tck.unify(symtbl, t, func_rettype)?;
             // TODO: Never type instead of whatever this hack is
-            tck.set_expr_type(expr, t);
-            Ok(t)
+            let unit_typeid = tck.insert_known(&Type::unit());
+            tck.set_expr_type(expr, unit_typeid);
+            Ok(unit_typeid)
         }
         TypeCtor {
             name,
