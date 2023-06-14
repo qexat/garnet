@@ -348,6 +348,7 @@ fn type_map(typ: Type, f: &mut dyn FnMut(Type) -> Type) -> Type {
         // Not super sure whether this is necessary, but can't hurt.
         Type::Named(nm, tys) => Type::Named(nm, types_map(tys, f)),
         Type::Prim(_) => typ,
+        Type::Never => typ,
         Type::Enum(_) => typ,
         Type::Generic(_) => typ,
     };
@@ -411,6 +412,7 @@ pub fn generate_type_name(typ: &Type) -> String {
             format!("__Named{}__{}", name, field_str)
         }
         Type::Prim(p) => p.get_name().into_owned(),
+        Type::Never => format!("!"),
         Type::Array(t, len) => {
             format!("__Arr{}__{}", generate_type_name(t), len)
         }

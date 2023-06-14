@@ -57,6 +57,7 @@ fn compile_typename(t: &Type) -> Cow<'static, str> {
         }
         Prim(PrimType::Bool) => "bool".into(),
         Prim(PrimType::AnyPtr) => format!("*const u8").into(),
+        Never => unreachable!(),
         Named(s, types) if s == &Sym::new("Tuple") => {
             trace!("Compiling tuple {:?}...", t);
             let mut accm = String::from("(");
