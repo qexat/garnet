@@ -19,7 +19,7 @@ use crate::passes::*;
 /// Hmmm.  expr_map() does a pre-traversal; this needs to be
 /// a post-traversal.  ie, we need to go from the tip of the
 /// leaves down up to the root.
-fn constcheck_expr(expr: ExprNode) -> ExprNode {
+fn constinfer_expr(expr: ExprNode) -> ExprNode {
     let is_const = match &*expr.e {
         E::Lit { .. } => true,
         E::Var { .. } => true,                   // I think?
@@ -70,12 +70,12 @@ fn constcheck_expr(expr: ExprNode) -> ExprNode {
     expr
 }
 
-pub fn constcheck(ir: Ir, _tck: &mut typeck::Tck) -> Ir {
+pub fn constinfer(ir: Ir, _tck: &mut typeck::Tck) -> Ir {
     let type_map = &mut |t| t;
     let new_decls = ir
         .decls
         .into_iter()
-        .map(|d| decl_map_post(d, &mut constcheck_expr, type_map))
+        .map(|d| decl_map_post(d, &mut constinfer_expr, type_map))
         .collect();
     Ir {
         decls: new_decls,
@@ -95,7 +95,7 @@ mod tests {
             name: Sym::new("foo"),
         });
         assert!(!inp.is_const);
-        let outp = constcheck_expr(inp);
+        let outp = expr_map_post(inp, &mut |e| constinfer_expr(e));
         assert!(outp.is_const);
     }
 
@@ -107,7 +107,7 @@ mod tests {
             })],
         });
         assert!(!inp.is_const);
-        let outp = constcheck_expr(inp);
-        //assert!(outp.is_const);
+        let outp = expr_map_post(inp, &mut |e| constinfer_expr(e));
+        assert!(outp.is_const);
     }
 }
