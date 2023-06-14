@@ -30,7 +30,10 @@ fn constcheck_expr(expr: ExprNode) -> ExprNode {
         E::StructCtor { body } => body.iter().all(|(_k, v)| v.is_const),
         E::ArrayCtor { body } => body.iter().all(|e| e.is_const),
         E::SumCtor { body, .. } => body.is_const,
-        E::TypeCtor { body, .. } => body.is_const,
+        E::TypeCtor { body, .. } => {
+            trace!("Is typector const? {}", body.is_const);
+            body.is_const
+        }
         E::TypeUnwrap { expr, .. } => expr.is_const,
         E::TupleRef { expr, .. } => expr.is_const,
         E::StructRef { expr, .. } => expr.is_const,
@@ -72,7 +75,7 @@ pub fn constcheck(ir: Ir, _tck: &mut typeck::Tck) -> Ir {
     let new_decls = ir
         .decls
         .into_iter()
-        .map(|d| decl_map_pre(d, &mut constcheck_expr, type_map))
+        .map(|d| decl_map_post(d, &mut constcheck_expr, type_map))
         .collect();
     Ir {
         decls: new_decls,

@@ -188,11 +188,10 @@ fn compile_decl(w: &mut impl Write, decl: &hir::Decl, tck: &Tck) -> io::Result<(
             let sstr = compile_fn_signature(signature);
             let bstr = compile_exprs(body, ";\n", tck);
             if body.iter().all(|expr| expr.is_const) {
-                trace!("Thing is const: {:?}", nstr);
+                trace!("Function is const: {:?}", nstr);
                 writeln!(w, "pub const fn {}{} {{\n{}\n}}\n", nstr, sstr, bstr)
             } else {
-                trace!("Thing is NOT const: {:?}", nstr);
-                trace!("Thing is NOT const: {:?}", body);
+                trace!("Function is NOT const: {:?}\nBody:{:?}", nstr, body);
                 writeln!(w, "pub fn {}{} {{\n{}\n}}\n", nstr, sstr, bstr)
             }
         }
