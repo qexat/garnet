@@ -50,6 +50,9 @@ pub struct ExprNode {
     pub e: Box<Expr>,
     /// Expression ID
     pub id: Eid,
+    /// Whether or not the expression is constant,
+    /// ie can be entirely evaluated at compile time.
+    pub is_const: bool,
 }
 
 impl PartialEq for ExprNode {
@@ -120,6 +123,7 @@ impl ExprNode {
         ExprNode {
             e: Box::new(e),
             id: Eid::new(),
+            is_const: false,
         }
     }
 
@@ -132,7 +136,7 @@ impl ExprNode {
     pub fn map(self, f: &mut dyn FnMut(Expr) -> Expr) -> Self {
         ExprNode {
             e: Box::new(f(*self.e)),
-            id: self.id,
+            ..self
         }
     }
 

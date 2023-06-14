@@ -61,6 +61,7 @@ impl PrimType {
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Type {
     Prim(PrimType),
+    Never,
     /// A C-like enum.
     /// For now we pretend there's no underlying values attached to
     /// the name.
@@ -97,6 +98,7 @@ impl Type {
         fn helper(t: &Type, accm: &mut Vec<Sym>) {
             match t {
                 Type::Prim(_) => (),
+                Type::Never => (),
                 Type::Enum(_ts) => (),
                 Type::Named(_, generics) => {
                     for g in generics {
@@ -264,6 +266,7 @@ impl Type {
         };
         match self {
             Type::Prim(p) => p.get_name(),
+            Type::Never => Cow::Borrowed("!"),
             Type::Enum(variants) => {
                 let mut res = String::from("enum {");
                 let s = variants
@@ -444,6 +447,7 @@ impl Type {
                 .to_owned(),
             Type::Prim(_) => self.clone(),
             Type::Enum(_) => self.clone(),
+            Type::Never => self.clone(),
         }
     }
 }

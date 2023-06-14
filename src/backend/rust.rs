@@ -57,6 +57,7 @@ fn compile_typename(t: &Type) -> Cow<'static, str> {
         }
         Prim(PrimType::Bool) => "bool".into(),
         Prim(PrimType::AnyPtr) => format!("*const u8").into(),
+        Never => unreachable!(),
         Named(s, types) if s == &Sym::new("Tuple") => {
             trace!("Compiling tuple {:?}...", t);
             let mut accm = String::from("(");
@@ -69,7 +70,7 @@ fn compile_typename(t: &Type) -> Cow<'static, str> {
         }
         Func(params, rettype, typeparams) => {
             if typeparams.len() > 0 {
-                todo!();
+                todo!("Function pointer types containing generics need monomorph to work");
             }
             let mut accm = String::from("fn ");
             // TODO: ...make sure this actually works.
@@ -187,7 +188,13 @@ fn compile_decl(w: &mut impl Write, decl: &hir::Decl, tck: &Tck) -> io::Result<(
             let nstr = mangle_name(&*INT.fetch(*name));
             let sstr = compile_fn_signature(signature);
             let bstr = compile_exprs(body, ";\n", tck);
-            writeln!(w, "pub fn {}{} {{\n{}\n}}\n", nstr, sstr, bstr)
+            if body.iter().all(|expr| expr.is_const) {
+                trace!("Function is const: {:?}", nstr);
+                writeln!(w, "pub const fn {}{} {{\n{}\n}}\n", nstr, sstr, bstr)
+            } else {
+                trace!("Function is NOT const: {:?}\nBody:{:?}", nstr, body);
+                writeln!(w, "pub fn {}{} {{\n{}\n}}\n", nstr, sstr, bstr)
+            }
         }
         hir::Decl::Const {
             name,
@@ -274,6 +281,13 @@ fn compile_fn_signature(sig: &ast::Signature) -> String {
     }
     accm += ") -> ";
     accm += &compile_typename(&sig.rettype);
+    if generics.len() > 0 {
+        accm += " where ";
+        for generic in generics.iter() {
+            accm += &mangle_name(&*generic.val());
+            accm += ": Copy,";
+        }
+    }
     accm
 }
 
@@ -548,19 +562,5 @@ fn compile_expr(expr: &hir::ExprNode, tck: &Tck) -> String {
         }
         other => todo!("{:?}", other),
     };
-    // We need to look at subexpressions.
-    // If the return type of that subexpression is AnyPtr,
-    // we need to cast it to what the current expression
-    // actually expects.
-    // If this is a function or constructor that is taking
-    // an AnyPtr as an arg,
-    let expr_rettypeid = tck.get_expr_type(expr);
-    let expr_rettype = tck.reconstruct(expr_rettypeid).expect("Shouldn't happen");
-    trace!("Checking if anyptr is in {:?}\n{:?}", expr_rettype, expr);
-    if expr_rettype == Type::anyptr() {
-        format!("((&{}) as *const _ as *const u8)", expr_str)
-        //expr_str
-    } else {
-        expr_str
-    }
+    expr_str
 }

@@ -1,6 +1,7 @@
 //! Typechecking and other semantic checking.
 //! Operates on the HIR.
 //!
+//! TODO: Actually check whether the body of const decls is const
 
 use std::borrow::Cow;
 use std::cell::RefCell;
@@ -27,6 +28,8 @@ pub enum TypeInfo {
     Ref(TypeId),
     Prim(PrimType),
     Enum(Vec<(Sym, i32)>),
+    /// This expression never returns so it can "be" any type
+    Never,
     /// N-ary type constructor.
     /// It could be Int()
     /// or List(Int)
@@ -49,6 +52,7 @@ impl TypeInfo {
         use TypeInfo::*;
         match self {
             Unknown => Cow::Borrowed("{unknown}"),
+            Never => Cow::Borrowed("{never}"),
             Prim(p) => p.get_name(),
             Ref(id) => Cow::Owned(format!("Ref({})", tck.vars[id].get_name(tck))),
             Enum(v) => {
@@ -378,6 +382,7 @@ impl Tck {
         // Recursively insert all subtypes.
         let tinfo = match t {
             Type::Prim(ty) => TypeInfo::Prim(ty.clone()),
+            Type::Never => TypeInfo::Never,
             Type::Enum(vals) => TypeInfo::Enum(vals.clone()),
             Type::Named(s, args) => {
                 let new_args = args.iter().map(|t| self.insert_known(t)).collect();
@@ -536,6 +541,10 @@ impl Tck {
                 self.vars.insert(b, TypeInfo::Ref(a));
                 Ok(())
             }
+            // Never types can turn into anything 'cause they never happen
+            // I'm like.... 97% sure this is correct.
+            (Never, _) => Ok(()),
+            (_, Never) => Ok(()),
             // Follow any references
             (Ref(a), _) => self.unify(symtbl, a, b),
             (_, Ref(b)) => self.unify(symtbl, a, b),
@@ -659,6 +668,7 @@ impl Tck {
         use TypeInfo::*;
         match &self.vars[&id] {
             Unknown => Err(TypeError::ReconstructFail { tid: id }),
+            Never => Ok(Type::Never),
             Prim(ty) => Ok(Type::Prim(ty.clone())),
             Ref(id) => self.reconstruct(*id),
             Enum(ts) => Ok(Type::Enum(ts.clone())),
@@ -734,6 +744,7 @@ impl Tck {
         fn helper(tck: &mut Tck, named_types: &mut BTreeMap<Sym, TypeId>, t: &Type) -> TypeId {
             let typeinfo = match t {
                 Type::Prim(val) => TypeInfo::Prim(val.clone()),
+                Type::Never => TypeInfo::Never,
                 Type::Enum(vals) => TypeInfo::Enum(vals.clone()),
                 Type::Named(s, args) => {
                     let inst_args: Vec<_> =
@@ -1397,9 +1408,10 @@ fn typecheck_expr(
             // Does the type of the expression match the function's return type?
             let t = typecheck_expr(tck, symtbl, func_rettype, retval)?;
             tck.unify(symtbl, t, func_rettype)?;
-            // TODO: Never type instead of whatever this hack is
-            tck.set_expr_type(expr, t);
-            Ok(t)
+            // The return type of `return` is Never because it will never happen
+            let unit_typeid = tck.insert_known(&Type::Never);
+            tck.set_expr_type(expr, unit_typeid);
+            Ok(unit_typeid)
         }
         TypeCtor {
             name,
