@@ -6,7 +6,8 @@
 //!  * Use something smarter than strings to collect output -- could just
 //!    output to a stream like the formatter does.  This is a little weird though 'cause
 //!    we often want to build pieces of code, and then combine them together at the end.
-//!  * Use `syn` or something to generate tokens for output rather than strings
+//!    An aggressively closure-y model might work wiht that tbh
+//!  * Use `syn` or something to generate tokens for output rather than strings???
 
 use std::borrow::Cow;
 use std::io::{self, Write};
@@ -17,7 +18,10 @@ use crate::hir;
 use crate::typeck::Tck;
 use crate::*;
 
-/// Whatever prefix stuff we want in the Rust program.
+/// Whatever builtin code stuff we want in the Rust program.
+///
+/// TODO: Refactor this into its own little data structure
+/// so we can have proper types connected to it.
 fn prelude() -> &'static str {
     r#"
 fn __println(x: i32) {
@@ -39,8 +43,6 @@ fn __println_i16(x: i16) {
 }
 
 /// Compiles a `Type` into a a valid Rust type.
-///
-/// Needed for when we do `let x: Foo = ...` rather than `struct Foo { ... }`
 fn compile_typename(t: &Type) -> Cow<'static, str> {
     use crate::Type::*;
     match t {
@@ -93,7 +95,6 @@ fn compile_typename(t: &Type) -> Cow<'static, str> {
             accm += &compile_typename(&*rettype);
             accm.into()
         }
-        //Named(sym) => (&*INT.fetch(*sym)).clone().into(),
         Struct(_fields, _generics) => {
             // We compile our structs into Rust tuples.
             // Our fields are always ordered via BTreeMap etc,
@@ -155,11 +156,13 @@ fn compile_typename(t: &Type) -> Cow<'static, str> {
             accm += ")";
             accm.into()
             */
-            format!("SomeSum").into()
+            //format!("SomeSum").into()
+            unimplemented!()
         }
     }
 }
 
+/// Driver that turns a pile of Ir into Rust code.
 pub(super) fn output(lir: &hir::Ir, tck: &Tck) -> Vec<u8> {
     let mut output = Vec::new();
     output.extend(prelude().as_bytes());
@@ -170,7 +173,7 @@ pub(super) fn output(lir: &hir::Ir, tck: &Tck) -> Vec<u8> {
     output
 }
 
-/// Mangle/unmangle a name for a function.
+/// Mangle a name for a function.
 /// We need this for lambda's, migth need it for other things, we'll see.
 /// TODO: There might be a better way to make lambda's un-nameable.
 /// Probably, really.
@@ -178,6 +181,7 @@ fn mangle_name(s: &str) -> String {
     s.replace("!", "__")
 }
 
+/// Compile a single decl
 fn compile_decl(w: &mut impl Write, decl: &hir::Decl, tck: &Tck) -> io::Result<()> {
     match decl {
         hir::Decl::Function {
@@ -260,6 +264,7 @@ fn compile_decl(w: &mut impl Write, decl: &hir::Decl, tck: &Tck) -> io::Result<(
     }
 }
 
+/// Compile a function signature
 fn compile_fn_signature(sig: &ast::Signature) -> String {
     let mut accm = String::from("");
     let generics = sig.generic_type_names();
@@ -449,19 +454,6 @@ fn compile_expr(expr: &hir::ExprNode, tck: &Tck) -> String {
         E::Return { retval } => {
             format!("return {};", compile_expr(retval, tck))
         }
-        /*
-        E::TupleCtor { body } => {
-            // We *don't* want join() here, we want to append comma's so that
-            // `(foo,)` works properly.
-            let mut accm = String::from("(");
-            for expr in body {
-                accm += &compile_expr(expr, tck);
-                accm += ", ";
-            }
-            accm += ")";
-            accm
-        }
-        */
         // Unit type
         E::TupleCtor { body } if body.len() == 0 => String::from(" ()\n"),
         E::TupleCtor { body } => {
@@ -530,10 +522,6 @@ fn compile_expr(expr: &hir::ExprNode, tck: &Tck) -> String {
             accm += "]";
             accm
         }
-        /*
-        E::Deref { expr } => format!("*{}", compile_expr(expr, tck)),
-        E::Ref { expr } => format!("&{}", compile_expr(expr, tck)),
-        */
         E::TypeUnwrap { expr } => {
             // Since our typedefs compile to Rust type aliases, we don't
             // have to do anything to unwrap them
