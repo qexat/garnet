@@ -1,4 +1,5 @@
 //! Backend indirection layer.
+//! Just a little code to select which backend module to use.
 
 use crate::hir;
 use crate::typeck::Tck;

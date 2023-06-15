@@ -11,10 +11,9 @@ way: I'm trying to make basically the language these people want, a
 language that asks "What would Rust look like if it were small?".  I call
 it [Garnet](https://hg.sr.ht/~icefox/garnet). I'm at the point where I
 am fairly sure my design is gonna do at least *something* vaguely
-useful, but I also think it's time to ask for interested parties to talk
-or help.
+useful, so I'm making it more or less public.
 
-Garnet strives for smallness by having three basic features: functions,
+Garnet strives for smallness by having three basic abstractions: functions,
 types, and structs.  Somewhat like Zig, structs double as modules when
 evaluated at compile time. A lot like SML/OCaml, structs also double as
 your tool for defining interfaces/traits/typeclasses/some kind of way of
@@ -63,15 +62,14 @@ fn main() {} =
     __println(fib(40))
 end
 ```
-
-
+ 
 There’s a bunch of small programs in its test suite here: <https://hg.sr.ht/~icefox/garnet/browse/tests/programs>
 And some slightly-more-interesting-but-often-still-hypothetical bits of programs here: <https://hg.sr.ht/~icefox/garnet/browse/gt>
 Syntax is *mostly* fixed but there's plenty of details that can still be a WIP.
 
 # Current state
 
-As of spring 2023 he typechecker seems to more or less work but some backend work needs to happen before some sorts of generic type code can be actually compiled.
+As of spring 2023 he typechecker seems to more or less work but some backend work needs to happen before certain code using generics can be actually compiled.  So while I work on that there's a bunch of other things that can be worked on more or less outside of that critical path.
  
 Just to make sure people have some realistic expectations.
 
@@ -87,10 +85,11 @@ Realistic language goals:
  * [✓] Arrays, sum types, other useful basic types
  * [✓] Generics and type inference
  * [⛭] Full ML-y modules
+ * [⛭] Packages for multiple files and separate compilation
  * [?] Move semantics, references and borrowing
  * [?] Stdlib of some kind
- * [ ] Pattern matching
  * [?] Function properties (`const`, `pure`, `noalloc`, etc)
+ * [ ] Pattern matching
  * [ ] Lots of little ergonomic things
 
 Giant scary tooling goals necessary for Real Use:
@@ -121,10 +120,10 @@ If it doesn't have something like this, it's a hard error.
 
 # Runtime/language model goals
 
-Things where you might need to need to make explicit design tradeoffs.
-It concerns the overlap of design and implementation.  These are
-essentially directions explore rather than hard-and-fast rules, and may
-change with time.
+These are the goals I'm thinking about where we might need to need to make
+explicit design tradeoffs to make something that is possible to implement
+effectively. These are essentially directions to explore rather than hard-and-
+fast rules, and may change with time.
 
  * Simplicity over runtime performance -- Rust and Go are very different
    places on this spectrum, but I think OCaml demonstrates you should be
@@ -141,7 +140,8 @@ change with time.
    metaprogramming, powerful dynamic linking, etc.  It seems very silly
    that this remains Dark Magic outside of anything that isn't Lisp or
    Erlang.  (That said, when you don't want this, you REALLY don't want
-   it.)
+   it.)  Haven't done much work on this yet, but it should be far easier
+   than Rust makes it.
  * As little undefined behavior as possible -- If the compiler is
    allowed to assume something can't happen, then the language should
    prevent it from happening if at all feasible.  Let's stop calling it
@@ -290,7 +290,7 @@ reasonably fast.
  * rustc
  * `logos` lexer
  * handrolled parser (recursive descent + Pratt)
- * output Rust, just to make things work.
+ * Backend outputs Rust, just to make things work.
  * `argh` for command line opts
  * `codespan` for error reporting
  * `lang_tester` for integration tests
@@ -301,60 +301,6 @@ Things to consider:
  * `ryu` for parsing floats
  * `tree-sitter` for parsing/formatting tooling (someday?)
 
-## Backend thoughts
-
-Something I need to consider a little is what I want in terms of a
-compiler backend, since emitting `x86_64` opcodes myself basically
-sounds like the least fun thing ever.
-
-Goals:
-
- * Not huge
- * Operates pretty fast
- * Outputs pretty good/fast/small code
- * Doesn't require binding to C++ code (pure C may be acceptable)
- * Produces `x86_64`, ideally also Aarch64 and WASM, SPIR-V would be a
-   nice bonus
-
-Non-goals:
-
- * Makes best code evar
- * Super cool innovative research project
- * Supports every platform evar, or anything less than 32-bits (it'd be
-   cool, but it's not a goal)
-
-Options:
-
- * Write our own -- ideal choice in the long run, worst choice in the
-   short run
- * LLVM -- Fails at "not huge", "operates fast" and "doesn't require C++
-   bindings"
- * Cranelift -- Might actually be a good choice, but word on the street
-   (as of early 2020) is it's poorly documented and unstable.
-   Investigate more.  As of 2023 might be in an ok place?
- * QBE -- Fails at "doesn't require C compiler", but initially looks
-   good for everything else.  Played around with it a little and it
-   left a bad taste in my mouth for some reasons, but worth revisiting.
- * WASM -- Just output straight-up WASM and use wasmtime to run it.
-   Cool idea in the short term, WASM is easy to output and doesn't need
-   us to optimize it much in theory, and would work well enough to let
-   us bootstrap the compiler if we want to.  Much easier to output than
-   raw asm, there's good libraries to output it, and I know how to do it.
- * C -- Just output C Code. The traditional solution, complicates build
-   process, but will work.
- * Rust -- Rust compiles slow but that's the only downside, complicates
-   build process, but will work.  Might be useful if we can proof
-   whatever borrow checking type stuff we implement against Rust's
-
-Output Rust for right now, bootstrap the compiler, then think about it.
-
-Trying out QBE and Cranelift both seem reasonable choices, and writing a
-not-super-sophisticated backend that outputs many targets seems
-semi-reasonable.  Outputting WASM is probably the simplest low-level
-thing to get started with, but is a little weird since it is kinda an IR
-itself, so to turn an SSA IR into wasm you need a step such as LLVM's
-"relooper".  Outputting C is similarly fine in the short term and has
-Problems in the longer term.
 
 # License
 

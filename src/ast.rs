@@ -112,6 +112,8 @@ impl Signature {
     pub fn generic_type_names(&self) -> Vec<Sym> {
         self.to_type().get_type_params()
     }
+
+    /// Returns a string containing just the params and rettype bits of the sig
     pub fn to_name(&self) -> String {
         let names: Vec<_> = self
             .params
@@ -130,7 +132,7 @@ impl Signature {
     /// Panics if the types are not compatible,
     /// ie, the given type is not a function with the
     /// same number of params.
-    pub fn map_type(&self, new_type: &Type) -> Self {
+    fn _map_type(&self, new_type: &Type) -> Self {
         match new_type {
             Type::Func(params, rettype, typeparams) => {
                 if self.params.len() != params.len() {
