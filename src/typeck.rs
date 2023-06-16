@@ -852,21 +852,10 @@ impl Drop for ScopeGuard {
 
 impl Symtbl {
     fn add_builtins(&self, tck: &mut Tck) {
-        let println_sig = Type::Func(vec![Type::i32()], Box::new(Type::unit()), vec![]);
-        let println_ty = tck.insert_known(&println_sig);
-        self.add_var(Sym::new("__println"), println_ty, false);
-
-        let println_sig = Type::Func(vec![Type::i16()], Box::new(Type::unit()), vec![]);
-        let println_ty = tck.insert_known(&println_sig);
-        self.add_var(Sym::new("__println_i16"), println_ty, false);
-
-        let println_sig = Type::Func(vec![Type::i64()], Box::new(Type::unit()), vec![]);
-        let println_ty = tck.insert_known(&println_sig);
-        self.add_var(Sym::new("__println_i64"), println_ty, false);
-
-        let println_sig = Type::Func(vec![Type::bool()], Box::new(Type::unit()), vec![]);
-        let println_ty = tck.insert_known(&println_sig);
-        self.add_var(Sym::new("__println_bool"), println_ty, false);
+        for builtin in &*builtins::BUILTINS {
+            let ty = tck.insert_known(&builtin.sig);
+            self.add_var(builtin.name, ty, false);
+        }
     }
     fn push_scope(&self) -> ScopeGuard {
         self.frames.borrow_mut().push(ScopeFrame::default());

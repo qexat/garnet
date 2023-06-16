@@ -7,7 +7,7 @@ use crate::typeck::Tck;
 mod rust;
 
 /// Specifies which backend to use.
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Backend {
     /// Rust backend
     Rust,

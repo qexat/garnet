@@ -8,17 +8,17 @@ use std::fmt;
 use std::sync::Arc;
 
 use log::*;
+use once_cell::sync::Lazy;
 
-pub mod ast;
+mod ast;
 pub mod backend;
+mod builtins;
 pub mod format;
 pub mod hir;
-pub mod intern;
+mod intern;
 pub mod parser;
 pub mod passes;
 pub mod typeck;
-
-use once_cell::sync::Lazy;
 
 /// The interner.  It's the ONLY part we have to actually
 /// carry around anywhere, so I'm experimenting with making
