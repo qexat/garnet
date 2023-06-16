@@ -296,19 +296,17 @@ pub(super) fn monomorphize(ir: Ir, tck: &mut typeck::Tck) -> Ir {
         }
     }
     // Oop heck we gotta include builtins too fuuuuuuuck
-    {
-        for builtin in &*builtins::BUILTINS {
-            let sig = builtin.sig.to_type();
-            let body = vec![];
-            functions.insert(
-                nm,
-                D::Function {
-                    name: nm,
-                    signature: sig,
-                    body,
-                },
-            );
-        }
+    for builtin in &*builtins::BUILTINS {
+        let sig = builtin.sig.to_type();
+        let body = vec![];
+        functions.insert(
+            nm,
+            D::Function {
+                name: nm,
+                signature: sig,
+                body,
+            },
+        );
     }
 
     // We start from the entry point and just walk the call tree.
