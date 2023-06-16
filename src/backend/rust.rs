@@ -18,30 +18,6 @@ use crate::hir;
 use crate::typeck::Tck;
 use crate::*;
 
-/// Whatever builtin code stuff we want in the Rust program.
-///
-/// TODO: Refactor this into its own little data structure
-/// so we can have proper types connected to it.
-fn prelude() -> &'static str {
-    r#"
-fn __println(x: i32) {
-    println!("{}", x);
-}
-
-fn __println_bool(x: bool) {
-    println!("{}", x);
-}
-
-fn __println_i64(x: i64) {
-    println!("{}", x);
-}
-
-fn __println_i16(x: i16) {
-    println!("{}", x);
-}
-"#
-}
-
 /// Compiles a `Type` into a a valid Rust type.
 fn compile_typename(t: &Type) -> Cow<'static, str> {
     use crate::Type::*;
@@ -165,7 +141,9 @@ fn compile_typename(t: &Type) -> Cow<'static, str> {
 /// Driver that turns a pile of Ir into Rust code.
 pub(super) fn output(lir: &hir::Ir, tck: &Tck) -> Vec<u8> {
     let mut output = Vec::new();
-    output.extend(prelude().as_bytes());
+    for builtin in &*builtins::BUILTINS {
+        output.extend(builtin.code[&backend::Backend::Rust].as_bytes());
+    }
     for decl in lir.decls.iter() {
         compile_decl(&mut output, decl, tck)
             .expect("IO error writing output code.  Out of memory???");

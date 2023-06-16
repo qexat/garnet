@@ -297,18 +297,8 @@ pub(super) fn monomorphize(ir: Ir, tck: &mut typeck::Tck) -> Ir {
     }
     // Oop heck we gotta include builtins too fuuuuuuuck
     {
-        let builtins = vec![
-            ("__println", Type::i32()),
-            ("__println_i16", Type::i16()),
-            ("__println_i64", Type::i64()),
-            ("__println_bool", Type::bool()),
-        ];
-        for (name, argtype) in builtins.into_iter() {
-            let nm = Sym::new(name);
-            let sig = ast::Signature {
-                params: vec![(Sym::new("x"), argtype)],
-                rettype: Type::unit(),
-            };
+        for builtin in &*builtins::BUILTINS {
+            let sig = builtin.sig.to_type();
             let body = vec![];
             functions.insert(
                 nm,
