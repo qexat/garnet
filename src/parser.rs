@@ -308,6 +308,7 @@ use self::TokenKind as T;
 // This is not dead code but sometimes cargo thinks some of it fields are, since their usage is
 // cfg'd out in unit tests.
 #[allow(dead_code)]
+#[derive(Clone)]
 struct ErrorReporter {
     files: cs::files::SimpleFiles<String, String>,
     file_id: usize,
@@ -682,6 +683,16 @@ impl<'input> Parser<'input> {
             rettype,
             typeparams,
         }
+    }
+
+    /// Ok, this is where the grammar gets slightly cursed, but I
+    /// think I can isolate the curse here.  Basically this parses
+    /// type args like `type, type, type |` up until the closing
+    /// `|`, or if there IS no closing `|` and it reads something
+    /// not a type then it *backtracks* and returns an empty list.
+    fn _parse_type_args(&mut self) -> Vec<Type> {
+        //let new_lexer = self.lex.into_inner().deref().clone();
+        vec![]
     }
 
     /// sig = ident typename
@@ -1304,9 +1315,11 @@ impl<'input> Parser<'input> {
         ast::Expr::ArrayCtor { body }
     }
 
+    /// Types compose prefix.
+    /// So "array(3) of T" is "[3]T"
     fn parse_type(&mut self) -> Type {
         let t = self.next().unwrap_or_else(|| self.error("type", None));
-        let mut ty = match t.kind {
+        match t.kind {
             T::Ident(ref s) => {
                 if let Some(t) = Type::get_primitive_type(s) {
                     t
@@ -1334,20 +1347,15 @@ impl<'input> Parser<'input> {
             T::Struct => self.parse_struct_type(),
             T::Enum => self.parse_enum_type(),
             T::Sum => self.parse_sum_type(),
-            // Apparently all our types are prefix, which is weird.
-            // Fix this someday.
+            T::LBracket => {
+                let len = self.expect_int();
+                assert!(len >= 0);
+                self.expect(T::RBracket);
+                let inner = self.parse_type();
+                Type::Array(Box::new(inner), len as usize)
+            }
             _ => self.error("type", Some(t)),
-        };
-        // Array?  (Or other postfix shit, this be gettin whack)
-        // TODO: Figure out what you're actually doing here.
-        while self.peek_is(T::LBracket.discr()) {
-            self.expect(T::LBracket);
-            let len = self.expect_int();
-            assert!(len >= 0);
-            self.expect(T::RBracket);
-            ty = Type::Array(Box::new(ty), len as usize);
         }
-        ty
     }
 }
 
@@ -1948,7 +1956,7 @@ type blar = I8
     #[test]
     fn parse_weird_nested_array_bug() {
         test_expr_is(
-            "let x I32[3][3] = [[4, 3, 2], [4, 3, 2], [4, 3, 2]]",
+            "let x [3][3]I32 = [[4, 3, 2], [4, 3, 2], [4, 3, 2]]",
             || {
                 let arr = Expr::ArrayCtor {
                     body: vec![Expr::int(4), Expr::int(3), Expr::int(2)],
@@ -1998,8 +2006,8 @@ type blar = I8
 
     #[test]
     fn parse_array_types() {
-        test_type_is("I32[4]", || Type::array(&Type::i32(), 4));
-        test_type_is("I32[4][6]", || {
+        test_type_is("[4]I32", || Type::array(&Type::i32(), 4));
+        test_type_is("[6][4]I32", || {
             Type::array(&Type::array(&Type::i32(), 4), 6)
         });
     }
