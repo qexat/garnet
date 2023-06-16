@@ -1,0 +1,35 @@
+-- A simple PCG RNG.
+-- Good test for bit ops and such.
+-- Inspiration: https://hg.sr.ht/~icefox/oorandom
+
+type Rand32 = struct
+    state: U64,
+	inc: U64,
+end
+
+const RAND32_DEFAULT_INC U64 = 1442695040888963407
+const RAND32_MULTIPLIER U64 = 6364136223846793005
+
+--- Creates a new Rand32 with the given state and seed
+fn new_inc(seed U64, increment U64) Rand32 =
+  let mut rng = Rand32 {
+	.state = 0,
+	.increment = increment.wrapping_shl(1) bitor 1
+  }
+  let _ = rand32(rng)
+  rng.state = rng.state.wrapping_add(seed)
+  let _ = rand32(rng)
+  rng
+end
+
+
+--- Produces a random `u32` in the range `[0, u32::MAX]`.
+fn rand_u32(selff ^uniq Rand32) U32 =
+    let oldstate U64 = selff^.state
+    selff.state = oldstate
+        .wrapping_mul(RAND32_MULTIPLIER)
+        .wrapping_add(selff^.inc)
+    let xorshifted U32 = (((oldstate >> 18) ^ oldstate) >> 27) as U32
+    let rot U32 = (oldstate >> 59) as U32
+    xorshifted.rotate_right(rot)
+end
