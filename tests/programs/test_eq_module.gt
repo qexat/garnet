@@ -19,7 +19,7 @@ const BoolEq Eq(Bool) = Eq {
     .eq = fn(lhs Bool, rhs Bool) Bool = lhs == rhs end,
 }
 
-fn all(eq_impl Eq(@T), val @T, array [3]@T | @T) Bool =
+fn all(|@T| eq_impl Eq(@T), val @T, array [3]@T) Bool =
 	let mut i I32 = 0
 	loop
 		if i == 3 then break end

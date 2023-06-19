@@ -404,6 +404,7 @@ impl<'input> Parser<'input> {
 
     /// Returns the next token, with span.
     fn next(&mut self) -> Option<Token> {
+        // TODO BUGGO: Unfuck token spans
         let t = self.lex.next().map(|tok| Token::new(tok, 0..0));
         match t {
             // Recurse to skip comments
@@ -419,6 +420,7 @@ impl<'input> Parser<'input> {
     fn peek(&mut self) -> Option<Token> {
         let mut peeked_lexer = self.lex.clone();
         // Get the next token without touching the actual lexer
+        // TODO BUGGO: Unfuck token spans
         let t = peeked_lexer.next().map(|tok| Token::new(tok.clone(), 0..0));
         match t {
             // Skip comments
@@ -489,6 +491,7 @@ impl<'input> Parser<'input> {
                 );
                 let diag = Diagnostic::error()
                     .with_message(msg)
+                    // TODO BUGGO: Unfuck token spans
                     .with_labels(vec![Label::primary(self.err.file_id, 0..0)]);
 
                 self.err.error(&diag);
@@ -545,6 +548,7 @@ impl<'input> Parser<'input> {
                 );
                 let diag = Diagnostic::error()
                     .with_message(msg)
+                    // TODO BUGGO: Unfuck token spans
                     .with_labels(vec![Label::primary(self.err.file_id, 0..0)]);
 
                 self.err.error(&diag);
@@ -580,6 +584,7 @@ impl<'input> Parser<'input> {
                 );
                 let diag = Diagnostic::error()
                     .with_message(msg)
+                    // TODO BUGGO: Unfuck token spans
                     .with_labels(vec![Label::primary(self.err.file_id, 0..0)]);
 
                 self.err.error(&diag);
@@ -704,9 +709,19 @@ impl<'input> Parser<'input> {
     /// fn_args = "(" [sig {"," sig} [","]] ["|" types...] ")"
     fn parse_fn_args(&mut self) -> (Vec<(Sym, Type)>, Vec<Type>) {
         let mut args = vec![];
-        //let mut typeargs = vec![];
+        let mut typeparams = vec![];
         self.expect(T::LParen);
-        let typeparams = self.parse_barred_type_list();
+        if self.peek_expect(T::Bar.discr()) {
+            parse_delimited!(self, T::Comma, {
+                if !self.peek_is(T::Bar.discr()) {
+                    let ty = self.parse_type();
+                    typeparams.push(ty);
+                } else {
+                    break;
+                }
+            });
+            self.peek_expect(T::Bar.discr());
+        }
 
         parse_delimited!(self, T::Comma, {
             if self.peek_is(TokenKind::Ident("foo".into()).discr()) {
@@ -717,18 +732,6 @@ impl<'input> Parser<'input> {
                 break;
             }
         });
-        /*
-        if self.peek_expect(T::Bar.discr()) {
-            parse_delimited!(self, T::Comma, {
-                if !self.peek_is(T::RParen.discr()) {
-                    let ty = self.parse_type();
-                    typeargs.push(ty);
-                } else {
-                    break;
-                }
-            });
-        }
-            */
         self.expect(T::RParen);
         (args, typeparams)
     }
@@ -746,7 +749,7 @@ impl<'input> Parser<'input> {
     /// we started, and return an empty vec.
     ///
     /// foo(T1, T2 | things)
-    fn parse_barred_type_list(&mut self) -> Vec<Type> {
+    fn _parse_barred_type_list(&mut self) -> Vec<Type> {
         let old_lexer = self.lex.clone();
         let mut accm = vec![];
         while let Some(tok) = self.peek() {
@@ -803,18 +806,8 @@ impl<'input> Parser<'input> {
     /// type_list_with_typeparams = "(" [types... "|"] [type {"," type} [","] ")"
     fn parse_type_list_with_typeparams(&mut self) -> (Vec<Type>, Vec<Type>) {
         let mut args = vec![];
+        let mut typeparams = vec![];
         self.expect(T::LParen);
-        let typeparams = self.parse_barred_type_list();
-
-        parse_delimited!(self, T::Comma, {
-            if !self.peek_is(T::RParen.discr()) {
-                let tname = self.parse_type();
-                args.push(tname);
-            } else {
-                break;
-            }
-        });
-        /*
         if self.peek_expect(T::Bar.discr()) {
             parse_delimited!(self, T::Comma, {
                 if !self.peek_is(T::RParen.discr()) {
@@ -824,8 +817,17 @@ impl<'input> Parser<'input> {
                     break;
                 }
             });
+            self.expect(T::Bar);
         }
-            */
+
+        parse_delimited!(self, T::Comma, {
+            if !self.peek_is(T::RParen.discr()) {
+                let tname = self.parse_type();
+                args.push(tname);
+            } else {
+                break;
+            }
+        });
         self.expect(T::RParen);
         (args, typeparams)
     }
@@ -1191,17 +1193,8 @@ impl<'input> Parser<'input> {
 
     fn parse_function_args(&mut self) -> (Vec<ast::Expr>, Vec<Type>) {
         let mut params = vec![];
-        //let mut typeparams = vec![];
+        let mut typeparams = vec![];
         self.expect(T::LParen);
-        let typeparams = self.parse_barred_type_list();
-        parse_delimited!(self, T::Comma, {
-            if let Some(expr) = self.parse_expr(0) {
-                params.push(expr);
-            } else {
-                break;
-            }
-        });
-        /*
         if self.peek_expect(T::Bar.discr()) {
             parse_delimited!(self, T::Comma, {
                 if !self.peek_is(T::RParen.discr()) {
@@ -1211,8 +1204,15 @@ impl<'input> Parser<'input> {
                     break;
                 }
             });
+            self.expect(T::Bar);
         }
-            */
+        parse_delimited!(self, T::Comma, {
+            if let Some(expr) = self.parse_expr(0) {
+                params.push(expr);
+            } else {
+                break;
+            }
+        });
         self.expect(T::RParen);
         (params, typeparams)
     }
@@ -1764,12 +1764,12 @@ type blar = I8
     fn parse_fn_decls() {
         let valid_args = vec![
             "fn foo1(f I32) I32 = f end",
-            "fn foo2(@T | f I32 ) I32 = f end",
-            "fn foo3(@T|) {} = f end",
-            "fn foo4(|) {} = f end",
+            "fn foo2(|@T| f I32 ) I32 = f end",
+            "fn foo3(|@T|) {} = f end",
+            "fn foo4(||) {} = f end",
             "fn foo5() {} = f end",
             "fn foo6(f @T) @T = f end",
-            "fn foo7(@T1, @T2, | f I32, g Bool, ) I32 = f end",
+            "fn foo7(|@T1, @T2, | f I32, g Bool, ) I32 = f end",
         ];
         test_parse_with(|p| p.parse_decl().unwrap(), &valid_args);
     }
@@ -1815,7 +1815,7 @@ type blar = I8
         test_expr_is("(1)", || Expr::int(1));
         test_expr_is("(((1)))", || Expr::int(1));
 
-        test_expr_is("y(I32 | 1)", || Expr::Funcall {
+        test_expr_is("y(|I32| 1)", || Expr::Funcall {
             func: Box::new(Expr::Var {
                 name: Sym::new("y"),
             }),
@@ -2106,7 +2106,7 @@ type blar = I8
         ];
         for (s, desired) in &v1 {
             let mut p = Parser::new("unittest.gt", s);
-            let result = p.parse_barred_type_list();
+            let result = p._parse_barred_type_list();
             assert_eq!(&result, desired)
         }
     }
