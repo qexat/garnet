@@ -404,8 +404,7 @@ impl<'input> Parser<'input> {
 
     /// Returns the next token, with span.
     fn next(&mut self) -> Option<Token> {
-        // TODO BUGGO: Unfuck token spans
-        let t = self.lex.next().map(|tok| Token::new(tok, 0..0));
+        let t = self.lex.next().map(|tok| Token::new(tok, self.lex.span()));
         match t {
             // Recurse to skip comments
             Some(Token {
@@ -420,8 +419,9 @@ impl<'input> Parser<'input> {
     fn peek(&mut self) -> Option<Token> {
         let mut peeked_lexer = self.lex.clone();
         // Get the next token without touching the actual lexer
-        // TODO BUGGO: Unfuck token spans
-        let t = peeked_lexer.next().map(|tok| Token::new(tok.clone(), 0..0));
+        let t = peeked_lexer
+            .next()
+            .map(|tok| Token::new(tok.clone(), self.lex.span()));
         match t {
             // Skip comments
             Some(Token {
@@ -491,8 +491,7 @@ impl<'input> Parser<'input> {
                 );
                 let diag = Diagnostic::error()
                     .with_message(msg)
-                    // TODO BUGGO: Unfuck token spans
-                    .with_labels(vec![Label::primary(self.err.file_id, 0..0)]);
+                    .with_labels(vec![Label::primary(self.err.file_id, self.lex.span())]);
 
                 self.err.error(&diag);
             }
@@ -548,8 +547,7 @@ impl<'input> Parser<'input> {
                 );
                 let diag = Diagnostic::error()
                     .with_message(msg)
-                    // TODO BUGGO: Unfuck token spans
-                    .with_labels(vec![Label::primary(self.err.file_id, 0..0)]);
+                    .with_labels(vec![Label::primary(self.err.file_id, self.lex.span())]);
 
                 self.err.error(&diag);
             }
@@ -584,8 +582,7 @@ impl<'input> Parser<'input> {
                 );
                 let diag = Diagnostic::error()
                     .with_message(msg)
-                    // TODO BUGGO: Unfuck token spans
-                    .with_labels(vec![Label::primary(self.err.file_id, 0..0)]);
+                    .with_labels(vec![Label::primary(self.err.file_id, self.lex.span())]);
 
                 self.err.error(&diag);
             }
