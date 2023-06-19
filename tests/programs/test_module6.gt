@@ -16,7 +16,7 @@ type Cell(@K, @V) = struct(@K, @V)
     val: @V
 end
 
-fn make_cell_map(@K, @V | k @K, v @V) Map(Cell(@K, @V), @K, @V) =
+fn make_cell_map(|@K, @V| k @K, v @V) Map(Cell(@K, @V), @K, @V) =
     let module = Map {
         -- I guess we pretend this always succeeds,
         -- since I don't really feel like implementing if's
