@@ -371,14 +371,15 @@ macro_rules! parse_delimited {
 /// manipulating the input stream, and the `parse()` method to
 /// try to drive the given input to completion.
 pub struct Parser<'input> {
-    lex: std::iter::Peekable<logos::SpannedIter<'input, TokenKind>>,
+    lex: logos::Lexer<'input, TokenKind>,
+    //lex: std::iter::Peekable<logos::SpannedIter<'input, TokenKind>>,
     source: &'input str,
     err: ErrorReporter,
 }
 
 impl<'input> Parser<'input> {
     pub fn new(filename: &str, source: &'input str) -> Self {
-        let lex = TokenKind::lexer(source).spanned().peekable();
+        let lex = TokenKind::lexer(source);
         let err = ErrorReporter::new(filename, source);
         Parser { lex, source, err }
     }
@@ -403,7 +404,7 @@ impl<'input> Parser<'input> {
 
     /// Returns the next token, with span.
     fn next(&mut self) -> Option<Token> {
-        let t = self.lex.next().map(|(tok, span)| Token::new(tok, span));
+        let t = self.lex.next().map(|tok| Token::new(tok, 0..0));
         match t {
             // Recurse to skip comments
             Some(Token {
@@ -416,18 +417,17 @@ impl<'input> Parser<'input> {
 
     /// Peeks the next token, with span.
     fn peek(&mut self) -> Option<Token> {
-        let t = self
-            .lex
-            .peek()
-            .map(|(tok, span)| Token::new(tok.clone(), span.clone()));
+        let mut peeked_lexer = self.lex.clone();
+        // Get the next token without touching the actual lexer
+        let t = peeked_lexer.next().map(|tok| Token::new(tok.clone(), 0..0));
         match t {
             // Skip comments
             Some(Token {
                 kind: T::Comment(_),
                 ..
             }) => {
-                // This must be self.lex.next(), not just self.next().
-                let _ = self.lex.next();
+                // Advance the actual lexer to skip past the comment token
+                self.lex = peeked_lexer;
                 self.peek()
             }
             _ => t,
@@ -505,6 +505,11 @@ impl<'input> Parser<'input> {
         } else {
             false
         }
+    }
+
+    /// gramble gramble
+    fn peek_is_ident(&mut self) -> bool {
+        self.peek_is(T::Ident("foo".into()).discr())
     }
 
     /// Returns whether the next token in the stream is what is expected,
@@ -703,7 +708,7 @@ impl<'input> Parser<'input> {
         self.expect(T::LParen);
 
         parse_delimited!(self, T::Comma, {
-            if let Some((T::Ident(_), _span)) = self.lex.peek() {
+            if self.peek_is(TokenKind::Ident("foo".into()).discr()) {
                 let name = self.expect_ident();
                 let tname = self.parse_type();
                 args.push((name, tname));
@@ -723,6 +728,56 @@ impl<'input> Parser<'input> {
         }
         self.expect(T::RParen);
         (args, typeargs)
+    }
+
+    /// Ok, this is the cursed backtracking bit of the parser.
+    /// Basically we want to parse things of the form
+    /// "(" [type {"," type} [","] "|"] exprlist ")"
+    ///
+    /// The problem is we don't necessarily know whether the
+    /// first thing we parse is a type or expr until we've done
+    /// a bunch of them and have hit either a "|" or a ")".
+    /// So we go through parsing types until we hit a "|" and if
+    /// we do then we're good, or if we hit a ")" first we go
+    /// "whoops those were all expressions", backtrack to where
+    /// we started, and return an empty vec.
+    ///
+    /// foo(T1, T2 | things)
+    fn parse_barred_type_list(&mut self) -> Vec<Type> {
+        let old_lexer = self.lex.clone();
+        let mut accm = vec![];
+        while let Some(tok) = self.peek() {
+            match tok.kind {
+                T::Bar => {
+                    // We are done with our type arg list!
+                    self.drop();
+                    break;
+                }
+                T::RParen | T::RBrace => {
+                    // Whoops, hit end of an arg list, guess this wasn't types.
+                    // Backtrack!
+                    self.lex = old_lexer;
+                    return vec![];
+                }
+                _other => {
+                    if let Some(ty) = self.try_parse_type() {
+                        // Was a type, great
+                        accm.push(ty);
+                    } else {
+                        // Whoops, not a type, guess this is an expression list
+                        // Backtrack!
+                        self.lex = old_lexer;
+                        return vec![];
+                    }
+                }
+            }
+            // If we've gotten here it means we've just parsed a type,
+            // consume a comma if it exists.
+            // TODO: This is a little fucked because it means the commas
+            // between types are technically optional, but fuckit for now.
+            if self.peek_expect(T::Comma.discr()) {}
+        }
+        accm
     }
 
     /// type_list = "(" [type {"," type} [","] ")"
@@ -796,14 +851,13 @@ impl<'input> Parser<'input> {
 
         // TODO someday: Doc comments on struct fields
         parse_delimited!(self, T::Comma, {
-            match self.lex.peek() {
-                Some((T::Ident(_i), _span)) => {
-                    let name = self.expect_ident();
-                    self.expect(T::Colon);
-                    let tname = self.parse_type();
-                    fields.insert(name, tname);
-                }
-                _ => break,
+            if self.peek_is_ident() {
+                let name = self.expect_ident();
+                self.expect(T::Colon);
+                let tname = self.parse_type();
+                fields.insert(name, tname);
+            } else {
+                break;
             }
         });
         (fields, generics)
@@ -832,16 +886,15 @@ impl<'input> Parser<'input> {
 
         // TODO someday: Doc comments on enum fields
         parse_delimited!(self, T::Comma, {
-            match self.lex.peek() {
-                Some((T::Ident(_i), _span)) => {
-                    let id = self.expect_ident();
-                    if self.peek_expect(T::Equals.discr()) {
-                        current_val = self.expect_int() as i32;
-                    }
-                    variants.push((id, current_val));
-                    current_val += 1;
+            if self.peek_is_ident() {
+                let id = self.expect_ident();
+                if self.peek_expect(T::Equals.discr()) {
+                    current_val = self.expect_int() as i32;
                 }
-                _ => break,
+                variants.push((id, current_val));
+                current_val += 1;
+            } else {
+                break;
             }
         });
         // Make sure we don't have any duplicates.
@@ -1005,8 +1058,10 @@ impl<'input> Parser<'input> {
         };
         // Parse a postfix or infix expression with a given
         // binding power or greater.
-        while let Some((op_token, _span)) = self.lex.peek().cloned() {
-            // Is our token a postfix op?
+        while let Some(op_token) = self.peek().clone() {
+            // we only really care about the token kind
+            let op_token = op_token.kind;
+            // Is the token a postfix op
             if let Some((l_bp, ())) = postfix_binding_power(&op_token) {
                 if l_bp < min_bp {
                     break;
@@ -1318,8 +1373,12 @@ impl<'input> Parser<'input> {
     /// Types compose prefix.
     /// So "array(3) of T" is "[3]T"
     fn parse_type(&mut self) -> Type {
-        let t = self.next().unwrap_or_else(|| self.error("type", None));
-        match t.kind {
+        self.try_parse_type().expect("Type expected")
+    }
+
+    fn try_parse_type(&mut self) -> Option<Type> {
+        let t = self.next()?;
+        let x = match t.kind {
             T::Ident(ref s) => {
                 if let Some(t) = Type::get_primitive_type(s) {
                     t
@@ -1354,8 +1413,9 @@ impl<'input> Parser<'input> {
                 let inner = self.parse_type();
                 Type::Array(Box::new(inner), len as usize)
             }
-            _ => self.error("type", Some(t)),
-        }
+            _ => return None,
+        };
+        Some(x)
     }
 }
 
@@ -1436,7 +1496,7 @@ mod tests {
             let mut p = Parser::new("unittest.gt", s);
             f(&mut p);
             // Make sure we've parsed the whole string.
-            assert_eq!(p.lex.peek(), None);
+            assert_eq!(p.peek(), None);
         }
     }
 
@@ -1451,7 +1511,7 @@ mod tests {
         let parsed_expr = p.parse_expr(0).unwrap();
         assert_eq!(&ast, &parsed_expr);
         // Make sure we've parsed the whole string.
-        assert_eq!(p.lex.peek(), None);
+        assert_eq!(p.peek(), None);
     }
 
     /// Same as test_expr_is but with decl's
@@ -1461,7 +1521,7 @@ mod tests {
         let parsed_decl = p.parse_decl().unwrap();
         assert_eq!(&ast, &parsed_decl);
         // Make sure we've parsed the whole string.
-        assert_eq!(p.lex.peek(), None);
+        assert_eq!(p.peek(), None);
     }
 
     /// And again with types
@@ -1471,7 +1531,7 @@ mod tests {
         let parsed_type = p.parse_type();
         assert_eq!(&ast, &parsed_type);
         // Make sure we've parsed the whole string.
-        assert_eq!(p.lex.peek(), None);
+        assert_eq!(p.peek(), None);
     }
 
     #[test]
@@ -2022,5 +2082,28 @@ type blar = I8
     fn parse_ref() {
         let valid_args = &["x&", "10^&", "z&^.0", "z.0^&&", "(1+2*3)&"][..];
         test_parse_with(|p| p.parse_expr(0), &valid_args)
+    }
+
+    #[test]
+    fn parse_cursed_type_list() {
+        let v1 = vec![
+            ("|", vec![]),
+            ("I32, I64, | other junk", vec![Type::i32(), Type::i64()]),
+            ("I32, I64 | other junk", vec![Type::i32(), Type::i64()]),
+            (
+                "[12]Bool, {I32, I32} | other junk",
+                vec![
+                    Type::array(&Type::bool(), 12),
+                    Type::tuple(vec![Type::i32(), Type::i32()]),
+                ],
+            ),
+            ("other junk)", vec![]),
+            ("other junk}", vec![]),
+        ];
+        for (s, desired) in &v1 {
+            let mut p = Parser::new("unittest.gt", s);
+            let result = p.parse_barred_type_list();
+            assert_eq!(&result, desired)
+        }
     }
 }
