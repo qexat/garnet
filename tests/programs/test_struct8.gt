@@ -3,10 +3,10 @@
 
 -- Test struct literal syntax stuff
 const X struct
-    a: I32,
+    a: I32
     b: Bool
 end = {
-    .a = 12,
+    .a = 12
     .b = false
 }
 

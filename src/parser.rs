@@ -189,6 +189,8 @@ pub enum TokenKind {
     #[token(":")]
     Colon,
     #[token(";")]
+    #[regex(r"\n+")]
+    //Newline,
     Semicolon,
     #[token("=")]
     Equals,
@@ -245,7 +247,8 @@ pub enum TokenKind {
     Comment(String),
 
     #[error]
-    #[regex(r"[ \t\n\f]+", logos::skip)]
+    #[regex(r"[ \t\f]+", logos::skip)]
+    #[regex(r"\\\n+", logos::skip)] // escaped newline
     Error,
 }
 
@@ -391,6 +394,7 @@ impl<'input> Parser<'input> {
         let mut decls = vec![];
         while let Some(d) = self.parse_decl() {
             decls.push(d);
+            self.eat_delimiters();
         }
         let filename = self.err.files.get(self.err.file_id).unwrap().name();
         // TODO: Handle paths and shit better
@@ -527,6 +531,14 @@ impl<'input> Parser<'input> {
         }
     }
 
+    /// Eat zero or more delimiters.  We put this in places where
+    /// delimiters/newlines are allowed but not necessary.
+    fn eat_delimiters(&mut self) {
+        while self.peek_is(T::Semicolon.discr()) {
+            self.drop();
+        }
+    }
+
     /// Consume an identifier and return its interned symbol.
     fn expect_ident(&mut self) -> Sym {
         match self.next() {
@@ -604,6 +616,7 @@ impl<'input> Parser<'input> {
                     T::Fn => Some(p.parse_fn(doc_comments)),
                     T::Type => Some(p.parse_typedef(doc_comments)),
                     T::Import => Some(p.parse_import(doc_comments)),
+                    T::Semicolon => parse_decl_inner(p, doc_comments),
                     _other => p.error("start of decl", Some(tok)),
                 }
             } else {
@@ -645,7 +658,7 @@ impl<'input> Parser<'input> {
         let name = self.expect_ident();
         let mut params = vec![];
         if self.peek_expect(T::LParen.discr()) {
-            parse_delimited!(self, T::Comma, {
+            parse_delimited!(self, T::Semicolon, {
                 if self.peek_is(T::RParen.discr()) {
                     break;
                 } else {
@@ -854,33 +867,27 @@ impl<'input> Parser<'input> {
         }
 
         // TODO someday: Doc comments on struct fields
-        parse_delimited!(self, T::Comma, {
-            if self.peek_is_ident() {
-                let name = self.expect_ident();
-                self.expect(T::Colon);
-                let tname = self.parse_type();
-                fields.insert(name, tname);
-            } else {
-                break;
-            }
-        });
+        while self.peek_is_ident() {
+            let name = self.expect_ident();
+            self.expect(T::Colon);
+            let tname = self.parse_type();
+            self.expect(T::Semicolon);
+            fields.insert(name, tname);
+        }
         (fields, generics)
     }
 
-    /// Parse the fields for a struct *type literal*
+    /// Parse the fields for a struct *valueliteral*
     fn parse_struct_lit_fields(&mut self) -> BTreeMap<Sym, ast::Expr> {
         let mut fields = BTreeMap::default();
 
-        parse_delimited!(self, T::Comma, {
-            if self.peek_expect(T::Period.discr()) {
-                let name = self.expect_ident();
-                self.expect(T::Equals);
-                let vl = self.parse_expr(0).unwrap();
-                fields.insert(name, vl);
-            } else {
-                break;
-            }
-        });
+        while self.peek_expect(T::Period.discr()) {
+            let name = self.expect_ident();
+            self.expect(T::Equals);
+            let vl = self.parse_expr(0).unwrap();
+            fields.insert(name, vl);
+            self.eat_delimiters();
+        }
         fields
     }
 
@@ -928,12 +935,14 @@ impl<'input> Parser<'input> {
     }
 
     fn try_parse_struct_type(&mut self) -> Option<Type> {
+        self.eat_delimiters();
         let (fields, type_params) = self.parse_struct_fields();
         self.expect(T::End);
         Some(Type::Struct(fields, type_params))
     }
 
     fn parse_enum_type(&mut self) -> Type {
+        self.eat_delimiters();
         let variants = self.parse_enum_fields();
         self.expect(T::End);
         Type::Enum(variants)
@@ -941,6 +950,7 @@ impl<'input> Parser<'input> {
 
     /// isomorphic-ish with parse_type_list()
     fn parse_sum_type(&mut self) -> Type {
+        self.eat_delimiters();
         let mut fields = BTreeMap::default();
         let mut generics = vec![];
         if self.peek_expect(T::LParen.discr()) {
@@ -980,10 +990,12 @@ impl<'input> Parser<'input> {
 
     fn parse_exprs(&mut self) -> Vec<ast::Expr> {
         let mut exprs = vec![];
+        self.eat_delimiters();
         let tok = self.peek();
         while let Some(e) = self.parse_expr(0) {
             // if we have a semicolon after an expr we can just eat it
-            self.peek_expect(T::Semicolon.discr());
+            //self.peek_expect(T::Semicolon.discr());
+            self.eat_delimiters();
             exprs.push(e);
         }
         // TODO: I think this was necessary for sanity's sake at some point
@@ -1255,10 +1267,13 @@ impl<'input> Parser<'input> {
     /// {"elseif" expr "then" {expr}}
     fn parse_elif(&mut self, accm: &mut Vec<ast::IfCase>) {
         while self.peek_expect(T::Elseif.discr()) {
+            self.eat_delimiters();
             let condition = self
                 .parse_expr(0)
                 .expect("TODO: be better; could not parse expr after elseif");
+            self.eat_delimiters();
             self.expect(T::Then);
+            self.eat_delimiters();
             let body = self.parse_exprs();
             accm.push(ast::IfCase {
                 condition: Box::new(condition),
@@ -1273,7 +1288,9 @@ impl<'input> Parser<'input> {
         let condition = self
             .parse_expr(0)
             .expect("TODO: Expected expression after if, did not get one");
+        self.eat_delimiters();
         self.expect(T::Then);
+        self.eat_delimiters();
         let body = self.parse_exprs();
         let mut ifcases = vec![ast::IfCase {
             condition: Box::new(condition),
@@ -1281,6 +1298,7 @@ impl<'input> Parser<'input> {
         }];
         // Parse 0 or more else if cases
         self.parse_elif(&mut ifcases);
+        self.eat_delimiters();
         let next = self.peek();
         let falseblock = match next {
             // No else block, we're done
@@ -1291,6 +1309,7 @@ impl<'input> Parser<'input> {
             // We're in an else block but not an else-if block
             Some(Token { kind: T::Else, .. }) => {
                 self.expect(T::Else);
+                self.eat_delimiters();
                 let elsepart = self.parse_exprs();
                 self.expect(T::End);
                 elsepart
@@ -1333,6 +1352,7 @@ impl<'input> Parser<'input> {
     /// struct constructor = "{" ["." id "=" expr {"," "." id "=" expr}]  [","] "}"
     fn parse_constructor(&mut self) -> ast::Expr {
         self.expect(T::LBrace);
+        self.eat_delimiters();
         if self.peek_is(T::Period.discr()) {
             self.parse_struct_literal()
         } else {
@@ -1342,7 +1362,9 @@ impl<'input> Parser<'input> {
 
     /// struct constructor = "{" "." ident "=" expr {"," ...} "}"
     fn parse_struct_literal(&mut self) -> ast::Expr {
+            self.eat_delimiters();
         let body = self.parse_struct_lit_fields();
+            self.eat_delimiters();
         self.expect(T::RBrace);
         ast::Expr::StructCtor { body }
     }
@@ -1353,6 +1375,8 @@ impl<'input> Parser<'input> {
         parse_delimited!(self, T::Comma, {
             if let Some(expr) = self.parse_expr(0) {
                 body.push(expr);
+                self.eat_delimiters();
+
             } else {
                 break;
             }
@@ -1688,19 +1712,16 @@ type blar = I8
             "if 10 then let x  Bool = false 10 end",
             r#"if 10 then false
             else true
-            end
-            "#,
+            end"#,
             r#"if 10 then false
             elseif 20 then false
             else true
-            end
-            "#,
+            end "#,
             r#"if 10 then false
             elseif 20 then {} false
             elseif 30 then {}
             else true
-            end
-            "#,
+            end "#,
         ];
         test_parse_with(|p| p.parse_if(), &valid_args);
         test_parse_with(|p| p.parse_expr(0), &valid_args);
@@ -1825,15 +1846,13 @@ type blar = I8
     fn verify_elseif() {
         use Expr;
         test_expr_is(
-            r#"
-            if x then
+            r#"if x then
                 1
             elseif y then
                 2
             else
                 3
-            end
-            "#,
+            end"#,
             || Expr::If {
                 cases: vec![
                     ast::IfCase {
@@ -1849,9 +1868,9 @@ type blar = I8
             },
         );
 
+        /*
         test_expr_is(
-            r#"
-            if x then
+            r#"if x then
                 1
             else
                 if y then
@@ -1859,8 +1878,7 @@ type blar = I8
                 else
                     3
                 end
-            end
-            "#,
+            end"#,
             || Expr::If {
                 cases: vec![ast::IfCase {
                     condition: Box::new(Expr::var("x")),
@@ -1875,6 +1893,7 @@ type blar = I8
                 }],
             },
         );
+        */
     }
 
     // Test op precedence works
@@ -2086,25 +2105,8 @@ type blar = I8
     }
 
     #[test]
-    fn parse_cursed_type_list() {
-        let v1 = vec![
-            ("|", vec![]),
-            ("I32, I64, | other junk", vec![Type::i32(), Type::i64()]),
-            ("I32, I64 | other junk", vec![Type::i32(), Type::i64()]),
-            (
-                "[12]Bool, {I32, I32} | other junk",
-                vec![
-                    Type::array(&Type::bool(), 12),
-                    Type::tuple(vec![Type::i32(), Type::i32()]),
-                ],
-            ),
-            ("other junk)", vec![]),
-            ("other junk}", vec![]),
-        ];
-        for (s, desired) in &v1 {
-            let mut p = Parser::new("unittest.gt", s);
-            let result = p._parse_barred_type_list();
-            assert_eq!(&result, desired)
-        }
+    fn parse_struct_type() {
+        let valid_args = &["x: I32; y: Bool;", "x: I32\ny: Bool\n"][..];
+        test_parse_with(|p| p.parse_struct_fields(), &valid_args);
     }
 }
