@@ -3,8 +3,9 @@
 
 
 type Foo(@Thing) = struct
-    a: @Thing,
+    a: @Thing 
     b: Bool
+
 end
 
 fn id(|@T| x @T) @T =
@@ -14,27 +15,27 @@ end
 
 fn main() {} =
     let f1 = id(|Foo(I32)| Foo(|I32| {
-        .a = 3_I32,
+        .a = 3_I32
         .b = false
     }))
 
     let f1 = id(|Foo(I32)| Foo {
-        .a = 3_I32,
+        .a = 3_I32
         .b = false
     })
  
     let f2 = id(|Foo(Bool)| Foo {
-        .a = true,
+        .a = true
         .b = false
     })
 
     let f3 = id(Foo {
-        .a = 3_I32,
+        .a = 3_I32
         .b = false
     } )
  
     let f4 = id(Foo {
-        .a = true,
+        .a = true
         .b = false
     } ) 
 end
