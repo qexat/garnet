@@ -6,10 +6,8 @@
 --   stdout: 3
 
 
-
-
 type Foo = struct
-    a: I32,
+    a: I32
     b: Bool
 end
 
@@ -20,9 +18,9 @@ end
 
 fn main() {} =
     let f1 Foo = id(Foo {
-        .a = 3,
+        .a = 3
         .b = false
     })
-    let f2 struct a: I32, b: Bool end = id({ .a = 3, .b = false })
+    let f2 struct a: I32; b: Bool; end = id({ .a = 3; .b = false })
     __println(f1$.a)
 end
