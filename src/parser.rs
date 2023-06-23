@@ -138,19 +138,19 @@ pub enum TokenKind {
     Let,
     #[token("mut")]
     Mut,
-    #[token("end")]
+    #[regex("end *\n*")]
     End,
     #[token("if")]
     If,
-    #[token("then")]
+    #[regex("then *\n*")]
     Then,
-    #[token("elseif")]
+    #[regex("elseif *\n*")]
     Elseif,
-    #[token("else")]
+    #[regex("else *\n*")]
     Else,
-    #[token("loop")]
+    #[regex("loop *\n*")]
     Loop,
-    #[token("do")]
+    #[regex("do *\n*")]
     Do,
     #[token("return")]
     Return,
@@ -158,11 +158,11 @@ pub enum TokenKind {
     Break,
     #[token("type")]
     Type,
-    #[token("struct")]
+    #[regex("struct *\n*")]
     Struct,
-    #[token("enum")]
+    #[regex("enum *\n*")]
     Enum,
-    #[token("sum")]
+    #[regex("sum *\n*")]
     Sum,
     #[token("import")]
     Import,
@@ -182,7 +182,7 @@ pub enum TokenKind {
     LBracket,
     #[token("]")]
     RBracket,
-    #[token(",")]
+    #[regex(", *\n*")]
     Comma,
     #[token(".")]
     Period,
@@ -409,10 +409,11 @@ impl<'input> Parser<'input> {
     /// Returns the next token, with span.
     fn next(&mut self) -> Option<Token> {
         let t = self.lex.next().map(|tok| Token::new(tok, self.lex.span()));
+        dbg!(&t);
         match t {
             // Recurse to skip comments
             Some(Token {
-                kind: T::Comment(_),
+                // kind: T::Comment(_),
                 ..
             }) => self.next(),
             _ => t,
@@ -867,13 +868,16 @@ impl<'input> Parser<'input> {
         }
 
         // TODO someday: Doc comments on struct fields
-        while self.peek_is_ident() {
-            let name = self.expect_ident();
-            self.expect(T::Colon);
-            let tname = self.parse_type();
-            self.expect(T::Semicolon);
-            fields.insert(name, tname);
-        }
+        parse_delimited!(self, T::Comma, {
+            if !self.peek_is_ident() { 
+                let name = self.expect_ident();
+                self.expect(T::Colon);
+                let tname = self.parse_type();
+                fields.insert(name, tname);
+            } else {
+                break;
+            }
+        });
         (fields, generics)
     }
 
@@ -902,6 +906,7 @@ impl<'input> Parser<'input> {
                 if self.peek_expect(T::Equals.discr()) {
                     current_val = self.expect_int() as i32;
                 }
+                self.eat_delimiters();
                 variants.push((id, current_val));
                 current_val += 1;
             } else {
@@ -1362,9 +1367,9 @@ impl<'input> Parser<'input> {
 
     /// struct constructor = "{" "." ident "=" expr {"," ...} "}"
     fn parse_struct_literal(&mut self) -> ast::Expr {
-            self.eat_delimiters();
+        self.eat_delimiters();
         let body = self.parse_struct_lit_fields();
-            self.eat_delimiters();
+        self.eat_delimiters();
         self.expect(T::RBrace);
         ast::Expr::StructCtor { body }
     }
@@ -1735,14 +1740,14 @@ type blar = I8
 
     #[test]
     fn parse_loop() {
-        let valid_args = vec!["loop 10 end", "loop 10 20 30 end", "loop {} end"];
+        let valid_args = vec!["loop 10 end", "loop 10; 20; 30 end", "loop {}; end"];
         test_parse_with(|p| p.parse_loop(), &valid_args);
         test_parse_with(|p| p.parse_expr(0), &valid_args);
     }
 
     #[test]
     fn parse_block() {
-        let valid_args = vec!["do 10 end", "do 10 20 30 end", "do {} end"];
+        let valid_args = vec!["do \n 10 end", "do 10 20 30 end", "do {} end"];
         test_parse_with(|p| p.parse_block(), &valid_args);
         test_parse_with(|p| p.parse_expr(0), &valid_args);
     }
@@ -2106,7 +2111,7 @@ type blar = I8
 
     #[test]
     fn parse_struct_type() {
-        let valid_args = &["x: I32; y: Bool;", "x: I32\ny: Bool\n"][..];
+        let valid_args = &["x: I32, y: Bool,", "x: I32, y: Bool"][..];
         test_parse_with(|p| p.parse_struct_fields(), &valid_args);
     }
 }
