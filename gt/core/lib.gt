@@ -8,15 +8,15 @@ type Str = {}
 alias Size = U64
 alias Offset = I64
 
-fn panic(s: Str): {} =
+fn panic(s Str) {} =
     __panic(s)
 end
 
-fn todo(msg: Str): {} =
+fn todo(msg Str) {} =
     panic(s)
 end
 
-fn assert(fact: Bool): {} =
+fn assert(fact Bool) {} =
     if not fact then
         panic("assertion failed")
     end
