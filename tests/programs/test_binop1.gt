@@ -1,0 +1,20 @@
+-- Compile:
+--   status: success
+--
+-- Run:
+--   status: success
+--   stdout:
+--     17
+--     23
+--     -23
+--     -4
+--     -7
+
+fn main() {} =
+    __println(3 * 4 + 5)
+    __println(3 + 4 * 5)
+    __println(-3 + 4 * 5)
+    let arr [5]I32 = [1,2,3,4,5]
+    __println(-arr[3])
+    __println(-3 + arr[3])
+end

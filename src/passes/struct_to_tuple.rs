@@ -137,7 +137,7 @@ pub(super) fn struct_to_tuple(ir: Ir, tck: &mut typeck::Tck) -> Ir {
     let tuplize_expr = &mut |e| tuplize_expr(e, tck);
 
     for decl in ir.decls.into_iter() {
-        let res = decl_map(decl, tuplize_expr, &mut tuplize_type);
+        let res = decl_map_pre(decl, tuplize_expr, &mut tuplize_type);
         new_decls.push(res);
     }
     let new_ir = Ir {

@@ -22,7 +22,7 @@ fn lambda_lift_expr(expr: ExprNode, output_funcs: &mut Vec<D>) -> ExprNode {
             let function_decl = D::Function {
                 name: lambda_name,
                 signature,
-                body: exprs_map(body, &mut |e| lambda_lift_expr(e, output_funcs)),
+                body: exprs_map_pre(body, &mut |e| lambda_lift_expr(e, output_funcs)),
             };
             output_funcs.push(function_decl);
             E::Var { name: lambda_name }
@@ -48,7 +48,7 @@ pub(super) fn lambda_lift(ir: Ir) -> Ir {
         .decls
         .into_iter()
         .map(|decl| {
-            decl_map(
+            decl_map_pre(
                 decl,
                 &mut |e| lambda_lift_expr(e, &mut new_functions),
                 &mut |t| t,

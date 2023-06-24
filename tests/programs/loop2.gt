@@ -3,7 +3,7 @@
 
 --- What if we try to break outside of a loop?
 fn main() {} =
-    let mut i I32 = 0;
+    let mut i I32 = 0
     break
     loop
         i = i + 1

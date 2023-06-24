@@ -6,7 +6,8 @@
 //!  * Use something smarter than strings to collect output -- could just
 //!    output to a stream like the formatter does.  This is a little weird though 'cause
 //!    we often want to build pieces of code, and then combine them together at the end.
-//!  * Use `syn` or something to generate tokens for output rather than strings
+//!    An aggressively closure-y model might work wiht that tbh
+//!  * Use `syn` or something to generate tokens for output rather than strings???
 
 use std::borrow::Cow;
 use std::io::{self, Write};
@@ -17,30 +18,7 @@ use crate::hir;
 use crate::typeck::Tck;
 use crate::*;
 
-/// Whatever prefix stuff we want in the Rust program.
-fn prelude() -> &'static str {
-    r#"
-fn __println(x: i32) {
-    println!("{}", x);
-}
-
-fn __println_bool(x: bool) {
-    println!("{}", x);
-}
-
-fn __println_i64(x: i64) {
-    println!("{}", x);
-}
-
-fn __println_i16(x: i16) {
-    println!("{}", x);
-}
-"#
-}
-
 /// Compiles a `Type` into a a valid Rust type.
-///
-/// Needed for when we do `let x: Foo = ...` rather than `struct Foo { ... }`
 fn compile_typename(t: &Type) -> Cow<'static, str> {
     use crate::Type::*;
     match t {
@@ -57,6 +35,7 @@ fn compile_typename(t: &Type) -> Cow<'static, str> {
         }
         Prim(PrimType::Bool) => "bool".into(),
         Prim(PrimType::AnyPtr) => format!("*const u8").into(),
+        Never => unreachable!(),
         Named(s, types) if s == &Sym::new("Tuple") => {
             trace!("Compiling tuple {:?}...", t);
             let mut accm = String::from("(");
@@ -69,7 +48,7 @@ fn compile_typename(t: &Type) -> Cow<'static, str> {
         }
         Func(params, rettype, typeparams) => {
             if typeparams.len() > 0 {
-                todo!();
+                todo!("Function pointer types containing generics need monomorph to work");
             }
             let mut accm = String::from("fn ");
             // TODO: ...make sure this actually works.
@@ -92,7 +71,6 @@ fn compile_typename(t: &Type) -> Cow<'static, str> {
             accm += &compile_typename(&*rettype);
             accm.into()
         }
-        //Named(sym) => (&*INT.fetch(*sym)).clone().into(),
         Struct(_fields, _generics) => {
             // We compile our structs into Rust tuples.
             // Our fields are always ordered via BTreeMap etc,
@@ -154,14 +132,18 @@ fn compile_typename(t: &Type) -> Cow<'static, str> {
             accm += ")";
             accm.into()
             */
-            format!("SomeSum").into()
+            //format!("SomeSum").into()
+            unimplemented!()
         }
     }
 }
 
+/// Driver that turns a pile of Ir into Rust code.
 pub(super) fn output(lir: &hir::Ir, tck: &Tck) -> Vec<u8> {
     let mut output = Vec::new();
-    output.extend(prelude().as_bytes());
+    for builtin in &*builtins::BUILTINS {
+        output.extend(builtin.code[&backend::Backend::Rust].as_bytes());
+    }
     for decl in lir.decls.iter() {
         compile_decl(&mut output, decl, tck)
             .expect("IO error writing output code.  Out of memory???");
@@ -169,7 +151,7 @@ pub(super) fn output(lir: &hir::Ir, tck: &Tck) -> Vec<u8> {
     output
 }
 
-/// Mangle/unmangle a name for a function.
+/// Mangle a name for a function.
 /// We need this for lambda's, migth need it for other things, we'll see.
 /// TODO: There might be a better way to make lambda's un-nameable.
 /// Probably, really.
@@ -177,6 +159,7 @@ fn mangle_name(s: &str) -> String {
     s.replace("!", "__")
 }
 
+/// Compile a single decl
 fn compile_decl(w: &mut impl Write, decl: &hir::Decl, tck: &Tck) -> io::Result<()> {
     match decl {
         hir::Decl::Function {
@@ -187,7 +170,13 @@ fn compile_decl(w: &mut impl Write, decl: &hir::Decl, tck: &Tck) -> io::Result<(
             let nstr = mangle_name(&*INT.fetch(*name));
             let sstr = compile_fn_signature(signature);
             let bstr = compile_exprs(body, ";\n", tck);
-            writeln!(w, "pub fn {}{} {{\n{}\n}}\n", nstr, sstr, bstr)
+            if body.iter().all(|expr| expr.is_const) {
+                trace!("Function is const: {:?}", nstr);
+                writeln!(w, "pub const fn {}{} {{\n{}\n}}\n", nstr, sstr, bstr)
+            } else {
+                trace!("Function is NOT const: {:?}\nBody:{:?}", nstr, body);
+                writeln!(w, "pub fn {}{} {{\n{}\n}}\n", nstr, sstr, bstr)
+            }
         }
         hir::Decl::Const {
             name,
@@ -253,6 +242,7 @@ fn compile_decl(w: &mut impl Write, decl: &hir::Decl, tck: &Tck) -> io::Result<(
     }
 }
 
+/// Compile a function signature
 fn compile_fn_signature(sig: &ast::Signature) -> String {
     let mut accm = String::from("");
     let generics = sig.generic_type_names();
@@ -274,6 +264,13 @@ fn compile_fn_signature(sig: &ast::Signature) -> String {
     }
     accm += ") -> ";
     accm += &compile_typename(&sig.rettype);
+    if generics.len() > 0 {
+        accm += " where ";
+        for generic in generics.iter() {
+            accm += &mangle_name(&*generic.val());
+            accm += ": Copy,";
+        }
+    }
     accm
 }
 
@@ -435,19 +432,6 @@ fn compile_expr(expr: &hir::ExprNode, tck: &Tck) -> String {
         E::Return { retval } => {
             format!("return {};", compile_expr(retval, tck))
         }
-        /*
-        E::TupleCtor { body } => {
-            // We *don't* want join() here, we want to append comma's so that
-            // `(foo,)` works properly.
-            let mut accm = String::from("(");
-            for expr in body {
-                accm += &compile_expr(expr, tck);
-                accm += ", ";
-            }
-            accm += ")";
-            accm
-        }
-        */
         // Unit type
         E::TupleCtor { body } if body.len() == 0 => String::from(" ()\n"),
         E::TupleCtor { body } => {
@@ -477,6 +461,14 @@ fn compile_expr(expr: &hir::ExprNode, tck: &Tck) -> String {
             }
             accm += ")\n";
             accm
+        }
+        E::ArrayRef { expr, idx } => {
+            // TODO: We don't actually have usize types yet, so...
+            format!(
+                "{}[{} as usize]",
+                compile_expr(expr, tck),
+                compile_expr(idx, tck)
+            )
         }
         E::StructRef { expr, elt } => {
             // panic!("Should never happen, structs should always be tuples by now!");
@@ -508,10 +500,6 @@ fn compile_expr(expr: &hir::ExprNode, tck: &Tck) -> String {
             accm += "]";
             accm
         }
-        /*
-        E::Deref { expr } => format!("*{}", compile_expr(expr, tck)),
-        E::Ref { expr } => format!("&{}", compile_expr(expr, tck)),
-        */
         E::TypeUnwrap { expr } => {
             // Since our typedefs compile to Rust type aliases, we don't
             // have to do anything to unwrap them
@@ -540,19 +528,5 @@ fn compile_expr(expr: &hir::ExprNode, tck: &Tck) -> String {
         }
         other => todo!("{:?}", other),
     };
-    // We need to look at subexpressions.
-    // If the return type of that subexpression is AnyPtr,
-    // we need to cast it to what the current expression
-    // actually expects.
-    // If this is a function or constructor that is taking
-    // an AnyPtr as an arg,
-    let expr_rettypeid = tck.get_expr_type(expr);
-    let expr_rettype = tck.reconstruct(expr_rettypeid).expect("Shouldn't happen");
-    trace!("Checking if anyptr is in {:?}\n{:?}", expr_rettype, expr);
-    if expr_rettype == Type::anyptr() {
-        format!("((&{}) as *const _ as *const u8)", expr_str)
-        //expr_str
-    } else {
-        expr_str
-    }
+    expr_str
 }

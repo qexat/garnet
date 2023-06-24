@@ -1,6 +1,7 @@
 //! Typechecking and other semantic checking.
 //! Operates on the HIR.
 //!
+//! TODO: Actually check whether the body of const decls is const
 
 use std::borrow::Cow;
 use std::cell::RefCell;
@@ -27,6 +28,8 @@ pub enum TypeInfo {
     Ref(TypeId),
     Prim(PrimType),
     Enum(Vec<(Sym, i32)>),
+    /// This expression never returns so it can "be" any type
+    Never,
     /// N-ary type constructor.
     /// It could be Int()
     /// or List(Int)
@@ -38,7 +41,7 @@ pub enum TypeInfo {
     Struct(BTreeMap<Sym, TypeId>),
     /// Definitely a sum type
     Sum(BTreeMap<Sym, TypeId>),
-    Array(TypeId, usize),
+    Array(TypeId, Option<usize>),
     /// This is some generic type that has a name like @A
     /// AKA a type parameter.
     TypeParam(Sym),
@@ -49,6 +52,7 @@ impl TypeInfo {
         use TypeInfo::*;
         match self {
             Unknown => Cow::Borrowed("{unknown}"),
+            Never => Cow::Borrowed("{never}"),
             Prim(p) => p.get_name(),
             Ref(id) => Cow::Owned(format!("Ref({})", tck.vars[id].get_name(tck))),
             Enum(v) => {
@@ -100,7 +104,14 @@ impl TypeInfo {
                 accm += "end\n";
                 accm.into()
             }
-            Array(id, len) => Cow::Owned(format!("{}[{}]", tck.vars[id].get_name(tck), len)),
+            Array(id, len) => {
+                // Output something intelligible if we don't know the
+                // length of the array.
+                let len_str = len
+                    .map(|l| format!("{}", l))
+                    .unwrap_or_else(|| format!("unknown"));
+                Cow::Owned(format!("{}[{}]", tck.vars[id].get_name(tck), len_str))
+            }
             TypeParam(sym) => Cow::Owned(format!("@{}", &*sym.val())),
         }
     }
@@ -371,6 +382,7 @@ impl Tck {
         // Recursively insert all subtypes.
         let tinfo = match t {
             Type::Prim(ty) => TypeInfo::Prim(ty.clone()),
+            Type::Never => TypeInfo::Never,
             Type::Enum(vals) => TypeInfo::Enum(vals.clone()),
             Type::Named(s, args) => {
                 let new_args = args.iter().map(|t| self.insert_known(t)).collect();
@@ -385,7 +397,7 @@ impl Tck {
             Type::Generic(s) => TypeInfo::TypeParam(*s),
             Type::Array(ty, len) => {
                 let new_body = self.insert_known(&ty);
-                TypeInfo::Array(new_body, *len)
+                TypeInfo::Array(new_body, Some(*len))
             }
             // TODO: Generics?
             Type::Struct(body, _names) => {
@@ -529,6 +541,10 @@ impl Tck {
                 self.vars.insert(b, TypeInfo::Ref(a));
                 Ok(())
             }
+            // Never types can turn into anything 'cause they never happen
+            // I'm like.... 97% sure this is correct.
+            (Never, _) => Ok(()),
+            (_, Never) => Ok(()),
             // Follow any references
             (Ref(a), _) => self.unify(symtbl, a, b),
             (_, Ref(b)) => self.unify(symtbl, a, b),
@@ -598,8 +614,8 @@ impl Tck {
                 }
                 Ok(())
             }
+            // Same as struct types
             (Sum(body1), Sum(body2)) => {
-                // Same as struct types
                 for (nm, t1) in body1.iter() {
                     let t2 = body2[nm];
                     self.unify(symtbl, *t1, t2)?;
@@ -609,6 +625,21 @@ impl Tck {
                     self.unify(symtbl, t1, *t2)?;
                 }
                 Ok(())
+            }
+            // Either both array lengths are the same or both are
+            // unknown.  The latter might need to be an error, we will see.
+            (Array(body1, len1), Array(body2, len2)) if len1 == len2 => {
+                self.unify(symtbl, body1, body2)
+            }
+            (Array(body1, None), Array(body2, Some(_len2))) => {
+                self.vars.insert(a, TypeInfo::Ref(b));
+                self.unify(symtbl, body1, body2)
+                //todo!("propegate array lengths")
+            }
+            (Array(body1, Some(_len1)), Array(body2, None)) => {
+                self.vars.insert(b, TypeInfo::Ref(a));
+                self.unify(symtbl, body1, body2)
+                // todo!("propegate array lengths")
             }
             (Array(body1, len1), Array(body2, len2)) if len1 == len2 => {
                 self.unify(symtbl, body1, body2)
@@ -637,6 +668,7 @@ impl Tck {
         use TypeInfo::*;
         match &self.vars[&id] {
             Unknown => Err(TypeError::ReconstructFail { tid: id }),
+            Never => Ok(Type::Never),
             Prim(ty) => Ok(Type::Prim(ty.clone())),
             Ref(id) => self.reconstruct(*id),
             Enum(ts) => Ok(Type::Enum(ts.clone())),
@@ -672,7 +704,7 @@ impl Tck {
             }
             Array(ty, len) => {
                 let real_body = self.reconstruct(*ty)?;
-                Ok(Type::Array(Box::new(real_body), *len))
+                Ok(Type::Array(Box::new(real_body), len.unwrap()))
             }
             Sum(body) => {
                 let real_body: Result<BTreeMap<_, _>, TypeError> = body
@@ -712,6 +744,7 @@ impl Tck {
         fn helper(tck: &mut Tck, named_types: &mut BTreeMap<Sym, TypeId>, t: &Type) -> TypeId {
             let typeinfo = match t {
                 Type::Prim(val) => TypeInfo::Prim(val.clone()),
+                Type::Never => TypeInfo::Never,
                 Type::Enum(vals) => TypeInfo::Enum(vals.clone()),
                 Type::Named(s, args) => {
                     let inst_args: Vec<_> =
@@ -745,7 +778,7 @@ impl Tck {
                 }
                 Type::Array(ty, len) => {
                     let inst_ty = helper(tck, named_types, &*ty);
-                    TypeInfo::Array(inst_ty, *len)
+                    TypeInfo::Array(inst_ty, Some(*len))
                 }
                 Type::Sum(body, _names) => {
                     let inst_body = body
@@ -819,21 +852,10 @@ impl Drop for ScopeGuard {
 
 impl Symtbl {
     fn add_builtins(&self, tck: &mut Tck) {
-        let println_sig = Type::Func(vec![Type::i32()], Box::new(Type::unit()), vec![]);
-        let println_ty = tck.insert_known(&println_sig);
-        self.add_var(Sym::new("__println"), println_ty, false);
-
-        let println_sig = Type::Func(vec![Type::i16()], Box::new(Type::unit()), vec![]);
-        let println_ty = tck.insert_known(&println_sig);
-        self.add_var(Sym::new("__println_i16"), println_ty, false);
-
-        let println_sig = Type::Func(vec![Type::i64()], Box::new(Type::unit()), vec![]);
-        let println_ty = tck.insert_known(&println_sig);
-        self.add_var(Sym::new("__println_i64"), println_ty, false);
-
-        let println_sig = Type::Func(vec![Type::bool()], Box::new(Type::unit()), vec![]);
-        let println_ty = tck.insert_known(&println_sig);
-        self.add_var(Sym::new("__println_bool"), println_ty, false);
+        for builtin in &*builtins::BUILTINS {
+            let ty = tck.insert_known(&builtin.sig);
+            self.add_var(builtin.name, ty, false);
+        }
     }
     fn push_scope(&self) -> ScopeGuard {
         self.frames.borrow_mut().push(ScopeFrame::default());
@@ -1375,9 +1397,10 @@ fn typecheck_expr(
             // Does the type of the expression match the function's return type?
             let t = typecheck_expr(tck, symtbl, func_rettype, retval)?;
             tck.unify(symtbl, t, func_rettype)?;
-            // TODO: Never type instead of whatever this hack is
-            tck.set_expr_type(expr, t);
-            Ok(t)
+            // The return type of `return` is Never because it will never happen
+            let unit_typeid = tck.insert_known(&Type::Never);
+            tck.set_expr_type(expr, unit_typeid);
+            Ok(unit_typeid)
         }
         TypeCtor {
             name,
@@ -1517,11 +1540,24 @@ fn typecheck_expr(
                 let expr_type = typecheck_expr(tck, symtbl, func_rettype, expr)?;
                 tck.unify(symtbl, body_type, expr_type)?;
             }
-            let arr_type = tck.insert(TypeInfo::Array(body_type, len));
+            let arr_type = tck.insert(TypeInfo::Array(body_type, Some(len)));
             tck.set_expr_type(expr, arr_type);
             Ok(arr_type)
         }
-        ArrayRef { e: _, idx: _ } => todo!(),
+        ArrayRef {
+            expr: arr_expr,
+            idx,
+        } => {
+            let expr_type = typecheck_expr(tck, symtbl, func_rettype, arr_expr)?;
+            let idx_type = typecheck_expr(tck, symtbl, func_rettype, idx)?;
+            let elt_type = tck.insert(TypeInfo::Unknown);
+            let expected_expr_type = tck.insert(TypeInfo::Array(elt_type, None));
+            let expected_idx_type = tck.insert(TypeInfo::Prim(PrimType::UnknownInt));
+            tck.unify(symtbl, expr_type, expected_expr_type)?;
+            tck.unify(symtbl, idx_type, expected_idx_type)?;
+            tck.set_expr_type(expr, elt_type);
+            Ok(elt_type)
+        }
         Typecast { e: _, to: _ } => todo!(),
     };
     if let Err(e) = rettype {

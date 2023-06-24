@@ -10,15 +10,15 @@
 const C_ROUNDS: U32 = 2
 const D_ROUNDS: U32 = 4
 
-fn rotl(x: U64, b: U64): U64 =
+fn rotl(x U64, b U64) U64 =
     (x << b) bor (x >> (64 - b))
 end
 
-fn u64_from_bytes_le(bytes: U8[] ^): U64 =
+fn u64_from_bytes_le(bytes ^[]U8) U64 =
     todo("this")
 end
 
-fn u64_to_bytes_le(bytes: U64): U8[8] =
+fn u64_to_bytes_le(bytes: U64): [8]U8 =
     todo("this too")
 end
 
@@ -41,7 +41,7 @@ fn sipround(v0: U64, v1: U64, v2: U64, v3: U64): {U64, U64, U64, U64} =
 end
 
 
-fn siphash(input: U8 []^, k: U128, out: U8 []^uniq): {} =
+fn siphash(input: ^[]U8, k: U128, out: ^uniq[]U8): {} =
     assert(out.len() == 8 or out.len() == 16)
     let mut v0: U64 = 0x736f6d6570736575
     let mut v1: U64 = 0x646f72616e646f6d
