@@ -2,9 +2,9 @@
 --   status: success
 
 fn foo() {} =
-    -- *oh god dammit* if we omit the ; here then it parses as a funcall
-    -- because it's `expr {}`
-    let a [3][3]I32 = [[1, 2, 3], [4, 5, 6], [7, 8, 9]];
+    -- This can parse as a funcall if things are screwy, but with newline
+    -- delimiters this shouldn't happen.
+    let a [3][3]I32 = [[1, 2, 3], [4, 5, 6], [7, 8, 9]]
     {}
 end
 

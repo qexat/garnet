@@ -7,7 +7,7 @@
 -- A generic functional map from a key to a value
 type Map(@T, @K, @V) = struct(@T, @K, @V)
     get: fn(@T, @K) @V,
-    set: fn(@T, @K, @V) @T
+    set: fn(@T, @K, @V) @T,
 end
 
 -- Implement Map for a cell type
