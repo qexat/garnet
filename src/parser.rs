@@ -138,19 +138,19 @@ pub enum TokenKind {
     Let,
     #[token("mut")]
     Mut,
-    #[token("end")]
+    #[regex("end[ \n]*")]
     End,
     #[token("if")]
     If,
-    #[token("then")]
+    #[regex("then[ \n]*")]
     Then,
-    #[token("elseif")]
+    #[regex("elseif[ \n]*")]
     Elseif,
-    #[token("else")]
+    #[regex("else[ \n]*")]
     Else,
-    #[token("loop")]
+    #[regex("loop[ \n]*")]
     Loop,
-    #[token("do")]
+    #[regex("do[ \n]*")]
     Do,
     #[token("return")]
     Return,
@@ -158,11 +158,11 @@ pub enum TokenKind {
     Break,
     #[token("type")]
     Type,
-    #[token("struct")]
+    #[regex("struct[ \n]*")]
     Struct,
-    #[token("enum")]
+    #[regex("enum[ \n]*")]
     Enum,
-    #[token("sum")]
+    #[regex("sum[ \n]*")]
     Sum,
     #[token("import")]
     Import,
@@ -174,7 +174,7 @@ pub enum TokenKind {
     LParen,
     #[token(")")]
     RParen,
-    #[token("{")]
+    #[regex("\\{[ \n]*")]
     LBrace,
     #[token("}")]
     RBrace,
@@ -182,14 +182,15 @@ pub enum TokenKind {
     LBracket,
     #[token("]")]
     RBracket,
-    #[token(",")]
+    #[regex(",[ \n]*")]
     Comma,
     #[token(".")]
     Period,
     #[token(":")]
     Colon,
     #[token(";")]
-    Semicolon,
+    #[token("\n")]
+    Delimiter,
     #[token("=")]
     Equals,
     #[token("$")]
@@ -245,7 +246,7 @@ pub enum TokenKind {
     Comment(String),
 
     #[error]
-    #[regex(r"[ \t\n\f]+", logos::skip)]
+    #[regex(r"[ \t\f]+", logos::skip)]
     Error,
 }
 
@@ -308,6 +309,7 @@ use self::TokenKind as T;
 // This is not dead code but sometimes cargo thinks some of it fields are, since their usage is
 // cfg'd out in unit tests.
 #[allow(dead_code)]
+#[derive(Clone)]
 struct ErrorReporter {
     files: cs::files::SimpleFiles<String, String>,
     file_id: usize,
@@ -370,14 +372,15 @@ macro_rules! parse_delimited {
 /// manipulating the input stream, and the `parse()` method to
 /// try to drive the given input to completion.
 pub struct Parser<'input> {
-    lex: std::iter::Peekable<logos::SpannedIter<'input, TokenKind>>,
+    lex: logos::Lexer<'input, TokenKind>,
+    //lex: std::iter::Peekable<logos::SpannedIter<'input, TokenKind>>,
     source: &'input str,
     err: ErrorReporter,
 }
 
 impl<'input> Parser<'input> {
     pub fn new(filename: &str, source: &'input str) -> Self {
-        let lex = TokenKind::lexer(source).spanned().peekable();
+        let lex = TokenKind::lexer(source);
         let err = ErrorReporter::new(filename, source);
         Parser { lex, source, err }
     }
@@ -402,7 +405,8 @@ impl<'input> Parser<'input> {
 
     /// Returns the next token, with span.
     fn next(&mut self) -> Option<Token> {
-        let t = self.lex.next().map(|(tok, span)| Token::new(tok, span));
+        let t = self.lex.next().map(|tok| Token::new(tok, self.lex.span()));
+        dbg!(&t);
         match t {
             // Recurse to skip comments
             Some(Token {
@@ -415,18 +419,19 @@ impl<'input> Parser<'input> {
 
     /// Peeks the next token, with span.
     fn peek(&mut self) -> Option<Token> {
-        let t = self
-            .lex
-            .peek()
-            .map(|(tok, span)| Token::new(tok.clone(), span.clone()));
+        let mut peeked_lexer = self.lex.clone();
+        // Get the next token without touching the actual lexer
+        let t = peeked_lexer
+            .next()
+            .map(|tok| Token::new(tok.clone(), self.lex.span()));
         match t {
             // Skip comments
             Some(Token {
                 kind: T::Comment(_),
                 ..
             }) => {
-                // This must be self.lex.next(), not just self.next().
-                let _ = self.lex.next();
+                // Advance the actual lexer to skip past the comment token
+                self.lex = peeked_lexer;
                 self.peek()
             }
             _ => t,
@@ -488,7 +493,7 @@ impl<'input> Parser<'input> {
                 );
                 let diag = Diagnostic::error()
                     .with_message(msg)
-                    .with_labels(vec![Label::primary(self.err.file_id, 0..0)]);
+                    .with_labels(vec![Label::primary(self.err.file_id, self.lex.span())]);
 
                 self.err.error(&diag);
             }
@@ -506,6 +511,11 @@ impl<'input> Parser<'input> {
         }
     }
 
+    /// gramble gramble
+    fn peek_is_ident(&mut self) -> bool {
+        self.peek_is(T::Ident("foo".into()).discr())
+    }
+
     /// Returns whether the next token in the stream is what is expected,
     /// and consume it if so.
     ///
@@ -518,6 +528,12 @@ impl<'input> Parser<'input> {
             false
         }
     }
+
+    /// Eat the next zero or more semicolons
+    fn eat_delimiters(&mut self) {
+        while self.peek_expect(T::Delimiter.discr()) {}
+    }
+
 
     /// Consume an identifier and return its interned symbol.
     fn expect_ident(&mut self) -> Sym {
@@ -539,7 +555,7 @@ impl<'input> Parser<'input> {
                 );
                 let diag = Diagnostic::error()
                     .with_message(msg)
-                    .with_labels(vec![Label::primary(self.err.file_id, 0..0)]);
+                    .with_labels(vec![Label::primary(self.err.file_id, self.lex.span())]);
 
                 self.err.error(&diag);
             }
@@ -574,7 +590,7 @@ impl<'input> Parser<'input> {
                 );
                 let diag = Diagnostic::error()
                     .with_message(msg)
-                    .with_labels(vec![Label::primary(self.err.file_id, 0..0)]);
+                    .with_labels(vec![Label::primary(self.err.file_id, self.lex.span())]);
 
                 self.err.error(&diag);
             }
@@ -596,6 +612,7 @@ impl<'input> Parser<'input> {
                     T::Fn => Some(p.parse_fn(doc_comments)),
                     T::Type => Some(p.parse_typedef(doc_comments)),
                     T::Import => Some(p.parse_import(doc_comments)),
+                    T::Delimiter => parse_decl_inner(p, doc_comments),
                     _other => p.error("start of decl", Some(tok)),
                 }
             } else {
@@ -622,6 +639,7 @@ impl<'input> Parser<'input> {
         let name = self.expect_ident();
         let signature = self.parse_fn_signature();
         self.expect(T::Equals);
+        self.eat_delimiters();
         let body = self.parse_exprs();
         self.expect(T::End);
         ast::Decl::Function {
@@ -684,15 +702,36 @@ impl<'input> Parser<'input> {
         }
     }
 
+    /// Ok, this is where the grammar gets slightly cursed, but I
+    /// think I can isolate the curse here.  Basically this parses
+    /// type args like `type, type, type |` up until the closing
+    /// `|`, or if there IS no closing `|` and it reads something
+    /// not a type then it *backtracks* and returns an empty list.
+    fn _parse_type_args(&mut self) -> Vec<Type> {
+        //let new_lexer = self.lex.into_inner().deref().clone();
+        vec![]
+    }
+
     /// sig = ident typename
     /// fn_args = "(" [sig {"," sig} [","]] ["|" types...] ")"
     fn parse_fn_args(&mut self) -> (Vec<(Sym, Type)>, Vec<Type>) {
         let mut args = vec![];
-        let mut typeargs = vec![];
+        let mut typeparams = vec![];
         self.expect(T::LParen);
+        if self.peek_expect(T::Bar.discr()) {
+            parse_delimited!(self, T::Comma, {
+                if !self.peek_is(T::Bar.discr()) {
+                    let ty = self.parse_type();
+                    typeparams.push(ty);
+                } else {
+                    break;
+                }
+            });
+            self.peek_expect(T::Bar.discr());
+        }
 
         parse_delimited!(self, T::Comma, {
-            if let Some((T::Ident(_), _span)) = self.lex.peek() {
+            if self.peek_is(TokenKind::Ident("foo".into()).discr()) {
                 let name = self.expect_ident();
                 let tname = self.parse_type();
                 args.push((name, tname));
@@ -700,51 +739,82 @@ impl<'input> Parser<'input> {
                 break;
             }
         });
-        if self.peek_expect(T::Bar.discr()) {
-            parse_delimited!(self, T::Comma, {
-                if !self.peek_is(T::RParen.discr()) {
-                    let ty = self.parse_type();
-                    typeargs.push(ty);
-                } else {
+        self.expect(T::RParen);
+        (args, typeparams)
+    }
+
+    /// Ok, this is the cursed backtracking bit of the parser.
+    /// Basically we want to parse things of the form
+    /// "(" [type {"," type} [","] "|"] exprlist ")"
+    ///
+    /// The problem is we don't necessarily know whether the
+    /// first thing we parse is a type or expr until we've done
+    /// a bunch of them and have hit either a "|" or a ")".
+    /// So we go through parsing types until we hit a "|" and if
+    /// we do then we're good, or if we hit a ")" first we go
+    /// "whoops those were all expressions", backtrack to where
+    /// we started, and return an empty vec.
+    ///
+    /// foo(T1, T2 | things)
+    fn _parse_barred_type_list(&mut self) -> Vec<Type> {
+        let old_lexer = self.lex.clone();
+        let mut accm = vec![];
+        while let Some(tok) = self.peek() {
+            match tok.kind {
+                T::Bar => {
+                    // We are done with our type arg list!
+                    self.drop();
                     break;
                 }
-            });
+                T::RParen | T::RBrace => {
+                    // Whoops, hit end of an arg list, guess this wasn't types.
+                    // Backtrack!
+                    self.lex = old_lexer;
+                    return vec![];
+                }
+                _other => {
+                    if let Some(ty) = self.try_parse_type() {
+                        // Was a type, great
+                        accm.push(ty);
+                    } else {
+                        // Whoops, not a type, guess this is an expression list
+                        // Backtrack!
+                        self.lex = old_lexer;
+                        return vec![];
+                    }
+                }
+            }
+            // If we've gotten here it means we've just parsed a type,
+            // consume a comma if it exists.
+            // TODO: This is a little fucked because it means the commas
+            // between types are technically optional, but fuckit for now.
+            if self.peek_expect(T::Comma.discr()) {}
         }
-        self.expect(T::RParen);
-        (args, typeargs)
+        accm
     }
 
     /// type_list = "(" [type {"," type} [","] ")"
-    fn parse_type_list(&mut self) -> Vec<Type> {
+    fn try_parse_type_list(&mut self) -> Option<Vec<Type>> {
         let mut args = vec![];
         self.expect(T::LParen);
 
         parse_delimited!(self, T::Comma, {
             if !self.peek_is(T::RParen.discr()) {
-                let tname = self.parse_type();
+                let tname = self.try_parse_type()?;
                 args.push(tname);
             } else {
                 break;
             }
         });
         self.expect(T::RParen);
-        args
+        Some(args)
     }
 
-    /// type_list_with_typeparams = "(" [type {"," type} [","] ["|" types...] ")"
+    /// type_list_with_typeparams = "(" [types... "|"] [type {"," type} [","] ")"
     fn parse_type_list_with_typeparams(&mut self) -> (Vec<Type>, Vec<Type>) {
         let mut args = vec![];
         let mut typeparams = vec![];
         self.expect(T::LParen);
-
-        parse_delimited!(self, T::Comma, {
-            if !self.peek_is(T::RParen.discr()) {
-                let tname = self.parse_type();
-                args.push(tname);
-            } else {
-                break;
-            }
-        });
         if self.peek_expect(T::Bar.discr()) {
             parse_delimited!(self, T::Comma, {
                 if !self.peek_is(T::RParen.discr()) {
@@ -754,7 +824,17 @@ impl<'input> Parser<'input> {
                     break;
                 }
             });
+            self.expect(T::Bar);
         }
+
+        parse_delimited!(self, T::Comma, {
+            if !self.peek_is(T::RParen.discr()) {
+                let tname = self.parse_type();
+                args.push(tname);
+            } else {
+                break;
+            }
+        });
         self.expect(T::RParen);
         (args, typeparams)
     }
@@ -782,18 +862,19 @@ impl<'input> Parser<'input> {
             });
             self.expect(T::RParen);
         }
+        self.eat_delimiters();
 
         // TODO someday: Doc comments on struct fields
         parse_delimited!(self, T::Comma, {
-            match self.lex.peek() {
-                Some((T::Ident(_i), _span)) => {
-                    let name = self.expect_ident();
-                    self.expect(T::Colon);
-                    let tname = self.parse_type();
-                    fields.insert(name, tname);
-                }
-                _ => break,
+            if self.peek_is_ident() {
+                let name = self.expect_ident();
+                self.expect(T::Colon);
+                let tname = self.parse_type();
+                fields.insert(name, tname);
+            } else {
+                break;
             }
+            self.eat_delimiters();
         });
         (fields, generics)
     }
@@ -811,6 +892,7 @@ impl<'input> Parser<'input> {
             } else {
                 break;
             }
+            self.eat_delimiters();
         });
         fields
     }
@@ -821,16 +903,15 @@ impl<'input> Parser<'input> {
 
         // TODO someday: Doc comments on enum fields
         parse_delimited!(self, T::Comma, {
-            match self.lex.peek() {
-                Some((T::Ident(_i), _span)) => {
-                    let id = self.expect_ident();
-                    if self.peek_expect(T::Equals.discr()) {
-                        current_val = self.expect_int() as i32;
-                    }
-                    variants.push((id, current_val));
-                    current_val += 1;
+            if self.peek_is_ident() {
+                let id = self.expect_ident();
+                if self.peek_expect(T::Equals.discr()) {
+                    current_val = self.expect_int() as i32;
                 }
-                _ => break,
+                variants.push((id, current_val));
+                current_val += 1;
+            } else {
+                break;
             }
         });
         // Make sure we don't have any duplicates.
@@ -847,22 +928,22 @@ impl<'input> Parser<'input> {
         variants
     }
 
-    fn parse_tuple_type(&mut self) -> Type {
+    fn try_parse_tuple_type(&mut self) -> Option<Type> {
         let mut body = vec![];
         parse_delimited!(self, T::Comma, {
             if !self.peek_is(T::RBrace.discr()) {
-                let t = self.parse_type();
+                let t = self.try_parse_type()?;
                 body.push(t);
             }
         });
         self.expect(T::RBrace);
-        Type::tuple(body)
+        Some(Type::tuple(body))
     }
 
-    fn parse_struct_type(&mut self) -> Type {
+    fn try_parse_struct_type(&mut self) -> Option<Type> {
         let (fields, type_params) = self.parse_struct_fields();
         self.expect(T::End);
-        Type::Struct(fields, type_params)
+        Some(Type::Struct(fields, type_params))
     }
 
     fn parse_enum_type(&mut self) -> Type {
@@ -914,8 +995,10 @@ impl<'input> Parser<'input> {
         let mut exprs = vec![];
         let tok = self.peek();
         while let Some(e) = self.parse_expr(0) {
-            // if we have a semicolon after an expr we can just eat it
-            self.peek_expect(T::Semicolon.discr());
+            // if we have delimiters after an expr we can just eat them
+            // But we have no expressions that can *contain* delimiters at the end,
+            // so if we see a delimiter it's the end of an expression.
+            self.eat_delimiters();
             exprs.push(e);
         }
         // TODO: I think this was necessary for sanity's sake at some point
@@ -994,8 +1077,10 @@ impl<'input> Parser<'input> {
         };
         // Parse a postfix or infix expression with a given
         // binding power or greater.
-        while let Some((op_token, _span)) = self.lex.peek().cloned() {
-            // Is our token a postfix op?
+        while let Some(op_token) = self.peek().clone() {
+            // we only really care about the token kind
+            let op_token = op_token.kind;
+            // Is the token a postfix op
             if let Some((l_bp, ())) = postfix_binding_power(&op_token) {
                 if l_bp < min_bp {
                     break;
@@ -1122,13 +1207,6 @@ impl<'input> Parser<'input> {
         let mut params = vec![];
         let mut typeparams = vec![];
         self.expect(T::LParen);
-        parse_delimited!(self, T::Comma, {
-            if let Some(expr) = self.parse_expr(0) {
-                params.push(expr);
-            } else {
-                break;
-            }
-        });
         if self.peek_expect(T::Bar.discr()) {
             parse_delimited!(self, T::Comma, {
                 if !self.peek_is(T::RParen.discr()) {
@@ -1138,7 +1216,15 @@ impl<'input> Parser<'input> {
                     break;
                 }
             });
+            self.expect(T::Bar);
         }
+        parse_delimited!(self, T::Comma, {
+            if let Some(expr) = self.parse_expr(0) {
+                params.push(expr);
+            } else {
+                break;
+            }
+        });
         self.expect(T::RParen);
         (params, typeparams)
     }
@@ -1253,6 +1339,7 @@ impl<'input> Parser<'input> {
         self.expect(T::Fn);
         let signature = self.parse_fn_signature();
         self.expect(T::Equals);
+        self.eat_delimiters();
         let body = self.parse_exprs();
         self.expect(T::End);
         ast::Expr::Lambda { signature, body }
@@ -1304,15 +1391,21 @@ impl<'input> Parser<'input> {
         ast::Expr::ArrayCtor { body }
     }
 
+    /// Types compose prefix.
+    /// So "array(3) of T" is "[3]T"
     fn parse_type(&mut self) -> Type {
-        let t = self.next().unwrap_or_else(|| self.error("type", None));
-        let mut ty = match t.kind {
+        self.try_parse_type().expect("Type expected")
+    }
+
+    fn try_parse_type(&mut self) -> Option<Type> {
+        let t = self.next()?;
+        let x = match t.kind {
             T::Ident(ref s) => {
                 if let Some(t) = Type::get_primitive_type(s) {
                     t
                 } else {
                     let type_params = if self.peek_is(T::LParen.discr()) {
-                        self.parse_type_list()
+                        self.try_parse_type_list()?
                     } else {
                         vec![]
                     };
@@ -1323,31 +1416,21 @@ impl<'input> Parser<'input> {
                 let s = self.expect_ident();
                 Type::Generic(s)
             }
-            T::LBrace => {
-                let tuptype = self.parse_tuple_type();
-                tuptype
-            }
-            T::Fn => {
-                let fntype = self.parse_fn_type();
-                fntype
-            }
-            T::Struct => self.parse_struct_type(),
+            T::LBrace => self.try_parse_tuple_type()?,
+            T::Fn => self.parse_fn_type(),
+            T::Struct => self.try_parse_struct_type()?,
             T::Enum => self.parse_enum_type(),
             T::Sum => self.parse_sum_type(),
-            // Apparently all our types are prefix, which is weird.
-            // Fix this someday.
-            _ => self.error("type", Some(t)),
+            T::LBracket => {
+                let len = self.expect_int();
+                assert!(len >= 0);
+                self.expect(T::RBracket);
+                let inner = self.parse_type();
+                Type::Array(Box::new(inner), len as usize)
+            }
+            _ => return None,
         };
-        // Array?  (Or other postfix shit, this be gettin whack)
-        // TODO: Figure out what you're actually doing here.
-        while self.peek_is(T::LBracket.discr()) {
-            self.expect(T::LBracket);
-            let len = self.expect_int();
-            assert!(len >= 0);
-            self.expect(T::RBracket);
-            ty = Type::Array(Box::new(ty), len as usize);
-        }
-        ty
+        Some(x)
     }
 }
 
@@ -1428,7 +1511,7 @@ mod tests {
             let mut p = Parser::new("unittest.gt", s);
             f(&mut p);
             // Make sure we've parsed the whole string.
-            assert_eq!(p.lex.peek(), None);
+            assert_eq!(p.peek(), None);
         }
     }
 
@@ -1443,7 +1526,7 @@ mod tests {
         let parsed_expr = p.parse_expr(0).unwrap();
         assert_eq!(&ast, &parsed_expr);
         // Make sure we've parsed the whole string.
-        assert_eq!(p.lex.peek(), None);
+        assert_eq!(p.peek(), None);
     }
 
     /// Same as test_expr_is but with decl's
@@ -1453,7 +1536,7 @@ mod tests {
         let parsed_decl = p.parse_decl().unwrap();
         assert_eq!(&ast, &parsed_decl);
         // Make sure we've parsed the whole string.
-        assert_eq!(p.lex.peek(), None);
+        assert_eq!(p.peek(), None);
     }
 
     /// And again with types
@@ -1463,7 +1546,7 @@ mod tests {
         let parsed_type = p.parse_type();
         assert_eq!(&ast, &parsed_type);
         // Make sure we've parsed the whole string.
-        assert_eq!(p.lex.peek(), None);
+        assert_eq!(p.peek(), None);
     }
 
     #[test]
@@ -1654,7 +1737,7 @@ type blar = I8
 
     #[test]
     fn parse_block() {
-        let valid_args = vec!["do 10 end", "do 10 20 30 end", "do {} end"];
+        let valid_args = vec!["do 10; end", "do 10; 20; 30; end", "do {}; end"];
         test_parse_with(|p| p.parse_block(), &valid_args);
         test_parse_with(|p| p.parse_expr(0), &valid_args);
     }
@@ -1694,10 +1777,12 @@ type blar = I8
     fn parse_fn_decls() {
         let valid_args = vec![
             "fn foo1(f I32) I32 = f end",
-            "fn foo2(f I32 | @T) I32 = f end",
-            "fn foo3(| @T) {} = f end",
-            "fn foo4(f @T) @T = f end",
-            "fn foo5(f I32, g Bool, | @T, @T2, ) I32 = f end",
+            "fn foo2(|@T| f I32 ) I32 = f end",
+            "fn foo3(|@T|) {} = f end",
+            "fn foo4(||) {} = f end",
+            "fn foo5() {} = f end",
+            "fn foo6(f @T) @T = f end",
+            "fn foo7(|@T1, @T2, | f I32, g Bool, ) I32 = f end",
         ];
         test_parse_with(|p| p.parse_decl().unwrap(), &valid_args);
     }
@@ -1743,7 +1828,7 @@ type blar = I8
         test_expr_is("(1)", || Expr::int(1));
         test_expr_is("(((1)))", || Expr::int(1));
 
-        test_expr_is("y(1, | I32)", || Expr::Funcall {
+        test_expr_is("y(|I32| 1)", || Expr::Funcall {
             func: Box::new(Expr::Var {
                 name: Sym::new("y"),
             }),
@@ -1756,15 +1841,13 @@ type blar = I8
     fn verify_elseif() {
         use Expr;
         test_expr_is(
-            r#"
-            if x then
+            r#"if x then
                 1
             elseif y then
                 2
             else
                 3
-            end
-            "#,
+            end"#,
             || Expr::If {
                 cases: vec![
                     ast::IfCase {
@@ -1781,8 +1864,7 @@ type blar = I8
         );
 
         test_expr_is(
-            r#"
-            if x then
+            r#"if x then
                 1
             else
                 if y then
@@ -1790,8 +1872,7 @@ type blar = I8
                 else
                     3
                 end
-            end
-            "#,
+            end"#,
             || Expr::If {
                 cases: vec![ast::IfCase {
                     condition: Box::new(Expr::var("x")),
@@ -1948,7 +2029,7 @@ type blar = I8
     #[test]
     fn parse_weird_nested_array_bug() {
         test_expr_is(
-            "let x I32[3][3] = [[4, 3, 2], [4, 3, 2], [4, 3, 2]]",
+            "let x [3][3]I32 = [[4, 3, 2], [4, 3, 2], [4, 3, 2]]",
             || {
                 let arr = Expr::ArrayCtor {
                     body: vec![Expr::int(4), Expr::int(3), Expr::int(2)],
@@ -1998,8 +2079,8 @@ type blar = I8
 
     #[test]
     fn parse_array_types() {
-        test_type_is("I32[4]", || Type::array(&Type::i32(), 4));
-        test_type_is("I32[4][6]", || {
+        test_type_is("[4]I32", || Type::array(&Type::i32(), 4));
+        test_type_is("[6][4]I32", || {
             Type::array(&Type::array(&Type::i32(), 4), 6)
         });
     }
@@ -2014,5 +2095,28 @@ type blar = I8
     fn parse_ref() {
         let valid_args = &["x&", "10^&", "z&^.0", "z.0^&&", "(1+2*3)&"][..];
         test_parse_with(|p| p.parse_expr(0), &valid_args)
+    }
+
+    #[test]
+    fn parse_cursed_type_list() {
+        let v1 = vec![
+            ("|", vec![]),
+            ("I32, I64, | other junk", vec![Type::i32(), Type::i64()]),
+            ("I32, I64 | other junk", vec![Type::i32(), Type::i64()]),
+            (
+                "[12]Bool, {I32, I32} | other junk",
+                vec![
+                    Type::array(&Type::bool(), 12),
+                    Type::tuple(vec![Type::i32(), Type::i32()]),
+                ],
+            ),
+            ("other junk)", vec![]),
+            ("other junk}", vec![]),
+        ];
+        for (s, desired) in &v1 {
+            let mut p = Parser::new("unittest.gt", s);
+            let result = p._parse_barred_type_list();
+            assert_eq!(&result, desired)
+        }
     }
 }

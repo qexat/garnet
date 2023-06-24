@@ -56,17 +56,6 @@ fn unparse_decl(d: &Decl, out: &mut dyn io::Write) -> io::Result<()> {
 }
 
 fn unparse_sig(sig: &Signature, out: &mut dyn io::Write) -> io::Result<()> {
-    /*
-    if sig.generics.len() > 0 {
-        write!(out, "[")?;
-        for name in &sig.generics {
-            let name = *name.val();
-            write!(out, "{}, ", name)?;
-        }
-        write!(out, "]")?;
-    }
-    */
-
     write!(out, "(")?;
     for (name, typename) in sig.params.iter() {
         let name = name.val();
@@ -84,6 +73,7 @@ fn unparse_exprs(exprs: &[Expr], indent: usize, out: &mut dyn io::Write) -> io::
     }
     Ok(())
 }
+
 fn unparse_expr(e: &Expr, indent: usize, out: &mut dyn io::Write) -> io::Result<()> {
     use Expr as E;
     for _ in 0..(indent * INDENT_SIZE) {
