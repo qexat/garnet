@@ -138,19 +138,19 @@ pub enum TokenKind {
     Let,
     #[token("mut")]
     Mut,
-    #[regex("end *\n*")]
+    #[regex("end[ \n]*")]
     End,
     #[token("if")]
     If,
-    #[regex("then *\n*")]
+    #[regex("then[ \n]*")]
     Then,
-    #[regex("elseif *\n*")]
+    #[regex("elseif[ \n]*")]
     Elseif,
-    #[regex("else *\n*")]
+    #[regex("else[ \n]*")]
     Else,
-    #[regex("loop *\n*")]
+    #[regex("loop[ \n]*")]
     Loop,
-    #[regex("do *\n*")]
+    #[regex("do[ \n]*")]
     Do,
     #[token("return")]
     Return,
@@ -158,11 +158,11 @@ pub enum TokenKind {
     Break,
     #[token("type")]
     Type,
-    #[regex("struct *\n*")]
+    #[regex("struct[ \n]*")]
     Struct,
-    #[regex("enum *\n*")]
+    #[regex("enum[ \n]*")]
     Enum,
-    #[regex("sum *\n*")]
+    #[regex("sum[ \n]*")]
     Sum,
     #[token("import")]
     Import,
@@ -174,7 +174,7 @@ pub enum TokenKind {
     LParen,
     #[token(")")]
     RParen,
-    #[regex("\\{ *\n*")]
+    #[regex("\\{[ \n]*")]
     LBrace,
     #[token("}")]
     RBrace,
@@ -182,7 +182,7 @@ pub enum TokenKind {
     LBracket,
     #[token("]")]
     RBracket,
-    #[regex(", *\n*")]
+    #[regex(",[ \n]*")]
     Comma,
     #[token(".")]
     Period,
@@ -859,7 +859,6 @@ impl<'input> Parser<'input> {
                 } else {
                     break;
                 }
-                self.eat_delimiters();
             });
             self.expect(T::RParen);
         }
@@ -889,7 +888,6 @@ impl<'input> Parser<'input> {
                 let name = self.expect_ident();
                 self.expect(T::Equals);
                 let vl = self.parse_expr(0).unwrap();
-                self.eat_delimiters();
                 fields.insert(name, vl);
             } else {
                 break;
@@ -997,10 +995,9 @@ impl<'input> Parser<'input> {
         let mut exprs = vec![];
         let tok = self.peek();
         while let Some(e) = self.parse_expr(0) {
-            // if we have a semicolon after an expr we can just eat it
-            //self.peek_expect(T::Delimiter.discr());
-            //self.expect(T::Delimiter);
-            // We need at least one semicolon, but more than one is fine.
+            // if we have delimiters after an expr we can just eat them
+            // But we have no expressions that can *contain* delimiters at the end,
+            // so if we see a delimiter it's the end of an expression.
             self.eat_delimiters();
             exprs.push(e);
         }
@@ -1342,7 +1339,7 @@ impl<'input> Parser<'input> {
         self.expect(T::Fn);
         let signature = self.parse_fn_signature();
         self.expect(T::Equals);
-                self.eat_delimiters();
+        self.eat_delimiters();
         let body = self.parse_exprs();
         self.expect(T::End);
         ast::Expr::Lambda { signature, body }
