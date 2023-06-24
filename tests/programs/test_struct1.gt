@@ -6,8 +6,6 @@
 --   stdout: 3
 
 
-
-
 type Foo = struct
     a: I32,
     b: Bool
