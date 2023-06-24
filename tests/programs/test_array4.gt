@@ -1,0 +1,32 @@
+-- Compile:
+--   status: success
+-- Run:
+--  status: success
+--  stdout:
+--    1
+--    5
+--    15
+
+fn actually_use_array(arr [5]I32) I32 =
+    let mut i I32 = 0
+    let mut summ = 0
+    loop
+        if i == 5 then break end
+        summ = summ + arr[i]
+        i = i + 1
+        
+    end
+    summ
+end
+
+fn main() {} =
+    let x [3]I32 = [1, 2, 3]
+    let y I32 = x[0]
+    __println(y)
+    let a [3][3]I32 = [[1, 2, 3], [4, 5, 6], [7, 8, 9]]
+    let b = a[1][1]
+    __println(b)
+
+    __println(actually_use_array([1, 2, 3, 4, 5]))
+
+end

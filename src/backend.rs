@@ -1,4 +1,5 @@
 //! Backend indirection layer.
+//! Just a little code to select which backend module to use.
 
 use crate::hir;
 use crate::typeck::Tck;
@@ -6,7 +7,7 @@ use crate::typeck::Tck;
 mod rust;
 
 /// Specifies which backend to use.
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Backend {
     /// Rust backend
     Rust,

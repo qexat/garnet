@@ -6,6 +6,7 @@
 --     false
 --     true
 
+
 type Eq(@T) = struct
     eq: fn(@T, @T) Bool,
 end
@@ -18,22 +19,21 @@ const BoolEq Eq(Bool) = Eq {
     .eq = fn(lhs Bool, rhs Bool) Bool = lhs == rhs end,
 }
 
-fn all(eq_impl Eq(@T), val @T, array @T[3] | @T) Bool =
+fn all(|@T| eq_impl Eq(@T), val @T, array [3]@T) Bool =
 	let mut i I32 = 0
-	/-
 	loop
 		if i == 3 then break end
 		let val2 = array[i]
 		if not eq_impl$.eq(val, val2) then return false end
 		i = i + 1
 	end
-	-/
 	true
 end
 
 fn main() {} =
 	let t1 = all(IntEq, 3, [1, 2, 3])                -- returns false
-	let t2 = all(BoolEq, true, [true, true, true])   -- returns true
+	let t2 = all(IntEq, 3, [3, 3, 3])                -- returns true
+	let t3 = all(BoolEq, true, [true, true, true])   -- returns true
 	__println_bool(t1)
 	__println_bool(t2)
 end

@@ -1,4 +1,5 @@
 //! Garnet compiler guts.
+
 //#![deny(missing_docs)]
 
 use std::borrow::Cow;
@@ -7,20 +8,18 @@ use std::fmt;
 use std::sync::Arc;
 
 use log::*;
+use once_cell::sync::Lazy;
 
-pub mod ast;
+mod ast;
 pub mod backend;
+mod builtins;
 pub mod format;
 pub mod hir;
-pub mod intern;
+mod intern;
 pub mod parser;
 pub mod passes;
 pub mod typeck;
 
-#[cfg(test)]
-pub(crate) mod testutil;
-
-use once_cell::sync::Lazy;
 /// The interner.  It's the ONLY part we have to actually
 /// carry around anywhere, so I'm experimenting with making
 /// it a global.  Seems to work pretty okay.
@@ -33,7 +32,7 @@ pub enum PrimType {
     SInt(u8),
     UnknownInt,
     Bool,
-    /// erased type
+    /// erased type, currently unused
     AnyPtr,
 }
 
@@ -53,35 +52,35 @@ impl PrimType {
     }
 }
 
-/// A concrete type that has been fully inferred
+/// A concrete type that is fully specified but may have type parameters.
 ///
 /// TODO someday: We should make a consistent and very good
-/// name-mangling scheme for this, will make some backend stuff
+/// name-mangling scheme for types, will make some backend stuff
 /// simpler.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Type {
+    /// Primitive type with no subtypes
     Prim(PrimType),
-    /// A C-like enum.
-    /// For now we pretend there's no underlying values attached to
-    /// the name.
-    ///
-    /// ... I seem to have ended up with anonymous enums somehow.
-    /// Not sure how I feel about this.
+    /// Never type, the type of an infinite loop
+    Never,
+    /// A C-like enum, and the integer values it corresponds to
     Enum(Vec<(Sym, i32)>),
+    /// A nominal type of some kind; may be built-in (like Tuple)
+    /// or user-defined.
     Named(Sym, Vec<Type>),
-    /// param types, return types, type parameters
+    /// A function pointer.
+    ///
+    /// The contents are arg types, return types, type parameters
     Func(Vec<Type>, Box<Type>, Vec<Type>),
-    /// The vec is the name of any generic type bindings in there
-    /// 'cause we need to keep track of those apparently.
+    /// An anonymous struct.  The vec is type parameters.
     Struct(BTreeMap<Sym, Type>, Vec<Type>),
     /// Sum type.
-    /// I guess this is ok?
     ///
-    /// Like structs, contains a list of generic bindings.
+    /// Like structs, contains a list of type parameters.
     Sum(BTreeMap<Sym, Type>, Vec<Type>),
     /// Arrays are just a type and a number.
     Array(Box<Type>, usize),
-    /// A generic type parameter
+    /// A generic type parameter that has been given an explicit name.
     Generic(Sym),
 }
 
@@ -93,10 +92,12 @@ impl Type {
     /// this is still a little cursed 'cause we infer type params in some places
     /// and it's actually really nice.  And also fiddly af so touching it
     /// breaks lots of things that currently work.
+    /// plz unfuck this, it's not THAT hard.
     fn get_type_params(&self) -> Vec<Sym> {
         fn helper(t: &Type, accm: &mut Vec<Sym>) {
             match t {
                 Type::Prim(_) => (),
+                Type::Never => (),
                 Type::Enum(_ts) => (),
                 Type::Named(_, generics) => {
                     for g in generics {
@@ -155,68 +156,62 @@ impl Type {
         Self::Prim(PrimType::UnknownInt)
     }
 
-    /// Shortcut for getting the type symbol for an int of a particular size
+    /// Shortcut for getting the Type for an int of a particular size
     pub fn isize(size: u8) -> Self {
         Self::Prim(PrimType::SInt(size))
     }
 
-    /// Shortcut for getting the type symbol for I128
+    /// Shortcut for getting the Type for I128
     pub fn i128() -> Self {
         Self::isize(16)
     }
 
-    /// Shortcut for getting the type symbol for I64
+    /// Shortcut for getting the Type for I64
     pub fn i64() -> Self {
         Self::isize(8)
     }
 
-    /// Shortcut for getting the type symbol for I32
+    /// Shortcut for getting the Type for I32
     pub fn i32() -> Self {
         Self::isize(4)
     }
 
-    pub fn anyptr() -> Self {
-        Self::Prim(PrimType::AnyPtr)
-    }
-
-    /// Shortcut for getting the type symbol for I16
+    /// Shortcut for getting the type for I16
     pub fn i16() -> Self {
         Self::isize(2)
     }
 
-    /// Shortcut for getting the type symbol for I8
+    /// Shortcut for getting the type for I8
     pub fn i8() -> Self {
         Self::isize(1)
     }
 
-    /// Shortcut for getting the type symbol for Bool
+    /// Shortcut for getting the type for Bool
     pub fn bool() -> Self {
         Self::Prim(PrimType::Bool)
     }
 
-    /// Shortcut for getting the type symbol for Unit
+    /// Shortcut for getting the type for Unit
     pub fn unit() -> Self {
         Self::Named(Sym::new("Tuple"), vec![])
     }
 
-    /// Shortcut for getting the type symbol for Never
+    /// Shortcut for getting the type for Never
     pub fn never() -> Self {
         Self::Named(Sym::new("Never"), vec![])
     }
 
+    /// Create a Tuple with the given values
     pub fn tuple(args: Vec<Self>) -> Self {
         Self::Named(Sym::new("Tuple"), args)
     }
 
-    pub fn named(name: impl Into<String>) -> Self {
-        Self::Named(Sym::new(&name.into()), vec![])
-    }
-
+    /// Used in some tests
     pub fn array(t: &Type, len: usize) -> Self {
         Self::Array(Box::new(t.clone()), len)
     }
 
-    pub fn is_integer(&self) -> bool {
+    fn _is_integer(&self) -> bool {
         match self {
             Self::Prim(PrimType::SInt(_)) => true,
             Self::Prim(PrimType::UnknownInt) => true,
@@ -246,7 +241,8 @@ impl Type {
         }
     }
 
-    /// Get a string for the name of the given type.
+    /// Get a string for the name of the given type in valid Garnet syntax.
+    /// Or at least should be.
     pub fn get_name(&self) -> Cow<'static, str> {
         let join_types_with_commas = |lst: &[Type]| {
             let p_strs = lst.iter().map(Type::get_name).collect::<Vec<_>>();
@@ -264,6 +260,7 @@ impl Type {
         };
         match self {
             Type::Prim(p) => p.get_name(),
+            Type::Never => Cow::Borrowed("!"),
             Type::Enum(variants) => {
                 let mut res = String::from("enum {");
                 let s = variants
@@ -336,13 +333,13 @@ impl Type {
     ///
     /// TODO someday: refactor with passes::type_map()?  Not sure how to make
     /// that walk over two types.
-    pub fn find_substs(&self, other: &Type, substitutions: &mut BTreeMap<Sym, Type>) {
+    fn _find_substs(&self, other: &Type, substitutions: &mut BTreeMap<Sym, Type>) {
         match (self, other) {
             // Types are identical, noop.
             (s, o) if s == o => (),
             (Type::Named(n1, args1), Type::Named(n2, args2)) if n1 == n2 => {
                 for (p1, p2) in args1.iter().zip(args2) {
-                    p1.find_substs(p2, substitutions);
+                    p1._find_substs(p2, substitutions);
                 }
             }
             (
@@ -359,9 +356,9 @@ impl Type {
                     todo!()
                 }
                 for (p1, p2) in params1.iter().zip(params2) {
-                    p1.find_substs(p2, substitutions);
+                    p1._find_substs(p2, substitutions);
                 }
-                rettype1.find_substs(rettype2, substitutions);
+                rettype1._find_substs(rettype2, substitutions);
             }
             (Type::Struct(_, _), Type::Struct(_, _)) => {
                 unreachable!("Actually can't happen I think, 'cause we tuple-ify everything first?")
@@ -381,15 +378,15 @@ impl Type {
                     panic!("subst for sum type had non-matching keys")
                 }
                 for ((_nm1, t1), (_nm2, t2)) in body1.iter().zip(body2) {
-                    t1.find_substs(t2, substitutions);
+                    t1._find_substs(t2, substitutions);
                 }
 
                 for (p1, p2) in generics1.iter().zip(generics2) {
-                    p1.find_substs(p2, substitutions);
+                    p1._find_substs(p2, substitutions);
                 }
             }
             (Type::Array(t1, len1), Type::Array(t2, len2)) if len1 == len2 => {
-                t1.find_substs(t2, substitutions);
+                t1._find_substs(t2, substitutions);
             }
             (Type::Generic(nm), p2) => {
                 // If we have an existing substitution, does it conflict?
@@ -414,36 +411,37 @@ impl Type {
     /// Panics if a generic type has no substitution.
     ///
     /// TODO someday: refactor with passes::type_map()?
-    pub fn apply_substs(&self, substs: &BTreeMap<Sym, Type>) -> Type {
+    fn _apply_substs(&self, substs: &BTreeMap<Sym, Type>) -> Type {
         match self {
             Type::Func(params1, rettype1, typeparams1) => {
-                let new_params = params1.iter().map(|p1| p1.apply_substs(substs)).collect();
-                let new_rettype = rettype1.apply_substs(substs);
+                let new_params = params1.iter().map(|p1| p1._apply_substs(substs)).collect();
+                let new_rettype = rettype1._apply_substs(substs);
                 if typeparams1.len() > 0 {
                     todo!("Hsfjkdslfjs");
                 }
                 Type::Func(new_params, Box::new(new_rettype), vec![])
             }
             Type::Named(n1, args1) => {
-                let new_args = args1.iter().map(|p1| p1.apply_substs(substs)).collect();
+                let new_args = args1.iter().map(|p1| p1._apply_substs(substs)).collect();
                 Type::Named(*n1, new_args)
             }
             Type::Struct(_, _) => unreachable!("see other unreachable in substitute()"),
             Type::Sum(body, generics) => {
                 let new_body = body
                     .iter()
-                    .map(|(nm, ty)| (*nm, ty.apply_substs(substs)))
+                    .map(|(nm, ty)| (*nm, ty._apply_substs(substs)))
                     .collect();
-                let new_generics = generics.iter().map(|p1| p1.apply_substs(substs)).collect();
+                let new_generics = generics.iter().map(|p1| p1._apply_substs(substs)).collect();
                 Type::Sum(new_body, new_generics)
             }
-            Type::Array(body, len) => Type::Array(Box::new(body.apply_substs(substs)), *len),
+            Type::Array(body, len) => Type::Array(Box::new(body._apply_substs(substs)), *len),
             Type::Generic(nm) => substs
                 .get(&nm)
                 .unwrap_or_else(|| panic!("No substitution found for generic named {}!", nm))
                 .to_owned(),
             Type::Prim(_) => self.clone(),
             Type::Enum(_) => self.clone(),
+            Type::Never => self.clone(),
         }
     }
 }
@@ -471,6 +469,7 @@ impl Sym {
     pub fn new(s: impl AsRef<str>) -> Self {
         INT.intern(s)
     }
+
     /// Get the underlying string
     pub fn val(&self) -> Arc<String> {
         INT.fetch(*self)
@@ -489,25 +488,11 @@ impl fmt::Display for Sym {
     }
 }
 
-/*
-/// A path of modules/structs/whatever
-/// `foo.bar.bop`
-pub struct Path {
-    /// The last part of the path, must always exist.
-    pub name: Sym,
-    /// The rest of the (possibly empty) path.
-    /// TODO: Whether this must be absolute or could be relative is currently undefined.
-    pub path: Vec<Sym>,
-}
-*/
-
-/// Interner context.
+/// Global interner context for Sym's.
 ///
-/// Really this is just an interner for symbols now, and
-/// the original plan of bundling it up into a special context
-/// type for each step of compilation hasn't really worked out.
+/// Could be used to store other things someday if we need to.
 #[derive(Debug)]
-pub struct Cx {
+struct Cx {
     /// Interned var names
     syms: intern::Interner<Sym, String>,
     //files: cs::files::SimpleFiles<String, String>,

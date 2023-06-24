@@ -50,6 +50,9 @@ pub struct ExprNode {
     pub e: Box<Expr>,
     /// Expression ID
     pub id: Eid,
+    /// Whether or not the expression is constant,
+    /// ie can be entirely evaluated at compile time.
+    pub is_const: bool,
 }
 
 impl PartialEq for ExprNode {
@@ -120,6 +123,7 @@ impl ExprNode {
         ExprNode {
             e: Box::new(e),
             id: Eid::new(),
+            is_const: false,
         }
     }
 
@@ -132,7 +136,7 @@ impl ExprNode {
     pub fn map(self, f: &mut dyn FnMut(Expr) -> Expr) -> Self {
         ExprNode {
             e: Box::new(f(*self.e)),
-            id: self.id,
+            ..self
         }
     }
 
@@ -240,7 +244,7 @@ pub enum Expr {
         elt: Sym,
     },
     ArrayRef {
-        e: ExprNode,
+        expr: ExprNode,
         idx: ExprNode,
     },
     Assign {
@@ -438,7 +442,7 @@ impl Expr {
                 expr.write(0, f)?;
                 write!(f, " {})", elt)?;
             }
-            ArrayRef { e, idx } => {
+            ArrayRef { expr: e, idx } => {
                 write!(f, "(arrayref ")?;
                 e.write(0, f)?;
                 write!(f, " ")?;
@@ -670,6 +674,10 @@ fn lower_expr(expr: &ast::Expr) -> ExprNode {
                 .collect();
             Expr::StructCtor { body: lowered_body }
         }
+        E::ArrayRef { expr, idx } => Expr::ArrayRef {
+            expr: lower_expr(expr),
+            idx: lower_expr(idx),
+        },
         E::TupleRef { expr, elt } => Expr::TupleRef {
             expr: lower_expr(expr),
             elt: *elt,

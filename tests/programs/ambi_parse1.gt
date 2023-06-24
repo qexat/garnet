@@ -4,11 +4,11 @@
 -- Run:
 --   status: success
 --   stdout:
---     1
+--     2
 --     -2
 --     -3
 --     1
---     1
+--     2
 --     2
 --     1
 --     1
@@ -17,12 +17,12 @@
 
 fn foo() I32 =
     let y I32 = 2
-    -1;
+    -1
     y
 end
 
 fn bar() I32 =
-    let y I32 = 2;
+    let y I32 = 2
     -y
 end
 
@@ -32,14 +32,11 @@ fn baz() I32 =
 end
 
 fn bop1(x {}) {} =
-    let a fn() I32 = baz;
-    {}
+    let a fn() I32 = baz
 end
 
 fn bop2() {} =
-    -- This parses as a function call
-    let a {} = bop1
-    {}
+    let a {} = bop1 {}
 end
 
 fn main() {} =
@@ -57,8 +54,7 @@ fn main() {} =
     __println(z)
 
     let aa I32 = 2 + -1
-    let ab I32 = 2 +
-    -aa
+    let ab I32 = 2 + -aa
     __println(aa)
     __println(ab)
 end
