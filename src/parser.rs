@@ -138,19 +138,19 @@ pub enum TokenKind {
     Let,
     #[token("mut")]
     Mut,
-    #[token("end")]
+    #[regex("end *\n*")]
     End,
     #[token("if")]
     If,
-    #[token("then")]
+    #[regex("then *\n*")]
     Then,
-    #[token("elseif")]
+    #[regex("elseif *\n*")]
     Elseif,
-    #[token("else")]
+    #[regex("else *\n*")]
     Else,
-    #[token("loop")]
+    #[regex("loop *\n*")]
     Loop,
-    #[token("do")]
+    #[regex("do *\n*")]
     Do,
     #[token("return")]
     Return,
@@ -158,11 +158,11 @@ pub enum TokenKind {
     Break,
     #[token("type")]
     Type,
-    #[token("struct")]
+    #[regex("struct *\n*")]
     Struct,
-    #[token("enum")]
+    #[regex("enum *\n*")]
     Enum,
-    #[token("sum")]
+    #[regex("sum *\n*")]
     Sum,
     #[token("import")]
     Import,
@@ -174,7 +174,7 @@ pub enum TokenKind {
     LParen,
     #[token(")")]
     RParen,
-    #[token("{")]
+    #[regex("\\{ *\n*")]
     LBrace,
     #[token("}")]
     RBrace,
@@ -182,14 +182,15 @@ pub enum TokenKind {
     LBracket,
     #[token("]")]
     RBracket,
-    #[token(",")]
+    #[regex(", *\n*")]
     Comma,
     #[token(".")]
     Period,
     #[token(":")]
     Colon,
     #[token(";")]
-    Semicolon,
+    #[token("\n")]
+    Delimiter,
     #[token("=")]
     Equals,
     #[token("$")]
@@ -245,7 +246,7 @@ pub enum TokenKind {
     Comment(String),
 
     #[error]
-    #[regex(r"[ \t\n\f]+", logos::skip)]
+    #[regex(r"[ \t\f]+", logos::skip)]
     Error,
 }
 
@@ -405,6 +406,7 @@ impl<'input> Parser<'input> {
     /// Returns the next token, with span.
     fn next(&mut self) -> Option<Token> {
         let t = self.lex.next().map(|tok| Token::new(tok, self.lex.span()));
+        dbg!(&t);
         match t {
             // Recurse to skip comments
             Some(Token {
@@ -527,6 +529,12 @@ impl<'input> Parser<'input> {
         }
     }
 
+    /// Eat the next zero or more semicolons
+    fn eat_delimiters(&mut self) {
+        while self.peek_expect(T::Delimiter.discr()) {}
+    }
+
+
     /// Consume an identifier and return its interned symbol.
     fn expect_ident(&mut self) -> Sym {
         match self.next() {
@@ -604,6 +612,7 @@ impl<'input> Parser<'input> {
                     T::Fn => Some(p.parse_fn(doc_comments)),
                     T::Type => Some(p.parse_typedef(doc_comments)),
                     T::Import => Some(p.parse_import(doc_comments)),
+                    T::Delimiter => parse_decl_inner(p, doc_comments),
                     _other => p.error("start of decl", Some(tok)),
                 }
             } else {
@@ -630,6 +639,7 @@ impl<'input> Parser<'input> {
         let name = self.expect_ident();
         let signature = self.parse_fn_signature();
         self.expect(T::Equals);
+        self.eat_delimiters();
         let body = self.parse_exprs();
         self.expect(T::End);
         ast::Decl::Function {
@@ -849,9 +859,11 @@ impl<'input> Parser<'input> {
                 } else {
                     break;
                 }
+                self.eat_delimiters();
             });
             self.expect(T::RParen);
         }
+        self.eat_delimiters();
 
         // TODO someday: Doc comments on struct fields
         parse_delimited!(self, T::Comma, {
@@ -863,6 +875,7 @@ impl<'input> Parser<'input> {
             } else {
                 break;
             }
+            self.eat_delimiters();
         });
         (fields, generics)
     }
@@ -876,10 +889,12 @@ impl<'input> Parser<'input> {
                 let name = self.expect_ident();
                 self.expect(T::Equals);
                 let vl = self.parse_expr(0).unwrap();
+                self.eat_delimiters();
                 fields.insert(name, vl);
             } else {
                 break;
             }
+            self.eat_delimiters();
         });
         fields
     }
@@ -983,7 +998,10 @@ impl<'input> Parser<'input> {
         let tok = self.peek();
         while let Some(e) = self.parse_expr(0) {
             // if we have a semicolon after an expr we can just eat it
-            self.peek_expect(T::Semicolon.discr());
+            //self.peek_expect(T::Delimiter.discr());
+            //self.expect(T::Delimiter);
+            // We need at least one semicolon, but more than one is fine.
+            self.eat_delimiters();
             exprs.push(e);
         }
         // TODO: I think this was necessary for sanity's sake at some point
@@ -1324,6 +1342,7 @@ impl<'input> Parser<'input> {
         self.expect(T::Fn);
         let signature = self.parse_fn_signature();
         self.expect(T::Equals);
+                self.eat_delimiters();
         let body = self.parse_exprs();
         self.expect(T::End);
         ast::Expr::Lambda { signature, body }
@@ -1721,7 +1740,7 @@ type blar = I8
 
     #[test]
     fn parse_block() {
-        let valid_args = vec!["do 10 end", "do 10 20 30 end", "do {} end"];
+        let valid_args = vec!["do 10; end", "do 10; 20; 30; end", "do {}; end"];
         test_parse_with(|p| p.parse_block(), &valid_args);
         test_parse_with(|p| p.parse_expr(0), &valid_args);
     }
@@ -1825,15 +1844,13 @@ type blar = I8
     fn verify_elseif() {
         use Expr;
         test_expr_is(
-            r#"
-            if x then
+            r#"if x then
                 1
             elseif y then
                 2
             else
                 3
-            end
-            "#,
+            end"#,
             || Expr::If {
                 cases: vec![
                     ast::IfCase {
@@ -1850,8 +1867,7 @@ type blar = I8
         );
 
         test_expr_is(
-            r#"
-            if x then
+            r#"if x then
                 1
             else
                 if y then
@@ -1859,8 +1875,7 @@ type blar = I8
                 else
                     3
                 end
-            end
-            "#,
+            end"#,
             || Expr::If {
                 cases: vec![ast::IfCase {
                     condition: Box::new(Expr::var("x")),
