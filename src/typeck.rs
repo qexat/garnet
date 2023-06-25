@@ -1,7 +1,7 @@
 //! Typechecking and other semantic checking.
 //! Operates on the HIR.
 //!
-//! TODO: Actually check whether the body of const decls is const
+//! TODO: Maybe turn the `Tck.vars[...]` lookups into something sensible.
 
 use std::borrow::Cow;
 use std::cell::RefCell;
@@ -15,16 +15,16 @@ use crate::*;
 use crate::hir;
 use crate::{Sym, Type};
 
-/// A identifier to uniquely refer to our type terms
+/// A identifier to uniquely refer to our `TypeInfo`'s
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct TypeId(usize);
 
-/// Information about a type term
+/// Potentially-incomplete information about the type of an expression.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum TypeInfo {
-    /// No information about the type of this type term
+    /// No information about the type of this expr
     Unknown,
-    /// This type term is the same as another type term
+    /// This type is the same as another expr's type
     Ref(TypeId),
     Prim(PrimType),
     Enum(Vec<(Sym, i32)>),
@@ -35,19 +35,22 @@ pub enum TypeInfo {
     /// or List(Int)
     /// or List(T)
     Named(Sym, Vec<TypeId>),
-    /// This type term is definitely a function
+    /// This type is definitely a function
     Func(Vec<TypeId>, TypeId, Vec<TypeId>),
     /// This is definitely some kind of struct
     Struct(BTreeMap<Sym, TypeId>),
     /// Definitely a sum type
     Sum(BTreeMap<Sym, TypeId>),
+    /// Definitely an array, one we might or might not know the length of
     Array(TypeId, Option<usize>),
-    /// This is some generic type that has a name like @A
+    /// This is some generic type that has a name like `@A`
     /// AKA a type parameter.
     TypeParam(Sym),
 }
 
 impl TypeInfo {
+    /// Conjure forth a printable name for a type term, suitable for printing
+    /// in debug or error messages.
     fn get_name(&self, tck: &Tck) -> Cow<'static, str> {
         use TypeInfo::*;
         match self {
@@ -57,7 +60,7 @@ impl TypeInfo {
             Ref(id) => Cow::Owned(format!("Ref({})", tck.vars[id].get_name(tck))),
             Enum(v) => {
                 let mut accm = String::from("enum ");
-                // TODO: Do heckin' something with the val???
+                // TODO: Do heckin' something with the enum's values???
                 for (name, _vl) in v {
                     accm += &format!("{}, ", name);
                 }
@@ -82,11 +85,10 @@ impl TypeInfo {
                     .map(|id| tck.vars[id].get_name(tck))
                     .collect();
                 let tparamstr = tparamstr.join(", ");
-                format!("fn({} | {}) {}", paramstr, tparamstr, rettypestr).into()
+                format!("fn(|{}| {}) {}", tparamstr, paramstr, rettypestr).into()
             }
             Struct(body) => {
                 let mut accm = String::from("struct\n");
-                // TODO: Do heckin' something with the val???
                 for (name, id) in body {
                     let typename = tck.vars[id].get_name(tck);
                     accm += &format!("{}: {},\n", name, typename);
@@ -96,7 +98,6 @@ impl TypeInfo {
             }
             Sum(body) => {
                 let mut accm = String::from("sum\n");
-                // TODO: Do heckin' something with the val???
                 for (name, id) in body {
                     let typename = tck.vars[id].get_name(tck);
                     accm += &format!("{} {},\n", name, typename);
@@ -126,6 +127,7 @@ pub enum TypeError {
         got: Type,
         expected: Type,
     },
+    TypeListMismatch, // TODO
     AmbiguousType {
         expr_name: Cow<'static, str>,
     },
@@ -136,6 +138,7 @@ pub enum TypeError {
         tid: TypeId,
     },
     /*
+    TODO: Oh heck make these used
     UnknownType(Sym),
     InvalidReturn,
     Return {
@@ -207,6 +210,7 @@ impl std::fmt::Display for TypeError {
 }
 
 impl TypeError {
+    /// TODO: This should just be turned into the Display impl
     pub fn format(&self) -> String {
         match self {
             TypeError::UnknownVar(sym) => format!("Unknown var: {}", sym.val()),
@@ -224,6 +228,9 @@ impl TypeError {
                 expected.get_name(),
                 got.get_name()
             ),
+            TypeError::TypeListMismatch => {
+                format!("Type list mismatch, make better error message")
+            }
             TypeError::AmbiguousType { expr_name } => {
                 format!("Ambiguous/unknown type for expression '{}'", expr_name)
             }
@@ -337,7 +344,8 @@ pub struct Tck {
 }
 
 impl Tck {
-    /// Save the type variable associated with the given expr
+    /// Save the type variable associated with the given expr.
+    /// Panics if it is redefining the expr's type.
     fn set_expr_type(&mut self, expr: &hir::ExprNode, ty: TypeId) {
         let res = self.types.insert(expr.id, ty);
         assert!(
@@ -348,7 +356,10 @@ impl Tck {
     }
 
     /// Replace the given expr's type with a new one.
-    /// Used for HIR transforms that change one node type into another.
+    /// Used for HIR transforms that change one node type into another,
+    /// but generally not used for actual typechecking since unification
+    /// always progresses.
+    ///
     /// Panics if the expression's type is not set.
     pub fn replace_expr_type(&mut self, expr: &hir::ExprNode, ty: &Type) {
         let typeid = self.insert_known(ty);
@@ -356,6 +367,7 @@ impl Tck {
         assert!(res.is_some());
     }
 
+    /// Returns the `TypeId` associated with the HIR node.
     /// Panics if the expression's type is not set.
     pub fn get_expr_type(&self, expr: &hir::ExprNode) -> TypeId {
         *self.types.get(&expr.id).unwrap_or_else(|| {
@@ -366,7 +378,7 @@ impl Tck {
         })
     }
 
-    /// Create a new type term with whatever we have about its type
+    /// Create a new type var with whatever we have about its type
     pub fn insert(&mut self, info: TypeInfo) -> TypeId {
         // Generate a new ID for our type term
         self.id_counter += 1;
@@ -376,7 +388,7 @@ impl Tck {
         id
     }
 
-    /// Create a new type term out of a known type, such as if we
+    /// Create a new type var out of a known type, such as if we
     /// declare a var's type.
     pub fn insert_known(&mut self, t: &Type) -> TypeId {
         // Recursively insert all subtypes.
@@ -419,6 +431,10 @@ impl Tck {
         self.insert(tinfo)
     }
 
+    /// Looks up a type var which must resolve to a struct (sooner or later)
+    /// and if it's a struct we know about then looks up the type of the
+    /// named field in it.
+    ///
     /// Panics on invalid field name or not a struct type
     pub fn get_struct_field_type(
         &mut self,
@@ -444,6 +460,7 @@ impl Tck {
         }
     }
 
+    /// Same as `get_struct_field_type()` but takes a tuple type and an integer.
     pub fn get_tuple_field_type(
         &mut self,
         symtbl: &Symtbl,
@@ -493,7 +510,6 @@ impl Tck {
     }
 
     /// Returns the type that the unary op operates on.
-    /// Currently, only numbers.
     pub fn uop_input_type(&mut self, uop: hir::UOp) -> TypeId {
         use hir::UOp::*;
         match uop {
@@ -515,10 +531,27 @@ impl Tck {
         }
     }
 
+    /// Unify two lists of types.  They must be the same length.
+    fn unify_lists(
+        &mut self,
+        symtbl: &Symtbl,
+        a: &[TypeId],
+        b: &[TypeId],
+    ) -> Result<(), TypeError> {
+        if a.len() == b.len() {
+            for (arg1, arg2) in a.iter().zip(b.iter()) {
+                self.unify(symtbl, *arg1, *arg2)?;
+            }
+            Ok(())
+        } else {
+            Err(TypeError::TypeListMismatch)
+        }
+    }
+
     /// Make the types of two type terms equivalent (or produce an error if
     /// there is a conflict between them)
     pub fn unify(&mut self, symtbl: &Symtbl, a: TypeId, b: TypeId) -> Result<(), TypeError> {
-        //println!("> Unifying {:?} with {:?}", self.vars[&a], self.vars[&b]);
+        //trace!("> Unifying {:?} with {:?}", self.vars[&a], self.vars[&b]);
         // If a == b then it's a little weird but shoooooould be fine
         // as long as we don't get any mutual recursion or self-recursion
         // involved
@@ -564,11 +597,8 @@ impl Tck {
             // For type constructors, if their names are the same we try
             // to unify their args
             (Named(n1, args1), Named(n2, args2)) => {
-                if n1 == n2 && args1.len() == args2.len() {
-                    for (arg1, arg2) in args1.iter().zip(args2.iter()) {
-                        self.unify(symtbl, *arg1, *arg2)?;
-                    }
-                    Ok(())
+                if n1 == n2 {
+                    self.unify_lists(symtbl, &args1, &args2)
                 } else {
                     panic!(
                         "Mismatch between types {}({:?}) and {}({:?})",
@@ -576,6 +606,9 @@ impl Tck {
                     )
                 }
             }
+            // Enums are the same if their contents are the same.
+            // No need to recurse, since they're terminal types.
+            (Enum(a), Enum(b)) if a == b => Ok(()),
             // When unifying complex types, we must check their sub-types. This
             // can be trivially implemented for tuples, sum types, etc.
             (Func(a_i, a_o, a_params), Func(b_i, b_o, b_params)) => {
@@ -597,9 +630,7 @@ impl Tck {
                 }
                 Ok(())
             }
-            // Enums are the same if their contents are the same.
-            // No need to recurse, since they're terminal types.
-            (Enum(a), Enum(b)) if a == b => Ok(()),
+            // same basic idea
             (Struct(body1), Struct(body2)) => {
                 for (nm, t1) in body1.iter() {
                     let t2 = body2[nm];
@@ -646,7 +677,7 @@ impl Tck {
             }
             // For declared type parameters like @T they match if their names match.
             // TODO: And if they have been declared?  Not sure we can ever get to
-            // here if that's the case.
+            // here if they haven't.
             (TypeParam(s1), TypeParam(s2)) if s1 == s2 => Ok(()),
             // If no previous attempts to unify were successful, raise an error
             (a, b) => {
@@ -661,7 +692,7 @@ impl Tck {
         }
     }
 
-    /// Attempt to reconstruct a concrete type from the given type term ID. This
+    /// Attempt to reconstruct a concrete type from the given type var ID. This
     /// may fail if we don't yet have enough information to figure out what the
     /// type is.
     pub fn reconstruct(&self, id: TypeId) -> Result<Type, TypeError> {
