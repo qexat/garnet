@@ -534,7 +534,6 @@ impl<'input> Parser<'input> {
         while self.peek_expect(T::Delimiter.discr()) {}
     }
 
-
     /// Consume an identifier and return its interned symbol.
     fn expect_ident(&mut self) -> Sym {
         match self.next() {
