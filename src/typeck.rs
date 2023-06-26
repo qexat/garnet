@@ -612,22 +612,10 @@ impl Tck {
             // When unifying complex types, we must check their sub-types. This
             // can be trivially implemented for tuples, sum types, etc.
             (Func(a_i, a_o, a_params), Func(b_i, b_o, b_params)) => {
-                if a_i.len() != b_i.len() {
-                    return Err(format!("Arg lists are not same length").into());
-                }
-                for (arg_a, arg_b) in a_i.iter().zip(b_i) {
-                    self.unify(symtbl, *arg_a, arg_b)?;
-                }
+                self.unify_lists(symtbl, &a_i, &b_i)?;
                 self.unify(symtbl, a_o, b_o)?;
+                self.unify_lists(symtbl, &a_params, &b_params)?;
 
-                if a_params.len() == b_params.len() {
-                    for (arg1, arg2) in a_params.iter().zip(b_params.iter()) {
-                        self.unify(symtbl, *arg1, *arg2)?;
-                    }
-                } else {
-                    trace!("oops: {:?} {:?}", a, b);
-                    return Err(format!("Type param lists are not same length!").into());
-                }
                 Ok(())
             }
             // same basic idea
@@ -966,7 +954,7 @@ fn typecheck_func_body(
     body: &[hir::ExprNode],
 ) -> Result<TypeId, TypeError> {
     /*
-    println!(
+    trace!(
         "Typechecking function {:?} with signature {:?}",
         name, signature
     );
@@ -978,12 +966,6 @@ fn typecheck_func_body(
         params.push(p);
     }
     let rettype = tck.insert_known(&signature.rettype);
-    /*
-    println!(
-        "signature is: {:?}",
-        TypeInfo::Func(params.clone(), rettype.clone())
-    );
-    */
     let tparams = signature
         .typeparams
         .iter()
@@ -1010,7 +992,7 @@ fn typecheck_func_body(
     // Typecheck body
     let last_expr_type = typecheck_exprs(tck, symtbl, rettype, body)?;
     /*
-    println!(
+    trace!(
         "Unifying last expr...?  Is type {:?}, we want {:?}",
         last_expr_type, rettype
     );
@@ -1023,7 +1005,7 @@ fn typecheck_func_body(
     }
 
     /*
-    println!(
+    trace!(
         "Typechecked function {}, types are",
         name.unwrap_or(Sym::new("(lambda)"))
     );
@@ -1134,7 +1116,7 @@ fn typecheck_expr(
             let actual_func_type = tck.reconstruct(func_type)?;
             let actual_func_type_params = match &actual_func_type {
                 Type::Func(_args, _rettype, typeparams) => {
-                    //println!("Calling function {:?} is {:?}", func, actual_func_type);
+                    //trace!("Calling function {:?} is {:?}", func, actual_func_type);
                     // So when we call a function we need to know what its
                     // type params are.  Then we bind those type parameters
                     // to things.
@@ -1148,14 +1130,6 @@ fn typecheck_expr(
 
             // Synthesize what we know about the function
             // from the call.
-            /*
-            let mut params_list = vec![];
-            for param in params {
-                typecheck_expr(tck, symtbl, func_rettype, param)?;
-                let param_type = tck.get_expr_type(param);
-                params_list.push(param_type);
-            }
-            */
             let params_list: Result<Vec<_>, _> = params
                 .iter()
                 .map(|param| typecheck_expr(tck, symtbl, func_rettype, param))
@@ -1178,12 +1152,6 @@ fn typecheck_expr(
                     .collect(),
                 // Map the given type params to the ones the function expects.
                 (given, expected) if given == expected => {
-                    /*
-                        let type_mapping: BTreeMap<_, _> = actual_func_type_params
-                            .iter()
-                            .zip(type_params.iter())
-                            .collect();
-                    */
                     type_params.iter().map(|t| tck.insert_known(t)).collect()
                 }
                 // Wrong number of type params given.
@@ -1414,6 +1382,7 @@ fn typecheck_expr(
         }
         Break => {
             // TODO: I guess the return type of `break` is unit?
+            // Or Never?
             // Someday we might want to break with a return value, but not yet.
             let unit = tck.insert_known(&Type::unit());
             tck.set_expr_type(expr, unit);
@@ -1455,7 +1424,6 @@ fn typecheck_expr(
             let tid = tck.instantiate(&named_type, None);
             trace!("Instantiated {:?} into {:?}", named_type, tid);
 
-            //let tid = tck.insert_known(&named_type);
             let body_type = typecheck_expr(tck, symtbl, func_rettype, body)?;
             trace!("Expected type is {:?}, body type is {:?}", tid, body_type);
             tck.unify(symtbl, tid, body_type)?;
@@ -1531,14 +1499,6 @@ fn typecheck_expr(
             let named_type = symtbl
                 .get_type(*name)
                 .expect("Unknown sum type constructor");
-            /*
-            let body_type = typecheck_expr(tck, symtbl, body)?;
-            let well_heck = tck.vars[&body_type].clone();
-            match well_heck.clone() {
-                Type::Sum(sum_body, _generics) => {
-                    todo!()
-                }
-            */
 
             // This might be wrong, we can probably do it the other way around
             // like we do with TypeUnwrap: start by checking the inner expr type and make
