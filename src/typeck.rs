@@ -1,7 +1,5 @@
 //! Typechecking and other semantic checking.
 //! Operates on the HIR.
-//!
-//! TODO: Maybe turn the `Tck.vars[...]` lookups into something sensible.
 
 use std::borrow::Cow;
 use std::cell::RefCell;
@@ -57,7 +55,7 @@ impl TypeInfo {
             Unknown => Cow::Borrowed("{unknown}"),
             Never => Cow::Borrowed("{never}"),
             Prim(p) => p.get_name(),
-            Ref(id) => Cow::Owned(format!("Ref({})", tck.vars[id].get_name(tck))),
+            Ref(id) => Cow::Owned(format!("Ref({})", tck.get(id).get_name(tck))),
             Enum(v) => {
                 let mut accm = String::from("enum ");
                 // TODO: Do heckin' something with the enum's values???
@@ -71,18 +69,18 @@ impl TypeInfo {
                 let name = (&*s.val()).to_owned();
                 let generics: Vec<_> = g
                     .iter()
-                    .map(|t| tck.vars[t].get_name(tck).to_owned())
+                    .map(|t| tck.get(t).get_name(tck).to_owned())
                     .collect();
                 let joined_generics = generics.join(", ");
                 format!("{}({})", name, joined_generics).into()
             }
             Func(params, rettype, typeparams) => {
-                let paramstr: Vec<_> = params.iter().map(|id| tck.vars[id].get_name(tck)).collect();
+                let paramstr: Vec<_> = params.iter().map(|id| tck.get(id).get_name(tck)).collect();
                 let paramstr = paramstr.join(", ");
-                let rettypestr = tck.vars[rettype].get_name(tck);
+                let rettypestr = tck.get(rettype).get_name(tck);
                 let tparamstr: Vec<_> = typeparams
                     .iter()
-                    .map(|id| tck.vars[id].get_name(tck))
+                    .map(|id| tck.get(id).get_name(tck))
                     .collect();
                 let tparamstr = tparamstr.join(", ");
                 format!("fn(|{}| {}) {}", tparamstr, paramstr, rettypestr).into()
@@ -90,7 +88,7 @@ impl TypeInfo {
             Struct(body) => {
                 let mut accm = String::from("struct\n");
                 for (name, id) in body {
-                    let typename = tck.vars[id].get_name(tck);
+                    let typename = tck.get(id).get_name(tck);
                     accm += &format!("{}: {},\n", name, typename);
                 }
                 accm += "end\n";
@@ -99,7 +97,7 @@ impl TypeInfo {
             Sum(body) => {
                 let mut accm = String::from("sum\n");
                 for (name, id) in body {
-                    let typename = tck.vars[id].get_name(tck);
+                    let typename = tck.get(id).get_name(tck);
                     accm += &format!("{} {},\n", name, typename);
                 }
                 accm += "end\n";
@@ -111,7 +109,7 @@ impl TypeInfo {
                 let len_str = len
                     .map(|l| format!("{}", l))
                     .unwrap_or_else(|| format!("unknown"));
-                Cow::Owned(format!("{}[{}]", tck.vars[id].get_name(tck), len_str))
+                Cow::Owned(format!("{}[{}]", tck.get(id).get_name(tck), len_str))
             }
             TypeParam(sym) => Cow::Owned(format!("@{}", &*sym.val())),
         }
@@ -344,6 +342,14 @@ pub struct Tck {
 }
 
 impl Tck {
+    fn get(&self, id: &TypeId) -> &TypeInfo {
+        self.vars.get(&id).unwrap_or_else(|| {
+            panic!(
+                "TypeId {:?} does not exist, should probably never happen",
+                id
+            )
+        })
+    }
     /// Save the type variable associated with the given expr.
     /// Panics if it is redefining the expr's type.
     fn set_expr_type(&mut self, expr: &hir::ExprNode, ty: TypeId) {
@@ -443,7 +449,7 @@ impl Tck {
         field_name: Sym,
     ) -> TypeId {
         use TypeInfo::*;
-        match self.vars[&struct_type].clone() {
+        match self.get(&struct_type).clone() {
             Ref(t) => self.get_struct_field_type(symtbl, t, field_name),
             Struct(body) => body.get(&field_name).cloned().unwrap_or_else(|| {
                 panic!(
@@ -468,7 +474,7 @@ impl Tck {
         n: usize,
     ) -> TypeId {
         use TypeInfo::*;
-        match self.vars[&tuple_type].clone() {
+        match self.get(&tuple_type).clone() {
             Ref(t) => self.get_tuple_field_type(symtbl, t, n),
             Named(nm, tys) if &*nm.val() == "Tuple" => tys.get(n).cloned().unwrap_or_else(|| {
                 panic!("Tuple has no field {}, valid fields are: {:#?}", n, tys)
@@ -551,7 +557,7 @@ impl Tck {
     /// Make the types of two type terms equivalent (or produce an error if
     /// there is a conflict between them)
     pub fn unify(&mut self, symtbl: &Symtbl, a: TypeId, b: TypeId) -> Result<(), TypeError> {
-        //trace!("> Unifying {:?} with {:?}", self.vars[&a], self.vars[&b]);
+        //trace!("> Unifying {:?} with {:?}", self.get(&a), self.get(&b));
         // If a == b then it's a little weird but shoooooould be fine
         // as long as we don't get any mutual recursion or self-recursion
         // involved
@@ -561,7 +567,7 @@ impl Tck {
             return Ok(());
         }
         use TypeInfo::*;
-        match (self.vars[&a].clone(), self.vars[&b].clone()) {
+        match (self.get(&a).clone(), self.get(&b).clone()) {
             // Primitives just match directly
             (Prim(p1), Prim(p2)) if p1 == p2 => Ok(()),
             // Unknown integers unified with known integers become known
@@ -685,7 +691,7 @@ impl Tck {
     /// type is.
     pub fn reconstruct(&self, id: TypeId) -> Result<Type, TypeError> {
         use TypeInfo::*;
-        match &self.vars[&id] {
+        match &self.get(&id) {
             Unknown => Err(TypeError::ReconstructFail { tid: id }),
             Never => Ok(Type::Never),
             Prim(ty) => Ok(Type::Prim(ty.clone())),
@@ -1451,7 +1457,7 @@ fn typecheck_expr(
                 symtbl: &Symtbl,
                 t: TypeId,
             ) -> Result<(Sym, Vec<TypeId>), String> {
-                let tinfo = &tck.vars[&t];
+                let tinfo = &tck.get(&t);
                 match tinfo {
                     // Lookup name in symbol table
                     TypeInfo::Named(nm, params) => return Ok((*nm, params.clone())),
