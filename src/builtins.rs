@@ -42,6 +42,32 @@ fn __println_i64(x: i64) {
 fn __println_i16(x: i16) {
     println!("{}", x);
 }"#;
+
+        let band = r#"
+fn __band(x: i32, y: i32) -> i32 {
+    x & y
+}"#;
+        let bor = r#"
+fn __bor(x: i32, y: i32) -> i32 {
+    x | y
+}"#;
+        let bxor = r#"
+fn __bxor(x: i32, y: i32) -> i32 {
+    x ^ y
+}"#;
+        let bnot = r#"
+fn __bnot(x: i32) -> i32 {
+    !x
+}"#;
+
+        let rshift = r#"
+fn __rshift(x: i32, i: i32) -> i32 {
+    x >> i
+}"#; 
+        let lshift = r#"
+fn __lshift(x: i32, i: i32) -> i32 {
+    x << i
+}"#;
         vec![
             Builtin {
                 name: Sym::new("__println"),
@@ -62,6 +88,37 @@ fn __println_i16(x: i16) {
                 name: Sym::new("__println_i16"),
                 sig: Type::Func(vec![Type::i16()], Box::new(Type::unit()), vec![]),
                 code: BTreeMap::from([(Backend::Null, ""), (Backend::Rust, rust_println_i16)]),
+            },
+            // names come from luajit I suppose
+            Builtin {
+                name: Sym::new("__band"),
+                sig: Type::Func(vec![Type::i32(), Type::i32()], Box::new(Type::i32()), vec![]),
+                code: BTreeMap::from([(Backend::Null, ""), (Backend::Rust, band)]),
+            },
+            Builtin {
+                name: Sym::new("__bor"),
+                sig: Type::Func(vec![Type::i32(), Type::i32()], Box::new(Type::i32()), vec![]),
+                code: BTreeMap::from([(Backend::Null, ""), (Backend::Rust, bor)]),
+            },
+            Builtin {
+                name: Sym::new("__bxor"),
+                sig: Type::Func(vec![Type::i32(), Type::i32()], Box::new(Type::i32()), vec![]),
+                code: BTreeMap::from([(Backend::Null, ""), (Backend::Rust, bxor)]),
+            },
+            Builtin {
+                name: Sym::new("__bnot"),
+                sig: Type::Func(vec![Type::i32()], Box::new(Type::i32()), vec![]),
+                code: BTreeMap::from([(Backend::Null, ""), (Backend::Rust, bnot)]),
+            },
+            Builtin {
+                name: Sym::new("__rshift"),
+                sig: Type::Func(vec![Type::i32(), Type::i32()], Box::new(Type::i32()), vec![]),
+                code: BTreeMap::from([(Backend::Null, ""), (Backend::Rust, rshift)]),
+            },
+            Builtin {
+                name: Sym::new("__lshift"),
+                sig: Type::Func(vec![Type::i32(), Type::i32()], Box::new(Type::i32()), vec![]),
+                code: BTreeMap::from([(Backend::Null, ""), (Backend::Rust, lshift)]),
             },
         ]
     }
