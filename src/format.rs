@@ -23,11 +23,8 @@ fn unparse_decl(d: &Decl, out: &mut dyn io::Write) -> io::Result<()> {
             write!(out, "fn {}", name)?;
             unparse_sig(signature, out)?;
             writeln!(out, " =")?;
-            for expr in body {
-                unparse_expr(expr, 1, out)?;
-            }
-
-            writeln!(out, "\nend")
+            unparse_exprs(body, 1, out)?; 
+            write!(out, "end")
         }
         Decl::Const {
             name,
@@ -41,15 +38,14 @@ fn unparse_decl(d: &Decl, out: &mut dyn io::Write) -> io::Result<()> {
             let name = name.val();
             let tname = typename.get_name();
             write!(out, "const {}: {} = ", name, tname)?;
-            unparse_expr(init, 0, out)?;
-            writeln!(out)
+            unparse_expr(init, 0, out)
         }
         Decl::TypeDef { .. } => todo!(),
         Decl::Import { name, rename } => {
             if let Some(re) = rename {
-                writeln!(out, "import {} as {}", name.val(), re.val())
+                write!(out, "import {} as {}", name.val(), re.val())
             } else {
-                writeln!(out, "import {}", name.val())
+                write!(out, "import {}", name.val())
             }
         }
     }
@@ -57,7 +53,15 @@ fn unparse_decl(d: &Decl, out: &mut dyn io::Write) -> io::Result<()> {
 
 fn unparse_sig(sig: &Signature, out: &mut dyn io::Write) -> io::Result<()> {
     write!(out, "(")?;
+    // Write (foo I32, bar I16)
+    // not (foo I32, bar I16, )
+    let mut first = true;
     for (name, typename) in sig.params.iter() {
+        if !first { 
+            write!(out, ", ")?;
+        } else {
+            first = false;
+        }
         let name = name.val();
         let tname = typename.get_name();
         write!(out, "{} {}", name, tname)?;
@@ -70,15 +74,22 @@ fn unparse_sig(sig: &Signature, out: &mut dyn io::Write) -> io::Result<()> {
 fn unparse_exprs(exprs: &[Expr], indent: usize, out: &mut dyn io::Write) -> io::Result<()> {
     for expr in exprs {
         unparse_expr(expr, indent, out)?;
+        writeln!(out)?;
+    }
+    Ok(())
+}
+
+fn write_indent(indent: usize, out: &mut dyn io::Write) -> io::Result<()> {
+    
+    for _ in 0..(indent * INDENT_SIZE) {
+        write!(out, " ")?;
     }
     Ok(())
 }
 
 fn unparse_expr(e: &Expr, indent: usize, out: &mut dyn io::Write) -> io::Result<()> {
     use Expr as E;
-    for _ in 0..(indent * INDENT_SIZE) {
-        write!(out, " ")?;
-    }
+    write_indent(indent, out)?;
     match e {
         E::Lit { val } => write!(out, "{}", val),
         E::Var { name } => {
@@ -123,6 +134,7 @@ fn unparse_expr(e: &Expr, indent: usize, out: &mut dyn io::Write) -> io::Result<
             for e in body {
                 unparse_expr(e, indent + 1, out)?;
             }
+            write_indent(indent, out)?;
             writeln!(out, "end")
         }
         E::Let {
@@ -139,7 +151,7 @@ fn unparse_expr(e: &Expr, indent: usize, out: &mut dyn io::Write) -> io::Result<
             write!(out, "{} ", name)?;
             if let Some(t) = typename {
                 let tname = t.get_name();
-                write!(out, " {} ", tname)?;
+                write!(out, "{} ", tname)?;
             }
             write!(out, "= ")?;
 
@@ -147,38 +159,41 @@ fn unparse_expr(e: &Expr, indent: usize, out: &mut dyn io::Write) -> io::Result<
             writeln!(out)
         }
         E::If { cases, falseblock } => {
-            assert!(cases.len() > 1);
+            assert!(cases.len() >= 1);
             let first_case = &cases[0];
             write!(out, "if ")?;
             unparse_expr(&*first_case.condition, 0, out)?;
-            writeln!(out, "then")?;
+            writeln!(out, " then")?;
             unparse_exprs(&first_case.body, indent + 1, out)?;
 
             for case in &cases[1..] {
+                write_indent(indent, out)?;
                 write!(out, "elseif ")?;
                 unparse_expr(&case.condition, 0, out)?;
-                writeln!(out, "then")?;
+                writeln!(out, " then")?;
                 unparse_exprs(&case.body, indent + 1, out)?;
             }
             if !falseblock.is_empty() {
+                write_indent(indent, out)?;
                 writeln!(out, "else")?;
                 unparse_exprs(falseblock, indent + 1, out)?;
             }
-            writeln!(out, "end")
+            write_indent(indent, out)?;
+            write!(out, "end")
         }
         E::Loop { body } => {
             writeln!(out, "loop")?;
             unparse_exprs(body, indent + 1, out)?;
-            writeln!(out)?;
             writeln!(out, "end")
         }
         E::Lambda { signature, body } => {
-            write!(out, "fn(")?;
+            write!(out, "fn")?;
             unparse_sig(signature, out)?;
             writeln!(out, " =")?;
-            unparse_exprs(body, indent + 1, out)?;
-            writeln!(out)?;
-            writeln!(out, "end")
+            // not sure these indent numbers are a good idea but works for now...
+            unparse_exprs(body, indent + 2, out)?;
+            write_indent(indent+1, out)?;
+            write!(out, "end")
         }
         E::Funcall {
             func,
@@ -187,21 +202,37 @@ fn unparse_expr(e: &Expr, indent: usize, out: &mut dyn io::Write) -> io::Result<
         } => {
             unparse_expr(func, 0, out)?;
             write!(out, "(")?;
-            for e in params {
-                unparse_expr(e, 0, out)?;
-                write!(out, ", ")?;
-            }
             if typeparams.len() > 0 {
-                write!(out, "| ")?;
+                write!(out, "|")?;
+                let mut first = true;
                 for t in typeparams {
+                    if !first {
+                        write!(out, ", ")?;
+                    } else {
+                        first = false;
+                    }
                     let tname = t.get_name();
-                    write!(out, "{}, ", tname)?;
+                    write!(out, "{}", tname)?;
                 }
+                write!(out, "| ")?;
+            }
+            let mut first = true;
+            for e in params {
+                    if !first {
+                        write!(out, ", ")?;
+                    } else {
+                        first = false;
+                    }
+                unparse_expr(e, 0, out)?;
             }
             write!(out, ")")
         }
-        E::Break => writeln!(out, "break"),
+        E::Break => {
+            write_indent(indent, out)?;
+            write!(out, "break")
+        }
         E::Return { retval: e } => {
+            write_indent(indent, out)?;
             write!(out, "return ")?;
             unparse_expr(e, 0, out)?;
             writeln!(out)
@@ -250,14 +281,14 @@ fn unparse_expr(e: &Expr, indent: usize, out: &mut dyn io::Write) -> io::Result<
             write!(out, "^")
         }
         E::Assign { lhs, rhs } => {
-            unparse_expr(&*lhs, indent, out)?;
+            unparse_expr(&*lhs, 0, out)?;
             write!(out, " = ")?;
-            unparse_expr(&*rhs, indent, out)
+            unparse_expr(&*rhs, 0, out)
         }
         E::ArrayCtor { body } => {
             writeln!(out, "[")?;
             for expr in body {
-                unparse_expr(expr, 0, out)?;
+                unparse_expr(expr, indent+1, out)?;
                 writeln!(out, ",")?;
             }
             write!(out, "]")
