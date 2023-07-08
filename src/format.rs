@@ -314,7 +314,6 @@ mod tests {
         let src = r#"fn test(x I32) I32 =
     3 * x + 2
 end
-
 "#;
         let ast = {
             let mut parser = crate::parser::Parser::new("unittest", src);

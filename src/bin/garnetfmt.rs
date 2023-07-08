@@ -8,7 +8,11 @@ use pretty_env_logger;
 
 /// Garnet formatter
 #[derive(Debug, FromArgs)]
-struct Opt {
+struct Opt { 
+    /// overwrite the original file with the new one?
+    #[argh(switch, short='o')]
+    overwrite: bool,
+    /// input file name
     #[argh(positional)]
     file: PathBuf,
 }
@@ -31,6 +35,9 @@ fn main() -> io::Result<()> {
 
     let mut output_file_name = PathBuf::from(&opt.file);
     output_file_name.set_extension("gt.tmp");
-    std::fs::write(output_file_name, &formatted_src.into_inner())?;
+    std::fs::write(&output_file_name, &formatted_src.into_inner())?;
+    if opt.overwrite {
+        std::fs::rename(&output_file_name, &opt.file)?;
+    }
     Ok(())
 }
