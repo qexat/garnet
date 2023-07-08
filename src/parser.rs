@@ -416,7 +416,6 @@ impl<'input> Parser<'input> {
     /// Returns the next token, with span.
     fn next(&mut self) -> Option<Token> {
         let t = self.lex.next().map(|tok| Token::new(tok, self.lex.span()));
-        dbg!(&t);
         match t {
             // Recurse to skip comments
             Some(Token {
