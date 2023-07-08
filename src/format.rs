@@ -23,7 +23,7 @@ fn unparse_decl(d: &Decl, out: &mut dyn io::Write) -> io::Result<()> {
             write!(out, "fn {}", name)?;
             unparse_sig(signature, out)?;
             writeln!(out, " =")?;
-            unparse_exprs(body, 1, out)?; 
+            unparse_exprs(body, 1, out)?;
             write!(out, "end")
         }
         Decl::Const {
@@ -57,7 +57,7 @@ fn unparse_sig(sig: &Signature, out: &mut dyn io::Write) -> io::Result<()> {
     // not (foo I32, bar I16, )
     let mut first = true;
     for (name, typename) in sig.params.iter() {
-        if !first { 
+        if !first {
             write!(out, ", ")?;
         } else {
             first = false;
@@ -80,7 +80,6 @@ fn unparse_exprs(exprs: &[Expr], indent: usize, out: &mut dyn io::Write) -> io::
 }
 
 fn write_indent(indent: usize, out: &mut dyn io::Write) -> io::Result<()> {
-    
     for _ in 0..(indent * INDENT_SIZE) {
         write!(out, " ")?;
     }
@@ -192,7 +191,7 @@ fn unparse_expr(e: &Expr, indent: usize, out: &mut dyn io::Write) -> io::Result<
             writeln!(out, " =")?;
             // not sure these indent numbers are a good idea but works for now...
             unparse_exprs(body, indent + 2, out)?;
-            write_indent(indent+1, out)?;
+            write_indent(indent + 1, out)?;
             write!(out, "end")
         }
         E::Funcall {
@@ -218,11 +217,11 @@ fn unparse_expr(e: &Expr, indent: usize, out: &mut dyn io::Write) -> io::Result<
             }
             let mut first = true;
             for e in params {
-                    if !first {
-                        write!(out, ", ")?;
-                    } else {
-                        first = false;
-                    }
+                if !first {
+                    write!(out, ", ")?;
+                } else {
+                    first = false;
+                }
                 unparse_expr(e, 0, out)?;
             }
             write!(out, ")")
@@ -288,7 +287,7 @@ fn unparse_expr(e: &Expr, indent: usize, out: &mut dyn io::Write) -> io::Result<
         E::ArrayCtor { body } => {
             writeln!(out, "[")?;
             for expr in body {
-                unparse_expr(expr, indent+1, out)?;
+                unparse_expr(expr, indent + 1, out)?;
                 writeln!(out, ",")?;
             }
             write!(out, "]")
