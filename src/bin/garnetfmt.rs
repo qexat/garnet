@@ -40,11 +40,16 @@ fn main() -> io::Result<()> {
     // anything
     let formatted_data = &formatted_src.into_inner();
     let formatted_str = String::from_utf8_lossy(formatted_data);
+    println!("{}", formatted_str);
     let formatted_ast = {
         let mut parser = parser::Parser::new(&filename, &formatted_str);
         parser.parse()
     };
-    assert_eq!(&ast, &formatted_ast);
+    if &ast != &formatted_ast {
+        eprintln!("Error, reformatted AST parses differently from original");
+        eprintln!("{}", formatted_str);
+        panic!("reformat failed");
+    }
 
     if !opt.check {
         let mut output_file_name = PathBuf::from(&opt.file);

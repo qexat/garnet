@@ -37,7 +37,7 @@ fn unparse_decl(d: &Decl, out: &mut dyn io::Write) -> io::Result<()> {
             }
             let name = name.val();
             let tname = typename.get_name();
-            write!(out, "const {}: {} = ", name, tname)?;
+            write!(out, "const {} {} = ", name, tname)?;
             unparse_expr(init, 0, out)
         }
         Decl::TypeDef { .. } => todo!(),
