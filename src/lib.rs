@@ -319,7 +319,7 @@ impl Type {
             }
             Type::Array(body, len) => {
                 let inner_name = body.get_name();
-                Cow::Owned(format!("{}[{}]", inner_name, len))
+                Cow::Owned(format!("[{}]{}", len, inner_name))
             }
             Type::Generic(name) => Cow::Owned(format!("@{}", name)),
         }

@@ -395,7 +395,10 @@ impl<'input> Parser<'input> {
         // To not do this, just put something else there, like
         // a newline
         let module_docstring = match self.peek() {
-            Some(Token{kind: T::DocComment(s), ..}) => s,
+            Some(Token {
+                kind: T::DocComment(s),
+                ..
+            }) => s,
             _ => String::new(),
         };
         self.eat_delimiters();
@@ -750,7 +753,6 @@ impl<'input> Parser<'input> {
         self.expect(T::RParen);
         (args, typeparams)
     }
-
 
     /// type_list = "(" [type {"," type} [","] ")"
     fn try_parse_type_list(&mut self) -> Option<Vec<Type>> {
@@ -2059,24 +2061,23 @@ type blar = I8
 
     #[test]
     fn parse_package_doc_comment() {
-        let thing1 = 
-r#"--- package with doc comment
+        let thing1 = r#"--- package with doc comment
 
 --- doc comment for function
 fn foo() {} = {} end
 "#;
- 
+
         let mut p = Parser::new("unittest.gt", thing1);
         let res = p.parse();
         assert_eq!(&res.module_docstring, " package with doc comment\n");
 
-        let thing2 =  r#"
+        let thing2 = r#"
             
 --- package with no doc comment, this is the
 --- doc comment for function
 fn foo() {} = {} end
 "#;
- 
+
         let mut p = Parser::new("unittest.gt", thing2);
         let res = p.parse();
         assert_eq!(&res.module_docstring, "");

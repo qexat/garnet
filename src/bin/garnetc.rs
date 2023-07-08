@@ -14,7 +14,7 @@ struct Opt {
     /// save intermediate generated code?
     #[argh(switch, short = 's')]
     save: bool,
- 
+
     /// run resulting program immediately, handy for unit tests.  Does not produce an executable.
     #[argh(switch, short = 'r')]
     run: bool,
