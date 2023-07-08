@@ -301,7 +301,7 @@ impl Type {
 
                 t += ")";
                 let rettype_str = rettype.get_name();
-                t += ": ";
+                t += " ";
                 t += &rettype_str;
                 Cow::Owned(t)
             }
@@ -564,7 +564,7 @@ mod tests {
         let args = vec![Type::i32(), Type::bool()];
         let def = Type::Func(args, Box::new(Type::i32()), vec![]);
         let gotten_name = def.get_name();
-        let desired_name = "fn(I32, Bool): I32";
+        let desired_name = "fn(I32, Bool) I32";
         assert_eq!(&gotten_name, desired_name);
     }
 

@@ -170,7 +170,7 @@ pub enum TokenKind {
     As,
 
     // Punctuation
-    #[token("(")]
+    #[regex("\\([ \n]*")]
     LParen,
     #[token(")")]
     RParen,
@@ -178,7 +178,7 @@ pub enum TokenKind {
     LBrace,
     #[token("}")]
     RBrace,
-    #[token("[")]
+    #[regex("\\[[ \n]*")]
     LBracket,
     #[token("]")]
     RBracket,
