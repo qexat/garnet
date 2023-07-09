@@ -398,7 +398,10 @@ impl<'input> Parser<'input> {
             Some(Token {
                 kind: T::DocComment(s),
                 ..
-            }) => s,
+            }) => {
+                self.drop();
+                s
+            },
             _ => String::new(),
         };
         self.eat_delimiters();

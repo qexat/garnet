@@ -1,5 +1,11 @@
+-- Format:
+--   status: success
 -- Compile:
 --   status: error
+--   stderr:
+--     ...
+--     ...Conflict between I32 and Foo()...
+--     ...
 
 type Idx(@Self, @Output) = struct
     idx: fn(@Self, I32) @Output,
@@ -11,6 +17,7 @@ end
 
 
 -- This correctly fails
-const BadIntListIdx2 = Idx {
+-- TODO: verify why and update stderr to make sure it fails *right*
+const BadIntListIdx2 Idx(I32) = Idx {
     .idx = fn(self List(I32), i I32) Foo = self$.dummy_data end
 }
