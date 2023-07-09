@@ -1,3 +1,5 @@
+-- Format:
+--   status: error
 -- Compile:
 --   status: error
 
@@ -5,6 +7,8 @@ type Result(@T, @E) = sum
     Ok @T,
     Err @E,
 end
+
+-- TODO: This should probably succeed
 
 fn main() {} =
     let x = Result.Ok 42

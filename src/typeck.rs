@@ -1,7 +1,5 @@
 //! Typechecking and other semantic checking.
 //! Operates on the HIR.
-//!
-//! TODO: Actually check whether the body of const decls is const
 
 use std::borrow::Cow;
 use std::cell::RefCell;
@@ -15,16 +13,16 @@ use crate::*;
 use crate::hir;
 use crate::{Sym, Type};
 
-/// A identifier to uniquely refer to our type terms
+/// A identifier to uniquely refer to our `TypeInfo`'s
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct TypeId(usize);
 
-/// Information about a type term
+/// Potentially-incomplete information about the type of an expression.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum TypeInfo {
-    /// No information about the type of this type term
+    /// No information about the type of this expr
     Unknown,
-    /// This type term is the same as another type term
+    /// This type is the same as another expr's type
     Ref(TypeId),
     Prim(PrimType),
     Enum(Vec<(Sym, i32)>),
@@ -35,29 +33,32 @@ pub enum TypeInfo {
     /// or List(Int)
     /// or List(T)
     Named(Sym, Vec<TypeId>),
-    /// This type term is definitely a function
+    /// This type is definitely a function
     Func(Vec<TypeId>, TypeId, Vec<TypeId>),
     /// This is definitely some kind of struct
     Struct(BTreeMap<Sym, TypeId>),
     /// Definitely a sum type
     Sum(BTreeMap<Sym, TypeId>),
+    /// Definitely an array, one we might or might not know the length of
     Array(TypeId, Option<usize>),
-    /// This is some generic type that has a name like @A
+    /// This is some generic type that has a name like `@A`
     /// AKA a type parameter.
     TypeParam(Sym),
 }
 
 impl TypeInfo {
+    /// Conjure forth a printable name for a type term, suitable for printing
+    /// in debug or error messages.
     fn get_name(&self, tck: &Tck) -> Cow<'static, str> {
         use TypeInfo::*;
         match self {
             Unknown => Cow::Borrowed("{unknown}"),
             Never => Cow::Borrowed("{never}"),
             Prim(p) => p.get_name(),
-            Ref(id) => Cow::Owned(format!("Ref({})", tck.vars[id].get_name(tck))),
+            Ref(id) => Cow::Owned(format!("Ref({})", tck.get(id).get_name(tck))),
             Enum(v) => {
                 let mut accm = String::from("enum ");
-                // TODO: Do heckin' something with the val???
+                // TODO: Do heckin' something with the enum's values???
                 for (name, _vl) in v {
                     accm += &format!("{}, ", name);
                 }
@@ -68,27 +69,26 @@ impl TypeInfo {
                 let name = (&*s.val()).to_owned();
                 let generics: Vec<_> = g
                     .iter()
-                    .map(|t| tck.vars[t].get_name(tck).to_owned())
+                    .map(|t| tck.get(t).get_name(tck).to_owned())
                     .collect();
                 let joined_generics = generics.join(", ");
                 format!("{}({})", name, joined_generics).into()
             }
             Func(params, rettype, typeparams) => {
-                let paramstr: Vec<_> = params.iter().map(|id| tck.vars[id].get_name(tck)).collect();
+                let paramstr: Vec<_> = params.iter().map(|id| tck.get(id).get_name(tck)).collect();
                 let paramstr = paramstr.join(", ");
-                let rettypestr = tck.vars[rettype].get_name(tck);
+                let rettypestr = tck.get(rettype).get_name(tck);
                 let tparamstr: Vec<_> = typeparams
                     .iter()
-                    .map(|id| tck.vars[id].get_name(tck))
+                    .map(|id| tck.get(id).get_name(tck))
                     .collect();
                 let tparamstr = tparamstr.join(", ");
-                format!("fn({} | {}) {}", paramstr, tparamstr, rettypestr).into()
+                format!("fn(|{}| {}) {}", tparamstr, paramstr, rettypestr).into()
             }
             Struct(body) => {
                 let mut accm = String::from("struct\n");
-                // TODO: Do heckin' something with the val???
                 for (name, id) in body {
-                    let typename = tck.vars[id].get_name(tck);
+                    let typename = tck.get(id).get_name(tck);
                     accm += &format!("{}: {},\n", name, typename);
                 }
                 accm += "end\n";
@@ -96,9 +96,8 @@ impl TypeInfo {
             }
             Sum(body) => {
                 let mut accm = String::from("sum\n");
-                // TODO: Do heckin' something with the val???
                 for (name, id) in body {
-                    let typename = tck.vars[id].get_name(tck);
+                    let typename = tck.get(id).get_name(tck);
                     accm += &format!("{} {},\n", name, typename);
                 }
                 accm += "end\n";
@@ -110,7 +109,7 @@ impl TypeInfo {
                 let len_str = len
                     .map(|l| format!("{}", l))
                     .unwrap_or_else(|| format!("unknown"));
-                Cow::Owned(format!("{}[{}]", tck.vars[id].get_name(tck), len_str))
+                Cow::Owned(format!("{}[{}]", tck.get(id).get_name(tck), len_str))
             }
             TypeParam(sym) => Cow::Owned(format!("@{}", &*sym.val())),
         }
@@ -126,6 +125,7 @@ pub enum TypeError {
         got: Type,
         expected: Type,
     },
+    TypeListMismatch, // TODO
     AmbiguousType {
         expr_name: Cow<'static, str>,
     },
@@ -136,6 +136,7 @@ pub enum TypeError {
         tid: TypeId,
     },
     /*
+    TODO: Oh heck make these used
     UnknownType(Sym),
     InvalidReturn,
     Return {
@@ -207,6 +208,7 @@ impl std::fmt::Display for TypeError {
 }
 
 impl TypeError {
+    /// TODO: This should just be turned into the Display impl
     pub fn format(&self) -> String {
         match self {
             TypeError::UnknownVar(sym) => format!("Unknown var: {}", sym.val()),
@@ -224,6 +226,9 @@ impl TypeError {
                 expected.get_name(),
                 got.get_name()
             ),
+            TypeError::TypeListMismatch => {
+                format!("Type list mismatch, make better error message")
+            }
             TypeError::AmbiguousType { expr_name } => {
                 format!("Ambiguous/unknown type for expression '{}'", expr_name)
             }
@@ -337,7 +342,16 @@ pub struct Tck {
 }
 
 impl Tck {
-    /// Save the type variable associated with the given expr
+    fn get(&self, id: &TypeId) -> &TypeInfo {
+        self.vars.get(&id).unwrap_or_else(|| {
+            panic!(
+                "TypeId {:?} does not exist, should probably never happen",
+                id
+            )
+        })
+    }
+    /// Save the type variable associated with the given expr.
+    /// Panics if it is redefining the expr's type.
     fn set_expr_type(&mut self, expr: &hir::ExprNode, ty: TypeId) {
         let res = self.types.insert(expr.id, ty);
         assert!(
@@ -348,7 +362,10 @@ impl Tck {
     }
 
     /// Replace the given expr's type with a new one.
-    /// Used for HIR transforms that change one node type into another.
+    /// Used for HIR transforms that change one node type into another,
+    /// but generally not used for actual typechecking since unification
+    /// always progresses.
+    ///
     /// Panics if the expression's type is not set.
     pub fn replace_expr_type(&mut self, expr: &hir::ExprNode, ty: &Type) {
         let typeid = self.insert_known(ty);
@@ -356,6 +373,7 @@ impl Tck {
         assert!(res.is_some());
     }
 
+    /// Returns the `TypeId` associated with the HIR node.
     /// Panics if the expression's type is not set.
     pub fn get_expr_type(&self, expr: &hir::ExprNode) -> TypeId {
         *self.types.get(&expr.id).unwrap_or_else(|| {
@@ -366,7 +384,7 @@ impl Tck {
         })
     }
 
-    /// Create a new type term with whatever we have about its type
+    /// Create a new type var with whatever we have about its type
     pub fn insert(&mut self, info: TypeInfo) -> TypeId {
         // Generate a new ID for our type term
         self.id_counter += 1;
@@ -376,7 +394,7 @@ impl Tck {
         id
     }
 
-    /// Create a new type term out of a known type, such as if we
+    /// Create a new type var out of a known type, such as if we
     /// declare a var's type.
     pub fn insert_known(&mut self, t: &Type) -> TypeId {
         // Recursively insert all subtypes.
@@ -419,6 +437,10 @@ impl Tck {
         self.insert(tinfo)
     }
 
+    /// Looks up a type var which must resolve to a struct (sooner or later)
+    /// and if it's a struct we know about then looks up the type of the
+    /// named field in it.
+    ///
     /// Panics on invalid field name or not a struct type
     pub fn get_struct_field_type(
         &mut self,
@@ -427,7 +449,7 @@ impl Tck {
         field_name: Sym,
     ) -> TypeId {
         use TypeInfo::*;
-        match self.vars[&struct_type].clone() {
+        match self.get(&struct_type).clone() {
             Ref(t) => self.get_struct_field_type(symtbl, t, field_name),
             Struct(body) => body.get(&field_name).cloned().unwrap_or_else(|| {
                 panic!(
@@ -444,6 +466,7 @@ impl Tck {
         }
     }
 
+    /// Same as `get_struct_field_type()` but takes a tuple type and an integer.
     pub fn get_tuple_field_type(
         &mut self,
         symtbl: &Symtbl,
@@ -451,7 +474,7 @@ impl Tck {
         n: usize,
     ) -> TypeId {
         use TypeInfo::*;
-        match self.vars[&tuple_type].clone() {
+        match self.get(&tuple_type).clone() {
             Ref(t) => self.get_tuple_field_type(symtbl, t, n),
             Named(nm, tys) if &*nm.val() == "Tuple" => tys.get(n).cloned().unwrap_or_else(|| {
                 panic!("Tuple has no field {}, valid fields are: {:#?}", n, tys)
@@ -493,7 +516,6 @@ impl Tck {
     }
 
     /// Returns the type that the unary op operates on.
-    /// Currently, only numbers.
     pub fn uop_input_type(&mut self, uop: hir::UOp) -> TypeId {
         use hir::UOp::*;
         match uop {
@@ -515,10 +537,27 @@ impl Tck {
         }
     }
 
+    /// Unify two lists of types.  They must be the same length.
+    fn unify_lists(
+        &mut self,
+        symtbl: &Symtbl,
+        a: &[TypeId],
+        b: &[TypeId],
+    ) -> Result<(), TypeError> {
+        if a.len() == b.len() {
+            for (arg1, arg2) in a.iter().zip(b.iter()) {
+                self.unify(symtbl, *arg1, *arg2)?;
+            }
+            Ok(())
+        } else {
+            Err(TypeError::TypeListMismatch)
+        }
+    }
+
     /// Make the types of two type terms equivalent (or produce an error if
     /// there is a conflict between them)
     pub fn unify(&mut self, symtbl: &Symtbl, a: TypeId, b: TypeId) -> Result<(), TypeError> {
-        //println!("> Unifying {:?} with {:?}", self.vars[&a], self.vars[&b]);
+        //trace!("> Unifying {:?} with {:?}", self.get(&a), self.get(&b));
         // If a == b then it's a little weird but shoooooould be fine
         // as long as we don't get any mutual recursion or self-recursion
         // involved
@@ -528,7 +567,7 @@ impl Tck {
             return Ok(());
         }
         use TypeInfo::*;
-        match (self.vars[&a].clone(), self.vars[&b].clone()) {
+        match (self.get(&a).clone(), self.get(&b).clone()) {
             // Primitives just match directly
             (Prim(p1), Prim(p2)) if p1 == p2 => Ok(()),
             // Unknown integers unified with known integers become known
@@ -564,11 +603,8 @@ impl Tck {
             // For type constructors, if their names are the same we try
             // to unify their args
             (Named(n1, args1), Named(n2, args2)) => {
-                if n1 == n2 && args1.len() == args2.len() {
-                    for (arg1, arg2) in args1.iter().zip(args2.iter()) {
-                        self.unify(symtbl, *arg1, *arg2)?;
-                    }
-                    Ok(())
+                if n1 == n2 {
+                    self.unify_lists(symtbl, &args1, &args2)
                 } else {
                     panic!(
                         "Mismatch between types {}({:?}) and {}({:?})",
@@ -576,30 +612,19 @@ impl Tck {
                     )
                 }
             }
-            // When unifying complex types, we must check their sub-types. This
-            // can be trivially implemented for tuples, sum types, etc.
-            (Func(a_i, a_o, a_params), Func(b_i, b_o, b_params)) => {
-                if a_i.len() != b_i.len() {
-                    return Err(format!("Arg lists are not same length").into());
-                }
-                for (arg_a, arg_b) in a_i.iter().zip(b_i) {
-                    self.unify(symtbl, *arg_a, arg_b)?;
-                }
-                self.unify(symtbl, a_o, b_o)?;
-
-                if a_params.len() == b_params.len() {
-                    for (arg1, arg2) in a_params.iter().zip(b_params.iter()) {
-                        self.unify(symtbl, *arg1, *arg2)?;
-                    }
-                } else {
-                    trace!("oops: {:?} {:?}", a, b);
-                    return Err(format!("Type param lists are not same length!").into());
-                }
-                Ok(())
-            }
             // Enums are the same if their contents are the same.
             // No need to recurse, since they're terminal types.
             (Enum(a), Enum(b)) if a == b => Ok(()),
+            // When unifying complex types, we must check their sub-types. This
+            // can be trivially implemented for tuples, sum types, etc.
+            (Func(a_i, a_o, a_params), Func(b_i, b_o, b_params)) => {
+                self.unify_lists(symtbl, &a_i, &b_i)?;
+                self.unify(symtbl, a_o, b_o)?;
+                self.unify_lists(symtbl, &a_params, &b_params)?;
+
+                Ok(())
+            }
+            // same basic idea
             (Struct(body1), Struct(body2)) => {
                 for (nm, t1) in body1.iter() {
                     let t2 = body2[nm];
@@ -646,7 +671,7 @@ impl Tck {
             }
             // For declared type parameters like @T they match if their names match.
             // TODO: And if they have been declared?  Not sure we can ever get to
-            // here if that's the case.
+            // here if they haven't.
             (TypeParam(s1), TypeParam(s2)) if s1 == s2 => Ok(()),
             // If no previous attempts to unify were successful, raise an error
             (a, b) => {
@@ -661,12 +686,12 @@ impl Tck {
         }
     }
 
-    /// Attempt to reconstruct a concrete type from the given type term ID. This
+    /// Attempt to reconstruct a concrete type from the given type var ID. This
     /// may fail if we don't yet have enough information to figure out what the
     /// type is.
     pub fn reconstruct(&self, id: TypeId) -> Result<Type, TypeError> {
         use TypeInfo::*;
-        match &self.vars[&id] {
+        match &self.get(&id) {
             Unknown => Err(TypeError::ReconstructFail { tid: id }),
             Never => Ok(Type::Never),
             Prim(ty) => Ok(Type::Prim(ty.clone())),
@@ -935,7 +960,7 @@ fn typecheck_func_body(
     body: &[hir::ExprNode],
 ) -> Result<TypeId, TypeError> {
     /*
-    println!(
+    trace!(
         "Typechecking function {:?} with signature {:?}",
         name, signature
     );
@@ -947,12 +972,6 @@ fn typecheck_func_body(
         params.push(p);
     }
     let rettype = tck.insert_known(&signature.rettype);
-    /*
-    println!(
-        "signature is: {:?}",
-        TypeInfo::Func(params.clone(), rettype.clone())
-    );
-    */
     let tparams = signature
         .typeparams
         .iter()
@@ -979,7 +998,7 @@ fn typecheck_func_body(
     // Typecheck body
     let last_expr_type = typecheck_exprs(tck, symtbl, rettype, body)?;
     /*
-    println!(
+    trace!(
         "Unifying last expr...?  Is type {:?}, we want {:?}",
         last_expr_type, rettype
     );
@@ -992,7 +1011,7 @@ fn typecheck_func_body(
     }
 
     /*
-    println!(
+    trace!(
         "Typechecked function {}, types are",
         name.unwrap_or(Sym::new("(lambda)"))
     );
@@ -1103,7 +1122,7 @@ fn typecheck_expr(
             let actual_func_type = tck.reconstruct(func_type)?;
             let actual_func_type_params = match &actual_func_type {
                 Type::Func(_args, _rettype, typeparams) => {
-                    //println!("Calling function {:?} is {:?}", func, actual_func_type);
+                    //trace!("Calling function {:?} is {:?}", func, actual_func_type);
                     // So when we call a function we need to know what its
                     // type params are.  Then we bind those type parameters
                     // to things.
@@ -1117,14 +1136,6 @@ fn typecheck_expr(
 
             // Synthesize what we know about the function
             // from the call.
-            /*
-            let mut params_list = vec![];
-            for param in params {
-                typecheck_expr(tck, symtbl, func_rettype, param)?;
-                let param_type = tck.get_expr_type(param);
-                params_list.push(param_type);
-            }
-            */
             let params_list: Result<Vec<_>, _> = params
                 .iter()
                 .map(|param| typecheck_expr(tck, symtbl, func_rettype, param))
@@ -1147,12 +1158,6 @@ fn typecheck_expr(
                     .collect(),
                 // Map the given type params to the ones the function expects.
                 (given, expected) if given == expected => {
-                    /*
-                        let type_mapping: BTreeMap<_, _> = actual_func_type_params
-                            .iter()
-                            .zip(type_params.iter())
-                            .collect();
-                    */
                     type_params.iter().map(|t| tck.insert_known(t)).collect()
                 }
                 // Wrong number of type params given.
@@ -1383,6 +1388,7 @@ fn typecheck_expr(
         }
         Break => {
             // TODO: I guess the return type of `break` is unit?
+            // Or Never?
             // Someday we might want to break with a return value, but not yet.
             let unit = tck.insert_known(&Type::unit());
             tck.set_expr_type(expr, unit);
@@ -1424,7 +1430,6 @@ fn typecheck_expr(
             let tid = tck.instantiate(&named_type, None);
             trace!("Instantiated {:?} into {:?}", named_type, tid);
 
-            //let tid = tck.insert_known(&named_type);
             let body_type = typecheck_expr(tck, symtbl, func_rettype, body)?;
             trace!("Expected type is {:?}, body type is {:?}", tid, body_type);
             tck.unify(symtbl, tid, body_type)?;
@@ -1452,7 +1457,7 @@ fn typecheck_expr(
                 symtbl: &Symtbl,
                 t: TypeId,
             ) -> Result<(Sym, Vec<TypeId>), String> {
-                let tinfo = &tck.vars[&t];
+                let tinfo = &tck.get(&t);
                 match tinfo {
                     // Lookup name in symbol table
                     TypeInfo::Named(nm, params) => return Ok((*nm, params.clone())),
@@ -1500,14 +1505,6 @@ fn typecheck_expr(
             let named_type = symtbl
                 .get_type(*name)
                 .expect("Unknown sum type constructor");
-            /*
-            let body_type = typecheck_expr(tck, symtbl, body)?;
-            let well_heck = tck.vars[&body_type].clone();
-            match well_heck.clone() {
-                Type::Sum(sum_body, _generics) => {
-                    todo!()
-                }
-            */
 
             // This might be wrong, we can probably do it the other way around
             // like we do with TypeUnwrap: start by checking the inner expr type and make

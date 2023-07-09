@@ -1,3 +1,5 @@
+-- Format:
+--   status: error
 -- Compile:
 --   status: error
 --   stderr:

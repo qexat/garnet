@@ -170,7 +170,7 @@ pub enum TokenKind {
     As,
 
     // Punctuation
-    #[token("(")]
+    #[regex("\\([ \n]*")]
     LParen,
     #[token(")")]
     RParen,
@@ -178,7 +178,7 @@ pub enum TokenKind {
     LBrace,
     #[token("}")]
     RBrace,
-    #[token("[")]
+    #[regex("\\[[ \n]*")]
     LBracket,
     #[token("]")]
     RBracket,
@@ -390,6 +390,21 @@ impl<'input> Parser<'input> {
     /// Currently just panics on error.
     pub fn parse(&mut self) -> ast::Ast {
         let mut decls = vec![];
+        // Look for a doc comment as the first thing in the file.
+        // If it's there, it's the package's doc comment.
+        // To not do this, just put something else there, like
+        // a newline
+        let module_docstring = match self.peek() {
+            Some(Token {
+                kind: T::DocComment(s),
+                ..
+            }) => {
+                self.drop();
+                s
+            },
+            _ => String::new(),
+        };
+        self.eat_delimiters();
         while let Some(d) = self.parse_decl() {
             decls.push(d);
         }
@@ -400,13 +415,13 @@ impl<'input> Parser<'input> {
             decls,
             filename: filename.clone(),
             modulename,
+            module_docstring,
         }
     }
 
     /// Returns the next token, with span.
     fn next(&mut self) -> Option<Token> {
         let t = self.lex.next().map(|tok| Token::new(tok, self.lex.span()));
-        dbg!(&t);
         match t {
             // Recurse to skip comments
             Some(Token {
@@ -529,11 +544,10 @@ impl<'input> Parser<'input> {
         }
     }
 
-    /// Eat the next zero or more semicolons
+    /// Eat the next zero or more semicolons or newlines
     fn eat_delimiters(&mut self) {
         while self.peek_expect(T::Delimiter.discr()) {}
     }
-
 
     /// Consume an identifier and return its interned symbol.
     fn expect_ident(&mut self) -> Sym {
@@ -741,56 +755,6 @@ impl<'input> Parser<'input> {
         });
         self.expect(T::RParen);
         (args, typeparams)
-    }
-
-    /// Ok, this is the cursed backtracking bit of the parser.
-    /// Basically we want to parse things of the form
-    /// "(" [type {"," type} [","] "|"] exprlist ")"
-    ///
-    /// The problem is we don't necessarily know whether the
-    /// first thing we parse is a type or expr until we've done
-    /// a bunch of them and have hit either a "|" or a ")".
-    /// So we go through parsing types until we hit a "|" and if
-    /// we do then we're good, or if we hit a ")" first we go
-    /// "whoops those were all expressions", backtrack to where
-    /// we started, and return an empty vec.
-    ///
-    /// foo(T1, T2 | things)
-    fn _parse_barred_type_list(&mut self) -> Vec<Type> {
-        let old_lexer = self.lex.clone();
-        let mut accm = vec![];
-        while let Some(tok) = self.peek() {
-            match tok.kind {
-                T::Bar => {
-                    // We are done with our type arg list!
-                    self.drop();
-                    break;
-                }
-                T::RParen | T::RBrace => {
-                    // Whoops, hit end of an arg list, guess this wasn't types.
-                    // Backtrack!
-                    self.lex = old_lexer;
-                    return vec![];
-                }
-                _other => {
-                    if let Some(ty) = self.try_parse_type() {
-                        // Was a type, great
-                        accm.push(ty);
-                    } else {
-                        // Whoops, not a type, guess this is an expression list
-                        // Backtrack!
-                        self.lex = old_lexer;
-                        return vec![];
-                    }
-                }
-            }
-            // If we've gotten here it means we've just parsed a type,
-            // consume a comma if it exists.
-            // TODO: This is a little fucked because it means the commas
-            // between types are technically optional, but fuckit for now.
-            if self.peek_expect(T::Comma.discr()) {}
-        }
-        accm
     }
 
     /// type_list = "(" [type {"," type} [","] ")"
@@ -1623,6 +1587,7 @@ type blar = I8
             ast::Ast {
                 filename: String::from("unittest.gt"),
                 modulename: String::from("unittest"),
+                module_docstring: String::new(),
                 decls: vec![
                     ast::Decl::Const {
                         name: foosym,
@@ -2098,25 +2063,26 @@ type blar = I8
     }
 
     #[test]
-    fn parse_cursed_type_list() {
-        let v1 = vec![
-            ("|", vec![]),
-            ("I32, I64, | other junk", vec![Type::i32(), Type::i64()]),
-            ("I32, I64 | other junk", vec![Type::i32(), Type::i64()]),
-            (
-                "[12]Bool, {I32, I32} | other junk",
-                vec![
-                    Type::array(&Type::bool(), 12),
-                    Type::tuple(vec![Type::i32(), Type::i32()]),
-                ],
-            ),
-            ("other junk)", vec![]),
-            ("other junk}", vec![]),
-        ];
-        for (s, desired) in &v1 {
-            let mut p = Parser::new("unittest.gt", s);
-            let result = p._parse_barred_type_list();
-            assert_eq!(&result, desired)
-        }
+    fn parse_package_doc_comment() {
+        let thing1 = r#"--- package with doc comment
+
+--- doc comment for function
+fn foo() {} = {} end
+"#;
+
+        let mut p = Parser::new("unittest.gt", thing1);
+        let res = p.parse();
+        assert_eq!(&res.module_docstring, " package with doc comment\n");
+
+        let thing2 = r#"
+            
+--- package with no doc comment, this is the
+--- doc comment for function
+fn foo() {} = {} end
+"#;
+
+        let mut p = Parser::new("unittest.gt", thing2);
+        let res = p.parse();
+        assert_eq!(&res.module_docstring, "");
     }
 }
