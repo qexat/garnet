@@ -39,11 +39,28 @@ fn main() {
                 .collect::<Vec<_>>()
                 .join("\n")
         })
-        // We have two test commands:
+        // We have three test commands:
+        //   * `Format`: Reformat the source and make sure that it parses identically
         //   * `Compile`: runs garnetc.
         //   * `Run`: if garnetc does not error, and the `Compile` tests succeed, then the
         //     output binary is run.
         .test_cmds(move |p| {
+            // Test command 0: Reformat-check `x.gt` and make sure it succeeds
+            // ie, the program after formatting parses the same way as before.
+            // We have to have our own test command for those because it has to know
+            // that it should fail on some things (like parse failures), but
+            // succeed on others where actual compilation fails (like type errors).
+            // Ah well.
+            let mut fmt = Command::new("cargo");
+            fmt.args(&[
+                "run",
+                "--bin",
+                "garnetfmt",
+                "--",
+                "-c",
+                p.to_str().unwrap()
+            ]);
+            
             // Test command 1: Compile `x.gt` into `tempdir/x`.
             let mut exe = PathBuf::new();
             exe.push(&tempdir);
@@ -60,7 +77,7 @@ fn main() {
             ]);
             // Test command 2: run `tempdir/x`.
             let run = Command::new(exe);
-            vec![("Compile", compile), ("Run", run)]
+            vec![("Format", fmt), ("Compile", compile), ("Run", run)]
         })
         .run();
 }

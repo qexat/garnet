@@ -320,4 +320,5 @@ pub struct Ast {
     pub decls: Vec<Decl>,
     pub filename: String,
     pub modulename: String,
+    pub module_docstring: String,
 }

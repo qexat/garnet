@@ -262,13 +262,13 @@ impl Type {
             Type::Prim(p) => p.get_name(),
             Type::Never => Cow::Borrowed("!"),
             Type::Enum(variants) => {
-                let mut res = String::from("enum {");
+                let mut res = String::from("enum ");
                 let s = variants
                     .iter()
                     .map(|(nm, vl)| format!("    {} = {},\n", INT.fetch(*nm), vl))
                     .collect::<String>();
                 res += &s;
-                res += "\n}\n";
+                res += "\nend\n";
                 Cow::Owned(res)
             }
             Type::Named(nm, tys) if nm == &Sym::new("Tuple") => {
@@ -301,12 +301,19 @@ impl Type {
 
                 t += ")";
                 let rettype_str = rettype.get_name();
-                t += ": ";
+                t += " ";
                 t += &rettype_str;
                 Cow::Owned(t)
             }
-            Type::Struct(body, _generics) => {
-                let mut res = String::from("struct ");
+            Type::Struct(body, generics) => {
+                let mut res = String::from("struct");
+                if generics.is_empty() {
+                    res += " "
+                } else {
+                    res += "(";
+                    res += &join_types_with_commas(generics);
+                    res += ") ";
+                }
                 res += &join_vars_with_commas(body);
                 res += " end";
                 Cow::Owned(res)
@@ -319,7 +326,7 @@ impl Type {
             }
             Type::Array(body, len) => {
                 let inner_name = body.get_name();
-                Cow::Owned(format!("{}[{}]", inner_name, len))
+                Cow::Owned(format!("[{}]{}", len, inner_name))
             }
             Type::Generic(name) => Cow::Owned(format!("@{}", name)),
         }
@@ -564,7 +571,7 @@ mod tests {
         let args = vec![Type::i32(), Type::bool()];
         let def = Type::Func(args, Box::new(Type::i32()), vec![]);
         let gotten_name = def.get_name();
-        let desired_name = "fn(I32, Bool): I32";
+        let desired_name = "fn(I32, Bool) I32";
         assert_eq!(&gotten_name, desired_name);
     }
 
