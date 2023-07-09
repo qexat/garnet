@@ -17,7 +17,7 @@ fn unparse_decl(d: &Decl, out: &mut dyn io::Write) -> io::Result<()> {
         } => {
             for line in doc_comment.iter() {
                 // No writeln, doc comment strings already end in \n
-                write!(out, "--- {}", line)?;
+                write!(out, "---{}", line)?;
             }
             let name = name.val();
             write!(out, "fn {}", name)?;
@@ -40,7 +40,31 @@ fn unparse_decl(d: &Decl, out: &mut dyn io::Write) -> io::Result<()> {
             write!(out, "const {} {} = ", name, tname)?;
             unparse_expr(init, 0, out)
         }
-        Decl::TypeDef { .. } => todo!(),
+        Decl::TypeDef { name, params, typedecl, doc_comment } => {
+            for line in doc_comment.iter() {
+                write!(out, "--- {}", line)?;
+            }
+            let name = name.val();
+            let tname = typedecl.get_name();
+            if params.len() == 0 {
+                writeln!(out, "type {} = {}", name, tname)?;
+            } else {
+                let mut paramstr = String::from("");
+                let mut first = true;
+                for t in params {
+                    if !first {
+                        paramstr += ", ";
+                    } else {
+                        first = false;
+                    }
+                    paramstr += "@";
+                    paramstr += &*t.val();
+                }
+                writeln!(out, "type {}({}) = {}", name, paramstr, tname)?;
+            }
+            writeln!(out)
+            
+        }
         Decl::Import { name, rename } => {
             if let Some(re) = rename {
                 write!(out, "import {} as {}", name.val(), re.val())
@@ -53,6 +77,21 @@ fn unparse_decl(d: &Decl, out: &mut dyn io::Write) -> io::Result<()> {
 
 fn unparse_sig(sig: &Signature, out: &mut dyn io::Write) -> io::Result<()> {
     write!(out, "(")?;
+    // Type parameters
+    if !sig.typeparams.is_empty() {
+        write!(out, "|")?;
+        let mut first = true;
+        for name in sig.typeparams.iter() {
+            if !first {
+                write!(out, ", ")?;
+            } else {
+                first = false;
+            }
+            write!(out, "{}", name.get_name())?;
+        }
+        write!(out, "| ")?; 
+    }
+    
     // Write (foo I32, bar I16)
     // not (foo I32, bar I16, )
     let mut first = true;
@@ -298,6 +337,10 @@ fn unparse_expr(e: &Expr, indent: usize, out: &mut dyn io::Write) -> io::Result<
 /// Take the AST and produce a formatted string of source code.
 pub fn unparse(ast: &Ast, out: &mut dyn io::Write) -> io::Result<()> {
     for decl in ast.decls.iter() {
+        if ast.module_docstring.len() > 0 {
+            writeln!(out, "--- {}", &ast.module_docstring)?;
+        }
+        writeln!(out)?;
         unparse_decl(decl, out)?;
         writeln!(out)?;
     }
@@ -310,7 +353,8 @@ mod tests {
     use std::io::Cursor;
     #[test]
     fn test_reparse() {
-        let src = r#"fn test(x I32) I32 =
+        let src = r#"
+fn test(x I32) I32 =
     3 * x + 2
 end
 "#;

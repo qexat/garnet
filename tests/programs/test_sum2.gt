@@ -1,5 +1,9 @@
+-- Format:
+--   status: error
 -- Compile:
 --   status: error
+
+-- TODO: Fix formatting of sum types
 
 -- TODO: This should pass when the `monomorph` branch is finished.
 

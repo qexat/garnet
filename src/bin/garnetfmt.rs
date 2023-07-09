@@ -46,8 +46,12 @@ fn main() -> io::Result<()> {
         parser.parse()
     };
     if &ast != &formatted_ast {
+        // we want more info here 
         eprintln!("Error, reformatted AST parses differently from original");
-        eprintln!("{}", formatted_str);
+        eprintln!("BEFORE:\n{}", src);
+        eprintln!("AST: {:#?}", &ast);
+        eprintln!("AFTER:\n{}", formatted_str);
+        eprintln!("AST: {:#?}", &formatted_ast);
         panic!("reformat failed");
     }
 

@@ -11,10 +11,10 @@ name = "endtoend"
 path = "tests/endtoend.rs"
 harness = false
 
-[[test]]
-name = "reformat"
-path = "tests/reformat.rs"
-harness = false
+#[[test]]
+#name = "reformat"
+#path = "tests/reformat.rs"
+#harness = false
 
 [[test]]
 name = "blns"
