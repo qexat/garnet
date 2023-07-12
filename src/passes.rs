@@ -225,6 +225,12 @@ fn expr_map(
             e: expr_map(e, f_pre, f_post),
             to,
         },
+        E::Ref { expr } => E::Ref {
+            expr: expr_map(expr, f_pre, f_post),
+        },
+        E::Deref { expr } => E::Deref {
+            expr: expr_map(expr, f_pre, f_post),
+        },
     };
     let post_thing = thing.map(exprfn);
     f_post(post_thing)
@@ -356,6 +362,10 @@ fn type_map(typ: Type, f: &mut dyn FnMut(Type) -> Type) -> Type {
         Type::Never => typ,
         Type::Enum(_) => typ,
         Type::Generic(_) => typ,
+        Type::Uniq(t) => {
+            let new_t = type_map(*t, f);
+            Type::Uniq(Box::new(new_t))
+        }
     };
     f(res)
 }
@@ -417,9 +427,12 @@ pub fn generate_type_name(typ: &Type) -> String {
             format!("__Named{}__{}", name, field_str)
         }
         Type::Prim(p) => p.get_name().into_owned(),
-        Type::Never => "!".to_string(),
+        Type::Never => format!("!"),
         Type::Array(t, len) => {
             format!("__Arr{}__{}", generate_type_name(t), len)
+        }
+        Type::Uniq(t) => {
+            format!("__Uniq__{}", generate_type_name(t))
         }
     }
 }

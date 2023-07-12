@@ -83,6 +83,8 @@ pub enum Type {
     Array(Box<Type>, usize),
     /// A generic type parameter that has been given an explicit name.
     Generic(Sym),
+    /// Unique borrow
+    Uniq(Box<Type>),
 }
 
 impl Type {
@@ -143,6 +145,9 @@ impl Type {
                     } else {
                         accm.push(*s)
                     }
+                }
+                Type::Uniq(ty) => {
+                    helper(&*ty, accm);
                 }
             }
         }
@@ -283,8 +288,8 @@ impl Type {
                 }
             }
             Type::Named(nm, tys) => {
-                let result = if tys.is_empty() {
-                    (*nm.val()).clone()
+                let result = if tys.len() == 0 {
+                    (&*nm.val()).clone()
                 } else {
                     format!("{}({})", nm.val(), &join_types_with_commas(tys))
                 };
@@ -295,7 +300,7 @@ impl Type {
                 t += "(";
                 t += &join_types_with_commas(params);
 
-                if !typeparams.is_empty() {
+                if typeparams.len() > 0 {
                     t += "| ";
                     t += &join_types_with_commas(typeparams);
                 }
@@ -330,6 +335,10 @@ impl Type {
                 Cow::Owned(format!("[{}]{}", len, inner_name))
             }
             Type::Generic(name) => Cow::Owned(format!("@{}", name)),
+            Type::Uniq(ty) => {
+                let inner = ty.get_name();
+                Cow::Owned(format!("&{}", inner))
+            }
         }
     }
 
@@ -360,7 +369,7 @@ impl Type {
                 if typeparams1.len() != typeparams2.len() {
                     panic!("subst for function had incorrect typeparam length")
                 }
-                if !typeparams1.is_empty() {
+                if typeparams1.len() > 0 {
                     todo!()
                 }
                 for (p1, p2) in params1.iter().zip(params2) {
@@ -424,7 +433,7 @@ impl Type {
             Type::Func(params1, rettype1, typeparams1) => {
                 let new_params = params1.iter().map(|p1| p1._apply_substs(substs)).collect();
                 let new_rettype = rettype1._apply_substs(substs);
-                if !typeparams1.is_empty() {
+                if typeparams1.len() > 0 {
                     todo!("Hsfjkdslfjs");
                 }
                 Type::Func(new_params, Box::new(new_rettype), vec![])
@@ -444,12 +453,13 @@ impl Type {
             }
             Type::Array(body, len) => Type::Array(Box::new(body._apply_substs(substs)), *len),
             Type::Generic(nm) => substs
-                .get(nm)
+                .get(&nm)
                 .unwrap_or_else(|| panic!("No substitution found for generic named {}!", nm))
                 .to_owned(),
             Type::Prim(_) => self.clone(),
             Type::Enum(_) => self.clone(),
             Type::Never => self.clone(),
+            Type::Uniq(_) => todo!(),
         }
     }
 }

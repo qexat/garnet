@@ -255,14 +255,12 @@ pub enum Expr {
         e: ExprNode,
         to: Type,
     },
-    /*
     Deref {
         expr: ExprNode,
     },
     Ref {
         expr: ExprNode,
     },
-    */
 }
 
 impl Expr {
@@ -461,6 +459,16 @@ impl Expr {
                 e.write(0, f)?;
                 write!(f, ")")?;
             }
+            Deref { expr } => {
+                write!(f, "(ref ")?;
+                expr.write(0, f)?;
+                write!(f, ")")?;
+            }
+            Ref { expr } => {
+                write!(f, "(ref ")?;
+                expr.write(0, f)?;
+                write!(f, ")")?;
+            }
         }
         Ok(())
     }
@@ -537,7 +545,6 @@ pub fn lower(ast: &ast::Ast) -> Ir {
         lower_decl(&mut accm, d)
     }
 
-    
     Ir {
         decls: accm,
         filename: ast.filename.clone(),
@@ -689,8 +696,12 @@ fn lower_expr(expr: &ast::Expr) -> ExprNode {
         E::TypeUnwrap { expr } => Expr::TypeUnwrap {
             expr: lower_expr(expr),
         },
-        E::Deref { expr: _ } => todo!(),
-        E::Ref { expr: _ } => todo!(),
+        E::Deref { expr } => Expr::Deref {
+            expr: lower_expr(expr),
+        },
+        E::Ref { expr } => Expr::Ref {
+            expr: lower_expr(expr),
+        },
         E::Assign { lhs, rhs } => Expr::Assign {
             lhs: lower_expr(lhs),
             rhs: lower_expr(rhs),

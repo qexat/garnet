@@ -64,6 +64,8 @@ fn constinfer_expr(expr: ExprNode) -> ExprNode {
         E::Loop { .. } => false,
         E::Lambda { .. } => true,
         E::Funcall { .. } => false, // TODO: True if function being called is also const
+        E::Ref { .. } => false,     // TODO: Maybe sometimes true?
+        E::Deref { .. } => false,   // Probably never true
     };
     let mut expr = expr;
     expr.is_const = is_const;
@@ -95,7 +97,7 @@ mod tests {
             name: Sym::new("foo"),
         });
         assert!(!inp.is_const);
-        let outp = expr_map_post(inp, &mut constinfer_expr);
+        let outp = expr_map_post(inp, &mut |e| constinfer_expr(e));
         assert!(outp.is_const);
     }
 
@@ -107,7 +109,7 @@ mod tests {
             })],
         });
         assert!(!inp.is_const);
-        let outp = expr_map_post(inp, &mut constinfer_expr);
+        let outp = expr_map_post(inp, &mut |e| constinfer_expr(e));
         assert!(outp.is_const);
     }
 }
