@@ -27,6 +27,7 @@
 
 //mod enum_to_int;
 mod constinfer;
+mod generic_infer;
 mod handle_imports;
 mod lambda_lift;
 //mod monomorphization;
@@ -48,7 +49,11 @@ pub fn run_passes(ir: Ir) -> Ir {
     // That will take some nontrivial restructuring of expr_map though, will also need
     // a decl_map or something that can compose multiple passes together.
     // Probably not *difficult*, but tricksy.
-    let passes: &[Pass] = &[handle_imports::handle_imports, lambda_lift::lambda_lift];
+    let passes: &[Pass] = &[
+        handle_imports::handle_imports,
+        lambda_lift::lambda_lift,
+        generic_infer::generic_infer,
+    ];
     passes.iter().fold(ir, |prev_ir, f| f(prev_ir))
 }
 
