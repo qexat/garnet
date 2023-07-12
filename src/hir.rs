@@ -322,7 +322,7 @@ impl Expr {
                 let m = if *mutable { " mut" } else { "" };
                 let type_str = typename
                     .as_ref()
-                    .map(|inner| Cow::from(inner.get_name()))
+                    .map(|inner| inner.get_name())
                     .unwrap_or(Cow::from(""));
                 write!(f, "(let {}{} {} = ", &*varname.val(), m, type_str)?;
                 init.write(0, f)?;
@@ -537,12 +537,12 @@ pub fn lower(ast: &ast::Ast) -> Ir {
         lower_decl(&mut accm, d)
     }
 
-    let i = Ir {
+    
+    Ir {
         decls: accm,
         filename: ast.filename.clone(),
         modulename: ast.modulename.clone(),
-    };
-    i
+    }
 }
 
 fn lower_lit(lit: &ast::Literal) -> Literal {
@@ -586,7 +586,7 @@ fn lower_expr(expr: &ast::Expr) -> ExprNode {
             UniOp { op: nop, rhs: nrhs }
         }
         E::Block { body } => {
-            let nbody = body.iter().map(|e| lower_expr(e)).collect();
+            let nbody = body.iter().map(lower_expr).collect();
             Block { body: nbody }
         }
         E::Let {
@@ -610,15 +610,15 @@ fn lower_expr(expr: &ast::Expr) -> ExprNode {
             assert!(!cases.is_empty(), "Should never happen");
             let mut cases: Vec<_> = cases
                 .iter()
-                .map(|case| (lower_expr(&*case.condition), lower_exprs(&case.body)))
+                .map(|case| (lower_expr(&case.condition), lower_exprs(&case.body)))
                 .collect();
             // Add the "else" case, which we can just make `else if true then...`
             // No idea if this is a good idea, but it makes life easier right
             // this instant, so.  Hasn't bit me yet, so it's not a *bad* idea.
             let nelse_case = ExprNode::bool(true);
             // Empty false block becomes a false block that returns unit
-            let false_exprs = if falseblock.len() == 0 {
-                lower_exprs(&vec![ast::Expr::TupleCtor { body: vec![] }])
+            let false_exprs = if falseblock.is_empty() {
+                lower_exprs(&[ast::Expr::TupleCtor { body: vec![] }])
             } else {
                 lower_exprs(falseblock)
             };
@@ -704,7 +704,7 @@ fn lower_expr(expr: &ast::Expr) -> ExprNode {
 
 /// handy shortcut to lower Vec<ast::Expr>
 fn lower_exprs(exprs: &[ast::Expr]) -> Vec<ExprNode> {
-    exprs.iter().map(|e| lower_expr(e)).collect()
+    exprs.iter().map(lower_expr).collect()
 }
 fn lower_typedef(accm: &mut Vec<Decl>, name: Sym, ty: &Type, params: &[Sym]) {
     use Decl::*;
@@ -775,13 +775,13 @@ fn lower_typedef(accm: &mut Vec<Decl>, name: Sym, ty: &Type, params: &[Sym]) {
                     // Just return the value passed to it wrapped
                     // in a constructor of some kind...?
                     let body = vec![ExprNode::new(Expr::SumCtor {
-                        name: name,
+                        name,
                         variant: *variant_name,
                         body: ExprNode::new(Expr::Var { name: paramname }),
                     })];
                     let e = ExprNode::new(Expr::Lambda { signature, body });
                     //println!("{} is {:#?}", variant_name, e);
-                    (variant_name.clone(), e)
+                    (*variant_name, e)
                 })
                 .collect();
             let init_val = ExprNode::new(Expr::StructCtor { body: struct_body });
@@ -822,7 +822,7 @@ fn lower_typedef(accm: &mut Vec<Decl>, name: Sym, ty: &Type, params: &[Sym]) {
             // The generated function just returns the value passed to it wrapped
             // in a type constructor
             let body = vec![ExprNode::new(Expr::TypeCtor {
-                name: name.into(),
+                name,
                 type_params,
                 body: ExprNode::new(Expr::Var { name: s }),
             })];
@@ -872,7 +872,7 @@ fn lower_decl(accm: &mut Vec<Decl>, decl: &ast::Decl) {
             doc_comment: _,
             params,
         } => {
-            lower_typedef(accm, *name, typedecl, &params);
+            lower_typedef(accm, *name, typedecl, params);
             accm.push(Decl::TypeDef {
                 name: *name,
                 params: params.clone(),

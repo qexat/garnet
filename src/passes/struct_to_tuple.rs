@@ -38,9 +38,7 @@ fn tuplize_type(typ: Type) -> Type {
             // on the field names.
 
             // TODO: What do we do with generics?  Anything?
-            let tuple_fields = fields
-                .iter()
-                .map(|(_sym, ty)| type_map(ty.clone(), &mut tuplize_type))
+            let tuple_fields = fields.values().map(|ty| type_map(ty.clone(), &mut tuplize_type))
                 .collect();
             Type::tuple(tuple_fields)
         }
@@ -63,7 +61,7 @@ fn tuplize_expr(expr: ExprNode, tck: &mut typeck::Tck) -> ExprNode {
             init,
             mutable,
         } => {
-            let new_type = tuplize_type(t.clone());
+            let new_type = tuplize_type(t);
             E::Let {
                 varname,
                 init,
@@ -76,12 +74,12 @@ fn tuplize_expr(expr: ExprNode, tck: &mut typeck::Tck) -> ExprNode {
             Type::Struct(type_body, _generics) => {
                 let mut ordered_body: Vec<_> = body
                     .into_iter()
-                    .map(|(ky, vl)| (offset_of_field(&type_body, ky), vl))
+                    .map(|(ky, vl)| (offset_of_field(type_body, ky), vl))
                     .collect();
                 ordered_body.sort_by(|a, b| a.0.cmp(&b.0));
                 let new_body = ordered_body
                     .into_iter()
-                    .map(|(_i, expr)| expr.clone())
+                    .map(|(_i, expr)| expr)
                     .collect();
 
                 E::TupleCtor { body: new_body }
@@ -100,7 +98,7 @@ fn tuplize_expr(expr: ExprNode, tck: &mut typeck::Tck) -> ExprNode {
                 Type::Struct(type_body, _generics) => {
                     let offset = offset_of_field(&type_body, elt);
                     E::TupleRef {
-                        expr: inner_expr.clone(),
+                        expr: inner_expr,
                         elt: offset,
                     }
                 }
@@ -279,9 +277,9 @@ mod tests {
         let out = type_map(inp.clone(), &mut tuplize_type);
         assert_eq!(out, desired);
 
-        let desired2 = Type::Array(Box::new(out.clone()), 3);
-        let inp2 = Type::Array(Box::new(inp.clone()), 3);
-        let out2 = type_map(inp2.clone(), &mut tuplize_type);
+        let desired2 = Type::Array(Box::new(out), 3);
+        let inp2 = Type::Array(Box::new(inp), 3);
+        let out2 = type_map(inp2, &mut tuplize_type);
         assert_eq!(out2, desired2);
     }
 }

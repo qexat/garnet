@@ -5,7 +5,7 @@
 
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 
-use garnet;
+
 
 /// Each iteration creates about 32 sLOC
 fn gen_dumb_test_code(count: usize) -> String {
