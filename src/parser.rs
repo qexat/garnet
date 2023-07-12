@@ -40,11 +40,11 @@ fn bounds_check(val: i128, int_size: u8) -> Option<(i128, u8)> {
 fn extract_digits(s: &str) -> String {
     /// Is the char a digit or the separator '_'?
     fn is_digitish(c: &char) -> bool {
-        c.is_ascii_digit() || (*c) == '_'
+        c.is_digit(10) || (*c) == '_'
     }
     s.chars()
         .take_while(is_digitish)
-        .filter(|c| c.is_ascii_digit())
+        .filter(|c| c.is_digit(10))
         .collect()
 }
 
@@ -401,7 +401,7 @@ impl<'input> Parser<'input> {
             }) => {
                 self.drop();
                 s
-            },
+            }
             _ => String::new(),
         };
         self.eat_delimiters();
@@ -410,7 +410,7 @@ impl<'input> Parser<'input> {
         }
         let filename = self.err.files.get(self.err.file_id).unwrap().name();
         // TODO: Handle paths and shit better
-        let modulename = filename.replacen(".gt", "", 1).replace('/', ".");
+        let modulename = filename.replacen(".gt", "", 1).replace("/", ".");
         ast::Ast {
             decls,
             filename: filename.clone(),
@@ -438,7 +438,7 @@ impl<'input> Parser<'input> {
         // Get the next token without touching the actual lexer
         let t = peeked_lexer
             .next()
-            .map(|tok| Token::new(tok, self.lex.span()));
+            .map(|tok| Token::new(tok.clone(), self.lex.span()));
         match t {
             // Skip comments
             Some(Token {
@@ -564,7 +564,9 @@ impl<'input> Parser<'input> {
                 self.err.error(&diag);
             }
             None => {
-                let msg = "Parse error: Got end of input or malformed token.  Expected identifier".to_string();
+                let msg = format!(
+                    "Parse error: Got end of input or malformed token.  Expected identifier",
+                );
                 let diag = Diagnostic::error()
                     .with_message(msg)
                     .with_labels(vec![Label::primary(self.err.file_id, self.lex.span())]);
@@ -597,7 +599,9 @@ impl<'input> Parser<'input> {
                 self.err.error(&diag);
             }
             None => {
-                let msg = "Parse error: Got end of input or malformed token.  Expected integer.".to_string();
+                let msg = format!(
+                    "Parse error: Got end of input or malformed token.  Expected integer.",
+                );
                 let diag = Diagnostic::error()
                     .with_message(msg)
                     .with_labels(vec![Label::primary(self.err.file_id, self.lex.span())]);
@@ -688,7 +692,7 @@ impl<'input> Parser<'input> {
     }
 
     fn parse_import(&mut self, doc_comment: Vec<String>) -> ast::Decl {
-        if !doc_comment.is_empty() {
+        if doc_comment.len() != 0 {
             panic!("We have a doc comment for an import statement, which seems valid but is... kinda weird.")
         }
         let name = self.expect_ident();
@@ -880,7 +884,7 @@ impl<'input> Parser<'input> {
             if let Some(other) = seen.get(vl) {
                 eprintln!(
                     "Duplicate variant in enum: field {} and {} both have value {}",
-                    name, other, *vl
+                    &*name, &*other, *vl
                 );
             }
             seen.insert(*vl, *name);
@@ -987,8 +991,8 @@ impl<'input> Parser<'input> {
                 self.drop();
                 ast::Expr::bool(*b)
             }
-            T::Integer(_) => ast::Expr::int(self.expect_int()),
-            T::IntegerSize((_str, size)) => ast::Expr::sized_int(self.expect_int(), *size),
+            T::Integer(_) => ast::Expr::int(self.expect_int() as i128),
+            T::IntegerSize((_str, size)) => ast::Expr::sized_int(self.expect_int() as i128, *size),
             // Tuple/struct literal
             T::LBrace => self.parse_constructor(),
             // Array literal
@@ -1022,10 +1026,10 @@ impl<'input> Parser<'input> {
             }
 
             // Unary prefix ops
-            x if uop_for(x).is_some() => {
+            x if uop_for(&x).is_some() => {
                 self.drop();
-                let ((), r_bp) = prefix_binding_power(x);
-                let op = uop_for(x).expect("Should never happen");
+                let ((), r_bp) = prefix_binding_power(&x);
+                let op = uop_for(&x).expect("Should never happen");
                 let rhs = self.parse_expr(r_bp)?;
                 ast::Expr::UniOp {
                     op,
@@ -1192,7 +1196,11 @@ impl<'input> Parser<'input> {
     /// let = "let" ident ":" typename "=" expr
     fn parse_let(&mut self) -> ast::Expr {
         self.expect(T::Let);
-        let mutable = self.peek_expect(T::Mut.discr());
+        let mutable = if self.peek_expect(T::Mut.discr()) {
+            true
+        } else {
+            false
+        };
         let varname = self.expect_ident();
         let typename = if self.peek_expect(T::Equals.discr()) {
             None
@@ -1383,6 +1391,10 @@ impl<'input> Parser<'input> {
                 self.expect(T::RBracket);
                 let inner = self.parse_type();
                 Type::Array(Box::new(inner), len as usize)
+            }
+            T::Ampersand => {
+                let next = self.try_parse_type()?;
+                Type::Uniq(Box::new(next))
             }
             _ => return None,
         };
@@ -1978,7 +1990,7 @@ type blar = I8
                 body: vec![Expr::int(4), Expr::int(3), Expr::int(2)],
             };
             Expr::ArrayCtor {
-                body: vec![arr.clone(), arr.clone(), arr],
+                body: vec![arr.clone(), arr.clone(), arr.clone()],
             }
         });
     }
@@ -1997,7 +2009,7 @@ type blar = I8
                     typename: Some(ty),
                     mutable: false,
                     init: Box::new(Expr::ArrayCtor {
-                        body: vec![arr.clone(), arr.clone(), arr],
+                        body: vec![arr.clone(), arr.clone(), arr.clone()],
                     }),
                 }
             },
@@ -2006,7 +2018,7 @@ type blar = I8
 
     #[test]
     fn parse_tuple_values() {
-        test_expr_is("{}", Expr::unit);
+        test_expr_is("{}", || Expr::unit());
         test_expr_is("{1,2,3}", || Expr::TupleCtor {
             body: vec![Expr::int(1), Expr::int(2), Expr::int(3)],
         });
@@ -2031,7 +2043,7 @@ type blar = I8
             "{Bool, Bool, I32}",
             "{Bool, {}, I32}",
         ][..];
-        test_parse_with(|p| p.parse_type(), valid_args)
+        test_parse_with(|p| p.parse_type(), &valid_args)
     }
 
     #[test]
@@ -2045,13 +2057,13 @@ type blar = I8
     #[test]
     fn parse_deref() {
         let valid_args = &["x^", "10^", "z^.0", "z.0^", "(1+2*3)^"][..];
-        test_parse_with(|p| p.parse_expr(0), valid_args)
+        test_parse_with(|p| p.parse_expr(0), &valid_args)
     }
 
     #[test]
     fn parse_ref() {
         let valid_args = &["x&", "10^&", "z&^.0", "z.0^&&", "(1+2*3)&"][..];
-        test_parse_with(|p| p.parse_expr(0), valid_args)
+        test_parse_with(|p| p.parse_expr(0), &valid_args)
     }
 
     #[test]

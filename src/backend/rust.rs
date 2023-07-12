@@ -112,8 +112,7 @@ fn compile_typename(t: &Type) -> Cow<'static, str> {
             if generics.is_empty() {
                 format!("{}", sym).into()
             } else {
-                let generic_strings: Vec<_> =
-                    generics.iter().map(compile_typename).collect();
+                let generic_strings: Vec<_> = generics.iter().map(compile_typename).collect();
                 let args = generic_strings.join(", ");
                 format!("{}<{}>", sym, args).into()
             }
@@ -134,6 +133,10 @@ fn compile_typename(t: &Type) -> Cow<'static, str> {
             */
             //format!("SomeSum").into()
             unimplemented!()
+        }
+        Uniq(t) => {
+            let res = compile_typename(t);
+            format!("&mut {}", res).into()
         }
     }
 }
@@ -445,7 +448,6 @@ fn compile_expr(expr: &hir::ExprNode, tck: &Tck) -> String {
             body,
             type_params: _,
         } => {
-            
             //format!("{}({})", &*name.val(), contents)
             compile_expr(body, tck)
         }
@@ -526,6 +528,7 @@ fn compile_expr(expr: &hir::ExprNode, tck: &Tck) -> String {
         } => {
             format!("{}", value)
         }
+        E::Ref { expr } => format!("&mut {}", compile_expr(expr, tck)),
         other => todo!("{:?}", other),
     };
     expr_str

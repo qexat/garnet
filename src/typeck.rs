@@ -44,6 +44,8 @@ pub enum TypeInfo {
     /// This is some generic type that has a name like `@A`
     /// AKA a type parameter.
     TypeParam(Sym),
+    /// Unique borrow.  Probably needs a lifetime param of some kind added someday?
+    Uniq(TypeId),
 }
 
 impl TypeInfo {
@@ -67,10 +69,7 @@ impl TypeInfo {
             }
             Named(s, g) => {
                 let name = (*s.val()).to_owned();
-                let generics: Vec<_> = g
-                    .iter()
-                    .map(|t| tck.get(t).get_name(tck))
-                    .collect();
+                let generics: Vec<_> = g.iter().map(|t| tck.get(t).get_name(tck)).collect();
                 let joined_generics = generics.join(", ");
                 format!("{}({})", name, joined_generics).into()
             }
@@ -112,6 +111,10 @@ impl TypeInfo {
                 Cow::Owned(format!("{}[{}]", tck.get(id).get_name(tck), len_str))
             }
             TypeParam(sym) => Cow::Owned(format!("@{}", &*sym.val())),
+            Uniq(ty) => {
+                let typename = tck.get(ty).get_name(tck);
+                format!("&{}", typename).into()
+            }
         }
     }
 }
@@ -433,6 +436,10 @@ impl Tck {
                     .collect();
                 TypeInfo::Sum(new_body)
             }
+            Type::Uniq(ty) => {
+                let new_body = self.insert_known(&*ty);
+                TypeInfo::Uniq(new_body)
+            }
         };
         self.insert(tinfo)
     }
@@ -673,6 +680,7 @@ impl Tck {
             // TODO: And if they have been declared?  Not sure we can ever get to
             // here if they haven't.
             (TypeParam(s1), TypeParam(s2)) if s1 == s2 => Ok(()),
+            (Uniq(s1), Uniq(s2)) => self.unify(symtbl, s1, s2),
             // If no previous attempts to unify were successful, raise an error
             (a, b) => {
                 self.print_types();
@@ -741,6 +749,10 @@ impl Tck {
                     .collect();
                 let params = vec![];
                 Ok(Type::Sum(real_body?, params))
+            }
+            Uniq(ty) => {
+                let inner_type = self.reconstruct(*ty)?;
+                Ok(Type::Uniq(Box::new(inner_type)))
             }
         }
     }
@@ -812,6 +824,10 @@ impl Tck {
                         .collect();
                     TypeInfo::Sum(inst_body)
                 }
+                Type::Uniq(ty) => {
+                    let inst_ty = helper(tck, named_types, ty);
+                    TypeInfo::Uniq(inst_ty)
+                }
             };
             tck.insert(typeinfo)
         }
@@ -854,7 +870,6 @@ impl Default for Symtbl {
     /// We start with an empty toplevel scope existing,
     /// then add some builtin's to it.
     fn default() -> Self {
-        
         Self {
             frames: Rc::new(RefCell::new(vec![ScopeFrame::default()])),
         }
@@ -1032,7 +1047,8 @@ fn typecheck_exprs(
         typecheck_expr(tck, symtbl, func_rettype, expr)?;
     }
     let last_exprtype = exprs
-        .last().map(|last_expr| tck.get_expr_type(last_expr))
+        .last()
+        .map(|last_expr| tck.get_expr_type(last_expr))
         // If we have an empty body, our rettype is unit
         .unwrap_or_else(|| tck.insert_known(&Type::unit()));
     Ok(last_exprtype)
@@ -1269,10 +1285,7 @@ fn typecheck_expr(
             match &enumtype {
                 Type::Enum(body) => {
                     // make sure variant actually exists
-                    if !body
-                        .iter()
-                        .any(|(ky, vl)| (*ky, *vl) == (*variant, *value))
-                    {
+                    if !body.iter().any(|(ky, vl)| (*ky, *vl) == (*variant, *value)) {
                         return Err(format!(
                             "Enum {} variant {} does not match typedef",
                             name, variant
@@ -1433,8 +1446,7 @@ fn typecheck_expr(
             tck.unify(symtbl, tid, body_type)?;
             trace!("Done unifying type ctor");
             // The type the expression returns
-            let constructed_type =
-                tck.insert_known(&Type::Named(*name, type_params.clone()));
+            let constructed_type = tck.insert_known(&Type::Named(*name, type_params.clone()));
             tck.set_expr_type(expr, constructed_type);
             Ok(constructed_type)
         }
@@ -1461,12 +1473,10 @@ fn typecheck_expr(
                     TypeInfo::Named(nm, params) => Ok((*nm, params.clone())),
                     // Follow type ref
                     TypeInfo::Ref(id) => try_resolve_named_type(tck, symtbl, *id),
-                    other => {
-                        Err(format!(
-                            "Can't resolve {:?} because it's not a named type!",
-                            other
-                        ))
-                    }
+                    other => Err(format!(
+                        "Can't resolve {:?} because it's not a named type!",
+                        other
+                    )),
                 }
             }
 
@@ -1553,6 +1563,22 @@ fn typecheck_expr(
             Ok(elt_type)
         }
         Typecast { e: _, to: _ } => todo!(),
+        Ref { expr: inner_expr } => {
+            // We can take a reference to basically anything
+            let expr_type = typecheck_expr(tck, symtbl, func_rettype, &*inner_expr)?;
+            // NOT a TypeInfo::Ref !!!
+            let ref_type = tck.insert(TypeInfo::Uniq(expr_type));
+            tck.set_expr_type(expr, ref_type);
+            Ok(ref_type)
+        }
+        Deref { expr: inner_expr } => {
+            let expr_type = typecheck_expr(tck, symtbl, func_rettype, &*inner_expr)?;
+            let inner_type = tck.insert(TypeInfo::Unknown);
+            let desired_type = tck.insert(TypeInfo::Uniq(inner_type));
+            tck.unify(symtbl, expr_type, desired_type)?;
+            tck.set_expr_type(expr, inner_type);
+            Ok(inner_type)
+        }
     };
     if let Err(e) = rettype {
         panic!("Error typechecking expression {:?}: {}", expr, e);
@@ -1681,7 +1707,7 @@ pub fn typecheck(ast: &hir::Ir) -> Result<Tck, TypeError> {
                 let desired_type = tck.insert_known(typename);
                 let init_type = {
                     let _guard = symtbl.push_scope();
-                    
+
                     typecheck_expr(tck, symtbl, desired_type, init).unwrap()
                 };
                 tck.unify(symtbl, desired_type, init_type)
