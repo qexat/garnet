@@ -5,7 +5,6 @@ use std::path::PathBuf;
 
 use argh::FromArgs;
 
-
 /// Garnet formatter
 #[derive(Debug, FromArgs)]
 struct Opt {
@@ -46,7 +45,7 @@ fn main() -> io::Result<()> {
         parser.parse()
     };
     if &ast != &formatted_ast {
-        // we want more info here 
+        // we want more info here
         eprintln!("Error, reformatted AST parses differently from original");
         eprintln!("BEFORE:\n{}", src);
         eprintln!("AST: {:#?}", &ast);

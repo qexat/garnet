@@ -260,7 +260,7 @@ fn exprs_map_pre(exprs: Vec<ExprNode>, f: &mut dyn FnMut(ExprNode) -> ExprNode) 
     exprs_map(exprs, f, &mut id)
 }
 
-fn exprs_map_post(exprs: Vec<ExprNode>, f: &mut dyn FnMut(ExprNode) -> ExprNode) -> Vec<ExprNode> {
+fn _exprs_map_post(exprs: Vec<ExprNode>, f: &mut dyn FnMut(ExprNode) -> ExprNode) -> Vec<ExprNode> {
     exprs_map(exprs, &mut id, f)
 }
 

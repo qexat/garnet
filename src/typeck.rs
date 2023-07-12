@@ -128,7 +128,12 @@ pub enum TypeError {
         got: Type,
         expected: Type,
     },
-    TypeListMismatch, // TODO
+    TypeListMismatch {
+        // We can't necessarily display TypeId's sensibly, so I guess
+        // we haven to turn them into strings
+        expected: String,
+        got: String,
+    },
     AmbiguousType {
         expr_name: Cow<'static, str>,
     },
@@ -229,8 +234,8 @@ impl TypeError {
                 expected.get_name(),
                 got.get_name()
             ),
-            TypeError::TypeListMismatch => {
-                "Type list mismatch, make better error message".to_string()
+            TypeError::TypeListMismatch { expected, got } => {
+                format!("Type list mismatch\nExpected {}, got {}", expected, got)
             }
             TypeError::AmbiguousType { expr_name } => {
                 format!("Ambiguous/unknown type for expression '{}'", expr_name)
@@ -557,7 +562,24 @@ impl Tck {
             }
             Ok(())
         } else {
-            Err(TypeError::TypeListMismatch)
+            // gramble gramble no `Iterator::intersperse()`` in stable
+            let mut expected_str = String::from("[");
+            for e in a {
+                expected_str += &TypeInfo::Ref(*e).get_name(self);
+                expected_str += " ";
+            }
+            expected_str += "]";
+
+            let mut got_str = String::from("[");
+            for e in b {
+                got_str += &TypeInfo::Ref(*e).get_name(self);
+                got_str += " ";
+            }
+            got_str += "]";
+            Err(TypeError::TypeListMismatch {
+                expected: expected_str,
+                got: got_str,
+            })
         }
     }
 
@@ -961,6 +983,8 @@ fn is_mutable_lvalue(symtbl: &Symtbl, expr: &hir::ExprNode) -> bool {
             mutable
         }
         StructRef { expr, .. } => is_mutable_lvalue(symtbl, expr),
+        TupleRef { expr, .. } => is_mutable_lvalue(symtbl, expr),
+        TypeUnwrap { expr } => is_mutable_lvalue(symtbl, expr),
         _ => false,
     }
 }

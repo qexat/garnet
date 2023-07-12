@@ -33,16 +33,21 @@ fn unparse_decl(d: &Decl, out: &mut dyn io::Write) -> io::Result<()> {
             doc_comment,
         } => {
             for line in doc_comment.iter() {
-                write!(out, "--- {}", line)?;
+                write!(out, "---{}", line)?;
             }
             let name = name.val();
             let tname = typename.get_name();
             write!(out, "const {} {} = ", name, tname)?;
             unparse_expr(init, 0, out)
         }
-        Decl::TypeDef { name, params, typedecl, doc_comment } => {
+        Decl::TypeDef {
+            name,
+            params,
+            typedecl,
+            doc_comment,
+        } => {
             for line in doc_comment.iter() {
-                write!(out, "--- {}", line)?;
+                write!(out, "---{}", line)?;
             }
             let name = name.val();
             let tname = typedecl.get_name();
@@ -63,7 +68,6 @@ fn unparse_decl(d: &Decl, out: &mut dyn io::Write) -> io::Result<()> {
                 writeln!(out, "type {}({}) = {}", name, paramstr, tname)?;
             }
             writeln!(out)
-            
         }
         Decl::Import { name, rename } => {
             if let Some(re) = rename {
@@ -89,9 +93,9 @@ fn unparse_sig(sig: &Signature, out: &mut dyn io::Write) -> io::Result<()> {
             }
             write!(out, "{}", name.get_name())?;
         }
-        write!(out, "| ")?; 
+        write!(out, "| ")?;
     }
-    
+
     // Write (foo I32, bar I16)
     // not (foo I32, bar I16, )
     let mut first = true;
