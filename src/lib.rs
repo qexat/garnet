@@ -12,6 +12,7 @@ use once_cell::sync::Lazy;
 
 mod ast;
 pub mod backend;
+mod borrowck;
 mod builtins;
 pub mod format;
 pub mod hir;
@@ -552,6 +553,7 @@ pub fn try_compile(
     info!("HIR from AST lowering:\n{}", &hir);
     let hir = passes::run_passes(hir);
     let tck = &mut typeck::typecheck(&hir)?;
+    borrowck::borrowck(&hir, tck).unwrap();
     let hir = passes::run_typechecked_passes(hir, tck);
     info!("HIR after transform passes:\n{}", &hir);
     Ok(backend::output(backend, &hir, tck))
