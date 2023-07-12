@@ -38,7 +38,7 @@ where
         // Apparently I'm not smart enough to use entry() currently.
         let mut data = self.data.write().unwrap();
         let mut map = self.map.write().unwrap();
-        if let Some(sym) = map.get(&*s) {
+        if let Some(sym) = map.get(s) {
             // We have it, great
             *sym
         } else {

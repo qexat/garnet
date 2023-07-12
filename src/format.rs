@@ -46,7 +46,7 @@ fn unparse_decl(d: &Decl, out: &mut dyn io::Write) -> io::Result<()> {
             }
             let name = name.val();
             let tname = typedecl.get_name();
-            if params.len() == 0 {
+            if params.is_empty() {
                 writeln!(out, "type {} = {}", name, tname)?;
             } else {
                 let mut paramstr = String::from("");
@@ -197,10 +197,10 @@ fn unparse_expr(e: &Expr, indent: usize, out: &mut dyn io::Write) -> io::Result<
             writeln!(out)
         }
         E::If { cases, falseblock } => {
-            assert!(cases.len() >= 1);
+            assert!(!cases.is_empty());
             let first_case = &cases[0];
             write!(out, "if ")?;
-            unparse_expr(&*first_case.condition, 0, out)?;
+            unparse_expr(&first_case.condition, 0, out)?;
             writeln!(out, " then")?;
             unparse_exprs(&first_case.body, indent + 1, out)?;
 
@@ -240,7 +240,7 @@ fn unparse_expr(e: &Expr, indent: usize, out: &mut dyn io::Write) -> io::Result<
         } => {
             unparse_expr(func, 0, out)?;
             write!(out, "(")?;
-            if typeparams.len() > 0 {
+            if !typeparams.is_empty() {
                 write!(out, "|")?;
                 let mut first = true;
                 for t in typeparams {
@@ -293,35 +293,35 @@ fn unparse_expr(e: &Expr, indent: usize, out: &mut dyn io::Write) -> io::Result<
             write!(out, "}}")
         }
         E::ArrayRef { expr, idx } => {
-            unparse_expr(&*expr, indent, out)?;
+            unparse_expr(expr, indent, out)?;
             write!(out, "[")?;
-            unparse_expr(&*idx, 0, out)?;
+            unparse_expr(idx, 0, out)?;
             write!(out, "]")
         }
         E::TupleRef { expr, elt } => {
-            unparse_expr(&*expr, indent, out)?;
+            unparse_expr(expr, indent, out)?;
             write!(out, ".{}", elt)
         }
         E::StructRef { expr, elt } => {
-            unparse_expr(&*expr, indent, out)?;
+            unparse_expr(expr, indent, out)?;
             write!(out, ".{}", elt.val())
         }
         E::TypeUnwrap { expr } => {
-            unparse_expr(&*expr, indent, out)?;
+            unparse_expr(expr, indent, out)?;
             write!(out, "$")
         }
         E::Ref { expr } => {
-            unparse_expr(&*expr, indent, out)?;
+            unparse_expr(expr, indent, out)?;
             write!(out, "&")
         }
         E::Deref { expr } => {
-            unparse_expr(&*expr, indent, out)?;
+            unparse_expr(expr, indent, out)?;
             write!(out, "^")
         }
         E::Assign { lhs, rhs } => {
-            unparse_expr(&*lhs, 0, out)?;
+            unparse_expr(lhs, 0, out)?;
             write!(out, " = ")?;
-            unparse_expr(&*rhs, 0, out)
+            unparse_expr(rhs, 0, out)
         }
         E::ArrayCtor { body } => {
             writeln!(out, "[")?;
@@ -337,7 +337,7 @@ fn unparse_expr(e: &Expr, indent: usize, out: &mut dyn io::Write) -> io::Result<
 /// Take the AST and produce a formatted string of source code.
 pub fn unparse(ast: &Ast, out: &mut dyn io::Write) -> io::Result<()> {
     for decl in ast.decls.iter() {
-        if ast.module_docstring.len() > 0 {
+        if !ast.module_docstring.is_empty() {
             writeln!(out, "--- {}", &ast.module_docstring)?;
         }
         writeln!(out)?;

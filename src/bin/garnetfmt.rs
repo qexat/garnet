@@ -4,7 +4,7 @@ use std::io::{self, Cursor};
 use std::path::PathBuf;
 
 use argh::FromArgs;
-use pretty_env_logger;
+
 
 /// Garnet formatter
 #[derive(Debug, FromArgs)]
@@ -28,7 +28,7 @@ fn main() -> io::Result<()> {
     let src = std::fs::read_to_string(&opt.file)?;
     let filename = &opt.file.to_string_lossy();
     let ast = {
-        let mut parser = parser::Parser::new(&filename, &src);
+        let mut parser = parser::Parser::new(filename, &src);
         parser.parse()
     };
 
@@ -42,7 +42,7 @@ fn main() -> io::Result<()> {
     let formatted_str = String::from_utf8_lossy(formatted_data);
     println!("{}", formatted_str);
     let formatted_ast = {
-        let mut parser = parser::Parser::new(&filename, &formatted_str);
+        let mut parser = parser::Parser::new(filename, &formatted_str);
         parser.parse()
     };
     if &ast != &formatted_ast {

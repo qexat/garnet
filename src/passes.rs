@@ -417,7 +417,7 @@ pub fn generate_type_name(typ: &Type) -> String {
             format!("__Named{}__{}", name, field_str)
         }
         Type::Prim(p) => p.get_name().into_owned(),
-        Type::Never => format!("!"),
+        Type::Never => "!".to_string(),
         Type::Array(t, len) => {
             format!("__Arr{}__{}", generate_type_name(t), len)
         }

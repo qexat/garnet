@@ -4,14 +4,14 @@
 
 use crate::hir::Ir;
 use crate::passes::*;
-use crate::*;
+
 
 fn generic_infer_expr(expr: ExprNode) -> ExprNode {
     expr
 }
 
 pub(super) fn generic_infer(ir: Ir) -> Ir {
-    let generic_infer_expr = &mut |expr| generic_infer_expr(expr);
+    let generic_infer_expr = &mut generic_infer_expr;
     let generic_infer_ty = &mut |ty| ty;
     let new_decls: Vec<D> = ir
         .decls

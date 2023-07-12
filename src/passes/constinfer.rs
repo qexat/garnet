@@ -95,7 +95,7 @@ mod tests {
             name: Sym::new("foo"),
         });
         assert!(!inp.is_const);
-        let outp = expr_map_post(inp, &mut |e| constinfer_expr(e));
+        let outp = expr_map_post(inp, &mut constinfer_expr);
         assert!(outp.is_const);
     }
 
@@ -107,7 +107,7 @@ mod tests {
             })],
         });
         assert!(!inp.is_const);
-        let outp = expr_map_post(inp, &mut |e| constinfer_expr(e));
+        let outp = expr_map_post(inp, &mut constinfer_expr);
         assert!(outp.is_const);
     }
 }
