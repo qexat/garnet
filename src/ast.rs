@@ -196,6 +196,10 @@ pub enum Expr {
     Loop {
         body: Vec<Expr>,
     },
+    While {
+        cond: Box<Expr>,
+        body: Vec<Expr>,
+    },
     Lambda {
         signature: Signature,
         body: Vec<Expr>,

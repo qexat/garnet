@@ -636,6 +636,25 @@ fn lower_expr(expr: &ast::Expr) -> ExprNode {
             let nbody = lower_exprs(body);
             Loop { body: nbody }
         }
+        E::While { cond, body } => {
+            // While loops just get turned into a Loop containing
+            // if not cond then break end
+            let inverted_cond = E::UniOp {
+                op: UOp::Not,
+                rhs: cond.clone(),
+            };
+            let test = lower_expr(&inverted_cond);
+            let brk = vec![ExprNode::new(Break)];
+            // As per above, we need to always have an "else" end case
+            let else_case = ExprNode::bool(true);
+            let else_exprs = lower_exprs(&[ast::Expr::TupleCtor { body: vec![] }]);
+            let if_expr = ExprNode::new(If {
+                cases: vec![(test, brk), (else_case, else_exprs)],
+            });
+            let mut nbody = lower_exprs(body);
+            nbody.insert(0, if_expr);
+            Loop { body: nbody }
+        }
         E::Lambda { signature, body } => {
             let nsig = lower_signature(signature);
             let nbody = lower_exprs(body);

@@ -228,6 +228,13 @@ fn unparse_expr(e: &Expr, indent: usize, out: &mut dyn io::Write) -> io::Result<
             unparse_exprs(body, indent + 1, out)?;
             writeln!(out, "end")
         }
+        E::While { cond, body } => {
+            write!(out, "while ")?;
+            unparse_expr(cond, 0, out)?;
+            writeln!(out, " do")?;
+            unparse_exprs(body, indent + 1, out)?;
+            writeln!(out, "end")
+        }
         E::Lambda { signature, body } => {
             write!(out, "fn")?;
             unparse_sig(signature, out)?;
