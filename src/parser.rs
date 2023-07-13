@@ -150,6 +150,8 @@ pub enum TokenKind {
     Else,
     #[regex("loop[ \n]*")]
     Loop,
+    #[regex("while[ \n]*")]
+    While,
     #[regex("do[ \n]*")]
     Do,
     #[token("return")]
@@ -1010,6 +1012,7 @@ impl<'input> Parser<'input> {
             T::Let => self.parse_let(),
             T::If => self.parse_if(),
             T::Loop => self.parse_loop(),
+            T::While => self.parse_while_loop(),
             T::Do => self.parse_block(),
             T::Fn => self.parse_lambda(),
             T::Return => self.parse_return(),
@@ -1288,6 +1291,21 @@ impl<'input> Parser<'input> {
         let body = self.parse_exprs();
         self.expect(T::End);
         ast::Expr::Loop { body }
+    }
+
+    /// while = "while" expr "do" {expr} "end"
+    fn parse_while_loop(&mut self) -> ast::Expr {
+        self.expect(T::While);
+        let cond = self
+            .parse_expr(0)
+            .expect("While loop condition was not an expression?");
+        self.expect(T::Do);
+        let body = self.parse_exprs();
+        self.expect(T::End);
+        ast::Expr::While {
+            cond: Box::new(cond),
+            body,
+        }
     }
 
     /// block = "do" {expr} "end"
