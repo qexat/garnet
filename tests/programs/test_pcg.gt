@@ -8,6 +8,14 @@
 --     -1403893721
 --     222523091
 --     -1045347539
+--     -1893201942
+--     1311075464
+--     718749721
+--     -376464712
+--     -249673620
+--     -2027436315
+--     263441840
+
 
 
 
@@ -16,36 +24,37 @@
 --- Fails to give perfect results after the first 3 numbers due to signed/unsigned 
 --- arithmetic nonsense, but it's a start.
 type Rand32 = struct
-    state: I64,
-    inc: I64,
+    state: U64,
+    inc: U64,
 end
 
-const RAND32_DEFAULT_INC I64 = 1442695040888963407
-const RAND32_MULTIPLIER I64 = 6364136223846793005
+const RAND32_DEFAULT_INC U64 = 1442695040888963407
+const RAND32_MULTIPLIER U64 = 6364136223846793005
 
-fn rand32_new_inc(seed I64, inc I64) Rand32 =
+fn rand32_new_inc(seed U64, inc U64) Rand32 =
     let rng = Rand32({
         .state = 0,
-        .inc = __bor_i64(__lshift_i64(inc, 1), 1),
+        .inc = __bor_u64(__lshift_u64(inc, 1), 1),
     })
-    let mut rng2 = rand32_u32(rng).0
+    let mut rng2 = rand32_i32(rng).0
     rng2$.state = rng2$.state + seed
-    let rng3 = rand32_u32(rng2).0
+    let rng3 = rand32_i32(rng2).0
     rng3
 end
 
-fn rand32_new(seed I64) Rand32 =
+fn rand32_new(seed U64) Rand32 =
     rand32_new_inc(seed, RAND32_DEFAULT_INC)
 end
 
-fn rand32_u32(rand Rand32) {Rand32, I32} =
+fn rand32_i32(rand Rand32) {Rand32, I32} =
     let oldstate = rand$.state
     let mut newrng = rand
     newrng$.state = oldstate * RAND32_MULTIPLIER + rand$.inc
     -- ok maybe binary op operators are an ok idea
-    let xorshifted = __i64_to_i32( __rshift_i64( __bxor_i64( __rshift_i64(oldstate, 18),  oldstate),  27))
-    let rot = __i64_to_i32(__rshift_i64(oldstate, 59))
-    {newrng, __ror_i32(xorshifted, rot)} 
+    let xorshifted = __u64_to_u32( __rshift_u64( __bxor_u64( __rshift_u64(oldstate, 18),  oldstate),  27))
+    let rot = __u64_to_i32(__rshift_u64(oldstate, 59))
+    {newrng, __u32_to_i32(__ror_u32(xorshifted, rot))} 
+    --{newrng, 3}
 end
 
 
@@ -54,11 +63,10 @@ end
 fn main() {} =
     let mut rng = rand32_new(54321);
     let mut i I32 = 0
-    loop
-        if i == 3 then break end
+    while i < 10 do
         i = i + 1
         
-        let res = rand32_u32(rng)
+        let res = rand32_i32(rng)
         rng = res.0
         let out I32 = res.1
         __println(out)

@@ -30,7 +30,8 @@ static INT: Lazy<Cx> = Lazy::new(Cx::new);
 /// and can't contain other types, so.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum PrimType {
-    SInt(u8),
+    /// size in bytes, is-signed
+    Int(u8, bool),
     UnknownInt,
     Bool,
     /// erased type, currently unused
@@ -40,12 +41,20 @@ pub enum PrimType {
 impl PrimType {
     fn get_name(&self) -> Cow<'static, str> {
         match self {
-            PrimType::SInt(16) => Cow::Borrowed("I128"),
-            PrimType::SInt(8) => Cow::Borrowed("I64"),
-            PrimType::SInt(4) => Cow::Borrowed("I32"),
-            PrimType::SInt(2) => Cow::Borrowed("I16"),
-            PrimType::SInt(1) => Cow::Borrowed("I8"),
-            PrimType::SInt(s) => panic!("Undefined integer size {}!", s),
+            PrimType::Int(16, true) => Cow::Borrowed("I128"),
+            PrimType::Int(8, true) => Cow::Borrowed("I64"),
+            PrimType::Int(4, true) => Cow::Borrowed("I32"),
+            PrimType::Int(2, true) => Cow::Borrowed("I16"),
+            PrimType::Int(1, true) => Cow::Borrowed("I8"),
+            PrimType::Int(16, false) => Cow::Borrowed("U128"),
+            PrimType::Int(8, false) => Cow::Borrowed("U64"),
+            PrimType::Int(4, false) => Cow::Borrowed("U32"),
+            PrimType::Int(2, false) => Cow::Borrowed("U16"),
+            PrimType::Int(1, false) => Cow::Borrowed("U8"),
+            PrimType::Int(s, is_signed) => {
+                let prefix = if *is_signed { "I" } else { "U" };
+                panic!("Undefined integer size {}{}!", prefix, s);
+            }
             PrimType::UnknownInt => Cow::Borrowed("{number}"),
             PrimType::Bool => Cow::Borrowed("Bool"),
             PrimType::AnyPtr => Cow::Borrowed("AnyPtr"),
@@ -162,9 +171,14 @@ impl Type {
         Self::Prim(PrimType::UnknownInt)
     }
 
-    /// Shortcut for getting the Type for an int of a particular size
+    /// Shortcut for getting the Type for a signed int of a particular size
     pub fn isize(size: u8) -> Self {
-        Self::Prim(PrimType::SInt(size))
+        Self::Prim(PrimType::Int(size, true))
+    }
+
+    /// Shortcut for getting the Type for an unsigned signed int of a particular size
+    pub fn usize(size: u8) -> Self {
+        Self::Prim(PrimType::Int(size, false))
     }
 
     /// Shortcut for getting the Type for I128
@@ -190,6 +204,31 @@ impl Type {
     /// Shortcut for getting the type for I8
     pub fn i8() -> Self {
         Self::isize(1)
+    }
+
+    /// Shortcut for getting the Type for U128
+    pub fn u128() -> Self {
+        Self::usize(16)
+    }
+
+    /// Shortcut for getting the Type for U64
+    pub fn u64() -> Self {
+        Self::usize(8)
+    }
+
+    /// Shortcut for getting the Type for U32
+    pub fn u32() -> Self {
+        Self::usize(4)
+    }
+
+    /// Shortcut for getting the type for U16
+    pub fn u16() -> Self {
+        Self::usize(2)
+    }
+
+    /// Shortcut for getting the type for U8
+    pub fn u8() -> Self {
+        Self::usize(1)
     }
 
     /// Shortcut for getting the type for Bool
@@ -219,7 +258,7 @@ impl Type {
 
     fn _is_integer(&self) -> bool {
         match self {
-            Self::Prim(PrimType::SInt(_)) => true,
+            Self::Prim(PrimType::Int(_, _)) => true,
             Self::Prim(PrimType::UnknownInt) => true,
             _ => false,
         }
@@ -241,6 +280,11 @@ impl Type {
             "I32" => Some(Type::i32()),
             "I64" => Some(Type::i64()),
             "I128" => Some(Type::i128()),
+            "U8" => Some(Type::u8()),
+            "U16" => Some(Type::u16()),
+            "U32" => Some(Type::u32()),
+            "U64" => Some(Type::u64()),
+            "U128" => Some(Type::u128()),
             "Bool" => Some(Type::bool()),
             "Never" => Some(Type::never()),
             _ => None,

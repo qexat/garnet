@@ -1,0 +1,18 @@
+-- Format:
+--   status: success
+-- Compile:
+--   status: error
+--   stderr:
+--     ...
+--     ...Conflict between I64 and U64...
+--     ...
+
+
+fn foo(x I64) U64 =
+    x + 3
+end
+
+fn main() {} =
+    let x U64 = 12
+    __println_u64(foo(x))
+end

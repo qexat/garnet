@@ -601,11 +601,11 @@ impl Tck {
             (Prim(p1), Prim(p2)) if p1 == p2 => Ok(()),
             // Unknown integers unified with known integers become known
             // integers.
-            (Prim(PrimType::UnknownInt), Prim(PrimType::SInt(_))) => {
+            (Prim(PrimType::UnknownInt), Prim(PrimType::Int(_, _))) => {
                 self.vars.insert(a, TypeInfo::Ref(b));
                 Ok(())
             }
-            (Prim(PrimType::SInt(_)), Prim(PrimType::UnknownInt)) => {
+            (Prim(PrimType::Int(_, _)), Prim(PrimType::UnknownInt)) => {
                 self.vars.insert(b, TypeInfo::Ref(a));
                 Ok(())
             }
@@ -969,7 +969,9 @@ impl Symtbl {
 fn infer_lit(lit: &ast::Literal) -> TypeInfo {
     match lit {
         ast::Literal::Integer(_) => TypeInfo::Prim(PrimType::UnknownInt),
-        ast::Literal::SizedInteger { bytes, .. } => TypeInfo::Prim(PrimType::SInt(*bytes)),
+        ast::Literal::SizedInteger { bytes, signed, .. } => {
+            TypeInfo::Prim(PrimType::Int(*bytes, *signed))
+        }
         ast::Literal::Bool(_) => TypeInfo::Prim(PrimType::Bool),
         //ast::Literal::EnumLit(nm, _) => TypeInfo::Named(*nm, vec![]),
     }
