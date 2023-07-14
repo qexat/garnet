@@ -338,10 +338,13 @@ impl ErrorReporter {
         // and the default test runner truncates 'em anyway.  Leave this
         // the way it is 'cause the lang_tester tests are set up to look
         // for specific strings on failure.
+        //
+        // TODO: It really would be nice to have the test harness capture things
+        // properly.  Why isn't it?
         #[cfg(not(test))]
         {
             use codespan_reporting::term::termcolor::{ColorChoice, StandardStream};
-            let writer = StandardStream::stderr(ColorChoice::Always);
+            let writer = StandardStream::stdout(ColorChoice::Always);
             cs::term::emit(&mut writer.lock(), &self.config, &self.files, _diag)
                 .expect("Could not print error message");
         }
@@ -373,9 +376,10 @@ macro_rules! parse_delimited {
 /// The core parser struct.  It provides basic methods for
 /// manipulating the input stream, and the `parse()` method to
 /// try to drive the given input to completion.
+#[derive(Clone)]
 pub struct Parser<'input> {
+    // Honestly, just cloning the lexer is easier than dealing with Peekable
     lex: logos::Lexer<'input, TokenKind>,
-    //lex: std::iter::Peekable<logos::SpannedIter<'input, TokenKind>>,
     source: &'input str,
     err: ErrorReporter,
 }
@@ -706,11 +710,10 @@ impl<'input> Parser<'input> {
         ast::Decl::Import { name, rename }
     }
 
-    /// signature = fn_args [":" typename]
+    /// signature = fn_args [typename]
     fn parse_fn_signature(&mut self) -> ast::Signature {
-        // TODO: Elide trailing unit type?
         let (params, typeparams) = self.parse_fn_args();
-        let rettype = self.parse_type();
+        let rettype = self.try_parse_type().unwrap_or(Type::unit());
         ast::Signature {
             params,
             rettype,
@@ -718,18 +721,8 @@ impl<'input> Parser<'input> {
         }
     }
 
-    /// Ok, this is where the grammar gets slightly cursed, but I
-    /// think I can isolate the curse here.  Basically this parses
-    /// type args like `type, type, type |` up until the closing
-    /// `|`, or if there IS no closing `|` and it reads something
-    /// not a type then it *backtracks* and returns an empty list.
-    fn _parse_type_args(&mut self) -> Vec<Type> {
-        //let new_lexer = self.lex.into_inner().deref().clone();
-        vec![]
-    }
-
     /// sig = ident typename
-    /// fn_args = "(" [sig {"," sig} [","]] ["|" types...] ")"
+    /// fn_args = "(" ["|" types... "|"] [sig {"," sig} [","]] ["|" types...] ")"
     fn parse_fn_args(&mut self) -> (Vec<(Sym, Type)>, Vec<Type>) {
         let mut args = vec![];
         let mut typeparams = vec![];
@@ -783,7 +776,10 @@ impl<'input> Parser<'input> {
         self.expect(T::LParen);
         if self.peek_expect(T::Bar.discr()) {
             parse_delimited!(self, T::Comma, {
-                if !self.peek_is(T::RParen.discr()) {
+                if self.peek_is(T::Bar.discr()) {
+                    // Bit of a hack, but (||) is a valid sig
+                    break;
+                } else if !self.peek_is(T::RParen.discr()) {
                     let tname = self.parse_type();
                     typeparams.push(tname);
                 } else {
@@ -807,7 +803,7 @@ impl<'input> Parser<'input> {
 
     fn parse_fn_type(&mut self) -> Type {
         let (params, typeparams) = self.parse_type_list_with_typeparams();
-        let rettype = self.parse_type();
+        let rettype = self.try_parse_type().unwrap_or(Type::unit());
         Type::Func(params, Box::new(rettype), typeparams)
     }
 
@@ -1379,7 +1375,11 @@ impl<'input> Parser<'input> {
         self.try_parse_type().expect("Type expected")
     }
 
+    /// If this can't parse a valid type, it will rewind
+    /// back to where it started.  Magic!
+    /// Also, you know, arbitrary lookahead, but that's ok.
     fn try_parse_type(&mut self) -> Option<Type> {
+        let old_parser = self.clone();
         let t = self.next()?;
         let x = match t.kind {
             T::Ident(ref s) => {
@@ -1414,7 +1414,11 @@ impl<'input> Parser<'input> {
                 let next = self.try_parse_type()?;
                 Type::Uniq(Box::new(next))
             }
-            _ => return None,
+            _ => {
+                // Wind the parse stream back to wherever we started
+                *self = old_parser;
+                return None;
+            }
         };
         Some(x)
     }
@@ -1658,13 +1662,28 @@ type blar = I8
     fn parse_fn_signature() {
         let valid_args = vec![
             "() {}",
-            "(x  Bool) I32",
-            "(x  Bool) {}",
-            "(x  I16, y  Bool) {}",
-            "(x  I64, y  Bool) Bool",
-            "(x  I8, y  Bool,) {}",
-            "(x  I32, y  Bool,) Bool",
-            "(f  fn(I32) I128, x  I32) Bool",
+            "(x Bool) I32",
+            "(x Bool) {}",
+            "(x I16, y Bool) {}",
+            "(x I64, y Bool) Bool",
+            "(x I8, y Bool,) {}",
+            "(x I32, y Bool,) Bool",
+            "(f fn(I32) I128, x I32) Bool",
+            "(f fn(|| I32) I128, x I32) Bool",
+            "(f fn(||) I128, x I32) Bool",
+            "(f fn(|@T| I32) I128, x I32) Bool",
+            // now without explicit return types
+            "()",
+            "(x Bool)",
+            "(x Bool)",
+            "(x I16, y Bool)",
+            "(x I64, y Bool)",
+            "(x I8, y Bool,)",
+            "(x I32, y Bool,)",
+            "(f fn(I32), x I32)",
+            "(f fn(|| I32), x I32)",
+            "(f fn(||), x I32)",
+            "(f fn(|@T| I32), x I32)",
         ];
         test_parse_with(|p| p.parse_fn_signature(), &valid_args)
     }
