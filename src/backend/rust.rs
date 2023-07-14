@@ -22,13 +22,18 @@ use crate::*;
 fn compile_typename(t: &Type) -> Cow<'static, str> {
     use crate::Type::*;
     match t {
-        Prim(PrimType::SInt(16)) => "i128".into(),
-        Prim(PrimType::SInt(8)) => "i64".into(),
-        Prim(PrimType::SInt(4)) => "i32".into(),
-        Prim(PrimType::SInt(2)) => "i16".into(),
-        Prim(PrimType::SInt(1)) => "i8".into(),
-        Prim(PrimType::SInt(e)) => {
-            unreachable!("Invalid integer size: {}", e)
+        Prim(PrimType::Int(16, true)) => "i128".into(),
+        Prim(PrimType::Int(8, true)) => "i64".into(),
+        Prim(PrimType::Int(4, true)) => "i32".into(),
+        Prim(PrimType::Int(2, true)) => "i16".into(),
+        Prim(PrimType::Int(1, true)) => "i8".into(),
+        Prim(PrimType::Int(16, false)) => "u128".into(),
+        Prim(PrimType::Int(8, false)) => "u64".into(),
+        Prim(PrimType::Int(4, false)) => "u32".into(),
+        Prim(PrimType::Int(2, false)) => "u16".into(),
+        Prim(PrimType::Int(1, false)) => "u8".into(),
+        Prim(PrimType::Int(e, is_signed)) => {
+            unreachable!("Invalid integer size: {} (is_signed: {})", e, is_signed)
         }
         Prim(PrimType::UnknownInt) => {
             unreachable!("Backend got an integer of unknown size, should never happen!")
@@ -347,10 +352,26 @@ fn compile_expr(expr: &hir::ExprNode, tck: &Tck) -> String {
             val: ast::Literal::Bool(b),
         } => format!("{}", b),
         E::Lit {
-            val: ast::Literal::SizedInteger { vl, bytes },
+            val:
+                ast::Literal::SizedInteger {
+                    vl,
+                    bytes,
+                    signed: true,
+                },
         } => {
             let bits = bytes * 8;
             format!("{}i{}", vl, bits)
+        }
+        E::Lit {
+            val:
+                ast::Literal::SizedInteger {
+                    vl,
+                    bytes,
+                    signed: false,
+                },
+        } => {
+            let bits = bytes * 8;
+            format!("{}u{}", vl, bits)
         }
         E::Var { name, .. } => mangle_name(&INT.fetch(*name)),
         E::BinOp { op, lhs, rhs } => format!(

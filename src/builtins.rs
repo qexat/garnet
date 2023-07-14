@@ -98,6 +98,12 @@ fn __{name}_to_i32(x: {name}) -> i32 {{
     x as i32
 }}"#
         );
+        let cast_u32 = format!(
+            r#"
+fn __{name}_to_u32(x: {name}) -> u32 {{
+    x as u32
+}}"#
+        );
 
         vec![
             Builtin {
@@ -150,6 +156,11 @@ fn __{name}_to_i32(x: {name}) -> i32 {{
                 sig: Type::Func(vec![ty.clone()], Box::new(Type::i32()), vec![]),
                 code: BTreeMap::from([(Backend::Null, "".into()), (Backend::Rust, cast_i32)]),
             },
+            Builtin {
+                name: Sym::new(format!("__{name}_to_u32")),
+                sig: Type::Func(vec![ty.clone()], Box::new(Type::u32()), vec![]),
+                code: BTreeMap::from([(Backend::Null, "".into()), (Backend::Rust, cast_u32)]),
+            },
         ]
     }
     /// A function that returns all the compiler builtin info.  Just
@@ -186,6 +197,10 @@ fn __println_bool(x: bool) {
         funcs.extend(Self::generate_numerics_for("i16", Type::i16()));
         funcs.extend(Self::generate_numerics_for("i32", Type::i32()));
         funcs.extend(Self::generate_numerics_for("i64", Type::i64()));
+        funcs.extend(Self::generate_numerics_for("u8", Type::u8()));
+        funcs.extend(Self::generate_numerics_for("u16", Type::u16()));
+        funcs.extend(Self::generate_numerics_for("u32", Type::u32()));
+        funcs.extend(Self::generate_numerics_for("u64", Type::u64()));
         funcs
     }
 }

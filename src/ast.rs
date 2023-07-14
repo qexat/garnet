@@ -17,12 +17,14 @@ use crate::*;
 pub enum Literal {
     /// An integer of some kind
     Integer(i128),
-    /// An integer with a known size
+    /// An integer with a known size and signedness
     SizedInteger {
         /// Literal value
         vl: i128,
         /// The size of the integer, in bytes
         bytes: u8,
+        /// is_signed
+        signed: bool,
     },
     /// A bool literal
     Bool(bool),
@@ -32,9 +34,13 @@ impl fmt::Display for Literal {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Literal::Integer(i) => write!(f, "{}", i),
-            Literal::SizedInteger { vl, bytes } => {
+            Literal::SizedInteger { vl, bytes, signed } => {
                 let size = bytes * 8;
-                write!(f, "{}_I{}", vl, size)
+                if *signed {
+                    write!(f, "{}_I{}", vl, size)
+                } else {
+                    write!(f, "{}_U{}", vl, size)
+                }
             }
             Literal::Bool(b) => write!(f, "{}", b),
         }
@@ -270,9 +276,13 @@ impl Expr {
     }
 
     /// Shortcut function for making literal integers of a known size
-    pub const fn sized_int(i: i128, bytes: u8) -> Expr {
+    pub const fn sized_int(i: i128, bytes: u8, signed: bool) -> Expr {
         Expr::Lit {
-            val: Literal::SizedInteger { vl: i, bytes },
+            val: Literal::SizedInteger {
+                vl: i,
+                bytes,
+                signed,
+            },
         }
     }
 

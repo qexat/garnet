@@ -20,9 +20,18 @@ use crate::*;
 
 /// Checks whether the given value can fit in `int_size` number
 /// of bits.
-fn bounds_check(val: i128, int_size: u8) -> Option<(i128, u8)> {
+fn bounds_check_signed(val: i128, int_size: u8) -> Option<(i128, u8)> {
     let bound = 2_i128.pow(int_size as u32 * 8);
     if val > (bound / 2) - 1 || val <= -(bound / 2) {
+        None
+    } else {
+        Some((val, int_size))
+    }
+}
+
+fn bounds_check_unsigned(val: i128, int_size: u8) -> Option<(i128, u8)> {
+    let bound = 2_i128.pow(int_size as u32 * 8);
+    if val > bound || val <= 0 {
         None
     } else {
         Some((val, int_size))
@@ -48,36 +57,15 @@ fn extract_digits(s: &str) -> String {
         .collect()
 }
 
-fn make_i8(lex: &mut Lexer<TokenKind>) -> Option<(i128, u8)> {
+fn make_int(lex: &mut Lexer<TokenKind>, size: u8, signed: bool) -> Option<(i128, u8, bool)> {
     let digits = extract_digits(lex.slice());
     let m = digits.parse().ok()?;
-    bounds_check(m, 1)
-}
-
-fn make_i16(lex: &mut Lexer<TokenKind>) -> Option<(i128, u8)> {
-    let digits = extract_digits(lex.slice());
-    let m = digits.parse().ok()?;
-    bounds_check(m, 2)
-}
-
-fn make_i32(lex: &mut Lexer<TokenKind>) -> Option<(i128, u8)> {
-    let digits = extract_digits(lex.slice());
-    let m = digits.parse().ok()?;
-    bounds_check(m, 4)
-}
-
-fn make_i64(lex: &mut Lexer<TokenKind>) -> Option<(i128, u8)> {
-    let digits = extract_digits(lex.slice());
-    let m = digits.parse().ok()?;
-    bounds_check(m, 8)
-}
-
-fn make_i128(lex: &mut Lexer<TokenKind>) -> Option<(i128, u8)> {
-    let digits = extract_digits(lex.slice());
-    let m = digits.parse().ok()?;
-    // No bounds check, since our internal type is i128 anyway.
-    //bounds_check(m, 16)
-    Some((m, 16))
+    let (val, size) = if signed {
+        bounds_check_signed(m, size)?
+    } else {
+        bounds_check_unsigned(m, size)?
+    };
+    Some((val, size, signed))
 }
 
 fn eat_block_comment(lex: &mut Lexer<TokenKind>) -> String {
@@ -118,12 +106,23 @@ pub enum TokenKind {
     //TypeIdent(String),
     #[regex("true|false", |lex| lex.slice().parse())]
     Bool(bool),
-    #[regex("[0-9][0-9_]*I8", make_i8)]
-    #[regex("[0-9][0-9_]*I16", make_i16)]
-    #[regex("[0-9][0-9_]*I32", make_i32)]
-    #[regex("[0-9][0-9_]*I64", make_i64)]
-    #[regex("[0-9][0-9_]*I128", make_i128)]
+    #[regex("[0-9][0-9_]*I8",   |lex| make_int(lex, 1, true))]
+    #[regex("[0-9][0-9_]*I16",  |lex| make_int(lex, 2, true))]
+    #[regex("[0-9][0-9_]*I32",  |lex| make_int(lex, 4, true))]
+    #[regex("[0-9][0-9_]*I64",  |lex| make_int(lex, 8, true))]
+    #[regex("[0-9][0-9_]*U8",   |lex| make_int(lex, 1, false))]
+    #[regex("[0-9][0-9_]*U16",  |lex| make_int(lex, 2, false))]
+    #[regex("[0-9][0-9_]*U32",  |lex| make_int(lex, 4, false))]
+    #[regex("[0-9][0-9_]*U64",  |lex| make_int(lex, 8, false))]
+    IntegerSize((i128, u8, bool)),
+    /*
+    #[regex("[0-9][0-9_]*U8", make_u8)]
+    #[regex("[0-9][0-9_]*U16", make_u16)]
+    #[regex("[0-9][0-9_]*U32", make_u32)]
+    #[regex("[0-9][0-9_]*U64", make_u64)]
+    #[regex("[0-9][0-9_]*U128", make_u128)]
     IntegerSize((i128, u8)),
+    */
     #[regex("[0-9][0-9_]*", |lex| lex.slice().parse())]
     Integer(i128),
 
@@ -593,7 +592,7 @@ impl<'input> Parser<'input> {
                 ..
             }) => s,
             Some(Token {
-                kind: T::IntegerSize((s, _)),
+                kind: T::IntegerSize((s, _, _)),
                 ..
             }) => s,
             Some(Token { kind, span }) => {
@@ -990,7 +989,9 @@ impl<'input> Parser<'input> {
                 ast::Expr::bool(*b)
             }
             T::Integer(_) => ast::Expr::int(self.expect_int() as i128),
-            T::IntegerSize((_str, size)) => ast::Expr::sized_int(self.expect_int() as i128, *size),
+            T::IntegerSize((_str, size, signed)) => {
+                ast::Expr::sized_int(self.expect_int() as i128, *size, *signed)
+            }
             // Tuple/struct literal
             T::LBrace => self.parse_constructor(),
             // Array literal
@@ -1668,10 +1669,10 @@ type blar = I8
             "(x I64, y Bool) Bool",
             "(x I8, y Bool,) {}",
             "(x I32, y Bool,) Bool",
-            "(f fn(I32) I128, x I32) Bool",
-            "(f fn(|| I32) I128, x I32) Bool",
-            "(f fn(||) I128, x I32) Bool",
-            "(f fn(|@T| I32) I128, x I32) Bool",
+            "(f fn(I32) I64, x I32) Bool",
+            "(f fn(|| I32) I64, x I32) Bool",
+            "(f fn(||) I64, x I32) Bool",
+            "(f fn(|@T| I32) I64, x I32) Bool",
             // now without explicit return types
             "()",
             "(x Bool)",
@@ -1960,13 +1961,12 @@ type blar = I8
             ("22_I16", 22, 2),
             ("33_I32", 33, 4),
             ("91_I64", 91, 8),
-            ("9_I128", 9, 16),
         ];
         for (s, expected_int, expected_bytes) in tests {
             let mut p = Parser::new("unittest.gt", s);
             assert_eq!(
                 p.next().unwrap().kind,
-                TokenKind::IntegerSize((*expected_int, *expected_bytes))
+                TokenKind::IntegerSize((*expected_int, *expected_bytes, true))
             );
             // Make sure we don't lex the "i128" or whatever as the start of
             // another token
@@ -1997,7 +1997,7 @@ type blar = I8
 
     #[test]
     fn parse_integer_values() {
-        test_expr_is("43_I8", || Expr::sized_int(43, 1));
+        test_expr_is("43_I8", || Expr::sized_int(43, 1, true));
         /*
         test_expr_is("{1,2,3}", |_cx| Expr::TupleCtor {
             body: vec![Expr::int(1), Expr::int(2), Expr::int(3)],
