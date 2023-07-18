@@ -319,8 +319,8 @@ fn decl_map(
     }
 }
 
-fn types_map(typs: Arc<Vec<Type>>, f: &mut dyn FnMut(Type) -> Type) -> Arc<Vec<Type>> {
-    Arc::new(typs.iter().cloned().map(|t| type_map(t, f)).collect())
+fn types_map(typs: Vec<Type>, f: &mut dyn FnMut(Type) -> Type) -> Vec<Type> {
+    typs.into_iter().map(|t| type_map(t, f)).collect()
 }
 
 /// Recursion scheme to turn one type into another.
@@ -330,17 +330,15 @@ fn type_map(typ: Type, f: &mut dyn FnMut(Type) -> Type) -> Type {
     /// it generic over any iterator, if we want to make life even harder for
     /// ourself.
     fn types_map_btree<K>(
-        typs: Arc<BTreeMap<K, Type>>,
+        typs: BTreeMap<K, Type>,
         f: &mut dyn FnMut(Type) -> Type,
-    ) -> Arc<BTreeMap<K, Type>>
+    ) -> BTreeMap<K, Type>
     where
-        K: Ord + Clone,
+        K: Ord,
     {
-        Arc::new(
-            typs.iter()
-                .map(|(key, ty)| (key.clone(), type_map(ty.clone(), f)))
-                .collect(),
-        )
+        typs.into_iter()
+            .map(|(key, ty)| (key, type_map(ty, f)))
+            .collect()
     }
     let res = match typ {
         Type::Struct(fields, generics) => {
@@ -351,12 +349,12 @@ fn type_map(typ: Type, f: &mut dyn FnMut(Type) -> Type) -> Type {
             let new_fields = types_map_btree(fields, f);
             Type::Sum(new_fields, generics)
         }
-        Type::Array(ty, len) => Type::array(&type_map(ty.as_ref().clone(), f), len),
+        Type::Array(ty, len) => Type::Array(Box::new(type_map(*ty, f)), len),
         Type::Func(args, rettype, typeparams) => {
             let new_args = types_map(args, f);
-            let new_rettype = type_map(rettype.as_ref().clone(), f);
+            let new_rettype = type_map(*rettype, f);
             let new_typeparams = types_map(typeparams, f);
-            Type::function(&new_args, &new_rettype, &new_typeparams)
+            Type::Func(new_args, Box::new(new_rettype), new_typeparams)
         }
         // Not super sure whether this is necessary, but can't hurt.
         Type::Named(nm, tys) => Type::Named(nm, types_map(tys, f)),
@@ -365,8 +363,8 @@ fn type_map(typ: Type, f: &mut dyn FnMut(Type) -> Type) -> Type {
         Type::Enum(_) => typ,
         Type::Generic(_) => typ,
         Type::Uniq(t) => {
-            let new_t = type_map(t.as_ref().clone(), f);
-            Type::Uniq(Arc::new(new_t))
+            let new_t = type_map(*t, f);
+            Type::Uniq(Box::new(new_t))
         }
     };
     f(res)
@@ -376,12 +374,11 @@ fn type_map(typ: Type, f: &mut dyn FnMut(Type) -> Type) -> Type {
 fn signature_map(sig: hir::Signature, f: &mut dyn FnMut(Type) -> Type) -> hir::Signature {
     let new_params = sig
         .params
-        .iter()
-        .cloned()
+        .into_iter()
         .map(|(sym, ty)| (sym, type_map(ty, f)))
         .collect();
     hir::Signature {
-        params: Arc::new(new_params),
+        params: new_params,
         rettype: type_map(sig.rettype, f),
         typeparams: types_map(sig.typeparams, f),
     }
