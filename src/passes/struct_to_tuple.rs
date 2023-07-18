@@ -38,11 +38,9 @@ fn tuplize_type(typ: Type) -> Type {
             // on the field names.
 
             // TODO: What do we do with generics?  Anything?
-            let tuple_fields = fields
-                .values()
-                .map(|ty| type_map(ty.clone(), &mut tuplize_type))
+            let tuple_fields = fields.values().map(|ty| type_map(ty.clone(), &mut tuplize_type))
                 .collect();
-            Type::tuple(Arc::new(tuple_fields))
+            Type::tuple(tuple_fields)
         }
         other => other,
     }
@@ -79,7 +77,10 @@ fn tuplize_expr(expr: ExprNode, tck: &mut typeck::Tck) -> ExprNode {
                     .map(|(ky, vl)| (offset_of_field(type_body, ky), vl))
                     .collect();
                 ordered_body.sort_by(|a, b| a.0.cmp(&b.0));
-                let new_body = ordered_body.into_iter().map(|(_i, expr)| expr).collect();
+                let new_body = ordered_body
+                    .into_iter()
+                    .map(|(_i, expr)| expr)
+                    .collect();
 
                 E::TupleCtor { body: new_body }
             }
@@ -270,15 +271,14 @@ mod tests {
         let mut body = BTreeMap::new();
         body.insert(Sym::new("foo"), Type::i32());
         body.insert(Sym::new("bar"), Type::i64());
-        let body = Arc::new(body);
 
-        let desired = tuplize_type(Type::Struct(body.clone(), Arc::new(vec![])));
-        let inp = Type::Struct(body, Arc::new(vec![]));
+        let desired = tuplize_type(Type::Struct(body.clone(), vec![]));
+        let inp = Type::Struct(body, vec![]);
         let out = type_map(inp.clone(), &mut tuplize_type);
         assert_eq!(out, desired);
 
-        let desired2 = Type::array(&out, 3);
-        let inp2 = Type::array(&inp, 3);
+        let desired2 = Type::Array(Box::new(out), 3);
+        let inp2 = Type::Array(Box::new(inp), 3);
         let out2 = type_map(inp2, &mut tuplize_type);
         assert_eq!(out2, desired2);
     }

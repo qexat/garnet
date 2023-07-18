@@ -66,7 +66,7 @@ end
     buf
 }
 
-fn bench_with_rust_backend(c: &mut Criterion) {
+fn bench_compile(c: &mut Criterion) {
     let code = gen_dumb_test_code(103);
     let lines = code.lines().count();
     let name = format!("compile {}ish lines to Rust", lines);
@@ -81,7 +81,6 @@ fn bench_with_rust_backend(c: &mut Criterion) {
         b.iter(|| compile("criterion.gt", black_box(&code), backend::Backend::Rust))
     });
 
-    /*
     let code = gen_dumb_test_code(103 * 16);
     let lines = code.lines().count();
     let name = format!("compile {}ish lines", lines);
@@ -93,30 +92,6 @@ fn bench_with_rust_backend(c: &mut Criterion) {
                 garnet::backend::Backend::Rust,
             )
         })
-    });
-    */
-}
-
-fn bench_with_null_backend(c: &mut Criterion) {
-    let code = gen_dumb_test_code(103);
-    let lines = code.lines().count();
-    let name = format!("compile {}ish lines to nothing", lines);
-    c.bench_function(&name, |b| {
-        b.iter(|| compile("criterion.gt", black_box(&code), backend::Backend::Null))
-    });
-
-    let code = gen_dumb_test_code(103 * 8);
-    let lines = code.lines().count();
-    let name = format!("compile {}ish lines to nothing", lines);
-    c.bench_function(&name, |b| {
-        b.iter(|| compile("criterion.gt", black_box(&code), backend::Backend::Null))
-    });
-
-    let code = gen_dumb_test_code(103 * 16);
-    let lines = code.lines().count();
-    let name = format!("compile {}ish lines to nothing", lines);
-    c.bench_function(&name, |b| {
-        b.iter(|| compile("criterion.gt", black_box(&code), backend::Backend::Rust))
     });
 }
 
@@ -161,15 +136,14 @@ fn bench_stages(c: &mut Criterion) {
     });
 
     let hir = passes::run_typechecked_passes(hir, tck);
-    c.bench_function("codegen", |b| {
+    c.bench_function("codegen to Rust", |b| {
         b.iter(|| backend::output(backend::Backend::Rust, black_box(&hir), black_box(tck)))
+    });
+
+    c.bench_function("codegen to null", |b| {
+        b.iter(|| backend::output(backend::Backend::Null, black_box(&hir), black_box(tck)))
     });
 }
 
-criterion_group!(
-    benches,
-    //bench_with_rust_backend,
-    //bench_with_null_backend,
-    bench_stages
-);
+criterion_group!(benches, bench_compile, bench_stages);
 criterion_main!(benches);

@@ -409,7 +409,7 @@ impl Tck {
         let tinfo = match t {
             Type::Prim(ty) => TypeInfo::Prim(*ty),
             Type::Never => TypeInfo::Never,
-            Type::Enum(vals) => TypeInfo::Enum((&**vals).clone()),
+            Type::Enum(vals) => TypeInfo::Enum(vals.clone()),
             Type::Named(s, args) => {
                 let new_args = args.iter().map(|t| self.insert_known(t)).collect();
                 TypeInfo::Named(*s, new_args)
@@ -726,11 +726,11 @@ impl Tck {
             Never => Ok(Type::Never),
             Prim(ty) => Ok(Type::Prim(*ty)),
             Ref(id) => self.reconstruct(*id),
-            Enum(ts) => Ok(Type::Enum(Arc::new(ts.clone()))),
+            Enum(ts) => Ok(Type::Enum(ts.clone())),
             Named(s, args) => {
                 let arg_types: Result<Vec<_>, _> =
                     args.iter().map(|x| self.reconstruct(*x)).collect();
-                Ok(Type::Named(*s, Arc::new(arg_types?)))
+                Ok(Type::Named(*s, arg_types?))
             }
             Func(args, rettype, typeparams) => {
                 let real_args: Result<Vec<Type>, TypeError> =
@@ -738,12 +738,10 @@ impl Tck {
                 let type_param_types: Result<Vec<Type>, _> =
                     typeparams.iter().map(|x| self.reconstruct(*x)).collect();
 
-                let real_args = real_args?;
-                let type_param_types = type_param_types?;
-                Ok(Type::function(
-                    &real_args,
-                    &self.reconstruct(*rettype)?,
-                    &type_param_types,
+                Ok(Type::Func(
+                    real_args?,
+                    Box::new(self.reconstruct(*rettype)?),
+                    type_param_types?,
                 ))
             }
             TypeParam(name) => Ok(Type::Generic(*name)),
@@ -757,11 +755,11 @@ impl Tck {
                     .collect();
                 // TODO: The empty params here feels suspicious, verify.
                 let params = vec![];
-                Ok(Type::Struct(Arc::new(real_body?), Arc::new(params)))
+                Ok(Type::Struct(real_body?, params))
             }
             Array(ty, len) => {
                 let real_body = self.reconstruct(*ty)?;
-                Ok(Type::array(&real_body, len.unwrap()))
+                Ok(Type::Array(Box::new(real_body), len.unwrap()))
             }
             Sum(body) => {
                 let real_body: Result<BTreeMap<_, _>, TypeError> = body
@@ -772,11 +770,11 @@ impl Tck {
                     })
                     .collect();
                 let params = vec![];
-                Ok(Type::Sum(Arc::new(real_body?), Arc::new(params)))
+                Ok(Type::Sum(real_body?, params))
             }
             Uniq(ty) => {
                 let inner_type = self.reconstruct(*ty)?;
-                Ok(Type::Uniq(Arc::new(inner_type)))
+                Ok(Type::Uniq(Box::new(inner_type)))
             }
         }
     }
@@ -806,7 +804,7 @@ impl Tck {
             let typeinfo = match t {
                 Type::Prim(val) => TypeInfo::Prim(*val),
                 Type::Never => TypeInfo::Never,
-                Type::Enum(vals) => TypeInfo::Enum((**vals).clone()),
+                Type::Enum(vals) => TypeInfo::Enum(vals.clone()),
                 Type::Named(s, args) => {
                     let inst_args: Vec<_> =
                         args.iter().map(|t| helper(tck, named_types, t)).collect();
@@ -916,7 +914,7 @@ impl Drop for ScopeGuard {
 
 impl Symtbl {
     fn add_builtins(&self, tck: &mut Tck) {
-        for builtin in &*builtins::all() {
+        for builtin in &*builtins::BUILTINS {
             let ty = tck.insert_known(&builtin.sig);
             self.add_var(builtin.name, ty, false);
         }
@@ -1010,7 +1008,7 @@ fn typecheck_func_body(
     */
     // Insert info about the function signature
     let mut params = vec![];
-    for (_paramname, paramtype) in &*signature.params {
+    for (_paramname, paramtype) in &signature.params {
         let p = tck.insert_known(paramtype);
         params.push(p);
     }
@@ -1033,7 +1031,7 @@ fn typecheck_func_body(
 
     // Add params to function's scope
     let _guard = symtbl.push_scope();
-    for (paramname, paramtype) in &*signature.params {
+    for (paramname, paramtype) in &signature.params {
         let p = tck.insert_known(paramtype);
         symtbl.add_var(*paramname, p, false);
     }
@@ -1474,8 +1472,7 @@ fn typecheck_expr(
             tck.unify(symtbl, tid, body_type)?;
             trace!("Done unifying type ctor");
             // The type the expression returns
-            let constructed_type =
-                tck.insert_known(&Type::Named(*name, Arc::new(type_params.clone())));
+            let constructed_type = tck.insert_known(&Type::Named(*name, type_params.clone()));
             tck.set_expr_type(expr, constructed_type);
             Ok(constructed_type)
         }
@@ -1626,7 +1623,7 @@ fn predeclare_decls(tck: &mut Tck, symtbl: &mut Symtbl, decls: &[hir::Decl]) {
             } => {
                 // TODO: Kinda duplicated, not a huge fan.
                 let mut params = vec![];
-                for (_paramname, paramtype) in &*signature.params {
+                for (_paramname, paramtype) in &signature.params {
                     let p = tck.insert_known(paramtype);
                     params.push(p);
                 }

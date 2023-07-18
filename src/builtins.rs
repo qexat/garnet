@@ -6,6 +6,8 @@
 
 use std::collections::BTreeMap;
 
+use once_cell::sync::Lazy;
+
 use crate::backend::Backend;
 use crate::*;
 
@@ -19,6 +21,8 @@ pub struct Builtin {
     /// backend.
     pub code: BTreeMap<Backend, String>,
 }
+
+pub static BUILTINS: Lazy<Vec<Builtin>> = Lazy::new(Builtin::all);
 
 impl Builtin {
     /// Generate all appropriate methods for the given numeric type.
@@ -104,99 +108,99 @@ fn __{name}_to_u32(x: {name}) -> u32 {{
         vec![
             Builtin {
                 name: Sym::new(format!("__println_{name}")),
-                sig: Type::function(&vec![ty.clone()], &Type::unit(), &vec![]),
+                sig: Type::Func(vec![ty.clone()], Box::new(Type::unit()), vec![]),
                 code: BTreeMap::from([(Backend::Null, "".into()), (Backend::Rust, println)]),
             },
             Builtin {
                 name: Sym::new(format!("__band_{name}")),
-                sig: Type::function(&vec![ty.clone(), ty.clone()], &ty.clone(), &vec![]),
+                sig: Type::Func(vec![ty.clone(), ty.clone()], Box::new(ty.clone()), vec![]),
                 code: BTreeMap::from([(Backend::Null, "".into()), (Backend::Rust, band)]),
             },
             Builtin {
                 name: Sym::new(format!("__bor_{name}")),
-                sig: Type::function(&vec![ty.clone(), ty.clone()], &ty.clone(), &vec![]),
+                sig: Type::Func(vec![ty.clone(), ty.clone()], Box::new(ty.clone()), vec![]),
                 code: BTreeMap::from([(Backend::Null, "".into()), (Backend::Rust, bor)]),
             },
             Builtin {
                 name: Sym::new(format!("__bxor_{name}")),
-                sig: Type::function(&vec![ty.clone(), ty.clone()], &ty.clone(), &vec![]),
+                sig: Type::Func(vec![ty.clone(), ty.clone()], Box::new(ty.clone()), vec![]),
                 code: BTreeMap::from([(Backend::Null, "".into()), (Backend::Rust, bxor)]),
             },
             Builtin {
                 name: Sym::new(format!("__bnot_{name}")),
-                sig: Type::function(&vec![ty.clone()], &ty.clone(), &vec![]),
+                sig: Type::Func(vec![ty.clone()], Box::new(ty.clone()), vec![]),
                 code: BTreeMap::from([(Backend::Null, "".into()), (Backend::Rust, bnot)]),
             },
             Builtin {
                 name: Sym::new(format!("__rshift_{name}")),
-                sig: Type::function(&vec![ty.clone(), ty.clone()], &ty.clone(), &vec![]),
+                sig: Type::Func(vec![ty.clone(), ty.clone()], Box::new(ty.clone()), vec![]),
                 code: BTreeMap::from([(Backend::Null, "".into()), (Backend::Rust, rshift)]),
             },
             Builtin {
                 name: Sym::new(format!("__lshift_{name}")),
-                sig: Type::function(&vec![ty.clone(), ty.clone()], &ty.clone(), &vec![]),
+                sig: Type::Func(vec![ty.clone(), ty.clone()], Box::new(ty.clone()), vec![]),
                 code: BTreeMap::from([(Backend::Null, "".into()), (Backend::Rust, lshift)]),
             },
             Builtin {
                 name: Sym::new(format!("__rol_{name}")),
-                sig: Type::function(&vec![ty.clone(), Type::i32()], &ty.clone(), &vec![]),
+                sig: Type::Func(vec![ty.clone(), Type::i32()], Box::new(ty.clone()), vec![]),
                 code: BTreeMap::from([(Backend::Null, "".into()), (Backend::Rust, rol)]),
             },
             Builtin {
                 name: Sym::new(format!("__ror_{name}")),
-                sig: Type::function(&vec![ty.clone(), Type::i32()], &ty.clone(), &vec![]),
+                sig: Type::Func(vec![ty.clone(), Type::i32()], Box::new(ty.clone()), vec![]),
                 code: BTreeMap::from([(Backend::Null, "".into()), (Backend::Rust, ror)]),
             },
             Builtin {
                 name: Sym::new(format!("__{name}_to_i32")),
-                sig: Type::function(&vec![ty.clone()], &Type::i32(), &vec![]),
+                sig: Type::Func(vec![ty.clone()], Box::new(Type::i32()), vec![]),
                 code: BTreeMap::from([(Backend::Null, "".into()), (Backend::Rust, cast_i32)]),
             },
             Builtin {
                 name: Sym::new(format!("__{name}_to_u32")),
-                sig: Type::function(&vec![ty.clone()], &Type::u32(), &vec![]),
+                sig: Type::Func(vec![ty.clone()], Box::new(Type::u32()), vec![]),
                 code: BTreeMap::from([(Backend::Null, "".into()), (Backend::Rust, cast_u32)]),
             },
         ]
     }
-}
-/// A function that returns all the compiler builtin info.  Just
-/// use the `BUILTINS` global instead, this is basically here
-/// to initialize it.
-pub fn all() -> Vec<Builtin> {
-    let rust_println = r#"fn __println(x: i32) {
+    /// A function that returns all the compiler builtin info.  Just
+    /// use the `BUILTINS` global instead, this is basically here
+    /// to initialize it.
+    fn all() -> Vec<Builtin> {
+        let rust_println = r#"fn __println(x: i32) {
     println!("{}", x);
 }"#;
-    let rust_println_bool = r#"
+        let rust_println_bool = r#"
 fn __println_bool(x: bool) {
     println!("{}", x);
 }"#;
 
-    let mut funcs = vec![
-        Builtin {
-            name: Sym::new("__println"),
-            sig: Type::function(&vec![Type::i32()], &Type::unit(), &vec![]),
-            code: BTreeMap::from([
-                (Backend::Null, "".into()),
-                (Backend::Rust, rust_println.into()),
-            ]),
-        },
-        Builtin {
-            name: Sym::new("__println_bool"),
-            sig: Type::function(&vec![Type::bool()], &Type::unit(), &vec![]),
-            code: BTreeMap::from([
-                (Backend::Null, "".into()),
-                (Backend::Rust, rust_println_bool.into()),
-            ]),
-        },
-    ];
-    funcs.extend(Builtin::generate_numerics_for("i8", Type::i8()));
-    funcs.extend(Builtin::generate_numerics_for("i16", Type::i16()));
-    funcs.extend(Builtin::generate_numerics_for("i32", Type::i32()));
-    funcs.extend(Builtin::generate_numerics_for("i64", Type::i64()));
-    funcs.extend(Builtin::generate_numerics_for("u8", Type::u8()));
-    funcs.extend(Builtin::generate_numerics_for("u16", Type::u16()));
-    funcs.extend(Builtin::generate_numerics_for("u32", Type::u32()));
-    funcs.extend(Builtin::generate_numerics_for("u64", Type::u64()));
-    funcs
+        let mut funcs = vec![
+            Builtin {
+                name: Sym::new("__println"),
+                sig: Type::Func(vec![Type::i32()], Box::new(Type::unit()), vec![]),
+                code: BTreeMap::from([
+                    (Backend::Null, "".into()),
+                    (Backend::Rust, rust_println.into()),
+                ]),
+            },
+            Builtin {
+                name: Sym::new("__println_bool"),
+                sig: Type::Func(vec![Type::bool()], Box::new(Type::unit()), vec![]),
+                code: BTreeMap::from([
+                    (Backend::Null, "".into()),
+                    (Backend::Rust, rust_println_bool.into()),
+                ]),
+            },
+        ];
+        funcs.extend(Self::generate_numerics_for("i8", Type::i8()));
+        funcs.extend(Self::generate_numerics_for("i16", Type::i16()));
+        funcs.extend(Self::generate_numerics_for("i32", Type::i32()));
+        funcs.extend(Self::generate_numerics_for("i64", Type::i64()));
+        funcs.extend(Self::generate_numerics_for("u8", Type::u8()));
+        funcs.extend(Self::generate_numerics_for("u16", Type::u16()));
+        funcs.extend(Self::generate_numerics_for("u32", Type::u32()));
+        funcs.extend(Self::generate_numerics_for("u64", Type::u64()));
+        funcs
+    }
 }
