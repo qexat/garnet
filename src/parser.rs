@@ -1370,9 +1370,9 @@ impl<'input> Parser<'input> {
 
     /// If this can't parse a valid type, it will rewind
     /// back to where it started.  Magic!
-    /// Also, you know, arbitrary lookahead, but that's ok.
+    /// Also, you know, arbitrary lookahead/backtracking, but that's ok.
     fn try_parse_type(&mut self) -> Option<Type> {
-        let old_parser = self.clone();
+        let old_lexer = self.lex.clone();
         let t = self.next()?;
         let x = match t.kind {
             T::Ident(ref s) => {
@@ -1409,7 +1409,9 @@ impl<'input> Parser<'input> {
             }
             _ => {
                 // Wind the parse stream back to wherever we started
-                *self = old_parser;
+                // TODO LATER: We should maybe think about making a better way
+                // of doing this, but so far this is the only place it happens.
+                self.lex = old_lexer;
                 return None;
             }
         };
