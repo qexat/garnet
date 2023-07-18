@@ -768,10 +768,10 @@ fn lower_typedef(accm: &mut Vec<Decl>, name: Sym, ty: &Type, params: &[Sym]) {
             let struct_signature = ts
                 .iter()
                 //.map(|(enumname, _enumval)| (*enumname, ty.clone()))
-                .map(|(enumname, _enumval)| (*enumname, Type::Named(name, vec![])))
+                .map(|(enumname, _enumval)| (*enumname, Type::Named(name, Arc::new(vec![]))))
                 .collect();
             // Enums cannot have type parameters, so this works.
-            let init_type = Type::Struct(struct_signature, vec![]);
+            let init_type = Type::Struct(Arc::new(struct_signature), Arc::new(vec![]));
             let new_constdef = Const {
                 name,
                 typ: init_type,
@@ -798,7 +798,7 @@ fn lower_typedef(accm: &mut Vec<Decl>, name: Sym, ty: &Type, params: &[Sym]) {
                 .map(|(variant_name, variant_type)| {
                     let paramname = Sym::new("x");
                     let signature = ast::Signature {
-                        params: vec![(paramname, variant_type.clone())],
+                        params: Arc::new(vec![(paramname, variant_type.clone())]),
                         rettype: Type::Named(name, generics.clone()),
                         typeparams: generics.clone(),
                     };
@@ -822,15 +822,15 @@ fn lower_typedef(accm: &mut Vec<Decl>, name: Sym, ty: &Type, params: &[Sym]) {
                     // `fn(variant_type) name`
                     (
                         *variant_name,
-                        Type::Func(
-                            vec![variant_type.clone()],
-                            Box::new(Type::Named(name, generics.clone())),
-                            generics.clone(),
+                        Type::function(
+                            &[variant_type.clone()],
+                            &Type::Named(name, generics.clone()),
+                            &generics,
                         ),
                     )
                 })
                 .collect();
-            let struct_type = Type::Struct(struct_typebody, generics.clone());
+            let struct_type = Type::Struct(Arc::new(struct_typebody), generics.clone());
             let new_constdef = Const {
                 name: name.to_owned(),
                 typ: struct_type,
@@ -843,9 +843,10 @@ fn lower_typedef(accm: &mut Vec<Decl>, name: Sym, ty: &Type, params: &[Sym]) {
         other => {
             let s = Sym::new("x");
             trace!("Lowering params {:?}", params);
-            let type_params: Vec<_> = params.iter().map(|s| Type::Generic(*s)).collect();
+            let type_params: Arc<Vec<_>> =
+                Arc::new(params.iter().map(|s| Type::Generic(*s)).collect());
             let signature = ast::Signature {
-                params: vec![(s, other.clone())],
+                params: Arc::new(vec![(s, other.clone())]),
                 rettype: Type::Named(name.to_owned(), type_params.clone()),
                 typeparams: type_params.clone(),
             };
@@ -853,7 +854,7 @@ fn lower_typedef(accm: &mut Vec<Decl>, name: Sym, ty: &Type, params: &[Sym]) {
             // in a type constructor
             let body = vec![ExprNode::new(Expr::TypeCtor {
                 name,
-                type_params,
+                type_params: type_params.to_vec(),
                 body: ExprNode::new(Expr::Var { name: s }),
             })];
             //println!("{} is {:#?}", variant_name, e);

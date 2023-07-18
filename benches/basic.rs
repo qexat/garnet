@@ -5,7 +5,7 @@
 
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 
-
+use garnet::*;
 
 /// Each iteration creates about 32 sLOC
 fn gen_dumb_test_code(count: usize) -> String {
@@ -66,33 +66,22 @@ end
     buf
 }
 
-fn criterion_benchmark(c: &mut Criterion) {
+fn bench_with_rust_backend(c: &mut Criterion) {
     let code = gen_dumb_test_code(103);
     let lines = code.lines().count();
-    let name = format!("compile {}ish lines", lines);
+    let name = format!("compile {}ish lines to Rust", lines);
     c.bench_function(&name, |b| {
-        b.iter(|| {
-            garnet::compile(
-                "criterion.gt",
-                black_box(&code),
-                garnet::backend::Backend::Rust,
-            )
-        })
+        b.iter(|| compile("criterion.gt", black_box(&code), backend::Backend::Rust))
     });
 
     let code = gen_dumb_test_code(103 * 8);
     let lines = code.lines().count();
-    let name = format!("compile {}ish lines", lines);
+    let name = format!("compile {}ish lines to Rust", lines);
     c.bench_function(&name, |b| {
-        b.iter(|| {
-            garnet::compile(
-                "criterion.gt",
-                black_box(&code),
-                garnet::backend::Backend::Rust,
-            )
-        })
+        b.iter(|| compile("criterion.gt", black_box(&code), backend::Backend::Rust))
     });
 
+    /*
     let code = gen_dumb_test_code(103 * 16);
     let lines = code.lines().count();
     let name = format!("compile {}ish lines", lines);
@@ -105,7 +94,82 @@ fn criterion_benchmark(c: &mut Criterion) {
             )
         })
     });
+    */
 }
 
-criterion_group!(benches, criterion_benchmark);
+fn bench_with_null_backend(c: &mut Criterion) {
+    let code = gen_dumb_test_code(103);
+    let lines = code.lines().count();
+    let name = format!("compile {}ish lines to nothing", lines);
+    c.bench_function(&name, |b| {
+        b.iter(|| compile("criterion.gt", black_box(&code), backend::Backend::Null))
+    });
+
+    let code = gen_dumb_test_code(103 * 8);
+    let lines = code.lines().count();
+    let name = format!("compile {}ish lines to nothing", lines);
+    c.bench_function(&name, |b| {
+        b.iter(|| compile("criterion.gt", black_box(&code), backend::Backend::Null))
+    });
+
+    let code = gen_dumb_test_code(103 * 16);
+    let lines = code.lines().count();
+    let name = format!("compile {}ish lines to nothing", lines);
+    c.bench_function(&name, |b| {
+        b.iter(|| compile("criterion.gt", black_box(&code), backend::Backend::Rust))
+    });
+}
+
+fn bench_stages(c: &mut Criterion) {
+    let code = gen_dumb_test_code(103 * 8);
+    let lines = code.lines().count();
+    let name = format!("Parse {} lines", lines);
+    c.bench_function(&name, |b| {
+        b.iter(|| {
+            let mut parser = parser::Parser::new("criterion.gt", black_box(&code));
+            parser.parse()
+        })
+    });
+
+    let mut parser = parser::Parser::new("criterion.gt", black_box(&code));
+    let ast = parser.parse();
+
+    c.bench_function("lower and run passes", |b| {
+        b.iter(|| {
+            let hir = hir::lower(black_box(&ast));
+            passes::run_passes(hir)
+        })
+    });
+
+    let hir = hir::lower(black_box(&ast));
+    let hir = passes::run_passes(hir);
+
+    c.bench_function("typecheck and borrowcheck", |b| {
+        b.iter(|| {
+            let tck = &mut typeck::typecheck(black_box(&hir)).unwrap();
+            borrowck::borrowck(&hir, tck).unwrap();
+        })
+    });
+
+    let tck = &mut typeck::typecheck(black_box(&hir)).unwrap();
+    borrowck::borrowck(&hir, tck).unwrap();
+
+    c.bench_function("typechecked passes", |b| {
+        b.iter(|| {
+            passes::run_typechecked_passes(black_box(hir.clone()), black_box(tck));
+        })
+    });
+
+    let hir = passes::run_typechecked_passes(hir, tck);
+    c.bench_function("codegen", |b| {
+        b.iter(|| backend::output(backend::Backend::Rust, black_box(&hir), black_box(tck)))
+    });
+}
+
+criterion_group!(
+    benches,
+    //bench_with_rust_backend,
+    //bench_with_null_backend,
+    bench_stages
+);
 criterion_main!(benches);

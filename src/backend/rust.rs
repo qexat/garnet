@@ -44,7 +44,7 @@ fn compile_typename(t: &Type) -> Cow<'static, str> {
         Named(s, types) if s == &Sym::new("Tuple") => {
             trace!("Compiling tuple {:?}...", t);
             let mut accm = String::from("(");
-            for typ in types {
+            for typ in &**types {
                 accm += &compile_typename(typ);
                 accm += ", ";
             }
@@ -68,7 +68,7 @@ fn compile_typename(t: &Type) -> Cow<'static, str> {
             }
             */
             accm += "(";
-            for p in params {
+            for p in &**params {
                 accm += &compile_typename(p);
                 accm += ", ";
             }
@@ -149,7 +149,7 @@ fn compile_typename(t: &Type) -> Cow<'static, str> {
 /// Driver that turns a pile of Ir into Rust code.
 pub(super) fn output(lir: &hir::Ir, tck: &Tck) -> Vec<u8> {
     let mut output = Vec::new();
-    for builtin in &*builtins::BUILTINS {
+    for builtin in &*builtins::all() {
         output.extend(builtin.code[&backend::Backend::Rust].as_bytes());
     }
     for decl in lir.decls.iter() {
@@ -223,7 +223,7 @@ fn compile_decl(w: &mut impl Write, decl: &hir::Decl, tck: &Tck) -> io::Result<(
                         params.iter().map(|sym| (*sym.val()).clone()).collect();
                     let args = param_strings.join(", ");
                     writeln!(w, "pub enum {}<{}> {{ ", nstr, args)?;
-                    for (nm, ty) in body {
+                    for (nm, ty) in &**body {
                         writeln!(w, "    {} ({}),", nm, compile_typename(ty))?;
                     }
                     writeln!(w, "}}")?;
