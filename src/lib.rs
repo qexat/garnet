@@ -12,7 +12,7 @@ use once_cell::sync::Lazy;
 
 mod ast;
 pub mod backend;
-mod borrowck;
+pub mod borrowck;
 mod builtins;
 pub mod format;
 pub mod hir;
@@ -74,26 +74,26 @@ pub enum Type {
     /// Never type, the type of an infinite loop
     Never,
     /// A C-like enum, and the integer values it corresponds to
-    Enum(Vec<(Sym, i32)>),
+    Enum(Arc<Vec<(Sym, i32)>>),
     /// A nominal type of some kind; may be built-in (like Tuple)
     /// or user-defined.
-    Named(Sym, Vec<Type>),
+    Named(Sym, Arc<Vec<Type>>),
     /// A function pointer.
     ///
     /// The contents are arg types, return types, type parameters
-    Func(Vec<Type>, Box<Type>, Vec<Type>),
+    Func(Arc<Vec<Type>>, Arc<Type>, Arc<Vec<Type>>),
     /// An anonymous struct.  The vec is type parameters.
-    Struct(BTreeMap<Sym, Type>, Vec<Type>),
+    Struct(Arc<BTreeMap<Sym, Type>>, Arc<Vec<Type>>),
     /// Sum type.
     ///
     /// Like structs, contains a list of type parameters.
-    Sum(BTreeMap<Sym, Type>, Vec<Type>),
+    Sum(Arc<BTreeMap<Sym, Type>>, Arc<Vec<Type>>),
     /// Arrays are just a type and a number.
-    Array(Box<Type>, usize),
+    Array(Arc<Type>, usize),
     /// A generic type parameter that has been given an explicit name.
     Generic(Sym),
     /// Unique borrow
-    Uniq(Box<Type>),
+    Uniq(Arc<Type>),
 }
 
 impl Type {
@@ -112,32 +112,32 @@ impl Type {
                 Type::Never => (),
                 Type::Enum(_ts) => (),
                 Type::Named(_, generics) => {
-                    for g in generics {
+                    for g in &**generics {
                         helper(g, accm);
                     }
                 }
                 Type::Func(args, rettype, typeparams) => {
-                    for t in args {
+                    for t in &**args {
                         helper(t, accm);
                     }
-                    for t in typeparams {
+                    for t in &**typeparams {
                         helper(t, accm);
                     }
                     helper(rettype, accm)
                 }
                 Type::Struct(body, generics) => {
-                    for (_, ty) in body {
+                    for (_, ty) in &**body {
                         helper(ty, accm);
                     }
-                    for g in generics {
+                    for g in &**generics {
                         helper(g, accm);
                     }
                 }
                 Type::Sum(body, generics) => {
-                    for (_, ty) in body {
+                    for (_, ty) in &**body {
                         helper(ty, accm);
                     }
-                    for g in generics {
+                    for g in &**generics {
                         helper(g, accm);
                     }
                 }
@@ -238,22 +238,30 @@ impl Type {
 
     /// Shortcut for getting the type for Unit
     pub fn unit() -> Self {
-        Self::Named(Sym::new("Tuple"), vec![])
+        Self::Named(Sym::new("Tuple"), Arc::new(vec![]))
     }
 
     /// Shortcut for getting the type for Never
     pub fn never() -> Self {
-        Self::Named(Sym::new("Never"), vec![])
+        Self::Named(Sym::new("Never"), Arc::new(vec![]))
     }
 
     /// Create a Tuple with the given values
-    pub fn tuple(args: Vec<Self>) -> Self {
+    pub fn tuple(args: Arc<Vec<Self>>) -> Self {
         Self::Named(Sym::new("Tuple"), args)
     }
 
     /// Used in some tests
     pub fn array(t: &Type, len: usize) -> Self {
-        Self::Array(Box::new(t.clone()), len)
+        Self::Array(Arc::new(t.clone()), len)
+    }
+
+    fn function(params: &[Type], rettype: &Type, generics: &[Type]) -> Self {
+        Type::Func(
+            Arc::new(Vec::from(params)),
+            Arc::new(rettype.clone()),
+            Arc::new(Vec::from(generics)),
+        )
     }
 
     fn _is_integer(&self) -> bool {
@@ -399,7 +407,7 @@ impl Type {
             // Types are identical, noop.
             (s, o) if s == o => (),
             (Type::Named(n1, args1), Type::Named(n2, args2)) if n1 == n2 => {
-                for (p1, p2) in args1.iter().zip(args2) {
+                for (p1, p2) in (&**args1).iter().zip(&**args2) {
                     p1._find_substs(p2, substitutions);
                 }
             }
@@ -416,7 +424,7 @@ impl Type {
                 if typeparams1.len() > 0 {
                     todo!()
                 }
-                for (p1, p2) in params1.iter().zip(params2) {
+                for (p1, p2) in (&**params1).iter().zip(&**params2) {
                     p1._find_substs(p2, substitutions);
                 }
                 rettype1._find_substs(rettype2, substitutions);
@@ -438,11 +446,11 @@ impl Type {
                 if !body1.keys().eq(body2.keys()) {
                     panic!("subst for sum type had non-matching keys")
                 }
-                for ((_nm1, t1), (_nm2, t2)) in body1.iter().zip(body2) {
+                for ((_nm1, t1), (_nm2, t2)) in (&**body1).iter().zip(&**body2) {
                     t1._find_substs(t2, substitutions);
                 }
 
-                for (p1, p2) in generics1.iter().zip(generics2) {
+                for (p1, p2) in (&**generics1).iter().zip(&**generics2) {
                     p1._find_substs(p2, substitutions);
                 }
             }
@@ -480,11 +488,15 @@ impl Type {
                 if typeparams1.len() > 0 {
                     todo!("Hsfjkdslfjs");
                 }
-                Type::Func(new_params, Box::new(new_rettype), vec![])
+                Type::Func(
+                    Arc::new(new_params),
+                    Arc::new(new_rettype),
+                    Arc::new(vec![]),
+                )
             }
             Type::Named(n1, args1) => {
                 let new_args = args1.iter().map(|p1| p1._apply_substs(substs)).collect();
-                Type::Named(*n1, new_args)
+                Type::Named(*n1, Arc::new(new_args))
             }
             Type::Struct(_, _) => unreachable!("see other unreachable in substitute()"),
             Type::Sum(body, generics) => {
@@ -493,9 +505,9 @@ impl Type {
                     .map(|(nm, ty)| (*nm, ty._apply_substs(substs)))
                     .collect();
                 let new_generics = generics.iter().map(|p1| p1._apply_substs(substs)).collect();
-                Type::Sum(new_body, new_generics)
+                Type::Sum(Arc::new(new_body), Arc::new(new_generics))
             }
-            Type::Array(body, len) => Type::Array(Box::new(body._apply_substs(substs)), *len),
+            Type::Array(body, len) => Type::Array(Arc::new(body._apply_substs(substs)), *len),
             Type::Generic(nm) => substs
                 .get(&nm)
                 .unwrap_or_else(|| panic!("No substitution found for generic named {}!", nm))
@@ -625,7 +637,7 @@ mod tests {
     #[test]
     fn check_name_format() {
         let args = vec![Type::i32(), Type::bool()];
-        let def = Type::Func(args, Box::new(Type::i32()), vec![]);
+        let def = Type::function(&args, &Type::i32(), &vec![]);
         let gotten_name = def.get_name();
         let desired_name = "fn(I32, Bool) I32";
         assert_eq!(&gotten_name, desired_name);

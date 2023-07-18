@@ -706,9 +706,9 @@ impl<'input> Parser<'input> {
         let (params, typeparams) = self.parse_fn_args();
         let rettype = self.try_parse_type().unwrap_or(Type::unit());
         ast::Signature {
-            params,
+            params: Arc::new(params),
             rettype,
-            typeparams,
+            typeparams: Arc::new(typeparams),
         }
     }
 
@@ -795,7 +795,7 @@ impl<'input> Parser<'input> {
     fn parse_fn_type(&mut self) -> Type {
         let (params, typeparams) = self.parse_type_list_with_typeparams();
         let rettype = self.try_parse_type().unwrap_or(Type::unit());
-        Type::Func(params, Box::new(rettype), typeparams)
+        Type::function(&params, &rettype, &typeparams)
     }
 
     /// Parse the fields for a struct *type decl*
@@ -890,19 +890,19 @@ impl<'input> Parser<'input> {
             }
         });
         self.expect(T::RBrace);
-        Some(Type::tuple(body))
+        Some(Type::tuple(Arc::new(body)))
     }
 
     fn try_parse_struct_type(&mut self) -> Option<Type> {
         let (fields, type_params) = self.parse_struct_fields();
         self.expect(T::End);
-        Some(Type::Struct(fields, type_params))
+        Some(Type::Struct(Arc::new(fields), Arc::new(type_params)))
     }
 
     fn parse_enum_type(&mut self) -> Type {
         let variants = self.parse_enum_fields();
         self.expect(T::End);
-        Type::Enum(variants)
+        Type::Enum(Arc::new(variants))
     }
 
     /// isomorphic-ish with parse_type_list()
@@ -941,7 +941,7 @@ impl<'input> Parser<'input> {
             .map(|ty| Type::Generic(ty))
             .collect();
         */
-        Type::Sum(fields, generics)
+        Type::Sum(Arc::new(fields), Arc::new(generics))
     }
 
     fn parse_exprs(&mut self) -> Vec<ast::Expr> {
@@ -1384,7 +1384,7 @@ impl<'input> Parser<'input> {
                     } else {
                         vec![]
                     };
-                    Type::Named(Sym::new(s), type_params)
+                    Type::Named(Sym::new(s), Arc::new(type_params))
                 }
             }
             T::At => {
@@ -1401,11 +1401,11 @@ impl<'input> Parser<'input> {
                 assert!(len >= 0);
                 self.expect(T::RBracket);
                 let inner = self.parse_type();
-                Type::Array(Box::new(inner), len as usize)
+                Type::Array(Arc::new(inner), len as usize)
             }
             T::Ampersand => {
                 let next = self.try_parse_type()?;
-                Type::Uniq(Box::new(next))
+                Type::Uniq(Arc::new(next))
             }
             _ => {
                 // Wind the parse stream back to wherever we started
@@ -1552,9 +1552,9 @@ mod tests {
             ast::Decl::Function {
                 name: Sym::new("foo"),
                 signature: ast::Signature {
-                    params: vec![(Sym::new("x"), i32_t.clone())],
+                    params: Arc::new(vec![(Sym::new("x"), i32_t.clone())]),
                     rettype: i32_t,
-                    typeparams: vec![],
+                    typeparams: Arc::new(vec![]),
                 },
                 body: vec![Expr::int(9)],
                 doc_comment: vec![],

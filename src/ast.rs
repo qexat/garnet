@@ -96,11 +96,11 @@ pub struct IfCase {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Signature {
     /// Parameters
-    pub params: Vec<(Sym, Type)>,
+    pub params: Arc<Vec<(Sym, Type)>>,
     /// Return type
     pub rettype: Type,
     /// Type parameters
-    pub typeparams: Vec<Type>,
+    pub typeparams: Arc<Vec<Type>>,
 }
 
 impl Signature {
@@ -108,8 +108,8 @@ impl Signature {
     pub fn to_type(&self) -> Type {
         let paramtypes = self.params.iter().map(|(_nm, ty)| ty.clone()).collect();
         Type::Func(
-            paramtypes,
-            Box::new(self.rettype.clone()),
+            Arc::new(paramtypes),
+            Arc::new(self.rettype.clone()),
             self.typeparams.clone(),
         )
     }
@@ -150,14 +150,14 @@ impl Signature {
                 let new_params = self
                     .params
                     .iter()
-                    .zip(params)
+                    .zip(params.as_ref())
                     .map(|((nm, _t1), t2)| (*nm, t2.clone()))
                     .collect();
                 let new_rettype = rettype.clone();
                 let new_type_params = typeparams.clone();
                 Self {
-                    params: new_params,
-                    rettype: *new_rettype,
+                    params: Arc::new(new_params),
+                    rettype: new_rettype.as_ref().clone(),
                     typeparams: new_type_params,
                 }
             }
