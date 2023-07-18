@@ -115,14 +115,6 @@ pub enum TokenKind {
     #[regex("[0-9][0-9_]*U32",  |lex| make_int(lex, 4, false))]
     #[regex("[0-9][0-9_]*U64",  |lex| make_int(lex, 8, false))]
     IntegerSize((i128, u8, bool)),
-    /*
-    #[regex("[0-9][0-9_]*U8", make_u8)]
-    #[regex("[0-9][0-9_]*U16", make_u16)]
-    #[regex("[0-9][0-9_]*U32", make_u32)]
-    #[regex("[0-9][0-9_]*U64", make_u64)]
-    #[regex("[0-9][0-9_]*U128", make_u128)]
-    IntegerSize((i128, u8)),
-    */
     #[regex("[0-9][0-9_]*", |lex| lex.slice().parse())]
     Integer(i128),
 
