@@ -4,12 +4,12 @@
 --   status: success
 
 
-type Foo(@Thing) = struct
-    a: @Thing,
+type Foo(Thing) = struct
+    a: Thing,
     b: Bool
 end
 
-fn id(|@T| x @T) @T =
+fn id(|T| x T) T =
     x
 end
 

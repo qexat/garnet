@@ -13,7 +13,7 @@ type Foo = struct
     b: Bool
 end
 
-fn id(x @T) @T =
+fn id(|T| x T) T =
     x
 end
 

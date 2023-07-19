@@ -11,7 +11,7 @@
 
 -- Test case for monomorphization of functions.
 
-fn identity(i @T) @T =
+fn identity(i T) T =
     let y = i
     y
 end

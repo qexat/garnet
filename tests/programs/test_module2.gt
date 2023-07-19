@@ -11,8 +11,8 @@ type String = I32
 
 -- TODO: Make the compiler mangle "Self" since it's a keyword in Rust
 -- Also "self" and "impl"
-type Show(@Selff) = struct
-    show: fn(@Selff) String
+type Show(Selff) = struct
+    show: fn(Selff) String
 end
 
 -- To make this work we need monomorphization, 'cause Rust refuses to
@@ -21,7 +21,7 @@ const IntShow Show(I32) = Show {
     .show = fn(x I32) String = String(x) end
 }
 
-fn show(show Show(@T), val @T) String =
+fn show(show Show(T), val T) String =
   show$.show(val)
 end
 

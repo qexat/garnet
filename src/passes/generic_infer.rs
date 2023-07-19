@@ -74,7 +74,9 @@ pub(super) fn generic_infer(ir: Ir) -> Ir {
             }
             D::Const { name, typ, init } => {
                 let _guard = symtbl.push_scope();
+                dbg!("dealing with const", name);
                 for name in typ.get_type_params() {
+                    dbg!(name);
                     symtbl.add_type(name, &Type::Generic(name));
                 }
                 D::Const {

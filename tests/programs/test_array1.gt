@@ -3,12 +3,12 @@
 -- Compile:
 --   status: success
 
-fn identity(i @T) @T =
-    let y @T = i
+fn identity(|T| i T) T =
+    let y T = i
     y
 end
 
-fn foo(i [3]@T) [3]@T =
+fn foo(|T| i [3]T) [3]T =
     i
 end
 

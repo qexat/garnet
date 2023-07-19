@@ -4,8 +4,8 @@
 --   status: success
 
 
-fn identity(i @T) @T =
-    let y @T = i
+fn identity(|T| i T) T =
+    let y T = i
     y
 end
 
