@@ -19,7 +19,9 @@
 
 fn foo() I32 =
     let y I32 = 2
-    -1
+    -- See https://todo.sr.ht/~icefox/garnetc/28
+    -- for this and related numbers needing type annotations
+    -1_I32
     y
 end
 
@@ -48,9 +50,9 @@ fn main() {} =
 
     let x I32 = 2 - 1
     let y I32 = 2
-    -1
+    -1_I32
     let z I32 = 2;
-    -1
+    -1_I32
     __println(x)
     __println(y)
     __println(z)
