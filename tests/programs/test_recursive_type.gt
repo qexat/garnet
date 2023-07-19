@@ -1,0 +1,16 @@
+-- Format:
+--   status: success
+-- Compile:
+--   status: error
+
+--- TODO: Detect this and do something sensible about it.
+type Foo = struct
+    x: I32,
+    y: I32,
+    z: Foo,
+end
+
+fn main() {} =
+    {}
+end
+
