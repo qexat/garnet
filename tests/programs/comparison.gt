@@ -36,15 +36,20 @@ fn main() {} =
     __println_bool(false /= true)
 
     __println(2)
-    __println_bool(1 == 1)
-    __println_bool(1 /= 0)
-    __println_bool(0 == 1)
-    __println_bool(0 == 0)
-    __println_bool(0 /= 1)
+    -- TODO LATER:
+    -- ah, so THIS is why rustc assumes an integer is I32 if it can't come
+    -- up with something better.  Type inference knows that `unknownint == unknownint`
+    -- is ok but cannot figure out what the unknownint actually is.
+    -- See https://todo.sr.ht/~icefox/garnetc/28
+    __println_bool(1_I32 == 1)
+    __println_bool(1_I32 /= 0)
+    __println_bool(0_I32 == 1)
+    __println_bool(0_I32 == 0)
+    __println_bool(0_I32 /= 1)
 
     __println(3)
-    __println_bool(0 < 1)
-    __println_bool(0 > 1)
-    __println_bool(0 <= 1)
-    __println_bool(0 >= 1)
+    __println_bool(0_I32 < 1)
+    __println_bool(0_I32 > 1)
+    __println_bool(0_I32 <= 1)
+    __println_bool(0_I32 >= 1)
 end

@@ -392,7 +392,11 @@ impl Tck {
         })
     }
 
-    /// Create a new type var with whatever we have about its type
+    /// Create a new type var with whatever we have about its type.
+    ///
+    /// Someday it may be worthwhile to dedupe type vars for
+    /// terminals like I32 or {} , but for now this is fine
+    /// (if inefficient and slightly confusing)
     pub fn insert(&mut self, info: TypeInfo) -> TypeId {
         // Generate a new ID for our type term
         self.id_counter += 1;
@@ -597,6 +601,11 @@ impl Tck {
         }
         use TypeInfo::*;
         match (self.get(&a).clone(), self.get(&b).clone()) {
+            // IDK what these integers are but they must be the same as each other
+            (Prim(PrimType::UnknownInt), Prim(PrimType::UnknownInt)) => {
+                self.vars.insert(b, TypeInfo::Ref(a));
+                Ok(())
+            }
             // Primitives just match directly
             (Prim(p1), Prim(p2)) if p1 == p2 => Ok(()),
             // Unknown integers unified with known integers become known
@@ -617,6 +626,10 @@ impl Tck {
             (Ref(a), _) => self.unify(symtbl, a, b),
             (_, Ref(b)) => self.unify(symtbl, a, b),
 
+            /*
+            (Prim(PrimType::UnknownInt), Unknown) => Ok(()),
+            (Unknown, Prim(PrimType::UnknownInt)) => Ok(()),
+            */
             // When we don't know anything about either term, assume that
             // they match and make the one we know nothing about reference the
             // one we may know something about
@@ -694,9 +707,6 @@ impl Tck {
                 self.vars.insert(b, TypeInfo::Ref(a));
                 self.unify(symtbl, body1, body2)
                 // todo!("propegate array lengths")
-            }
-            (Array(body1, len1), Array(body2, len2)) if len1 == len2 => {
-                self.unify(symtbl, body1, body2)
             }
             // For declared type parameters like @T they match if their names match.
             // TODO: And if they have been declared?  Not sure we can ever get to
@@ -1565,10 +1575,15 @@ fn typecheck_expr(
             // So if the body has len 0 we can't know what type it is.
             // So we create a new unknown and then try unifying it with
             // all the expressions in the body.
+
+            // Ok so this typechecks the first element of the array correctly
+            // but not subsequent ones.
             let body_type = tck.insert(TypeInfo::Unknown);
-            for expr in body {
-                let expr_type = typecheck_expr(tck, symtbl, func_rettype, expr)?;
-                tck.unify(symtbl, body_type, expr_type)?;
+            let last_expr_type = tck.insert(TypeInfo::Ref(body_type));
+            for inner_expr in body {
+                let expr_type = typecheck_expr(tck, symtbl, func_rettype, inner_expr)?;
+                //let intended_expr_type = tck.insert(TypeInfo::Ref(body_type));
+                tck.unify(symtbl, last_expr_type, expr_type)?;
             }
             let arr_type = tck.insert(TypeInfo::Array(body_type, Some(len)));
             tck.set_expr_type(expr, arr_type);

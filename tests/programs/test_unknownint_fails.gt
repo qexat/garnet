@@ -1,7 +1,11 @@
 -- Format:
 --   status: success
 -- Compile:
---   status: success
+--   status: error
+--   stderr:
+--     ...
+--     ...Unknown int in expr Lit...
+--     ...
 
 fn main() {} =
     let x = 3
