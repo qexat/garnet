@@ -166,6 +166,17 @@ impl Type {
         accm
     }
 
+    /// Shortcut for a named type with no type params
+    pub fn named0(s: impl AsRef<str>) -> Self {
+        Type::Named(Sym::new(s), vec![])
+    }
+
+    /// Shortcut for a generic type
+    /// Not much shorter, but it keeps test cases cleaner I guess
+    pub fn generic(s: impl AsRef<str>) -> Self {
+        Type::Generic(Sym::new(s))
+    }
+
     /// Shortcut for getting the type for an unknown int
     pub fn iunknown() -> Self {
         Self::Prim(PrimType::UnknownInt)

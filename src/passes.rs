@@ -105,6 +105,7 @@ fn expr_map(
     expr: ExprNode,
     f_pre: &mut dyn FnMut(ExprNode) -> ExprNode,
     f_post: &mut dyn FnMut(ExprNode) -> ExprNode,
+    ft: &mut dyn FnMut(Type) -> Type,
 ) -> ExprNode {
     let thing = f_pre(expr);
     let exprfn = &mut |e| match e {
@@ -117,12 +118,12 @@ fn expr_map(
         E::Break => e,
         E::EnumCtor { .. } => e,
         E::TupleCtor { body } => E::TupleCtor {
-            body: exprs_map(body, f_pre, f_post),
+            body: exprs_map(body, f_pre, f_post, ft),
         },
         E::StructCtor { body } => {
             let new_body = body
                 .into_iter()
-                .map(|(sym, vl)| (sym, expr_map(vl, f_pre, f_post)))
+                .map(|(sym, vl)| (sym, expr_map(vl, f_pre, f_post, ft)))
                 .collect();
             E::StructCtor { body: new_body }
         }
@@ -132,8 +133,8 @@ fn expr_map(
             body,
         } => E::TypeCtor {
             name,
-            type_params,
-            body: expr_map(body, f_pre, f_post),
+            type_params: types_map(type_params, ft),
+            body: expr_map(body, f_pre, f_post, ft),
         },
         E::SumCtor {
             name,
@@ -142,41 +143,41 @@ fn expr_map(
         } => E::SumCtor {
             name,
             variant,
-            body: expr_map(body, f_pre, f_post),
+            body: expr_map(body, f_pre, f_post, ft),
         },
         E::ArrayCtor { body } => E::ArrayCtor {
-            body: exprs_map(body, f_pre, f_post),
+            body: exprs_map(body, f_pre, f_post, ft),
         },
         E::TypeUnwrap { expr } => E::TypeUnwrap {
-            expr: expr_map(expr, f_pre, f_post),
+            expr: expr_map(expr, f_pre, f_post, ft),
         },
         E::TupleRef { expr, elt } => E::TupleRef {
-            expr: expr_map(expr, f_pre, f_post),
+            expr: expr_map(expr, f_pre, f_post, ft),
             elt,
         },
         E::StructRef { expr, elt } => E::StructRef {
-            expr: expr_map(expr, f_pre, f_post),
+            expr: expr_map(expr, f_pre, f_post, ft),
             elt,
         },
         E::ArrayRef { expr, idx } => E::ArrayRef {
-            expr: expr_map(expr, f_pre, f_post),
+            expr: expr_map(expr, f_pre, f_post, ft),
             idx,
         },
         E::Assign { lhs, rhs } => E::Assign {
-            lhs: expr_map(lhs, f_pre, f_post), // TODO: Think real hard about lvalues
-            rhs: expr_map(rhs, f_pre, f_post),
+            lhs: expr_map(lhs, f_pre, f_post, ft), // TODO: Think real hard about lvalues
+            rhs: expr_map(rhs, f_pre, f_post, ft),
         },
         E::BinOp { op, lhs, rhs } => E::BinOp {
             op,
-            lhs: expr_map(lhs, f_pre, f_post),
-            rhs: expr_map(rhs, f_pre, f_post),
+            lhs: expr_map(lhs, f_pre, f_post, ft),
+            rhs: expr_map(rhs, f_pre, f_post, ft),
         },
         E::UniOp { op, rhs } => E::UniOp {
             op,
-            rhs: expr_map(rhs, f_pre, f_post),
+            rhs: expr_map(rhs, f_pre, f_post, ft),
         },
         E::Block { body } => E::Block {
-            body: exprs_map(body, f_pre, f_post),
+            body: exprs_map(body, f_pre, f_post, ft),
         },
         E::Let {
             varname,
@@ -185,53 +186,54 @@ fn expr_map(
             mutable,
         } => E::Let {
             varname,
-            typename,
-            init: expr_map(init, f_pre, f_post),
+            typename: typename.map(|t| type_map(t, ft)),
+            init: expr_map(init, f_pre, f_post, ft),
             mutable,
         },
         E::If { cases } => {
             let new_cases = cases
                 .into_iter()
                 .map(|(test, case)| {
-                    let new_test = expr_map(test, f_pre, f_post);
-                    let new_cases = exprs_map(case, f_pre, f_post);
+                    let new_test = expr_map(test, f_pre, f_post, ft);
+                    let new_cases = exprs_map(case, f_pre, f_post, ft);
                     (new_test, new_cases)
                 })
                 .collect();
             E::If { cases: new_cases }
         }
         E::Loop { body } => E::Loop {
-            body: exprs_map(body, f_pre, f_post),
+            body: exprs_map(body, f_pre, f_post, ft),
         },
         E::Return { retval } => E::Return {
-            retval: expr_map(retval, f_pre, f_post),
+            retval: expr_map(retval, f_pre, f_post, ft),
         },
         E::Funcall {
             func,
             params,
             type_params,
         } => {
-            let new_func = expr_map(func, f_pre, f_post);
-            let new_params = exprs_map(params, f_pre, f_post);
+            let new_func = expr_map(func, f_pre, f_post, ft);
+            let new_params = exprs_map(params, f_pre, f_post, ft);
+            let new_type_params = types_map(type_params, ft);
             E::Funcall {
                 func: new_func,
                 params: new_params,
-                type_params,
+                type_params: new_type_params,
             }
         }
         E::Lambda { signature, body } => E::Lambda {
             signature,
-            body: exprs_map(body, f_pre, f_post),
+            body: exprs_map(body, f_pre, f_post, ft),
         },
         E::Typecast { e, to } => E::Typecast {
-            e: expr_map(e, f_pre, f_post),
-            to,
+            e: expr_map(e, f_pre, f_post, ft),
+            to: type_map(to, ft),
         },
         E::Ref { expr } => E::Ref {
-            expr: expr_map(expr, f_pre, f_post),
+            expr: expr_map(expr, f_pre, f_post, ft),
         },
         E::Deref { expr } => E::Deref {
-            expr: expr_map(expr, f_pre, f_post),
+            expr: expr_map(expr, f_pre, f_post, ft),
         },
     };
     let post_thing = thing.map(exprfn);
@@ -239,11 +241,11 @@ fn expr_map(
 }
 
 pub fn expr_map_pre(expr: ExprNode, f: &mut dyn FnMut(ExprNode) -> ExprNode) -> ExprNode {
-    expr_map(expr, f, &mut id)
+    expr_map(expr, f, &mut id, &mut id)
 }
 
 pub fn expr_map_post(expr: ExprNode, f: &mut dyn FnMut(ExprNode) -> ExprNode) -> ExprNode {
-    expr_map(expr, &mut id, f)
+    expr_map(expr, &mut id, f, &mut id)
 }
 
 /// Map functions over a list of exprs.
@@ -251,19 +253,20 @@ fn exprs_map(
     exprs: Vec<ExprNode>,
     f_pre: &mut dyn FnMut(ExprNode) -> ExprNode,
     f_post: &mut dyn FnMut(ExprNode) -> ExprNode,
+    ft: &mut dyn FnMut(Type) -> Type,
 ) -> Vec<ExprNode> {
     exprs
         .into_iter()
-        .map(|e| expr_map(e, f_pre, f_post))
+        .map(|e| expr_map(e, f_pre, f_post, ft))
         .collect()
 }
 
 fn exprs_map_pre(exprs: Vec<ExprNode>, f: &mut dyn FnMut(ExprNode) -> ExprNode) -> Vec<ExprNode> {
-    exprs_map(exprs, f, &mut id)
+    exprs_map(exprs, f, &mut id, &mut id)
 }
 
 fn _exprs_map_post(exprs: Vec<ExprNode>, f: &mut dyn FnMut(ExprNode) -> ExprNode) -> Vec<ExprNode> {
-    exprs_map(exprs, &mut id, f)
+    exprs_map(exprs, &mut id, f, &mut id)
 }
 
 fn decl_map_pre(
@@ -301,12 +304,12 @@ fn decl_map(
         } => D::Function {
             name,
             signature: signature_map(signature, ft),
-            body: exprs_map(body, fe_pre, fe_post),
+            body: exprs_map(body, fe_pre, fe_post, ft),
         },
         D::Const { name, typ, init } => D::Const {
             name,
             typ: type_map(typ, ft),
-            init: expr_map(init, fe_pre, fe_post),
+            init: expr_map(init, fe_pre, fe_post, ft),
         },
         D::TypeDef {
             name,

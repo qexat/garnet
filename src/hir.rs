@@ -99,7 +99,7 @@ impl fmt::Display for Decl {
                 typ: typename,
                 init,
             } => {
-                write!(f, "const {}: {} = ", name, typename.get_name())?;
+                write!(f, "const {} {} = ", name, typename.get_name())?;
                 init.write(1, f)?;
                 writeln!(f)?;
             }
@@ -357,13 +357,14 @@ impl Expr {
             } => {
                 write!(f, "(funcall ")?;
                 func.write(0, f)?;
+                write!(f, " |")?;
+                for ty in type_params {
+                    write!(f, "{},", ty.get_name())?;
+                }
+                write!(f, "|")?;
                 for b in params {
                     b.write(indent + 1, f)?;
                     write!(f, " ")?;
-                }
-                write!(f, "|")?;
-                for ty in type_params {
-                    write!(f, "{},", ty.get_name())?;
                 }
                 write!(f, ")")?;
             }
