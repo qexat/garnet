@@ -62,7 +62,6 @@ fn unparse_decl(d: &Decl, out: &mut dyn io::Write) -> io::Result<()> {
                     } else {
                         first = false;
                     }
-                    paramstr += "@";
                     paramstr += &*t.val();
                 }
                 writeln!(out, "type {}({}) = {}", name, paramstr, tname)?;

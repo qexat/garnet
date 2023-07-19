@@ -929,7 +929,7 @@ impl Symtbl {
             self.add_var(builtin.name, ty, false);
         }
     }
-    fn push_scope(&self) -> ScopeGuard {
+    pub(crate) fn push_scope(&self) -> ScopeGuard {
         self.frames.borrow_mut().push(ScopeFrame::default());
         ScopeGuard {
             scope: self.clone(),
@@ -956,7 +956,7 @@ impl Symtbl {
         None
     }
 
-    fn add_type(&self, name: Sym, ty: &Type) {
+    pub(crate) fn add_type(&self, name: Sym, ty: &Type) {
         self.frames
             .borrow_mut()
             .last_mut()
@@ -965,7 +965,7 @@ impl Symtbl {
             .insert(name, ty.to_owned());
     }
 
-    fn get_type(&self, ty: Sym) -> Option<Type> {
+    pub(crate) fn get_type(&self, ty: Sym) -> Option<Type> {
         for scope in self.frames.borrow().iter().rev() {
             let v = scope.types.get(&ty);
             if v.is_some() {
