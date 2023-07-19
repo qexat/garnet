@@ -3,7 +3,7 @@
 -- Compile:
 --   status: error
 
-type Foo(@T) = {I32, @T}
+type Foo(T) = {I32, T}
 
 fn thing(i I32, x Bool) Foo(Bool) =
     Foo{i, x}

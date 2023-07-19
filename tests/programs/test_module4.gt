@@ -3,12 +3,12 @@
 -- Compile:
 --   status: error
 
-type Idx(@Self, @Output) = struct
-    idx: fn(@Self, I32) @Output,
+type Idx(Self, Output) = struct
+    idx: fn(Self, I32) Output,
 end
 
-type List(@T) = struct
-    dummy_data: @T,
+type List(T) = struct
+    dummy_data: T,
 end
 
 fn foo(self List(I32), i I32) Bar =

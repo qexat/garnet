@@ -4,8 +4,8 @@
 --   status: error
 
 
-fn identity(i @T) @T =
-    let y @Heck = i
+fn identity(i T) T =
+    let y Heck = i
     y
 end
 

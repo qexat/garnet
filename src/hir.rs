@@ -108,7 +108,12 @@ impl fmt::Display for Decl {
                 typedecl,
                 params,
             } => {
-                writeln!(f, "type {}({:?}) = {}", name, params, typedecl.get_name())?;
+                let mut buf = String::new();
+                for param in params {
+                    buf += &*param.val();
+                    buf += ", ";
+                }
+                writeln!(f, "type {}({}) = {}", name, buf, typedecl.get_name())?;
             }
             D::Import { name, localname } => {
                 writeln!(f, "import {} as {}", name, localname)?;

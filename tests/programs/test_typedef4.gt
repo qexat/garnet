@@ -4,13 +4,13 @@
 --   status: success
 
 
-type Foo(@A) = {I32, @A}
+type Foo(A) = {I32, A}
 
-fn thing(i I32, x @A) Foo(@A) =
+fn thing(|A| i I32, x A) Foo(A) =
     Foo{i, x}
 end
 
-fn thing2(i I32, x @A) {I32, @A} =
+fn thing2(|A| i I32, x A) {I32, A} =
     {i, x}
 end
 

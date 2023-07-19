@@ -9,15 +9,15 @@
 --     42
 --     42
 
-fn foo(i @T) @T =
+fn foo(|T| i T) T =
     i
 end
 
-fn first(a @T1, b @T2) @T1 =
+fn first(|T1, T2| a T1, b T2) T1 =
     a
 end
 
-fn second(a @T1, b @T2) @T2 =
+fn second(|T1, T2| a T1, b T2) T2 =
     b
 end
 
