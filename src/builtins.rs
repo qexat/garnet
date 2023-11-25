@@ -1,8 +1,5 @@
 //! A place for us to stick compiler builtins and the metadata they need,
 //! instead of having them scattered all over.
-//!
-//! TODO: We would really benefit from having a function that can take in a single
-//! number type and output all the math/binary/logic ops for that number.
 
 use std::collections::BTreeMap;
 

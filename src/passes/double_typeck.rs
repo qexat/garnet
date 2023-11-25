@@ -2,6 +2,9 @@
 //! Doesn't actually change anything, just walks through
 //! the entire IR tree and makes sure that every expression
 //! has a real type.
+//!
+//! Technically unnecessary but occasionally useful for
+//! debugging stuff.
 
 use crate::hir::*;
 use crate::passes::*;

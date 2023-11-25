@@ -1,8 +1,7 @@
 //! Compile our HIR to Rust.
 //! This is kinda silly, but hey why not.
 //!
-//!
-//! Potential improvements:
+//! Potential optimizations:
 //!  * Use something smarter than strings to collect output -- could just
 //!    output to a stream like the formatter does.  This is a little weird though 'cause
 //!    we often want to build pieces of code, and then combine them together at the end.
@@ -96,7 +95,7 @@ fn compile_typename(t: &Type) -> Cow<'static, str> {
             //         }
             //         accm += ")";
             //         accm.into()
-            passes::generate_type_name(t).into()
+            passes::mangled_type_name(t).into()
         }
         Enum(_things) => {
             // Construct names for anonymous enums by concat'ing the member
@@ -109,7 +108,7 @@ fn compile_typename(t: &Type) -> Cow<'static, str> {
             //     accm += &*nm.val();
             // }
             // accm.into()
-            passes::generate_type_name(t).into()
+            passes::mangled_type_name(t).into()
         }
         Generic(s) => mangle_name(&s.val()).into(),
         Array(t, len) => format!("[{};{}]", compile_typename(t), len).into(),
