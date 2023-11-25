@@ -288,6 +288,8 @@ impl Expr {
         Self::TupleCtor { body: vec![] }
     }
 
+    /// Write the given HIR expr as a slightly-jank sexpr-y format.
+    /// It's not too pretty, but is way easier to eyeball than derive(Debug) output.
     pub fn write(&self, indent: usize, f: &mut dyn fmt::Write) -> fmt::Result {
         use Expr::*;
         for _ in 0..(indent * 2) {
@@ -483,23 +485,20 @@ impl Expr {
 impl ExprNode {
     /// Shortcut function for making literal bools
     pub fn bool(b: bool) -> Self {
-        Self::new(Expr::Lit {
-            val: Literal::Bool(b),
-        })
+        Self::new(Expr::bool(b))
     }
 
     /// Shortcut function for making literal integers
     pub fn int(i: i128) -> Self {
-        Self::new(Expr::Lit {
-            val: Literal::Integer(i),
-        })
+        Self::new(Expr::int(i))
     }
 
     /// Shortcut function for making literal unit
     pub fn unit() -> Self {
-        Self::new(Expr::TupleCtor { body: vec![] })
+        Self::new(Expr::unit())
     }
 }
+
 /// A top-level declaration in the source file.
 /// Like ExprNode, contains a type annotation.
 #[derive(Debug, Clone, PartialEq)]
@@ -618,7 +617,7 @@ fn lower_expr(expr: &ast::Expr) -> ExprNode {
         }
         E::If { cases, falseblock } => {
             // One of the actual transformations, this makes all if/else statements
-            // into essentially a switch: `if ... else if ... else if ... else if true ... end`
+            // into essentially a cond: `if ... else if ... else if ... else if true ... end`
             // This is more consistent and easier to handle for typechecking.
             assert!(!cases.is_empty(), "Should never happen");
             let mut cases: Vec<_> = cases
@@ -644,7 +643,7 @@ fn lower_expr(expr: &ast::Expr) -> ExprNode {
         }
         E::While { cond, body } => {
             // While loops just get turned into a Loop containing
-            // if not cond then break end
+            // `if not cond then break end`
             let inverted_cond = E::UniOp {
                 op: UOp::Not,
                 rhs: cond.clone(),
@@ -742,6 +741,7 @@ fn lower_expr(expr: &ast::Expr) -> ExprNode {
 fn lower_exprs(exprs: &[ast::Expr]) -> Vec<ExprNode> {
     exprs.iter().map(lower_expr).collect()
 }
+
 fn lower_typedef(accm: &mut Vec<Decl>, name: Sym, ty: &Type, params: &[Sym]) {
     use Decl::*;
     match ty {
@@ -785,6 +785,7 @@ fn lower_typedef(accm: &mut Vec<Decl>, name: Sym, ty: &Type, params: &[Sym]) {
             };
             accm.push(new_constdef);
         }
+
         // For `type Foo = sum X {}, Y Thing end`
         // synthesize
         // const Foo = {

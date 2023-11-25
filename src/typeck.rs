@@ -130,7 +130,7 @@ pub enum TypeError {
     },
     TypeListMismatch {
         // We can't necessarily display TypeId's sensibly, so I guess
-        // we haven to turn them into strings
+        // we have to turn them into strings
         expected: String,
         got: String,
     },
@@ -216,7 +216,9 @@ impl std::fmt::Display for TypeError {
 }
 
 impl TypeError {
-    /// TODO: This should just be turned into the Display impl
+    /// TODO: This should just be turned into the Display impl.
+    /// But we might need access to the Tck sometimes?  Do we make
+    /// it so that has to happen when the error is created?  I guess so
     pub fn format(&self) -> String {
         match self {
             TypeError::UnknownVar(sym) => format!("Unknown var: {}", sym.val()),
@@ -358,6 +360,7 @@ impl Tck {
             )
         })
     }
+
     /// Save the type variable associated with the given expr.
     /// Panics if it is redefining the expr's type.
     fn set_expr_type(&mut self, expr: &hir::ExprNode, ty: TypeId) {
@@ -483,15 +486,10 @@ impl Tck {
     }
 
     /// Same as `get_struct_field_type()` but takes a tuple type and an integer.
-    pub fn get_tuple_field_type(
-        &mut self,
-        symtbl: &Symtbl,
-        tuple_type: TypeId,
-        n: usize,
-    ) -> TypeId {
+    pub fn get_tuple_field_type(&mut self, tuple_type: TypeId, n: usize) -> TypeId {
         use TypeInfo::*;
         match self.get(&tuple_type).clone() {
-            Ref(t) => self.get_tuple_field_type(symtbl, t, n),
+            Ref(t) => self.get_tuple_field_type(t, n),
             Named(nm, tys) if &*nm.val() == "Tuple" => tys.get(n).cloned().unwrap_or_else(|| {
                 panic!("Tuple has no field {}, valid fields are: {:#?}", n, tys)
             }),
@@ -1356,7 +1354,7 @@ fn typecheck_expr(
         TupleRef { expr: e, elt } => {
             typecheck_expr(tck, symtbl, func_rettype, e)?;
             let tuple_type = tck.get_expr_type(e);
-            let field_type = tck.get_tuple_field_type(symtbl, tuple_type, *elt);
+            let field_type = tck.get_tuple_field_type(tuple_type, *elt);
             trace!(
                 "Heckin tuple ref...  Type of {:?}.{} is {:?}",
                 e,

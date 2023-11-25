@@ -86,7 +86,7 @@ fn id<T>(thing: T) -> T {
 ///
 /// To handle multiple expressions this will turn more into a fold()
 /// than a map(), it will take an accumulator that gets threaded through
-/// everything...  That gets *very weird* though and I manage to pour
+/// everything...  That gets *very weird* though and I managed to pour
 /// my coffee on my cat this morning so let's give that a miss for now.
 /// As it is, this can only transform subtrees into other subtrees.
 ///
@@ -389,7 +389,9 @@ fn signature_map(sig: hir::Signature, f: &mut dyn FnMut(Type) -> Type) -> hir::S
     }
 }
 
-pub fn generate_type_name(typ: &Type) -> String {
+/// Generates a mangled type name for the given type that is unique (hopefully) and
+/// printable.  See also TODO on crate::Type.
+pub fn mangled_type_name(typ: &Type) -> String {
     match typ {
         Type::Enum(fields) => {
             let fieldnames: Vec<_> = fields
@@ -400,17 +402,17 @@ pub fn generate_type_name(typ: &Type) -> String {
             format!("__Enum{}", fieldstr)
         }
         Type::Func(params, rettype, typeparams) => {
-            let paramnames: Vec<String> = params.iter().map(generate_type_name).collect();
+            let paramnames: Vec<String> = params.iter().map(mangled_type_name).collect();
             let paramstr = paramnames.join("_");
-            let retname = generate_type_name(rettype);
-            let tparamnames: Vec<String> = typeparams.iter().map(generate_type_name).collect();
+            let retname = mangled_type_name(rettype);
+            let tparamnames: Vec<String> = typeparams.iter().map(mangled_type_name).collect();
             let tparamstr = tparamnames.join("_");
             format!("__Func__{}__{}_{}", paramstr, retname, tparamstr)
         }
         Type::Struct(body, _) => {
             let fieldnames: Vec<_> = body
                 .iter()
-                .map(|(nm, ty)| format!("{}_{}", nm, generate_type_name(ty)))
+                .map(|(nm, ty)| format!("{}_{}", nm, mangled_type_name(ty)))
                 .collect();
             let fieldstr = fieldnames.join("_");
             format!("__Struct__{}", fieldstr)
@@ -418,7 +420,7 @@ pub fn generate_type_name(typ: &Type) -> String {
         Type::Sum(body, _) => {
             let fieldnames: Vec<_> = body
                 .iter()
-                .map(|(nm, ty)| format!("{}_{}", nm, generate_type_name(ty)))
+                .map(|(nm, ty)| format!("{}_{}", nm, mangled_type_name(ty)))
                 .collect();
             let fieldstr = fieldnames.join("_");
             format!("__Sum__{}", fieldstr)
@@ -427,17 +429,17 @@ pub fn generate_type_name(typ: &Type) -> String {
             format!("__G{}", name)
         }
         Type::Named(name, fields) => {
-            let field_names: Vec<_> = fields.iter().map(generate_type_name).collect();
+            let field_names: Vec<_> = fields.iter().map(mangled_type_name).collect();
             let field_str = field_names.join("_");
             format!("__Named{}__{}", name, field_str)
         }
         Type::Prim(p) => p.get_name().into_owned(),
         Type::Never => format!("!"),
         Type::Array(t, len) => {
-            format!("__Arr{}__{}", generate_type_name(t), len)
+            format!("__Arr{}__{}", mangled_type_name(t), len)
         }
         Type::Uniq(t) => {
-            format!("__Uniq__{}", generate_type_name(t))
+            format!("__Uniq__{}", mangled_type_name(t))
         }
     }
 }

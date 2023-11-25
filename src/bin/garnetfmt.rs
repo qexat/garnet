@@ -1,4 +1,5 @@
 //! A code formatter.
+//! Very simple and dumb.
 
 use std::io::{self, Cursor};
 use std::path::PathBuf;

@@ -1,4 +1,4 @@
-//! Garnet compiler guts.
+//! Garnet compiler driver functions and utility funcs.
 
 //#![deny(missing_docs)]
 
@@ -66,7 +66,7 @@ impl PrimType {
 ///
 /// TODO someday: We should make a consistent and very good
 /// name-mangling scheme for types, will make some backend stuff
-/// simpler.
+/// simpler.  Also see passes::generate_type_name.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Type {
     /// Primitive type with no subtypes
@@ -609,7 +609,7 @@ impl Cx {
 
 /// Main driver function.
 /// Compile a given source string to Rust source code, or return an error.
-/// TODO: Better parser errors with locations
+/// TODO: Better errors with locations
 ///
 /// Parse -> lower to IR -> run transformation passes
 /// -> typecheck -> more passes -> codegen
