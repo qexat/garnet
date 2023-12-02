@@ -191,6 +191,15 @@ impl Symtbl {
                 let _guard = self.push_scope();
                 self.handle_exprs(body);
             }
+            Loop { .. } => todo!(),
+            Funcall {
+                func,
+                params,
+                type_params: _,
+            } => {
+                self.handle_expr(func);
+                self.handle_exprs(params);
+            }
             Let { varname, init, .. } => {
                 // init expression cannot refer to the same
                 // symbol name
@@ -199,11 +208,70 @@ impl Symtbl {
             }
             If { cases } => {
                 for (test, body) in cases {
-                todo!()
-                    
+                    // The test cannot introduce a new scope unless
+                    // it contains some cursed structure like a block
+                    // or fn that introduces a new scope anyway, so.
+                    self.handle_expr(test);
+                    let _guard = self.push_scope();
+                    self.handle_exprs(body);
                 }
             }
-            _ => todo!(),
+            EnumCtor { name, .. } => {
+                todo!()
+            }
+            TupleCtor { body } => {
+                self.handle_exprs(body);
+            }
+            TupleRef { expr: e, .. } => {
+                self.handle_expr(e);
+            }
+            StructCtor { body } => {
+                for (_nm, expr) in body {
+                    self.handle_expr(expr);
+                }
+            }
+            StructRef { expr: e, .. } => {
+                todo!()
+            }
+            Assign { .. } => {
+                todo!()
+            }
+            Break => {}
+            Lambda { .. } => {
+                todo!()
+            }
+            Return { retval } => {
+                self.handle_expr(retval);
+            }
+            TypeCtor {
+                name,
+                type_params: _,
+                body,
+            } => {
+                self.bind_new_symbol(*name);
+                self.handle_expr(body);
+            }
+            TypeUnwrap { expr: e } => {
+                self.handle_expr(e);
+            }
+            SumCtor { .. } => {
+                todo!()
+            }
+            ArrayCtor { .. } => {
+                todo!()
+            }
+            ArrayRef { .. } => {
+                todo!()
+            }
+            Typecast { .. } => {
+                todo!()
+            }
+            Ref { .. } => {
+                todo!()
+            }
+            Deref { .. } => {
+                todo!()
+            }
         }
     }
 }
