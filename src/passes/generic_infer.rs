@@ -2,7 +2,6 @@
 //! if they are not declared.
 //! We could do this in the typechecker but I think it will be simpler as a preprocessing pass.
 
-use crate::hir::{Decl as D, Expr as E, Ir, Signature};
 use crate::passes::*;
 
 // This is slightly bonkers and a big dependency inversion but it also does
@@ -32,7 +31,7 @@ fn generic_infer_type(symtbl: &Symtbl, ty: Type) -> Type {
 fn generic_infer_sig(symtbl: &Symtbl, sig: Signature) -> Signature {
     sig
 }
-    */
+*/
 
 /// Basically, if we see a Named type mentioned, we check to see if it's
 /// in the symtbl.  If it is, we replace it with a Generic.  Otherwise
