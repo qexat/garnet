@@ -2,15 +2,14 @@
 //! Operates on the HIR.
 
 use std::borrow::Cow;
-use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
-use std::rc::Rc;
 
 use log::*;
 
 use crate::*;
 
 use crate::hir;
+use crate::symtbl::Symtbl;
 use crate::{Sym, Type};
 
 /// A identifier to uniquely refer to our `TypeInfo`'s
@@ -882,100 +881,6 @@ impl Tck {
         helper(self, known_types, t)
     }
 }
-
-#[derive(Clone, Default)]
-struct ScopeFrame {
-    /// Values are (type, mutability)
-    symbols: BTreeMap<Sym, (TypeId, bool)>,
-    types: BTreeMap<Sym, Type>,
-}
-
-/// Basic symbol table that maps names to type ID's
-/// and manages scope.
-/// Looks ugly, works well.
-#[derive(Clone)]
-pub struct Symtbl {
-    frames: Rc<RefCell<Vec<ScopeFrame>>>,
-}
-
-impl Default for Symtbl {
-    /// We start with an empty toplevel scope existing,
-    /// then add some builtin's to it.
-    fn default() -> Self {
-        Self {
-            frames: Rc::new(RefCell::new(vec![ScopeFrame::default()])),
-        }
-    }
-}
-
-pub struct ScopeGuard {
-    scope: Symtbl,
-}
-
-impl Drop for ScopeGuard {
-    fn drop(&mut self) {
-        self.scope
-            .frames
-            .borrow_mut()
-            .pop()
-            .expect("Scope stack underflow");
-    }
-}
-
-impl Symtbl {
-    fn add_builtins(&self, tck: &mut Tck) {
-        for builtin in &*builtins::BUILTINS {
-            let ty = tck.insert_known(&builtin.sig);
-            self.add_var(builtin.name, ty, false);
-        }
-    }
-    fn push_scope(&self) -> ScopeGuard {
-        self.frames.borrow_mut().push(ScopeFrame::default());
-        ScopeGuard {
-            scope: self.clone(),
-        }
-    }
-
-    fn add_var(&self, var: Sym, ty: TypeId, mutable: bool) {
-        self.frames
-            .borrow_mut()
-            .last_mut()
-            .expect("Scope stack underflow")
-            .symbols
-            .insert(var, (ty, mutable));
-    }
-
-    /// Checks whether the var exists in the currently alive scopes
-    fn get_var_binding(&self, var: Sym) -> Option<(TypeId, bool)> {
-        for scope in self.frames.borrow().iter().rev() {
-            let v = scope.symbols.get(&var);
-            if v.is_some() {
-                return v.cloned();
-            }
-        }
-        None
-    }
-
-    fn add_type(&self, name: Sym, ty: &Type) {
-        self.frames
-            .borrow_mut()
-            .last_mut()
-            .expect("Scope stack underflow")
-            .types
-            .insert(name, ty.to_owned());
-    }
-
-    fn get_type(&self, ty: Sym) -> Option<Type> {
-        for scope in self.frames.borrow().iter().rev() {
-            let v = scope.types.get(&ty);
-            if v.is_some() {
-                return v.cloned();
-            }
-        }
-        None
-    }
-}
-
 fn infer_lit(lit: &ast::Literal) -> TypeInfo {
     match lit {
         ast::Literal::Integer(_) => TypeInfo::Prim(PrimType::UnknownInt),
@@ -1688,6 +1593,13 @@ fn predeclare_decls(tck: &mut Tck, symtbl: &mut Symtbl, decls: &[hir::Decl]) {
     }
 }
 
+fn add_builtins(symtbl: &Symtbl, tck: &mut typeck::Tck) {
+    for builtin in &*builtins::BUILTINS {
+        let ty = tck.insert_known(&builtin.sig);
+        symtbl.add_var(builtin.name, ty, false);
+    }
+}
+
 /// From example code:
 /// "In reality, the most common approach will be to walk your AST, assigning type
 /// terms to each of your nodes with whatever information you have available. You
@@ -1697,7 +1609,7 @@ pub fn typecheck(ast: &hir::Ir) -> Result<Tck, TypeError> {
     let mut t = Tck::default();
     let tck = &mut t;
     let symtbl = &mut Symtbl::default();
-    symtbl.add_builtins(tck);
+    add_builtins(symtbl, tck);
     predeclare_decls(tck, symtbl, &ast.decls);
     for decl in &ast.decls {
         use hir::Decl::*;
@@ -1759,13 +1671,13 @@ pub fn typecheck(ast: &hir::Ir) -> Result<Tck, TypeError> {
         }
     }
     // Print out toplevel symbols
-    for (name, id) in &symtbl.frames.borrow().last().unwrap().symbols {
+    symtbl.for_toplevel(|name, id| {
         info!(
             "value {} type is {:?}",
             name,
-            tck.reconstruct(id.0).map(|t| t.get_name())
-        );
-    }
+            tck.reconstruct(id).map(|t| t.get_name())
+        )
+    });
     trace!("Type variables:");
     for (id, info) in &tck.vars {
         trace!("  ${} = {info:?}", id.0);
