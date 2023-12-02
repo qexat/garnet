@@ -19,6 +19,7 @@ pub mod hir;
 mod intern;
 pub mod parser;
 pub mod passes;
+pub mod symtbl;
 pub mod typeck;
 
 /// The interner.  It's the ONLY part we have to actually
