@@ -77,6 +77,13 @@ impl Drop for ScopeGuard {
 }
 
 impl Symtbl {
+    fn add_builtins(&mut self) {
+        for builtin in &*builtins::BUILTINS {
+            let new = self.new_unchanged_symbol(builtin.name);
+            info!("New stuff: {:?}", new);
+        }
+    }
+
     /// Creates a new symbol with the name of the given one
     /// and a unique numerical suffix.
     fn gensym(&mut self, base: Sym) -> UniqueSym {
@@ -169,10 +176,29 @@ impl Symtbl {
         }
     }
 
+    /// Insert a new symbol that is actually identical to the given one,
+    //
+    fn new_unchanged_symbol(&mut self, sym: Sym) -> UniqueSym {
+        if self.binding_exists(sym) {
+            panic!("Attempting to create duplicate symbol {}", sym);
+        } else {
+            let new_sym = UniqueSym(sym);
+            self.frames
+                .borrow_mut()
+                .last_mut()
+                .expect("Scope stack underflow")
+                .symbols
+                .insert(sym, new_sym);
+            self.unique_symbols.insert(new_sym, SymbolInfo::default());
+            new_sym
+        }
+    }
+
     fn handle_exprs(&mut self, exprs: Vec<hir::ExprNode>) -> Vec<hir::ExprNode> {
-        let f = &mut |e| self.handle_expr2(e);
-        //exprs.into_iter().map(|e| e.map(f)).collect()
-        passes::exprs_map_pre(exprs, f)
+        trace!("Handling exprs");
+        //let f = &mut |e| self.handle_expr2(e);
+        exprs.into_iter().map(|e| self.handle_expr(e)).collect()
+        //passes::exprs_map_pre(exprs, f)
     }
 
     /// TODO: These can't *quite* be part of the Pass framework,
@@ -182,148 +208,56 @@ impl Symtbl {
     /// probably make it fit if we tried hard enough but I'm not
     /// sure it's worth it, so for now we'll just brute-force
     /// it and see how it looks at the end.
-    fn handle_expr(&mut self, expr: hir::Expr) -> hir::Expr {
+    fn handle_expr(&mut self, expr: hir::ExprNode) -> hir::ExprNode {
         use hir::Expr::*;
-        // you know things are going well when you accidentally invent
-        // the Y combinator
-        let ff = &mut |e| self.handle_expr(e);
-        match expr {
+        let f = &mut |e| match e {
+            Lit { val } => Lit { val },
             Var { name } => {
                 let new_name = self.really_get_binding(name);
                 Var { name: new_name.0 }
             }
             BinOp { op, lhs, rhs } => BinOp {
                 op,
-                lhs: lhs.map(ff),
-                rhs: rhs.map(ff),
+                lhs: self.handle_expr(lhs),
+                rhs: self.handle_expr(rhs),
             },
-            /*
-            UniOp { rhs, .. } => {
-                self.handle_expr(rhs);
-            }
+            UniOp { rhs, op } => UniOp {
+                op,
+                rhs: self.handle_expr(rhs),
+            },
             Block { body } => {
                 let _guard = self.push_scope();
-                self.handle_exprs(body);
+                let new_body = self.handle_exprs(body);
+                Block { body: new_body }
             }
             Loop { .. } => todo!(),
             Funcall {
                 func,
                 params,
-                type_params: _,
+                type_params,
             } => {
-                self.handle_expr(func);
-                self.handle_exprs(params);
-            }
-            Let { varname, init, .. } => {
-                // init expression cannot refer to the same
-                // symbol name
-                self.handle_expr(init);
-                self.bind_new_symbol(*varname);
-            }
-            If { cases } => {
-                for (test, body) in cases {
-                    // The test cannot introduce a new scope unless
-                    // it contains some cursed structure like a block
-                    // or fn that introduces a new scope anyway, so.
-                    self.handle_expr(test);
-                    let _guard = self.push_scope();
-                    self.handle_exprs(body);
-                }
-            }
-            EnumCtor { name, .. } => {
-                todo!()
-            }
-            TupleCtor { body } => {
-                self.handle_exprs(body);
-            }
-            TupleRef { expr: e, .. } => {
-                self.handle_expr(e);
-            }
-            StructCtor { body } => {
-                for (_nm, expr) in body {
-                    self.handle_expr(expr);
-                }
-            }
-            StructRef { expr: e, .. } => {
-                todo!()
-            }
-            Assign { .. } => {
-                todo!()
-            }
-            Break => {}
-            Lambda { .. } => {
-                todo!()
-            }
-            Return { retval } => {
-                self.handle_expr(retval);
-            }
-            TypeCtor {
-                name,
-                type_params: _,
-                body,
-            } => {
-                self.bind_new_symbol(*name);
-                self.handle_expr(body);
-            }
-            TypeUnwrap { expr: e } => {
-                self.handle_expr(e);
-            }
-            SumCtor { .. } => {
-                todo!()
-            }
-            ArrayCtor { .. } => {
-                todo!()
-            }
-            ArrayRef { .. } => {
-                todo!()
-            }
-            Typecast { .. } => {
-                todo!()
-            }
-            Ref { .. } => {
-                todo!()
-            }
-            Deref { .. } => {
-                todo!()
-            }
-                            */
-            other => other,
-        }
-    }
-
-    fn handle_expr2(&mut self, expr: hir::ExprNode) -> hir::ExprNode {
-        use hir::Expr::*;
-        let f = &mut |e| match e {
-            Var { name } => {
-                let new_name = self.really_get_binding(name);
-                Var { name: new_name.0 }
-            }
-            Block { body } => {
-                let _guard = self.push_scope();
-                Block {
-                    body: self.handle_exprs(body),
-                }
-            }
-            Loop { body } => {
-                let _guard = self.push_scope();
-                Loop {
-                    body: self.handle_exprs(body),
+                let func = self.handle_expr(func);
+                let params = self.handle_exprs(params);
+                Funcall {
+                    func,
+                    params,
+                    type_params,
                 }
             }
             Let {
                 varname,
-                typename,
                 init,
+                typename,
                 mutable,
             } => {
                 // init expression cannot refer to the same
                 // symbol name
-                let init = self.handle_expr2(init);
+                let init = self.handle_expr(init);
                 let varname = self.bind_new_symbol(varname).0;
                 Let {
                     varname,
-                    typename,
                     init,
+                    typename,
                     mutable,
                 }
             }
@@ -334,28 +268,30 @@ impl Symtbl {
                         // The test cannot introduce a new scope unless
                         // it contains some cursed structure like a block
                         // or fn that introduces a new scope anyway, so.
-                        let test = self.handle_expr2(test);
+                        let t = self.handle_expr(test);
                         let _guard = self.push_scope();
-                        let body = self.handle_exprs(body);
-                        (test, body)
+                        let b = self.handle_exprs(body);
+                        (t, b)
                     })
                     .collect();
                 If { cases }
             }
-            /*
             EnumCtor { name, .. } => {
                 todo!()
             }
-            TupleCtor { body } => {
-                self.handle_exprs(body);
-            }
-            TupleRef { expr: e, .. } => {
-                self.handle_expr(e);
-            }
+            TupleCtor { body } => TupleCtor {
+                body: self.handle_exprs(body),
+            },
+            TupleRef { expr, elt } => TupleRef {
+                expr: self.handle_expr(expr),
+                elt,
+            },
             StructCtor { body } => {
-                for (_nm, expr) in body {
-                    self.handle_expr(expr);
-                }
+                let body = body
+                    .into_iter()
+                    .map(|(nm, expr)| (nm, self.handle_expr(expr)))
+                    .collect();
+                StructCtor { body }
             }
             StructRef { expr: e, .. } => {
                 todo!()
@@ -363,24 +299,44 @@ impl Symtbl {
             Assign { .. } => {
                 todo!()
             }
-            Break => {}
-            Lambda { .. } => {
-                todo!()
+            Break => Break,
+            Lambda { signature, body } => {
+                let _scope = self.push_scope();
+                let new_params = signature
+                    .params
+                    .into_iter()
+                    .map(|(sym, typ)| (self.bind_new_symbol(sym).0, typ))
+                    .collect();
+                let new_sig = hir::Signature {
+                    params: new_params,
+                    rettype: signature.rettype,
+                    typeparams: signature.typeparams,
+                };
+                let new_body = self.handle_exprs(body);
+                Lambda {
+                    signature: new_sig,
+                    body: new_body,
+                }
             }
-            Return { retval } => {
-                self.handle_expr(retval);
-            }
+            Return { retval } => Return {
+                retval: self.handle_expr(retval),
+            },
             TypeCtor {
                 name,
-                type_params: _,
+                type_params,
                 body,
             } => {
-                self.bind_new_symbol(*name);
-                self.handle_expr(body);
+                //let name = self.bind_new_symbol(name).0;
+                let body = self.handle_expr(body);
+                TypeCtor {
+                    name,
+                    type_params,
+                    body,
+                }
             }
-            TypeUnwrap { expr: e } => {
-                self.handle_expr(e);
-            }
+            TypeUnwrap { expr } => TypeUnwrap {
+                expr: self.handle_expr(expr),
+            },
             SumCtor { .. } => {
                 todo!()
             }
@@ -399,10 +355,155 @@ impl Symtbl {
             Deref { .. } => {
                 todo!()
             }
-                            */
-            other => other,
         };
         expr.map(f)
+    }
+
+    fn _handle_expr2(&mut self, expr: hir::ExprNode) -> hir::ExprNode {
+        eprintln!("Called with {:?}", expr);
+        use hir::Expr::*;
+        let f = &mut |e| {
+            info!("Mapping {:?}", e);
+            match e {
+                Var { name } => {
+                    let new_name = self.really_get_binding(name);
+                    Var { name: new_name.0 }
+                }
+                Block { body } => {
+                    let _guard = self.push_scope();
+                    Block {
+                        body: self.handle_exprs(body),
+                    }
+                }
+                Loop { body } => {
+                    let _guard = self.push_scope();
+                    Loop {
+                        body: self.handle_exprs(body),
+                    }
+                }
+                Funcall { ..
+                    // func,
+                    // params,
+                    // type_params,
+                } => {
+                    eprintln!("Handling funcall");
+                    e
+                }
+                Let {
+                    varname,
+                    typename,
+                    init,
+                    mutable,
+                } => {
+                    // init expression cannot refer to the same
+                    // symbol name
+                    let init = self._handle_expr2(init);
+                    let varname = self.bind_new_symbol(varname).0;
+                    Let {
+                        varname,
+                        typename,
+                        init,
+                        mutable,
+                    }
+                }
+                If { cases } => {
+                    let cases = cases
+                        .into_iter()
+                        .map(|(test, body)| {
+                            // The test cannot introduce a new scope unless
+                            // it contains some cursed structure like a block
+                            // or fn that introduces a new scope anyway, so.
+                            let test = self._handle_expr2(test);
+                            let _guard = self.push_scope();
+                            let body = self.handle_exprs(body);
+                            (test, body)
+                        })
+                        .collect();
+                    If { cases }
+                }
+                /*
+                EnumCtor { name, .. } => {
+                    todo!()
+                }
+                TupleCtor { body } => {
+                    self.handle_exprs(body);
+                }
+                TupleRef { expr: e, .. } => {
+                    self.handle_expr(e);
+                }
+                StructCtor { body } => {
+                    for (_nm, expr) in body {
+                        self.handle_expr(expr);
+                    }
+                }
+                StructRef { expr: e, .. } => {
+                    todo!()
+                }
+                Break => {}
+                */
+                Assign { lhs, rhs } => {
+                    // Rewrite the LHS
+                    todo!()
+                }
+                Lambda { signature, body } => {
+                    let _scope = self.push_scope();
+                    let new_params = signature
+                        .params
+                        .into_iter()
+                        .map(|(sym, typ)| (self.bind_new_symbol(sym).0, typ))
+                        .collect();
+                    let new_sig = hir::Signature {
+                        params: new_params,
+                        rettype: signature.rettype,
+                        typeparams: signature.typeparams,
+                    };
+                    let new_body = self.handle_exprs(body);
+                    Lambda {
+                        signature: new_sig,
+                        body: new_body,
+                    }
+                }
+                /*
+                Return { retval } => {
+                    self.handle_expr(retval);
+                }
+                TypeCtor {
+                    name,
+                    type_params: _,
+                    body,
+                } => {
+                    self.bind_new_symbol(*name);
+                    self.handle_expr(body);
+                }
+                TypeUnwrap { expr: e } => {
+                    self.handle_expr(e);
+                }
+                SumCtor { .. } => {
+                    todo!()
+                }
+                ArrayCtor { .. } => {
+                    todo!()
+                }
+                ArrayRef { .. } => {
+                    todo!()
+                }
+                Typecast { .. } => {
+                    todo!()
+                }
+                Ref { .. } => {
+                    todo!()
+                }
+                Deref { .. } => {
+                    todo!()
+                }
+                                */
+                other => other,
+            }
+        };
+        //let res = expr;
+        let res = expr.map(f);
+        eprintln!("Res is {:?}", res);
+        res
     }
 }
 
@@ -457,6 +558,8 @@ fn handle_decl(symtbl: &mut Symtbl, decl: hir::Decl) -> hir::Decl {
             };
             let new_body = symtbl.handle_exprs(body);
             // Don't rename function named "main"
+            // BUGGO: This is a little of a hack, but
+            // works for now I guess.
             let fn_name = if name == Sym::new("main") {
                 name
             } else {
@@ -476,12 +579,14 @@ fn handle_decl(symtbl: &mut Symtbl, decl: hir::Decl) -> hir::Decl {
             //todo!()
             decl
         }
-        Const {
-            name: _,
-            typ: _,
-            init: _,
-        } => {
-            todo!()
+        Const { name, typ, init } => {
+            let new_name = symtbl.really_get_binding(name).0;
+            let new_body = symtbl._handle_expr2(init);
+            Const {
+                name: new_name,
+                typ: typ,
+                init: new_body,
+            }
         }
         Import { .. } => todo!(),
     }
@@ -491,6 +596,7 @@ fn handle_decl(symtbl: &mut Symtbl, decl: hir::Decl) -> hir::Decl {
 /// remove scope dependence.
 pub fn resolve_symbols(ir: hir::Ir) -> (hir::Ir, Symtbl) {
     let mut s = Symtbl::default();
+    s.add_builtins();
     predeclare_decls(&mut s, &ir.decls);
     let mut ir = ir;
     ir.decls = ir
