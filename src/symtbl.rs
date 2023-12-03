@@ -168,22 +168,36 @@ impl Symtbl {
             self.bind_new_symbol(sym)
         }
     }
-    fn handle_exprs(&mut self, exprs: &[hir::ExprNode]) {
-        for expr in exprs {
-            self.handle_expr(expr);
-        }
+
+    fn handle_exprs(&mut self, exprs: Vec<hir::ExprNode>) -> Vec<hir::ExprNode> {
+        let f = &mut |e| self.handle_expr2(e);
+        //exprs.into_iter().map(|e| e.map(f)).collect()
+        passes::exprs_map_pre(exprs, f)
     }
-    fn handle_expr(&mut self, expr: &hir::ExprNode) {
+
+    /// TODO: These can't *quite* be part of the Pass framework,
+    /// because we need to handle different parts of the expr
+    /// in different orders depending on what it is, pushing and
+    /// popping scopes in different places as we go.  We *could*
+    /// probably make it fit if we tried hard enough but I'm not
+    /// sure it's worth it, so for now we'll just brute-force
+    /// it and see how it looks at the end.
+    fn handle_expr(&mut self, expr: hir::Expr) -> hir::Expr {
         use hir::Expr::*;
-        match &*expr.e {
-            Lit { .. } => (),
+        // you know things are going well when you accidentally invent
+        // the Y combinator
+        let ff = &mut |e| self.handle_expr(e);
+        match expr {
             Var { name } => {
-                let _ = self.really_get_binding(*name);
+                let new_name = self.really_get_binding(name);
+                Var { name: new_name.0 }
             }
-            BinOp { lhs, rhs, .. } => {
-                self.handle_expr(lhs);
-                self.handle_expr(rhs);
-            }
+            BinOp { op, lhs, rhs } => BinOp {
+                op,
+                lhs: lhs.map(ff),
+                rhs: rhs.map(ff),
+            },
+            /*
             UniOp { rhs, .. } => {
                 self.handle_expr(rhs);
             }
@@ -272,7 +286,123 @@ impl Symtbl {
             Deref { .. } => {
                 todo!()
             }
+                            */
+            other => other,
         }
+    }
+
+    fn handle_expr2(&mut self, expr: hir::ExprNode) -> hir::ExprNode {
+        use hir::Expr::*;
+        let f = &mut |e| match e {
+            Var { name } => {
+                let new_name = self.really_get_binding(name);
+                Var { name: new_name.0 }
+            }
+            Block { body } => {
+                let _guard = self.push_scope();
+                Block {
+                    body: self.handle_exprs(body),
+                }
+            }
+            Loop { body } => {
+                let _guard = self.push_scope();
+                Loop {
+                    body: self.handle_exprs(body),
+                }
+            }
+            Let {
+                varname,
+                typename,
+                init,
+                mutable,
+            } => {
+                // init expression cannot refer to the same
+                // symbol name
+                let init = self.handle_expr2(init);
+                let varname = self.bind_new_symbol(varname).0;
+                Let {
+                    varname,
+                    typename,
+                    init,
+                    mutable,
+                }
+            }
+            If { cases } => {
+                let cases = cases
+                    .into_iter()
+                    .map(|(test, body)| {
+                        // The test cannot introduce a new scope unless
+                        // it contains some cursed structure like a block
+                        // or fn that introduces a new scope anyway, so.
+                        let test = self.handle_expr2(test);
+                        let _guard = self.push_scope();
+                        let body = self.handle_exprs(body);
+                        (test, body)
+                    })
+                    .collect();
+                If { cases }
+            }
+            /*
+            EnumCtor { name, .. } => {
+                todo!()
+            }
+            TupleCtor { body } => {
+                self.handle_exprs(body);
+            }
+            TupleRef { expr: e, .. } => {
+                self.handle_expr(e);
+            }
+            StructCtor { body } => {
+                for (_nm, expr) in body {
+                    self.handle_expr(expr);
+                }
+            }
+            StructRef { expr: e, .. } => {
+                todo!()
+            }
+            Assign { .. } => {
+                todo!()
+            }
+            Break => {}
+            Lambda { .. } => {
+                todo!()
+            }
+            Return { retval } => {
+                self.handle_expr(retval);
+            }
+            TypeCtor {
+                name,
+                type_params: _,
+                body,
+            } => {
+                self.bind_new_symbol(*name);
+                self.handle_expr(body);
+            }
+            TypeUnwrap { expr: e } => {
+                self.handle_expr(e);
+            }
+            SumCtor { .. } => {
+                todo!()
+            }
+            ArrayCtor { .. } => {
+                todo!()
+            }
+            ArrayRef { .. } => {
+                todo!()
+            }
+            Typecast { .. } => {
+                todo!()
+            }
+            Ref { .. } => {
+                todo!()
+            }
+            Deref { .. } => {
+                todo!()
+            }
+                            */
+            other => other,
+        };
+        expr.map(f)
     }
 }
 
@@ -306,37 +436,54 @@ fn predeclare_decls(symtbl: &mut Symtbl, decls: &[hir::Decl]) {
     }
 }
 
-fn handle_decls(symtbl: &mut Symtbl, decls: &[hir::Decl]) {
+fn handle_decl(symtbl: &mut Symtbl, decl: hir::Decl) -> hir::Decl {
     use hir::Decl::*;
-    for d in decls {
-        match d {
+    match decl {
+        Function {
+            name,
+            signature,
+            body,
+        } => {
+            let _scope = symtbl.push_scope();
+            let new_params = signature
+                .params
+                .into_iter()
+                .map(|(sym, typ)| (symtbl.bind_new_symbol(sym).0, typ))
+                .collect();
+            let new_sig = hir::Signature {
+                params: new_params,
+                rettype: signature.rettype,
+                typeparams: signature.typeparams,
+            };
+            let new_body = symtbl.handle_exprs(body);
+            // Don't rename function named "main"
+            let fn_name = if name == Sym::new("main") {
+                name
+            } else {
+                symtbl.really_get_binding(name).0
+            };
             Function {
-                name: _,
-                signature,
-                body,
-            } => {
-                let _scope = symtbl.push_scope();
-                for (paramname, _) in &signature.params {
-                    symtbl.bind_new_symbol(*paramname);
-                }
-                symtbl.handle_exprs(body);
+                name: fn_name,
+                signature: new_sig,
+                body: new_body,
             }
-            TypeDef {
-                name: _,
-                params: _,
-                typedecl: _,
-            } => {
-                //todo!()
-            }
-            Const {
-                name: _,
-                typ: _,
-                init: _,
-            } => {
-                todo!()
-            }
-            Import { .. } => todo!(),
         }
+        TypeDef {
+            name: _,
+            params: _,
+            typedecl: _,
+        } => {
+            //todo!()
+            decl
+        }
+        Const {
+            name: _,
+            typ: _,
+            init: _,
+        } => {
+            todo!()
+        }
+        Import { .. } => todo!(),
     }
 }
 
@@ -345,6 +492,11 @@ fn handle_decls(symtbl: &mut Symtbl, decls: &[hir::Decl]) {
 pub fn resolve_symbols(ir: hir::Ir) -> (hir::Ir, Symtbl) {
     let mut s = Symtbl::default();
     predeclare_decls(&mut s, &ir.decls);
-    handle_decls(&mut s, &ir.decls);
+    let mut ir = ir;
+    ir.decls = ir
+        .decls
+        .into_iter()
+        .map(|d| handle_decl(&mut s, d))
+        .collect();
     (ir, s)
 }
