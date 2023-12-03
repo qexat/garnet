@@ -258,7 +258,10 @@ fn exprs_map(
         .collect()
 }
 
-fn exprs_map_pre(exprs: Vec<ExprNode>, f: &mut dyn FnMut(ExprNode) -> ExprNode) -> Vec<ExprNode> {
+pub fn exprs_map_pre(
+    exprs: Vec<ExprNode>,
+    f: &mut dyn FnMut(ExprNode) -> ExprNode,
+) -> Vec<ExprNode> {
     exprs_map(exprs, f, &mut id)
 }
 
