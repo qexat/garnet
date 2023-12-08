@@ -669,6 +669,12 @@ impl Tck {
             // same basic idea
             (Struct(body1), Struct(body2)) => {
                 for (nm, t1) in body1.iter() {
+                    assert!(
+                        body2.contains_key(nm),
+                        "struct {:?} does not contain key '{}'",
+                        body1,
+                        nm
+                    );
                     let t2 = body2[nm];
                     self.unify(symtbl, *t1, t2)?;
                 }

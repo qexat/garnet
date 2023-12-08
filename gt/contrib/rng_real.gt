@@ -1,0 +1,35 @@
+type Rand32 = struct
+    state: U64,
+	increment: U64,
+end
+
+const RAND32_DEFAULT_INC U64 = 1442695040888963407
+const RAND32_MULTIPLIER U64 = 6364136223846793005
+
+fn new_rand32(seed U64) Rand32 =
+  let mut rng = Rand32 {
+	.state = 0,
+	.increment = RAND32_DEFAULT_INC,
+  }
+  let _ = rng:rand_u32()
+  rng$.state = rng$.state + seed
+  let _ = rng:rand_u32()
+  rng
+end
+
+
+fn rand_u32(self Rand32) {Rand32, U32} =
+    let mut self = self
+    let oldstate = self$.state
+    self$.state = oldstate * RAND32_MULTIPLIER + self$.increment
+    let xorshifted = __rshift_u64(__bxor_u64(__rshift_u64(oldstate, 18), oldstate), 27)
+    let rot = __rshift_u64(oldstate, 59)
+    let res = __ror_u64(xorshifted, __u64_to_i32(rot))
+    {self, __u64_to_u32(res)}
+end
+
+fn main() =
+  let mut rng = new_rand32(4)
+  let res = rng:rand_u32()
+  __println_u32(res.1)
+end

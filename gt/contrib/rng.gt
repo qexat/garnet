@@ -10,26 +10,34 @@ end
 const RAND32_DEFAULT_INC U64 = 1442695040888963407
 const RAND32_MULTIPLIER U64 = 6364136223846793005
 
---- Creates a new Rand32 with the given state and seed
-fn new_inc(seed U64, increment U64) Rand32 =
+--- Creates a new RNG state with the given seed
+--- and the default multiplier
+fn new_rng(seed U64) Rand32 =
   let mut rng = Rand32 {
 	.state = 0,
-	.increment = increment.wrapping_shl(1) bitor 1
+	.increment = RAND32_DEFAULT_INC,
   }
-  let _ = rand32(rng)
-  rng.state = rng.state.wrapping_add(seed)
-  let _ = rand32(rng)
+  let _ = rng:rand_u32()
+  rng.state = rng.state:wrapping_add(seed)
+  let _ = rng:rand_u32()
   rng
 end
 
 
---- Produces a random `u32` in the range `[0, u32::MAX]`.
-fn rand_u32(selff ^uniq Rand32) U32 =
-    let oldstate U64 = selff^.state
-    selff.state = oldstate
-        .wrapping_mul(RAND32_MULTIPLIER)
-        .wrapping_add(selff^.inc)
-    let xorshifted U32 = (((oldstate >> 18) ^ oldstate) >> 27) as U32
-    let rot U32 = (oldstate >> 59) as U32
-    xorshifted.rotate_right(rot)
+--- Mutably borrows a `Rand32` and produces a random 
+--- `U32` in the range `[0, u32::MAX]`.
+fn rand_u32(self ^uniq Rand32) U32 =
+    let oldstate U64 = self^.state
+    self.state = oldstate
+        :wrapping_mul(RAND32_MULTIPLIER)
+        :wrapping_add(self^.inc)
+    let xorshifted = cast(|U32| ((oldstate shr 18) xor oldstate) shr 27)
+    let rot = cast(|U32| oldstate shr 59)
+    xorshifted rotr rot
+end
+
+fn main() =
+  let mut rng = new_rand32(4)
+  let num = rng:rand_u32()
+  __println_u64(rng$.state)
 end
