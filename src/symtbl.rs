@@ -293,12 +293,14 @@ impl Symtbl {
                     .collect();
                 StructCtor { body }
             }
-            StructRef { expr: e, .. } => {
-                todo!()
-            }
-            Assign { .. } => {
-                todo!()
-            }
+            StructRef { expr, elt } => StructRef {
+                expr: self.handle_expr(expr),
+                elt,
+            },
+            Assign { lhs, rhs } => Assign {
+                lhs: self.handle_expr(lhs),
+                rhs: self.handle_expr(rhs),
+            },
             Break => Break,
             Lambda { signature, body } => {
                 let _scope = self.push_scope();
