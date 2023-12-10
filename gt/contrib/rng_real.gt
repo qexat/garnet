@@ -11,9 +11,9 @@ fn new_rand32(seed U64) Rand32 =
 	.state = 0,
 	.increment = RAND32_DEFAULT_INC,
   }
-  let _ = rng:rand_u32()
+  rng = rng:rand_u32().0
   rng$.state = rng$.state + seed
-  let _ = rng:rand_u32()
+  rng = rng:rand_u32().0
   rng
 end
 
