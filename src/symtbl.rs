@@ -18,8 +18,16 @@ use crate::*;
 /// So basically instead of `foo` being scoped, it gets
 /// renamed to `foo_1` where every mention of `foo_1`
 /// refers to the same value.
+///
+/// TODO: The typeck code needs to construct/retrieve its own
+/// UniqueSym's, which is why this is public.  It's a bit of
+/// a pickle though, since really the goal is to have these
+/// make non-unique syms unrepresentable.
+///
+/// But after the alpha-renaming pass all Sym's are unique already
+/// anyway, soooooo...  idk.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
-struct UniqueSym(Sym);
+pub struct UniqueSym(pub Sym);
 
 #[derive(Clone, Default, Debug)]
 struct ScopeFrame {
@@ -37,6 +45,9 @@ pub struct Symtbl {
     /// we need to know about them.  It's an AnyMap, so
     /// we can just stuff whatever data we need into it.
     unique_symbols: BTreeMap<UniqueSym, Map<dyn anymap::any::CloneAny>>,
+
+    /// Same as unique_symbols but for types.
+    unique_types: BTreeMap<UniqueSym, Map<dyn anymap::any::CloneAny>>,
 
     /// Every time we generate a new symbol we increment
     /// this.
@@ -57,6 +68,7 @@ impl Default for Symtbl {
         Self {
             frames: Rc::new(RefCell::new(vec![ScopeFrame::default()])),
             unique_symbols: Default::default(),
+            unique_types: Default::default(),
             gensym_increment: 0,
         }
     }
@@ -124,15 +136,46 @@ impl Symtbl {
         self.get_binding(sym).expect(&msg)
     }
 
-    /// Get the SymbolInfo for the given UniqueSym, or
+    /// Get the specified info for the given UniqueSym, or
     /// None if DNE
-    fn _get_info<T>(&self, sym: UniqueSym) -> Option<&T>
+    pub fn get_info<T>(&self, sym: UniqueSym) -> Option<&T>
     where
         T: anymap::any::CloneAny,
     {
         self.unique_symbols
             .get(&sym)
             .and_then(|anymap| anymap.get::<T>())
+    }
+
+    /// Adds the given info struct to the symbol, or
+    /// panics if it already exists.
+    pub fn put_info<T>(&mut self, sym: UniqueSym, info: T)
+    where
+        T: anymap::any::CloneAny,
+    {
+        self.unique_symbols
+            .get_mut(&sym)
+            .and_then(|anymap| anymap.insert(info));
+    }
+
+    pub fn get_type_info<T>(&self, sym: UniqueSym) -> Option<&T>
+    where
+        T: anymap::any::CloneAny,
+    {
+        self.unique_types
+            .get(&sym)
+            .and_then(|anymap| anymap.get::<T>())
+    }
+
+    /// Adds the given type struct to the symbol, or
+    /// panics if it already exists.
+    pub fn put_type_info<T>(&mut self, sym: UniqueSym, info: T)
+    where
+        T: anymap::any::CloneAny,
+    {
+        self.unique_types
+            .get_mut(&sym)
+            .and_then(|anymap| anymap.insert(info));
     }
 
     fn binding_exists(&self, sym: Sym) -> bool {
