@@ -983,6 +983,32 @@ impl SymtblOld {
     }
 }
 
+#[derive(Debug, Clone)]
+struct TckInfo {
+    ty: TypeId,
+    mutable: bool,
+}
+
+impl Symtbl {
+    fn add_var(&mut self, var: Sym, ty: TypeId, mutable: bool) {
+        let info = TckInfo { ty, mutable };
+        self.put_info(symtbl::UniqueSym(var), info)
+    }
+
+    /// Checks whether the var exists in the currently alive scopes
+    fn get_var_binding(&self, var: Sym) -> Option<&TckInfo> {
+        let sym = symtbl::UniqueSym(var);
+        self.get_info::<TckInfo>(sym)
+    }
+
+    fn add_builtin_typeinfo(&mut self, tck: &mut Tck) {
+        for builtin in &*builtins::BUILTINS {
+            let ty = tck.insert_known(&builtin.sig);
+            self.add_var(builtin.name, ty, false);
+        }
+    }
+}
+
 fn infer_lit(lit: &ast::Literal) -> TypeInfo {
     match lit {
         ast::Literal::Integer(_) => TypeInfo::Prim(PrimType::UnknownInt),
@@ -1008,9 +1034,9 @@ fn is_mutable_lvalue(symtbl: &SymtblOld, expr: &hir::ExprNode) -> bool {
     }
 }
 
-/// TODO: This doesn't necessarily handle a func body as much
-/// as a block with its own scope, which is what we actually want.
-fn typecheck_func_body(
+/// This typechecks a block with its own scope, such as a function
+/// body or if arm.
+fn typecheck_block(
     name: Option<Sym>,
     tck: &mut Tck,
     symtbl: &SymtblOld,
@@ -1449,7 +1475,7 @@ fn typecheck_expr(
             Ok(unit)
         }
         Lambda { signature, body } => {
-            let t = typecheck_func_body(None, tck, symtbl, signature, body)?;
+            let t = typecheck_block(None, tck, symtbl, signature, body)?;
             tck.set_expr_type(expr, t);
             Ok(t)
         }
@@ -1634,7 +1660,10 @@ fn typecheck_expr(
     rettype
 }
 
-fn predeclare_decls(tck: &mut Tck, symtbl: &mut SymtblOld, decls: &[hir::Decl]) {
+/// TODO: I am a little miffed because the alpha-renaming was supposed
+/// to make it so this had been done already, but we still need to do all
+/// the type-y things for it.
+fn predeclare_decls(tck: &mut Tck, symtbl: &mut Symtbl, decls: &[hir::Decl]) {
     use hir::Decl::*;
     for d in decls {
         match d {
@@ -1679,7 +1708,8 @@ fn predeclare_decls(tck: &mut Tck, symtbl: &mut SymtblOld, decls: &[hir::Decl]) 
                 }
 
                 // Remember that we know about a type with this name
-                symtbl.add_type(*name, typedecl)
+                let name = symtbl::UniqueSym(*name);
+                symtbl.put_type_info(name, typedecl.clone())
             }
             Const {
                 name,
@@ -1703,8 +1733,7 @@ fn predeclare_decls(tck: &mut Tck, symtbl: &mut SymtblOld, decls: &[hir::Decl]) 
 pub fn typecheck(ast: &hir::Ir, symtbl: &mut Symtbl) -> Result<Tck, TypeError> {
     let mut t = Tck::default();
     let tck = &mut t;
-    let symtbl = &mut SymtblOld::default();
-    symtbl.add_builtins(tck);
+    symtbl.add_builtin_typeinfo(tck);
     predeclare_decls(tck, symtbl, &ast.decls);
     for decl in &ast.decls {
         use hir::Decl::*;
@@ -1715,7 +1744,8 @@ pub fn typecheck(ast: &hir::Ir, symtbl: &mut Symtbl) -> Result<Tck, TypeError> {
                 signature,
                 body,
             } => {
-                let t = typecheck_func_body(Some(*name), tck, symtbl, signature, body);
+                let symtbl = &mut SymtblOld::default();
+                let t = typecheck_block(Some(*name), tck, symtbl, signature, body);
                 t.unwrap_or_else(|e| {
                     error!("Error, type context is:");
                     tck.print_types();
@@ -1727,6 +1757,7 @@ pub fn typecheck(ast: &hir::Ir, symtbl: &mut Symtbl) -> Result<Tck, TypeError> {
                 params,
                 typedecl,
             } => {
+                let symtbl = &mut SymtblOld::default();
                 // TODO: Handle recursive types properly?  Somehow.
                 // Make sure that there are no unbound generics in the typedef
                 // that aren't mentioned in the params.
@@ -1749,6 +1780,7 @@ pub fn typecheck(ast: &hir::Ir, symtbl: &mut Symtbl) -> Result<Tck, TypeError> {
                 typ: typename,
                 init,
             } => {
+                let symtbl = &mut SymtblOld::default();
                 // The init expression is typechecked in its own
                 // scope, since it may theoretically be a `let` or
                 // something that introduces new names inside it.
@@ -1766,13 +1798,13 @@ pub fn typecheck(ast: &hir::Ir, symtbl: &mut Symtbl) -> Result<Tck, TypeError> {
         }
     }
     // Print out toplevel symbols
-    for (name, id) in &symtbl.frames.borrow().last().unwrap().symbols {
-        info!(
-            "value {} type is {:?}",
-            name,
-            tck.reconstruct(id.0).map(|t| t.get_name())
-        );
-    }
+    // for (name, id) in &symtbl.frames.borrow().last().unwrap().symbols {
+    //     info!(
+    //         "value {} type is {:?}",
+    //         name,
+    //         tck.reconstruct(id.0).map(|t| t.get_name())
+    //     );
+    // }
     trace!("Type variables:");
     for (id, info) in &tck.vars {
         trace!("  ${} = {info:?}", id.0);
