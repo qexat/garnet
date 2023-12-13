@@ -122,7 +122,7 @@ impl Symtbl {
 
     /// Get the SymbolInfo for the given UniqueSym, or
     /// None if DNE
-    fn get_info(&self, sym: UniqueSym) -> Option<&SymbolInfo> {
+    fn _get_info(&self, sym: UniqueSym) -> Option<&SymbolInfo> {
         self.unique_symbols.get(&sym)
     }
 
@@ -130,8 +130,8 @@ impl Symtbl {
         self.get_binding(sym).is_some()
     }
 
-    fn unique_exists(&self, sym: UniqueSym) -> bool {
-        self.get_info(sym).is_some()
+    fn _unique_exists(&self, sym: UniqueSym) -> bool {
+        self._get_info(sym).is_some()
     }
 
     /// Takes a symbol, generates a new UniqueSym for it,
@@ -162,7 +162,7 @@ impl Symtbl {
 
     /// Introduce a new symbol as long as it doesn't clash with one
     /// currently in the top scope.
-    fn new_local_symbol(&mut self, sym: Sym) -> UniqueSym {
+    fn _new_local_symbol(&mut self, sym: Sym) -> UniqueSym {
         // Does the symbol exist in the topmost scope?
         if self
             .frames
@@ -337,7 +337,6 @@ impl Symtbl {
                 type_params,
                 body,
             } => {
-                //let name = self.bind_new_symbol(name).0;
                 let body = self.handle_expr(body);
                 TypeCtor {
                     name,
@@ -375,153 +374,6 @@ impl Symtbl {
             }
         };
         expr.map(f)
-    }
-
-    fn _handle_expr2(&mut self, expr: hir::ExprNode) -> hir::ExprNode {
-        eprintln!("Called with {:?}", expr);
-        use hir::Expr::*;
-        let f = &mut |e| {
-            info!("Mapping {:?}", e);
-            match e {
-                Var { name } => {
-                    let new_name = self.really_get_binding(name);
-                    Var { name: new_name.0 }
-                }
-                Block { body } => {
-                    let _guard = self.push_scope();
-                    Block {
-                        body: self.handle_exprs(body),
-                    }
-                }
-                Loop { body } => {
-                    let _guard = self.push_scope();
-                    Loop {
-                        body: self.handle_exprs(body),
-                    }
-                }
-                Funcall { ..
-                    // func,
-                    // params,
-                    // type_params,
-                } => {
-                    eprintln!("Handling funcall");
-                    e
-                }
-                Let {
-                    varname,
-                    typename,
-                    init,
-                    mutable,
-                } => {
-                    // init expression cannot refer to the same
-                    // symbol name
-                    let init = self._handle_expr2(init);
-                    let varname = self.bind_new_symbol(varname).0;
-                    Let {
-                        varname,
-                        typename,
-                        init,
-                        mutable,
-                    }
-                }
-                If { cases } => {
-                    let cases = cases
-                        .into_iter()
-                        .map(|(test, body)| {
-                            // The test cannot introduce a new scope unless
-                            // it contains some cursed structure like a block
-                            // or fn that introduces a new scope anyway, so.
-                            let test = self._handle_expr2(test);
-                            let _guard = self.push_scope();
-                            let body = self.handle_exprs(body);
-                            (test, body)
-                        })
-                        .collect();
-                    If { cases }
-                }
-                /*
-                EnumCtor { name, .. } => {
-                    todo!()
-                }
-                TupleCtor { body } => {
-                    self.handle_exprs(body);
-                }
-                TupleRef { expr: e, .. } => {
-                    self.handle_expr(e);
-                }
-                StructCtor { body } => {
-                    for (_nm, expr) in body {
-                        self.handle_expr(expr);
-                    }
-                }
-                StructRef { expr: e, .. } => {
-                    todo!()
-                }
-                Break => {}
-                */
-                Assign { lhs, rhs } => {
-                    // Rewrite the LHS
-                    todo!()
-                }
-                Lambda { signature, body } => {
-                    let _scope = self.push_scope();
-                    let new_params = signature
-                        .params
-                        .into_iter()
-                        .map(|(sym, typ)| (self.bind_new_symbol(sym).0, typ))
-                        .collect();
-                    let new_sig = hir::Signature {
-                        params: new_params,
-                        rettype: signature.rettype,
-                        typeparams: signature.typeparams,
-                    };
-                    let new_body = self.handle_exprs(body);
-                    Lambda {
-                        signature: new_sig,
-                        body: new_body,
-                    }
-                }
-                /*
-                Return { retval } => {
-                    self.handle_expr(retval);
-                }
-                TypeCtor {
-                    name,
-                    type_params: _,
-                    body,
-                } => {
-                    self.bind_new_symbol(*name);
-                    self.handle_expr(body);
-                }
-                TypeUnwrap { expr: e } => {
-                    self.handle_expr(e);
-                }
-                SumCtor { .. } => {
-                    todo!()
-                }
-                ArrayCtor { .. } => {
-                    todo!()
-                }
-                ArrayRef { .. } => {
-                    todo!()
-                }
-                Typecast { .. } => {
-                    todo!()
-                }
-                Ref { .. } => {
-                    todo!()
-                }
-                Deref { .. } => {
-                    todo!()
-                }
-                                */
-                other => other,
-            }
-        };
-        //let res = expr;
-        let res = expr.map(f);
-        eprintln!("Res is {:?}", res);
-        res
     }
 }
 
