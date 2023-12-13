@@ -11,6 +11,7 @@ use log::*;
 use crate::*;
 
 use crate::hir;
+use crate::symtbl::Symtbl;
 use crate::{Sym, Type};
 
 /// A identifier to uniquely refer to our `TypeInfo`'s
@@ -460,7 +461,7 @@ impl Tck {
     /// Panics on invalid field name or not a struct type
     pub fn get_struct_field_type(
         &mut self,
-        symtbl: &Symtbl,
+        symtbl: &SymtblOld,
         struct_type: TypeId,
         field_name: Sym,
     ) -> TypeId {
@@ -485,7 +486,7 @@ impl Tck {
     /// Same as `get_struct_field_type()` but takes a tuple type and an integer.
     pub fn get_tuple_field_type(
         &mut self,
-        symtbl: &Symtbl,
+        symtbl: &SymtblOld,
         tuple_type: TypeId,
         n: usize,
     ) -> TypeId {
@@ -556,7 +557,7 @@ impl Tck {
     /// Unify two lists of types.  They must be the same length.
     fn unify_lists(
         &mut self,
-        symtbl: &Symtbl,
+        symtbl: &SymtblOld,
         a: &[TypeId],
         b: &[TypeId],
     ) -> Result<(), TypeError> {
@@ -589,7 +590,7 @@ impl Tck {
 
     /// Make the types of two type terms equivalent (or produce an error if
     /// there is a conflict between them)
-    pub fn unify(&mut self, symtbl: &Symtbl, a: TypeId, b: TypeId) -> Result<(), TypeError> {
+    pub fn unify(&mut self, symtbl: &SymtblOld, a: TypeId, b: TypeId) -> Result<(), TypeError> {
         //trace!("> Unifying {:?} with {:?}", self.get(&a), self.get(&b));
         // If a == b then it's a little weird but shoooooould be fine
         // as long as we don't get any mutual recursion or self-recursion
@@ -900,11 +901,11 @@ struct ScopeFrame {
 /// and manages scope.
 /// Looks ugly, works well.
 #[derive(Clone)]
-pub struct Symtbl {
+pub struct SymtblOld {
     frames: Rc<RefCell<Vec<ScopeFrame>>>,
 }
 
-impl Default for Symtbl {
+impl Default for SymtblOld {
     /// We start with an empty toplevel scope existing,
     /// then add some builtin's to it.
     fn default() -> Self {
@@ -915,7 +916,7 @@ impl Default for Symtbl {
 }
 
 pub struct ScopeGuard {
-    scope: Symtbl,
+    scope: SymtblOld,
 }
 
 impl Drop for ScopeGuard {
@@ -928,7 +929,7 @@ impl Drop for ScopeGuard {
     }
 }
 
-impl Symtbl {
+impl SymtblOld {
     fn add_builtins(&self, tck: &mut Tck) {
         for builtin in &*builtins::BUILTINS {
             let ty = tck.insert_known(&builtin.sig);
@@ -993,7 +994,7 @@ fn infer_lit(lit: &ast::Literal) -> TypeInfo {
     }
 }
 
-fn is_mutable_lvalue(symtbl: &Symtbl, expr: &hir::ExprNode) -> bool {
+fn is_mutable_lvalue(symtbl: &SymtblOld, expr: &hir::ExprNode) -> bool {
     use hir::Expr::*;
     match &*expr.e {
         Var { name } => {
@@ -1012,7 +1013,7 @@ fn is_mutable_lvalue(symtbl: &Symtbl, expr: &hir::ExprNode) -> bool {
 fn typecheck_func_body(
     name: Option<Sym>,
     tck: &mut Tck,
-    symtbl: &Symtbl,
+    symtbl: &SymtblOld,
     signature: &hir::Signature,
     body: &[hir::ExprNode],
 ) -> Result<TypeId, TypeError> {
@@ -1081,7 +1082,7 @@ fn typecheck_func_body(
 /// or unit if the list is empty.  Does NOT push a new scope.
 fn typecheck_exprs(
     tck: &mut Tck,
-    symtbl: &Symtbl,
+    symtbl: &SymtblOld,
     func_rettype: TypeId,
     exprs: &[hir::ExprNode],
 ) -> Result<TypeId, TypeError> {
@@ -1098,7 +1099,7 @@ fn typecheck_exprs(
 
 fn typecheck_expr(
     tck: &mut Tck,
-    symtbl: &Symtbl,
+    symtbl: &SymtblOld,
     func_rettype: TypeId,
     expr: &hir::ExprNode,
 ) -> Result<TypeId, TypeError> {
@@ -1506,7 +1507,7 @@ fn typecheck_expr(
             /// but it needs to recurse.  Writing it iteratively is even more cursed.
             fn try_resolve_named_type(
                 tck: &Tck,
-                symtbl: &Symtbl,
+                symtbl: &SymtblOld,
                 t: TypeId,
             ) -> Result<(Sym, Vec<TypeId>), String> {
                 let tinfo = &tck.get(&t);
@@ -1633,7 +1634,7 @@ fn typecheck_expr(
     rettype
 }
 
-fn predeclare_decls(tck: &mut Tck, symtbl: &mut Symtbl, decls: &[hir::Decl]) {
+fn predeclare_decls(tck: &mut Tck, symtbl: &mut SymtblOld, decls: &[hir::Decl]) {
     use hir::Decl::*;
     for d in decls {
         match d {
@@ -1699,10 +1700,10 @@ fn predeclare_decls(tck: &mut Tck, symtbl: &mut Symtbl, decls: &[hir::Decl]) {
 /// terms to each of your nodes with whatever information you have available. You
 /// will also need to call `engine.unify(x, y)` when you know two nodes have the
 /// same type, such as in the statement `x = y;`."
-pub fn typecheck(ast: &hir::Ir) -> Result<Tck, TypeError> {
+pub fn typecheck(ast: &hir::Ir, symtbl: &mut Symtbl) -> Result<Tck, TypeError> {
     let mut t = Tck::default();
     let tck = &mut t;
-    let symtbl = &mut Symtbl::default();
+    let symtbl = &mut SymtblOld::default();
     symtbl.add_builtins(tck);
     predeclare_decls(tck, symtbl, &ast.decls);
     for decl in &ast.decls {

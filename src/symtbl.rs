@@ -10,6 +10,8 @@ use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::rc::Rc;
 
+use anymap::Map;
+
 use crate::*;
 
 /// A symbol that has been renamed to be globally unique.
@@ -25,18 +27,16 @@ struct ScopeFrame {
     _types: BTreeMap<Sym, Type>,
 }
 
-#[derive(Clone, Debug, Default)]
-struct SymbolInfo {}
-
 /// Basic symbol table that maps names to type ID's
 /// and manages scope.
 /// Looks ugly, works well.
-#[derive(Clone, Debug)]
+#[derive(Debug, Clone)]
 pub struct Symtbl {
     frames: Rc<RefCell<Vec<ScopeFrame>>>,
     /// A mapping from unique symbol names to whatever
-    /// we need to know about them.
-    unique_symbols: BTreeMap<UniqueSym, SymbolInfo>,
+    /// we need to know about them.  It's an AnyMap, so
+    /// we can just stuff whatever data we need into it.
+    unique_symbols: BTreeMap<UniqueSym, Map<dyn anymap::any::CloneAny>>,
 
     /// Every time we generate a new symbol we increment
     /// this.
@@ -96,6 +96,10 @@ impl Symtbl {
 
     fn push_scope(&self) -> ScopeGuard {
         self.frames.borrow_mut().push(ScopeFrame::default());
+        // TODO: This clone is a little cursed 'cause
+        // it'll clone the whole `unique_symbols` map,
+        // We should probably just wrap the whole symtbl in
+        // a Rc<RefCell<>> intead of just the scopeframe.
         ScopeGuard {
             scope: self.clone(),
         }
@@ -122,8 +126,13 @@ impl Symtbl {
 
     /// Get the SymbolInfo for the given UniqueSym, or
     /// None if DNE
-    fn _get_info(&self, sym: UniqueSym) -> Option<&SymbolInfo> {
-        self.unique_symbols.get(&sym)
+    fn _get_info<T>(&self, sym: UniqueSym) -> Option<&T>
+    where
+        T: anymap::any::CloneAny,
+    {
+        self.unique_symbols
+            .get(&sym)
+            .and_then(|anymap| anymap.get::<T>())
     }
 
     fn binding_exists(&self, sym: Sym) -> bool {
@@ -131,7 +140,7 @@ impl Symtbl {
     }
 
     fn _unique_exists(&self, sym: UniqueSym) -> bool {
-        self._get_info(sym).is_some()
+        self.unique_symbols.get(&sym).is_some()
     }
 
     /// Takes a symbol, generates a new UniqueSym for it,
@@ -145,7 +154,7 @@ impl Symtbl {
             .expect("Scope stack underflow")
             .symbols
             .insert(sym, newsym);
-        self.unique_symbols.insert(newsym, SymbolInfo::default());
+        self.unique_symbols.insert(newsym, Map::new());
         newsym
     }
 
@@ -190,7 +199,7 @@ impl Symtbl {
                 .expect("Scope stack underflow")
                 .symbols
                 .insert(sym, new_sym);
-            self.unique_symbols.insert(new_sym, SymbolInfo::default());
+            self.unique_symbols.insert(new_sym, Map::new());
             new_sym
         }
     }
