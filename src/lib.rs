@@ -614,9 +614,9 @@ pub fn try_compile(
     };
     let hir = hir::lower(&ast);
     info!("HIR from AST lowering:\n{}", &hir);
-    let (hir, symtbl) = symtbl::resolve_symbols(hir);
+    let (hir, _symtbl) = symtbl::resolve_symbols(hir);
     info!("HIR from symtbl renaming:\n{}", &hir);
-    info!("Symtbl from AST:\n{:#?}", &symtbl);
+    //info!("Symtbl from AST:\n{:#?}", &symtbl);
     let hir = passes::run_passes(hir);
     let tck = &mut typeck::typecheck(&hir)?;
     borrowck::borrowck(&hir, tck).unwrap();

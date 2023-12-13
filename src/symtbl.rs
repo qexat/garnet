@@ -79,9 +79,11 @@ impl Drop for ScopeGuard {
 impl Symtbl {
     fn add_builtins(&mut self) {
         for builtin in &*builtins::BUILTINS {
-            let new = self.new_unchanged_symbol(builtin.name);
-            info!("New stuff: {:?}", new);
+            let _new = self.new_unchanged_symbol(builtin.name);
         }
+        // Add another builtin called "main" so the main function
+        // doesn't get renamed.
+        self.new_unchanged_symbol(Sym::new("main"));
     }
 
     /// Creates a new symbol with the name of the given one
@@ -177,7 +179,6 @@ impl Symtbl {
     }
 
     /// Insert a new symbol that is actually identical to the given one,
-    //
     fn new_unchanged_symbol(&mut self, sym: Sym) -> UniqueSym {
         if self.binding_exists(sym) {
             panic!("Attempting to create duplicate symbol {}", sym);
@@ -533,7 +534,11 @@ fn predeclare_decls(symtbl: &mut Symtbl, decls: &[hir::Decl]) {
                 signature: _,
                 body: _,
             } => {
-                symtbl.new_unique_symbol(*name);
+                // Don't rename functions already declared as builtins, like "main"
+                // Little hacky but does what we want.
+                symtbl
+                    .get_binding(*name)
+                    .unwrap_or_else(|| symtbl.new_unique_symbol(*name));
             }
             TypeDef {
                 name: _,
@@ -562,6 +567,11 @@ fn handle_decl(symtbl: &mut Symtbl, decl: hir::Decl) -> hir::Decl {
             signature,
             body,
         } => {
+            // This has to happen before we push the scope, so
+            // if we have a function arg with the same name as the
+            // function it doesn't rename the function.
+            let fn_name = symtbl.really_get_binding(name).0;
+
             let _scope = symtbl.push_scope();
             let new_params = signature
                 .params
@@ -574,14 +584,6 @@ fn handle_decl(symtbl: &mut Symtbl, decl: hir::Decl) -> hir::Decl {
                 typeparams: signature.typeparams,
             };
             let new_body = symtbl.handle_exprs(body);
-            // Don't rename function named "main"
-            // BUGGO: This is a little of a hack, but
-            // works for now I guess.
-            let fn_name = if name == Sym::new("main") {
-                name
-            } else {
-                symtbl.really_get_binding(name).0
-            };
             Function {
                 name: fn_name,
                 signature: new_sig,
@@ -592,16 +594,13 @@ fn handle_decl(symtbl: &mut Symtbl, decl: hir::Decl) -> hir::Decl {
             name: _,
             params: _,
             typedecl: _,
-        } => {
-            //todo!()
-            decl
-        }
+        } => decl,
         Const { name, typ, init } => {
             let new_name = symtbl.really_get_binding(name).0;
-            let new_body = symtbl._handle_expr2(init);
+            let new_body = symtbl.handle_expr(init);
             Const {
                 name: new_name,
-                typ: typ,
+                typ,
                 init: new_body,
             }
         }
