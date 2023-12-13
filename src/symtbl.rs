@@ -230,7 +230,9 @@ impl Symtbl {
                 let new_body = self.handle_exprs(body);
                 Block { body: new_body }
             }
-            Loop { .. } => todo!(),
+            Loop { body } => Loop {
+                body: self.handle_exprs(body),
+            },
             Funcall {
                 func,
                 params,
@@ -276,9 +278,15 @@ impl Symtbl {
                     .collect();
                 If { cases }
             }
-            EnumCtor { name, .. } => {
-                todo!()
-            }
+            EnumCtor {
+                name,
+                variant,
+                value,
+            } => EnumCtor {
+                name,
+                variant,
+                value,
+            },
             TupleCtor { body } => TupleCtor {
                 body: self.handle_exprs(body),
             },
@@ -339,15 +347,22 @@ impl Symtbl {
             TypeUnwrap { expr } => TypeUnwrap {
                 expr: self.handle_expr(expr),
             },
-            SumCtor { .. } => {
-                todo!()
-            }
-            ArrayCtor { .. } => {
-                todo!()
-            }
-            ArrayRef { .. } => {
-                todo!()
-            }
+            SumCtor {
+                name,
+                variant,
+                body,
+            } => SumCtor {
+                name,
+                variant,
+                body: self.handle_expr(body),
+            },
+            ArrayCtor { body } => ArrayCtor {
+                body: self.handle_exprs(body),
+            },
+            ArrayRef { expr, idx } => ArrayRef {
+                expr: self.handle_expr(expr),
+                idx: self.handle_expr(idx),
+            },
             Typecast { .. } => {
                 todo!()
             }
@@ -596,6 +611,8 @@ fn handle_decl(symtbl: &mut Symtbl, decl: hir::Decl) -> hir::Decl {
 
 /// Takes all value and type names and renames them all to
 /// remove scope dependence.
+///
+/// aka alpha-renaming
 pub fn resolve_symbols(ir: hir::Ir) -> (hir::Ir, Symtbl) {
     let mut s = Symtbl::default();
     s.add_builtins();
