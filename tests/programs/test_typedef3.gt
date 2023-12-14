@@ -4,9 +4,9 @@
 --   status: error
 
 
-type Foo = {I32, @A}
+type Foo = {I32, A}
 
-fn thing(i I32, x @A) Foo =
+fn thing(i I32, x A) Foo =
     Foo{i, x}
 end
 

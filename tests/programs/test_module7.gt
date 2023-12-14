@@ -18,19 +18,19 @@ module type Functor = sig
 end
 -/
 
-type Functor(@T1, @T2) = struct
-    map: fn(@T1) @T2,
+type Functor(T1, T2) = struct
+    map: fn(T1) T2,
 end
 
 -- Implement Map for a cell type
-type Cell(@V) = struct
-    val: @V
+type Cell(V) = struct
+    val: V
 end
 
-fn make_cell_functor(f fn(@A) @B) Functor(Cell(@A), Cell(@B)) =
+fn make_cell_functor(f fn(A) B) Functor(Cell(A), Cell(B)) =
     -- to work this needs closures, 'cause it
     -- captures f()
-    let m = fn(c Cell(@A)) Cell(@B) =
+    let m = fn(c Cell(A)) Cell(B) =
         Cell({
             .val = f(c$.val)
         })

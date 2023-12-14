@@ -4,7 +4,7 @@
 --   status: success
 
 
-fn apply(f fn(@In) @Out, arg @In) @Out =
+fn apply(|In, Out| f fn(In) Out, arg In) Out =
     f(arg)
 end
 

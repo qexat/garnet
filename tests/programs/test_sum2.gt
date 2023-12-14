@@ -12,10 +12,10 @@ TFW your typechecker catches a real bug.
 Especially one you don't know how to fix.
 We lower the constructors for this type into functions,
 and then it complains that the function Option.None()
-returns Option(@T) and it has no way of knowing what
-the @T is for that function.
+returns Option(T) and it has no way of knowing what
+the T is for that function.
 
-This should technically be fine because @T is
+This should technically be fine because T is
 instantiated and figured out wherever Option.None()
 is actually called, but I don't know how to tell the
 typechecker that.
@@ -30,8 +30,8 @@ Added explicit type args to sum types and function,
 but leaving this note here for now just in case
 it pops up again later.
 -/
-type Option(@T) = sum(@T)
-    Some @T,
+type Option(T) = sum(T)
+    Some T,
     None {},
 end
 

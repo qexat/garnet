@@ -3,9 +3,9 @@
 -- Compile:
 --   status: error
 
-type Result(@T, @E) = sum
-    Ok @T,
-    Err @E,
+type Result(T, E) = sum
+    Ok T,
+    Err E,
 end
 
 -- TODO: This should probably succeed

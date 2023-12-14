@@ -102,8 +102,6 @@ fn eat_block_comment(lex: &mut Lexer<TokenKind>) -> String {
 pub enum TokenKind {
     #[regex("[a-zA-Z_][a-zA-Z0-9_]*", |lex| lex.slice().to_owned())]
     Ident(String),
-    //#[regex("@[a-zA-Z_][a-zA-Z0-9_]*", |lex| lex.slice().to_owned())]
-    //TypeIdent(String),
     #[regex("true|false", |lex| lex.slice().parse())]
     Bool(bool),
     #[regex("[0-9][0-9_]*I8",   |lex| make_int(lex, 1, true))]
@@ -670,7 +668,6 @@ impl<'input> Parser<'input> {
                 if self.peek_is(T::RParen.discr()) {
                     break;
                 } else {
-                    self.expect(T::At);
                     let name = self.expect_ident();
                     params.push(name);
                 }
@@ -1387,10 +1384,12 @@ impl<'input> Parser<'input> {
                     Type::Named(Sym::new(s), type_params)
                 }
             }
-            T::At => {
-                let s = self.expect_ident();
-                Type::Generic(s)
-            }
+            /*
+                    T::At => {
+                        let s = self.expect_ident();
+                        Type::Generic(s)
+                    }
+            */
             T::LBrace => self.try_parse_tuple_type()?,
             T::Fn => self.parse_fn_type(),
             T::Struct => self.try_parse_struct_type()?,
@@ -1576,9 +1575,9 @@ mod tests {
 
     #[test]
     fn test_typedef_generics() {
-        test_decl_is("type bop(@T) = @T", || ast::Decl::TypeDef {
+        test_decl_is("type bop(T) = T", || ast::Decl::TypeDef {
             name: Sym::new("bop"),
-            typedecl: Type::Generic(Sym::new("T")),
+            typedecl: Type::Named(Sym::new("T"), vec![]),
             doc_comment: vec![],
             params: vec![Sym::new("T")],
         });
@@ -1648,7 +1647,7 @@ type blar = I8
             "(x  Bool)",
             "(x  Bool,)",
             "(x  I32, y  Bool)",
-            "(x @X, y @Y)",
+            "(x X, y Y)",
             "(x  I32, y  Bool,)",
         ];
         test_parse_with(|p| p.parse_fn_args(), &valid_args)
@@ -1666,7 +1665,7 @@ type blar = I8
             "(f fn(I32) I64, x I32) Bool",
             "(f fn(|| I32) I64, x I32) Bool",
             "(f fn(||) I64, x I32) Bool",
-            "(f fn(|@T| I32) I64, x I32) Bool",
+            "(f fn(|T| I32) I64, x I32) Bool",
             // now without explicit return types
             "()",
             "(x Bool)",
@@ -1678,7 +1677,7 @@ type blar = I8
             "(f fn(I32), x I32)",
             "(f fn(|| I32), x I32)",
             "(f fn(||), x I32)",
-            "(f fn(|@T| I32), x I32)",
+            "(f fn(|T| I32), x I32)",
         ];
         test_parse_with(|p| p.parse_fn_signature(), &valid_args)
     }
@@ -1778,12 +1777,12 @@ type blar = I8
     fn parse_fn_decls() {
         let valid_args = vec![
             "fn foo1(f I32) I32 = f end",
-            "fn foo2(|@T| f I32 ) I32 = f end",
-            "fn foo3(|@T|) {} = f end",
+            "fn foo2(|T| f I32 ) I32 = f end",
+            "fn foo3(|T|) {} = f end",
             "fn foo4(||) {} = f end",
             "fn foo5() {} = f end",
-            "fn foo6(f @T) @T = f end",
-            "fn foo7(|@T1, @T2, | f I32, g Bool, ) I32 = f end",
+            "fn foo6(f T) T = f end",
+            "fn foo7(|T1, T2, | f I32, g Bool, ) I32 = f end",
         ];
         test_parse_with(|p| p.parse_decl().unwrap(), &valid_args);
     }

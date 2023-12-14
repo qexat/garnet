@@ -4,7 +4,7 @@
 --   status: success
 
 
-fn thing(i {@T1, @T2}) {@T1, @T2} =
+fn thing(|T1, T2| i {T1, T2}) {T1, T2} =
     i
 end
 
