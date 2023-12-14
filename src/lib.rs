@@ -614,10 +614,12 @@ pub fn try_compile(
     };
     let hir = hir::lower(&ast);
     info!("HIR from AST lowering:\n{}", &hir);
+    //let (hir, mut symtbl) = symtbl::resolve_symbols(hir);
+    let hir = passes::run_passes(hir);
+    info!("HIR from first passes:\n{}", &hir);
     let (hir, mut symtbl) = symtbl::resolve_symbols(hir);
     info!("HIR from symtbl renaming:\n{}", &hir);
-    //info!("Symtbl from AST:\n{:#?}", &symtbl);
-    let hir = passes::run_passes(hir);
+    // info!("Symtbl from AST:\n{:#?}", &symtbl);
     let tck = &mut typeck::typecheck(&hir, &mut symtbl)?;
     borrowck::borrowck(&hir, tck).unwrap();
     let hir = passes::run_typechecked_passes(hir, tck);

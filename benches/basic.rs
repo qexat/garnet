@@ -118,15 +118,16 @@ fn bench_stages(c: &mut Criterion) {
 
     let hir = hir::lower(black_box(&ast));
     let hir = passes::run_passes(hir);
+    let (hir, mut symtbl) = symtbl::resolve_symbols(hir);
 
     c.bench_function("typecheck and borrowcheck", |b| {
         b.iter(|| {
-            let tck = &mut typeck::typecheck(black_box(&hir)).unwrap();
+            let tck = &mut typeck::typecheck(black_box(&hir), &mut symtbl).unwrap();
             borrowck::borrowck(&hir, tck).unwrap();
         })
     });
 
-    let tck = &mut typeck::typecheck(black_box(&hir)).unwrap();
+    let tck = &mut typeck::typecheck(black_box(&hir), &mut symtbl).unwrap();
     borrowck::borrowck(&hir, tck).unwrap();
 
     c.bench_function("typechecked passes", |b| {

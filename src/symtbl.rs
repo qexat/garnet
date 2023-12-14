@@ -32,8 +32,11 @@ pub struct UniqueSym(pub Sym);
 #[derive(Clone, Default, Debug)]
 struct ScopeFrame {
     symbols: BTreeMap<Sym, UniqueSym>,
-    _types: BTreeMap<Sym, Type>,
+    types: BTreeMap<Sym, Type>,
 }
+
+/// A shortcut for a cloneable AnyMap
+type CloneMap = Map<dyn anymap::any::CloneAny>;
 
 /// Basic symbol table that maps names to type ID's
 /// and manages scope.
@@ -44,10 +47,10 @@ pub struct Symtbl {
     /// A mapping from unique symbol names to whatever
     /// we need to know about them.  It's an AnyMap, so
     /// we can just stuff whatever data we need into it.
-    unique_symbols: BTreeMap<UniqueSym, Map<dyn anymap::any::CloneAny>>,
+    unique_symbols: BTreeMap<UniqueSym, CloneMap>,
 
     /// Same as unique_symbols but for types.
-    unique_types: BTreeMap<UniqueSym, Map<dyn anymap::any::CloneAny>>,
+    unique_types: BTreeMap<UniqueSym, CloneMap>,
 
     /// Every time we generate a new symbol we increment
     /// this.
@@ -158,24 +161,47 @@ impl Symtbl {
             .and_then(|anymap| anymap.insert(info));
     }
 
-    pub fn get_type_info<T>(&self, sym: UniqueSym) -> Option<&T>
+    fn get_type_info<T>(&self, sym: UniqueSym) -> Option<&T>
     where
         T: anymap::any::CloneAny,
     {
+        dbg!(&self.unique_types);
         self.unique_types
             .get(&sym)
             .and_then(|anymap| anymap.get::<T>())
     }
 
-    /// Adds the given type struct to the symbol, or
-    /// panics if it already exists.
-    pub fn put_type_info<T>(&mut self, sym: UniqueSym, info: T)
+    /// BUGGO: See discussion on UniqueSym type
+    pub fn get_type_info2<T>(&self, sym: Sym) -> Option<&T>
     where
         T: anymap::any::CloneAny,
     {
-        self.unique_types
-            .get_mut(&sym)
-            .and_then(|anymap| anymap.insert(info));
+        self.get_type_info(UniqueSym(sym))
+    }
+
+    /// Adds the given type struct to the symbol, or
+    /// panics if it already exists.
+    fn put_type_info<T>(&mut self, sym: UniqueSym, info: T)
+    where
+        T: anymap::any::CloneAny + std::fmt::Debug,
+    {
+        let anymap = self.unique_types.entry(sym).or_insert_with(CloneMap::new);
+        // slightly weird error message formatting 'cause we apparently can't
+        // clone `info` easily???
+        let info_dbg = format!("{:?}", info);
+        if let Some(x) = anymap.insert(info) {
+            panic!(
+                "Type info for {} already exists: {:?}\nAttempting to replace it with:    {}",
+                sym.0, x, info_dbg
+            );
+        }
+    }
+    /// BUGGO: same as get_type_info2()
+    pub fn put_type_info2<T>(&mut self, sym: Sym, info: T)
+    where
+        T: anymap::any::CloneAny + std::fmt::Debug,
+    {
+        self.put_type_info(UniqueSym(sym), info)
     }
 
     fn binding_exists(&self, sym: Sym) -> bool {
@@ -449,7 +475,10 @@ fn predeclare_decls(symtbl: &mut Symtbl, decls: &[hir::Decl]) {
                 params: _,
                 typedecl: _,
             } => {
-                //todo!()
+                // We currently don't rename all types, sooooo I think
+                // this is just a no-op?  The type checker is the only
+                // thing that has to worry about it, so it does its own
+                // predeclare pass anyway...
             }
             Const {
                 name,

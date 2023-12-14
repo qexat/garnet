@@ -2,9 +2,7 @@
 //! Operates on the HIR.
 
 use std::borrow::Cow;
-use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
-use std::rc::Rc;
 
 use log::*;
 
@@ -461,7 +459,7 @@ impl Tck {
     /// Panics on invalid field name or not a struct type
     pub fn get_struct_field_type(
         &mut self,
-        symtbl: &SymtblOld,
+        symtbl: &Symtbl,
         struct_type: TypeId,
         field_name: Sym,
     ) -> TypeId {
@@ -486,7 +484,7 @@ impl Tck {
     /// Same as `get_struct_field_type()` but takes a tuple type and an integer.
     pub fn get_tuple_field_type(
         &mut self,
-        symtbl: &SymtblOld,
+        symtbl: &Symtbl,
         tuple_type: TypeId,
         n: usize,
     ) -> TypeId {
@@ -557,7 +555,7 @@ impl Tck {
     /// Unify two lists of types.  They must be the same length.
     fn unify_lists(
         &mut self,
-        symtbl: &SymtblOld,
+        symtbl: &Symtbl,
         a: &[TypeId],
         b: &[TypeId],
     ) -> Result<(), TypeError> {
@@ -590,7 +588,7 @@ impl Tck {
 
     /// Make the types of two type terms equivalent (or produce an error if
     /// there is a conflict between them)
-    pub fn unify(&mut self, symtbl: &SymtblOld, a: TypeId, b: TypeId) -> Result<(), TypeError> {
+    pub fn unify(&mut self, symtbl: &Symtbl, a: TypeId, b: TypeId) -> Result<(), TypeError> {
         //trace!("> Unifying {:?} with {:?}", self.get(&a), self.get(&b));
         // If a == b then it's a little weird but shoooooould be fine
         // as long as we don't get any mutual recursion or self-recursion
@@ -890,99 +888,6 @@ impl Tck {
     }
 }
 
-#[derive(Clone, Default)]
-struct ScopeFrame {
-    /// Values are (type, mutability)
-    symbols: BTreeMap<Sym, (TypeId, bool)>,
-    types: BTreeMap<Sym, Type>,
-}
-
-/// Basic symbol table that maps names to type ID's
-/// and manages scope.
-/// Looks ugly, works well.
-#[derive(Clone)]
-pub struct SymtblOld {
-    frames: Rc<RefCell<Vec<ScopeFrame>>>,
-}
-
-impl Default for SymtblOld {
-    /// We start with an empty toplevel scope existing,
-    /// then add some builtin's to it.
-    fn default() -> Self {
-        Self {
-            frames: Rc::new(RefCell::new(vec![ScopeFrame::default()])),
-        }
-    }
-}
-
-pub struct ScopeGuard {
-    scope: SymtblOld,
-}
-
-impl Drop for ScopeGuard {
-    fn drop(&mut self) {
-        self.scope
-            .frames
-            .borrow_mut()
-            .pop()
-            .expect("Scope stack underflow");
-    }
-}
-
-impl SymtblOld {
-    fn add_builtins(&self, tck: &mut Tck) {
-        for builtin in &*builtins::BUILTINS {
-            let ty = tck.insert_known(&builtin.sig);
-            self.add_var(builtin.name, ty, false);
-        }
-    }
-    fn push_scope(&self) -> ScopeGuard {
-        self.frames.borrow_mut().push(ScopeFrame::default());
-        ScopeGuard {
-            scope: self.clone(),
-        }
-    }
-
-    fn add_var(&self, var: Sym, ty: TypeId, mutable: bool) {
-        self.frames
-            .borrow_mut()
-            .last_mut()
-            .expect("Scope stack underflow")
-            .symbols
-            .insert(var, (ty, mutable));
-    }
-
-    /// Checks whether the var exists in the currently alive scopes
-    fn get_var_binding(&self, var: Sym) -> Option<(TypeId, bool)> {
-        for scope in self.frames.borrow().iter().rev() {
-            let v = scope.symbols.get(&var);
-            if v.is_some() {
-                return v.cloned();
-            }
-        }
-        None
-    }
-
-    fn add_type(&self, name: Sym, ty: &Type) {
-        self.frames
-            .borrow_mut()
-            .last_mut()
-            .expect("Scope stack underflow")
-            .types
-            .insert(name, ty.to_owned());
-    }
-
-    fn get_type(&self, ty: Sym) -> Option<Type> {
-        for scope in self.frames.borrow().iter().rev() {
-            let v = scope.types.get(&ty);
-            if v.is_some() {
-                return v.cloned();
-            }
-        }
-        None
-    }
-}
-
 #[derive(Debug, Clone)]
 struct TckInfo {
     ty: TypeId,
@@ -1007,6 +912,14 @@ impl Symtbl {
             self.add_var(builtin.name, ty, false);
         }
     }
+
+    fn add_type(&mut self, var: Sym, ty: &Type) {
+        self.put_type_info2(var, ty.clone())
+    }
+
+    fn get_type(&mut self, var: Sym) -> Option<&Type> {
+        self.get_type_info2(var)
+    }
 }
 
 fn infer_lit(lit: &ast::Literal) -> TypeInfo {
@@ -1020,12 +933,12 @@ fn infer_lit(lit: &ast::Literal) -> TypeInfo {
     }
 }
 
-fn is_mutable_lvalue(symtbl: &SymtblOld, expr: &hir::ExprNode) -> bool {
+fn is_mutable_lvalue(symtbl: &Symtbl, expr: &hir::ExprNode) -> bool {
     use hir::Expr::*;
     match &*expr.e {
         Var { name } => {
-            let (_ty, mutable) = symtbl.get_var_binding(*name).unwrap();
-            mutable
+            let info = symtbl.get_var_binding(*name).unwrap();
+            info.mutable
         }
         StructRef { expr, .. } => is_mutable_lvalue(symtbl, expr),
         TupleRef { expr, .. } => is_mutable_lvalue(symtbl, expr),
@@ -1039,7 +952,7 @@ fn is_mutable_lvalue(symtbl: &SymtblOld, expr: &hir::ExprNode) -> bool {
 fn typecheck_block(
     name: Option<Sym>,
     tck: &mut Tck,
-    symtbl: &SymtblOld,
+    symtbl: &mut Symtbl,
     signature: &hir::Signature,
     body: &[hir::ExprNode],
 ) -> Result<TypeId, TypeError> {
@@ -1072,8 +985,7 @@ fn typecheck_block(
         symtbl.add_var(n, f, false);
     }
 
-    // Add params to function's scope
-    let _guard = symtbl.push_scope();
+    // Add type info for params.
     for (paramname, paramtype) in &signature.params {
         let p = tck.insert_known(paramtype);
         symtbl.add_var(*paramname, p, false);
@@ -1108,7 +1020,7 @@ fn typecheck_block(
 /// or unit if the list is empty.  Does NOT push a new scope.
 fn typecheck_exprs(
     tck: &mut Tck,
-    symtbl: &SymtblOld,
+    symtbl: &mut Symtbl,
     func_rettype: TypeId,
     exprs: &[hir::ExprNode],
 ) -> Result<TypeId, TypeError> {
@@ -1125,11 +1037,12 @@ fn typecheck_exprs(
 
 fn typecheck_expr(
     tck: &mut Tck,
-    symtbl: &SymtblOld,
+    symtbl: &mut Symtbl,
     func_rettype: TypeId,
     expr: &hir::ExprNode,
 ) -> Result<TypeId, TypeError> {
     use hir::Expr::*;
+    trace!("Typechecking expr {:?}", expr);
     let rettype: Result<_, TypeError> = match &*expr.e {
         Lit { val } => {
             let lit_type = infer_lit(val);
@@ -1138,11 +1051,12 @@ fn typecheck_expr(
             Ok(typeid)
         }
         Var { name } => {
-            let (ty, _mutable) = symtbl
+            trace!("Looking up var {}", name);
+            let varinfo = symtbl
                 .get_var_binding(*name)
                 .unwrap_or_else(|| panic!("unbound var: {:?}", name));
-            tck.set_expr_type(expr, ty);
-            Ok(ty)
+            tck.set_expr_type(expr, varinfo.ty);
+            Ok(varinfo.ty)
         }
         BinOp { op, lhs, rhs } => {
             let t1 = typecheck_expr(tck, symtbl, func_rettype, lhs)?;
@@ -1174,7 +1088,7 @@ fn typecheck_expr(
             let expr_in = typecheck_expr(tck, symtbl, func_rettype, rhs)?;
             let expected_in = tck.uop_input_type(*op);
             tck.unify(symtbl, expr_in, expected_in)?;
-            // Similar problem as BOp
+            // BUGGO: Similar problem as BOp
             let expected_output = tck.uop_output_type(*op, expected_in);
             //tck.unify(symtbl, expr_in, expected_output)?;
             tck.set_expr_type(expr, expected_output);
@@ -1335,7 +1249,6 @@ fn typecheck_expr(
                 let case_type = typecheck_expr(tck, symtbl, func_rettype, case)?;
                 tck.unify(symtbl, case_type, booltype)?;
 
-                let _guard = symtbl.push_scope();
                 let body_type = typecheck_exprs(tck, symtbl, func_rettype, body)?;
                 tck.unify(symtbl, body_type, rettype)?;
             }
@@ -1493,7 +1406,8 @@ fn typecheck_expr(
             type_params,
             body,
         } => {
-            let named_type = symtbl.get_type(*name).expect("Unknown type constructor");
+            let errmsg = format!("Unknown type constructor: {:?}", *name);
+            let named_type: &Type = symtbl.get_type(*name).expect(&errmsg);
             trace!("Got type named {}: is {:?}", name, named_type);
             // Ok if we have declared type params we gotta instantiate them
             // to match the type's generics.
@@ -1533,7 +1447,7 @@ fn typecheck_expr(
             /// but it needs to recurse.  Writing it iteratively is even more cursed.
             fn try_resolve_named_type(
                 tck: &Tck,
-                symtbl: &SymtblOld,
+                symtbl: &Symtbl,
                 t: TypeId,
             ) -> Result<(Sym, Vec<TypeId>), String> {
                 let tinfo = &tck.get(&t);
@@ -1551,7 +1465,7 @@ fn typecheck_expr(
 
             let body_type = typecheck_expr(tck, symtbl, func_rettype, inner_expr)?;
             let (nm, params) = try_resolve_named_type(tck, symtbl, body_type)?;
-            let inner_type = symtbl
+            let inner_type: &Type = symtbl
                 .get_type(nm)
                 .ok_or(format!("Named type {} is not known!", nm))?;
             trace!("Inner type is {:?}", inner_type);
@@ -1580,7 +1494,8 @@ fn typecheck_expr(
         } => {
             let named_type = symtbl
                 .get_type(*name)
-                .expect("Unknown sum type constructor");
+                .expect("Unknown sum type constructor")
+                .clone();
 
             // This might be wrong, we can probably do it the other way around
             // like we do with TypeUnwrap: start by checking the inner expr type and make
@@ -1689,27 +1604,13 @@ fn predeclare_decls(tck: &mut Tck, symtbl: &mut Symtbl, decls: &[hir::Decl]) {
             }
             TypeDef {
                 name,
-                params,
+                params: _,
                 typedecl,
             } => {
-                // Make sure that there are no unbound generics in the typedef
-                // that aren't mentioned in the params.
-                let generic_names: BTreeSet<Sym> = typedecl.get_type_params().into_iter().collect();
-                let param_names: BTreeSet<Sym> = params.iter().cloned().collect();
-                let difference: Vec<_> = generic_names.symmetric_difference(&param_names).collect();
-                if !difference.is_empty() {
-                    // gramble gramble strings
-                    let differences: Vec<_> = difference
-                        .into_iter()
-                        .map(|sym| (*sym.val()).clone())
-                        .collect();
-                    let differences = differences.join(", ");
-                    panic!("Error in typedef {}: Type params do not match generics mentioned in body.  Unmatched types: {}", name, differences);
-                }
-
                 // Remember that we know about a type with this name
-                let name = symtbl::UniqueSym(*name);
-                symtbl.put_type_info(name, typedecl.clone())
+                // All the real work is done in typecheck()
+                trace!("Predeclaring type {:?} with decl {:?}", *name, typedecl);
+                symtbl.add_type(*name, typedecl)
             }
             Const {
                 name,
@@ -1744,7 +1645,6 @@ pub fn typecheck(ast: &hir::Ir, symtbl: &mut Symtbl) -> Result<Tck, TypeError> {
                 signature,
                 body,
             } => {
-                let symtbl = &mut SymtblOld::default();
                 let t = typecheck_block(Some(*name), tck, symtbl, signature, body);
                 t.unwrap_or_else(|e| {
                     error!("Error, type context is:");
@@ -1757,7 +1657,6 @@ pub fn typecheck(ast: &hir::Ir, symtbl: &mut Symtbl) -> Result<Tck, TypeError> {
                 params,
                 typedecl,
             } => {
-                let symtbl = &mut SymtblOld::default();
                 // TODO: Handle recursive types properly?  Somehow.
                 // Make sure that there are no unbound generics in the typedef
                 // that aren't mentioned in the params.
@@ -1772,24 +1671,18 @@ pub fn typecheck(ast: &hir::Ir, symtbl: &mut Symtbl) -> Result<Tck, TypeError> {
                     panic!("Error in typedef {}: Type params do not match generics mentioned in body.  Unmatched types: {:?}", name, differences);
                 }
 
-                // Remember that we know about a type with this name
-                symtbl.add_type(*name, typedecl)
+                // Unnecessary to call add_type() since we've already predeclared it
             }
             Const {
                 name: _,
                 typ: typename,
                 init,
             } => {
-                let symtbl = &mut SymtblOld::default();
                 // The init expression is typechecked in its own
                 // scope, since it may theoretically be a `let` or
                 // something that introduces new names inside it.
                 let desired_type = tck.insert_known(typename);
-                let init_type = {
-                    let _guard = symtbl.push_scope();
-
-                    typecheck_expr(tck, symtbl, desired_type, init).unwrap()
-                };
+                let init_type = { typecheck_expr(tck, symtbl, desired_type, init).unwrap() };
                 tck.unify(symtbl, desired_type, init_type)
                     .expect("Error typechecking const decl");
                 //println!("Typechecked const {}, type is {:?}", name, init_type);
