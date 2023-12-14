@@ -612,7 +612,7 @@ fn lower_expr(expr: &ast::Expr) -> ExprNode {
         }
         E::If { cases, falseblock } => {
             // One of the actual transformations, this makes all if/else statements
-            // into essentially a switch: `if ... else if ... else if ... else if true ... end`
+            // into essentially a cond: `if ... else if ... else if ... else if true ... end`
             // This is more consistent and easier to handle for typechecking.
             assert!(!cases.is_empty(), "Should never happen");
             let mut cases: Vec<_> = cases

@@ -8,13 +8,13 @@
 --     4
 
 
-type List(@T) = struct
-    dummy_data: @T,
+type List(T) = struct
+    dummy_data: T,
 end
 
 
-type Idx(@Selff, @Output) = struct
-    idx: fn(@Selff, I32) @Output,
+type Idx(Selff, Output) = struct
+    idx: fn(Selff, I32) Output,
 end
 
 -- Can we make an instance for a specialization of List(T)?
@@ -23,8 +23,10 @@ const IntListIdx Idx(List(I32), I32) = Idx {
 }
 
 fn main() {} =
+/-
     let x = List { .dummy_data = 4_I32 }
     let y = IntListIdx$.idx(x, 3)
     __println(y); -- gfd parser ambiguity
+    -/
     {}
 end

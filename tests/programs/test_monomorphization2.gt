@@ -9,9 +9,9 @@
 --     2
 
 
-fn identity(i @T) @T =
+fn identity(i T) T =
     -- Does it work properly when we have a declared type for our var?
-    let y @T = i
+    let y T = i
     y
 end
 

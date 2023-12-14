@@ -11,8 +11,8 @@
 
 -- Fine let's try something simpler.
 
-type Eq(@Selff) = struct
-    eq: fn(@Selff, @Selff) Bool,
+type Eq(Selff) = struct
+    eq: fn(Selff, Selff) Bool,
 end
 
 -- The name here has to be something other than Eq(I32) 'cause we
@@ -28,8 +28,8 @@ const IntEq Eq(I32) = Eq {
     end,
 }
 
-type Ord(@Selff) = struct
-    cmp: fn(@Selff, @Selff) I32,
+type Ord(Selff) = struct
+    cmp: fn(Selff, Selff) I32,
 end
 
 const IntOrd Ord(I32) = Ord {
@@ -39,47 +39,47 @@ const IntOrd Ord(I32) = Ord {
 }
 
 
-type From(@Selff, @In) = struct
-    from: fn(@In) @Selff
+type From(Selff, In) = struct
+    from: fn(In) Selff
 end
 
 const BoolFromInt From(Bool, I32) = From {
     .from = fn(i I32) Bool = false end
 }
 
-type List(@T) = struct
-    dummy_data: @T,
+type List(T) = struct
+    dummy_data: T,
 end
 
 
-type Idx(@Selff, @Output) = struct
-    idx: fn(@Selff, I32) @Output,
+type Idx(Selff, Output) = struct
+    idx: fn(Selff, I32) Output,
 end
 
-type Len(@Selff) = struct
-    len: fn(@Selff) I32,
+type Len(Selff) = struct
+    len: fn(Selff) I32,
 end
 
-const ListLen Len(List(@T)) = Len {
-    .len = fn(selff List(@T)) I32 = 0 end
+const ListLen Len(List(T)) = Len {
+    .len = fn(selff List(T)) I32 = 0 end
 }
 
-fn module_len(impll Len(@T), l @T) I32 =
+fn module_len(impll Len(T), l T) I32 =
     let total I32 = 0
     impll$.len(l)
 end
 
 -- Specialize it just to make sure everything fits together...
-fn list_len(l List(@T)) I32 =
+fn list_len(l List(T)) I32 =
     module_len(ListLen, l)
 end
 
-const ListIdx Idx(List(@T), @T) = Idx {
-    .idx = fn(selff List(@T), i I32) @T = selff$.dummy_data end
+const ListIdx Idx(List(T), T) = Idx {
+    .idx = fn(selff List(T), i I32) T = selff$.dummy_data end
 }
 
 -- Generalized thingy...
-fn idx(l List(@T)) @T =
+fn idx(l List(T)) T =
     let total I32 = 3
     ListIdx$.idx(l, total)
 end

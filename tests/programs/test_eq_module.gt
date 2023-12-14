@@ -9,8 +9,8 @@
 --     true
 
 
-type Eq(@T) = struct
-    eq: fn(@T, @T) Bool,
+type Eq(T) = struct
+    eq: fn(T, T) Bool,
 end
 
 const IntEq Eq(I32) = Eq {
@@ -21,7 +21,7 @@ const BoolEq Eq(Bool) = Eq {
     .eq = fn(lhs Bool, rhs Bool) Bool = lhs == rhs end,
 }
 
-fn all(|@T| eq_impl Eq(@T), val @T, array [3]@T) Bool =
+fn all(|T| eq_impl Eq(T), val T, array [3]T) Bool =
 	let mut i I32 = 0
 	loop
 		if i == 3 then break end

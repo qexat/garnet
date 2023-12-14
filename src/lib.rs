@@ -257,6 +257,17 @@ impl Type {
         Self::Array(Box::new(t.clone()), len)
     }
 
+    /// Shortcut for a named type with no type params
+    pub fn named0(s: impl AsRef<str>) -> Self {
+        Type::Named(Sym::new(s), vec![])
+    }
+
+    /// Shortcut for a generic type
+    /// Not much shorter, but it keeps test cases cleaner I guess
+    pub fn generic(s: impl AsRef<str>) -> Self {
+        Type::Generic(Sym::new(s))
+    }
+
     fn function(params: &[Type], rettype: &Type, generics: &[Type]) -> Self {
         Type::Func(
             Vec::from(params),
