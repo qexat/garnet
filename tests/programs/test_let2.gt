@@ -20,6 +20,12 @@ fn main() {} =
         .b = false
     }))
 
+    let f2 = id(|Foo(Bool)| Foo(|Bool| {
+        .a = 3_I32,
+        .b = false
+    }))
+
+/- For now we do not try to infer any of this.
     let f1 = id(|Foo(I32)| Foo {
         .a = 3_I32,
         .b = false
@@ -39,4 +45,5 @@ fn main() {} =
         .a = true,
         .b = false
     } ) 
+-/
 end

@@ -1607,6 +1607,7 @@ fn predeclare_decls(tck: &mut Tck, symtbl: &mut Symtbl, decls: &[hir::Decl]) {
                 params: _,
                 typedecl,
             } => {
+                todo!("Start here");
                 // Remember that we know about a type with this name
                 // All the real work is done in typecheck()
                 trace!("Predeclaring type {:?} with decl {:?}", *name, typedecl);
