@@ -1416,7 +1416,7 @@ fn typecheck_expr(
             assert_eq!(
                 type_params.len(),
                 type_param_names.len(),
-                "Type '{}' expected params {:?} but got params {:?}",
+                "Type constructor '{}' expected params {:?} but got params {:?}",
                 name,
                 type_param_names,
                 type_params
@@ -1607,10 +1607,14 @@ fn predeclare_decls(tck: &mut Tck, symtbl: &mut Symtbl, decls: &[hir::Decl]) {
                 params: _,
                 typedecl,
             } => {
-                todo!("Start here");
+                //todo!("Start here");
+                // ...ok but when checking the typector it needs
+                // to get the type params and make sure those match
+                // too...  or can we just wing it 'cause we always
+                // generate those so they're always correct?
+                trace!("Predeclaring type {:?} with decl {:?}", *name, typedecl);
                 // Remember that we know about a type with this name
                 // All the real work is done in typecheck()
-                trace!("Predeclaring type {:?} with decl {:?}", *name, typedecl);
                 symtbl.add_type(*name, typedecl)
             }
             Const {

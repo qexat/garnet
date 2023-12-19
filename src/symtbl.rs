@@ -32,7 +32,7 @@ pub struct UniqueSym(pub Sym);
 #[derive(Clone, Default, Debug)]
 struct ScopeFrame {
     symbols: BTreeMap<Sym, UniqueSym>,
-    types: BTreeMap<Sym, Type>,
+    types: BTreeMap<Sym, UniqueSym>,
 }
 
 /// A shortcut for a cloneable AnyMap
@@ -139,6 +139,16 @@ impl Symtbl {
         self.get_binding(sym).expect(&msg)
     }
 
+    fn get_type_binding(&self, sym: Sym) -> Option<UniqueSym> {
+        for scope in self.frames.borrow().iter().rev() {
+            let v = scope.types.get(&sym).cloned();
+            if v.is_some() {
+                return v;
+            }
+        }
+        None
+    }
+
     /// Get the specified info for the given UniqueSym, or
     /// None if DNE
     pub fn get_info<T>(&self, sym: UniqueSym) -> Option<&T>
@@ -227,6 +237,19 @@ impl Symtbl {
         newsym
     }
 
+    /// Takes a name and generates a new type param name for it
+    fn bind_new_type(&mut self, sym: Sym) -> UniqueSym {
+        let newsym = self.gensym(sym);
+        self.frames
+            .borrow_mut()
+            .last_mut()
+            .expect("Scope stack underflow")
+            .types
+            .insert(sym, newsym);
+        self.unique_types.insert(newsym, Map::new());
+        newsym
+    }
+
     /// Introduce a new symbol, or panic if that name is already
     /// defined (ie, it is a name conflict, like two functions with
     /// the same name)
@@ -270,6 +293,40 @@ impl Symtbl {
                 .insert(sym, new_sym);
             self.unique_symbols.insert(new_sym, Map::new());
             new_sym
+        }
+    }
+
+    fn handle_types(&mut self, tys: Vec<Type>) -> Vec<Type> {
+        tys.into_iter().map(|t| self.handle_type(t)).collect()
+    }
+
+    /// Replace any generic names in the type with unique ones
+    fn handle_type(&mut self, ty: Type) -> Type {
+        use crate::Type::*;
+        match ty {
+            Named(nm, type_params) => {
+                let nm = self.get_type_binding(nm).unwrap().0;
+                let _guard = self.push_scope();
+                let new_type_params = self.handle_types(type_params);
+                Named(nm, new_type_params)
+            }
+            Func(args, rettype, type_params) => {
+                let _guard = self.push_scope();
+                let new_args = self.handle_types(args);
+                let new_rettype = Box::new(self.handle_type(*rettype));
+                let new_type_params = self.handle_types(type_params);
+                Func(new_args, new_rettype, new_type_params)
+            }
+            Struct(_, _) => ty,
+            Sum(_, _) => ty,
+            Array(_, _) => ty,
+            Generic(nm) => Generic(self.get_type_binding(nm).unwrap().0),
+            Uniq(_) => ty,
+
+            // all these have no subtypes
+            Prim(_) => ty,
+            Never => ty,
+            Enum(_) => ty,
         }
     }
 
@@ -524,10 +581,24 @@ fn handle_decl(symtbl: &mut Symtbl, decl: hir::Decl) -> hir::Decl {
             }
         }
         TypeDef {
-            name: _,
-            params: _,
-            typedecl: _,
-        } => decl,
+            name,
+            params,
+            typedecl,
+        } => {
+            // Ok this is exactly like resolving variables in a function.
+            // We bind the declared type params, check that all the types
+            // named in the body exist, and rename the ones in the params.
+            let _scope = symtbl.push_scope();
+            let new_params = params
+                .into_iter()
+                .map(|sym| (symtbl.bind_new_type(sym).0))
+                .collect();
+            TypeDef {
+                name,
+                params: new_params,
+                typedecl: symtbl.handle_type(typedecl),
+            }
+        }
         Const { name, typ, init } => {
             let new_name = symtbl.really_get_binding(name).0;
             let new_body = symtbl.handle_expr(init);
