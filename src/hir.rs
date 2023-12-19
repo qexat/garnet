@@ -108,7 +108,10 @@ impl fmt::Display for Decl {
                 typedecl,
                 params,
             } => {
-                writeln!(f, "type {}({:?}) = {}", name, params, typedecl.get_name())?;
+                let param_str = params
+                    .iter()
+                    .fold(String::new(), |res, t| res + &t.to_string());
+                writeln!(f, "type {}({}) = {}", name, param_str, typedecl.get_name())?;
             }
             D::Import { name, localname } => {
                 writeln!(f, "import {} as {}", name, localname)?;
@@ -283,6 +286,8 @@ impl Expr {
         Self::TupleCtor { body: vec![] }
     }
 
+    /// A fairly janky pretty-printer for IR, that is at least better
+    /// than using Debug on the raw structures.
     pub fn write(&self, indent: usize, f: &mut dyn fmt::Write) -> fmt::Result {
         use Expr::*;
         for _ in 0..(indent * 2) {
@@ -417,11 +422,15 @@ impl Expr {
             }
             TypeCtor {
                 name,
-                type_params: _,
+                type_params,
                 body,
             } => {
                 // TODO: type_params
-                write!(f, "(typector {} ", name)?;
+                write!(f, "(typector |")?;
+                for ty in type_params {
+                    write!(f, "{} ", ty.get_name())?;
+                }
+                write!(f, "| {} ", name)?;
                 body.write(0, f)?;
                 write!(f, ")")?;
             }
