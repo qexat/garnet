@@ -134,6 +134,10 @@ impl Symtbl {
 
     /// Get a reference to the symbol most recently bound
     /// with that name, or panic if it does not exist
+    ///
+    /// ...I kinda miss Elixir's convention of having
+    /// a function `foo` return a result and `foo!` panic
+    /// on error.
     fn really_get_binding(&self, sym: Sym) -> UniqueSym {
         let msg = format!("Symbol {} is not bound!", sym);
         self.get_binding(sym).expect(&msg)
@@ -147,6 +151,11 @@ impl Symtbl {
             }
         }
         None
+    }
+
+    fn really_get_type_binding(&self, sym: Sym) -> UniqueSym {
+        let msg = format!("Type {} is not bound!", sym);
+        self.get_type_binding(sym).expect(&msg)
     }
 
     /// Get the specified info for the given UniqueSym, or
@@ -487,9 +496,11 @@ impl Symtbl {
                 type_params,
                 body,
             } => {
+                // Translate the type name
+                let new_name = self.really_get_type_binding(name).0;
                 let body = self.handle_expr(body);
                 TypeCtor {
-                    name,
+                    name: new_name,
                     type_params,
                     body,
                 }
@@ -501,11 +512,14 @@ impl Symtbl {
                 name,
                 variant,
                 body,
-            } => SumCtor {
-                name,
-                variant,
-                body: self.handle_expr(body),
-            },
+            } => {
+                let new_name = self.really_get_type_binding(name).0;
+                SumCtor {
+                    name: new_name,
+                    variant,
+                    body: self.handle_expr(body),
+                }
+            }
             ArrayCtor { body } => ArrayCtor {
                 body: self.handle_exprs(body),
             },
@@ -543,14 +557,14 @@ fn predeclare_decls(symtbl: &mut Symtbl, decls: &[hir::Decl]) {
                     .unwrap_or_else(|| symtbl.new_unique_symbol(*name));
             }
             TypeDef {
-                name: _,
+                name,
                 params: _,
                 typedecl: _,
             } => {
-                // We currently don't rename all types, sooooo I think
-                // this is just a no-op?  The type checker is the only
-                // thing that has to worry about it, so it does its own
-                // predeclare pass anyway...
+                // Let's rename all types, which I think doesn't
+                // quite matter yet but will in the future when we
+                // have more powerful modules and such.
+                symtbl.bind_new_type(*name);
             }
             Const {
                 name,
@@ -583,6 +597,11 @@ fn handle_decl(symtbl: &mut Symtbl, decl: hir::Decl) -> hir::Decl {
                 .into_iter()
                 .map(|(sym, typ)| (symtbl.bind_new_symbol(sym).0, typ))
                 .collect();
+            let new_type_params = signature
+                .typeparams
+                .into_iter()
+                .map(|sym| symtbl.bind_new_type(sym).0)
+                .collect();
             let new_sig = hir::Signature {
                 params: new_params,
                 rettype: signature.rettype,
@@ -603,13 +622,14 @@ fn handle_decl(symtbl: &mut Symtbl, decl: hir::Decl) -> hir::Decl {
             // Ok this is exactly like resolving variables in a function.
             // We bind the declared type params, check that all the types
             // named in the body exist, and rename the ones in the params.
+            let ty_name = symtbl.really_get_type_binding(name).0;
             let _scope = symtbl.push_scope();
             let new_params = params
                 .into_iter()
                 .map(|sym| (symtbl.bind_new_type(sym).0))
                 .collect();
             TypeDef {
-                name,
+                name: ty_name,
                 params: new_params,
                 typedecl: symtbl.handle_type(typedecl),
             }
