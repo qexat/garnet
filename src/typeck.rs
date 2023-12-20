@@ -625,10 +625,6 @@ impl Tck {
             (Ref(a), _) => self.unify(symtbl, a, b),
             (_, Ref(b)) => self.unify(symtbl, a, b),
 
-            /*
-            (Prim(PrimType::UnknownInt), Unknown) => Ok(()),
-            (Unknown, Prim(PrimType::UnknownInt)) => Ok(()),
-            */
             // When we don't know anything about either term, assume that
             // they match and make the one we know nothing about reference the
             // one we may know something about
@@ -644,6 +640,8 @@ impl Tck {
             // For type constructors, if their names are the same we try
             // to unify their args
             (Named(n1, args1), Named(n2, args2)) => {
+                // Ok they may be generics so we need to look up their
+                // actual types in the symbol table...?
                 if n1 == n2 {
                     self.unify_lists(symtbl, &args1, &args2)
                 } else {
