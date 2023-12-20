@@ -175,7 +175,7 @@ impl Symtbl {
     where
         T: anymap::any::CloneAny,
     {
-        dbg!(&self.unique_types);
+        // dbg!(&self.unique_types);
         self.unique_types
             .get(&sym)
             .and_then(|anymap| anymap.get::<T>())
@@ -317,11 +317,26 @@ impl Symtbl {
                 let new_type_params = self.handle_types(type_params);
                 Func(new_args, new_rettype, new_type_params)
             }
-            Struct(_, _) => ty,
-            Sum(_, _) => ty,
-            Array(_, _) => ty,
-            Generic(nm) => Generic(self.get_type_binding(nm).unwrap().0),
-            Uniq(_) => ty,
+            Struct(body, type_params) => {
+                let _guard = self.push_scope();
+                let new_type_params = self.handle_types(type_params);
+                let new_body = body
+                    .into_iter()
+                    .map(|(nm, ty)| (nm, self.handle_type(ty)))
+                    .collect();
+                Struct(new_body, new_type_params)
+            }
+            Sum(body, type_params) => {
+                let _guard = self.push_scope();
+                let new_type_params = self.handle_types(type_params);
+                let new_body = body
+                    .into_iter()
+                    .map(|(nm, ty)| (nm, self.handle_type(ty)))
+                    .collect();
+                Sum(new_body, new_type_params)
+            }
+            Array(t, size) => Array(Box::new(self.handle_type(*t)), size),
+            Uniq(inner) => Uniq(Box::new(self.handle_type(*inner))),
 
             // all these have no subtypes
             Prim(_) => ty,

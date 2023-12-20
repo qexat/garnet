@@ -111,7 +111,6 @@ fn compile_typename(t: &Type) -> Cow<'static, str> {
             // accm.into()
             passes::generate_type_name(t).into()
         }
-        Generic(s) => mangle_name(&s.val()).into(),
         Array(t, len) => format!("[{};{}]", compile_typename(t), len).into(),
         Named(sym, generics) => {
             if generics.is_empty() {
@@ -253,7 +252,7 @@ fn compile_decl(w: &mut impl Write, decl: &hir::Decl, tck: &Tck) -> io::Result<(
 /// Compile a function signature
 fn compile_fn_signature(sig: &ast::Signature) -> String {
     let mut accm = String::from("");
-    let generics = sig.generic_type_names();
+    let generics = sig.type_params();
 
     if !generics.is_empty() {
         accm += "<";
@@ -336,7 +335,6 @@ fn contains_anyptr(t: &Type) -> bool {
         Struct(_body, _generics) => todo!(),
         Sum(_body, _generics) => todo!(),
         Array(t, _) => contains_anyptr(t),
-        Generic(_) => unreachable!(),
         _ => false,
     }
 }
