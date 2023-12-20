@@ -4,7 +4,7 @@
 --   status: success
 
 
-type Foo(Thing) = struct
+type Foo(Thing) = struct(Thing)
     a: Thing,
     b: Bool
 end

@@ -362,13 +362,14 @@ impl Expr {
             } => {
                 write!(f, "(funcall ")?;
                 func.write(0, f)?;
+                write!(f, " |")?;
+                for ty in type_params {
+                    write!(f, "{}, ", ty.get_name())?;
+                }
+                write!(f, "|")?;
                 for b in params {
                     b.write(indent + 1, f)?;
                     write!(f, " ")?;
-                }
-                write!(f, "|")?;
-                for ty in type_params {
-                    write!(f, "{},", ty.get_name())?;
                 }
                 write!(f, ")")?;
             }
@@ -852,7 +853,7 @@ fn lower_typedef(accm: &mut Vec<Decl>, name: Sym, ty: &Type, params: &[Sym]) {
         other => {
             let s = Sym::new("x");
             trace!("Lowering params {:?}", params);
-            let type_params: Vec<_> = params.iter().map(|s| Type::Generic(*s)).collect();
+            let type_params: Vec<_> = params.iter().map(|s| Type::named0(*s)).collect();
             let signature = ast::Signature {
                 params: vec![(s, other.clone())],
                 rettype: Type::Named(name.to_owned(), type_params.clone()),

@@ -115,8 +115,8 @@ impl Signature {
     }
 
     /// Get all the generic params out of this function sig
-    pub fn generic_type_names(&self) -> Vec<Sym> {
-        self.to_type().get_type_params()
+    pub fn type_params(&self) -> Vec<Sym> {
+        self.to_type().get_toplevel_type_params()
     }
 
     /// Returns a string containing just the params and rettype bits of the sig
@@ -130,7 +130,7 @@ impl Signature {
 
         let typenames: Vec<_> = self.typeparams.iter().map(|t| t.get_name()).collect();
         let typeargs = typenames.join(", ");
-        format!("({} | {}) {}", args, typeargs, self.rettype.get_name())
+        format!("(|{}| {}) {}", typeargs, args, self.rettype.get_name())
     }
 
     /// Transforms this signature into a new type.

@@ -414,6 +414,7 @@ impl Tck {
             Type::Never => TypeInfo::Never,
             Type::Enum(vals) => TypeInfo::Enum(vals.clone()),
             Type::Named(s, args) => {
+                // BUGGO: These can be type params sometimes, hrmm
                 let new_args = args.iter().map(|t| self.insert_known(t)).collect();
                 TypeInfo::Named(*s, new_args)
             }
@@ -423,7 +424,6 @@ impl Tck {
                 let new_typeparams = typeparams.iter().map(|t| self.insert_known(t)).collect();
                 TypeInfo::Func(new_args, new_rettype, new_typeparams)
             }
-            Type::Generic(s) => TypeInfo::TypeParam(*s),
             Type::Array(ty, len) => {
                 let new_body = self.insert_known(ty);
                 TypeInfo::Array(new_body, Some(*len))
@@ -759,7 +759,7 @@ impl Tck {
                     type_param_types?,
                 ))
             }
-            TypeParam(name) => Ok(Type::Generic(*name)),
+            TypeParam(name) => Ok(Type::named0(*name)),
             Struct(body) => {
                 let real_body: Result<BTreeMap<_, _>, TypeError> = body
                     .iter()
@@ -825,14 +825,6 @@ impl Tck {
                         args.iter().map(|t| helper(tck, named_types, t)).collect();
                     TypeInfo::Named(*s, inst_args)
                 }
-                Type::Generic(s) => {
-                    // If we know this is is a particular generic, match wiht it
-                    if let Some(ty) = named_types.get(s) {
-                        TypeInfo::Ref(*ty)
-                    } else {
-                        panic!("Referred to unknown generic named {}", s);
-                    }
-                }
                 Type::Func(args, rettype, typeparams) => {
                     let inst_args: Vec<_> =
                         args.iter().map(|t| helper(tck, named_types, t)).collect();
@@ -875,7 +867,7 @@ impl Tck {
         // We do have to take any of those unknowns that are actually
         // known and preserve that knowledge though.
         let known_types = &mut known_types.unwrap_or_default();
-        let type_params = t.get_type_params();
+        let type_params = t.get_toplevel_type_params();
         // Probably a cleaner way to do this but oh well.
         // We to through the type params, and if any of them
         // are unknown we put a new TypeInfo::Unknown in for them.
@@ -1195,7 +1187,7 @@ fn typecheck_expr(
             //
             // Ok we *also* need to see if we can infer type params on function
             // calls that haven't been passed them explicitly.
-            // like, if we have id(thing @T | @T) @T and we call id(false | Bool)
+            // like, if we have id(|T| thing T) T and we call id(|Bool| false)
             // that is fine, if we call id(false) then we need to infer the
             // Bool there. We require either all or no type params for these
             // functions, so it's actually possible.
@@ -1204,7 +1196,7 @@ fn typecheck_expr(
                 .zip(actual_func_type_params.iter())
                 .filter_map(
                     |(given_type_param, fnexpr_type_param)| match fnexpr_type_param {
-                        Type::Generic(nm) => Some((*nm, *given_type_param)),
+                        Type::Named(nm, _) => Some((*nm, *given_type_param)),
                         _ => None,
                     },
                 )
@@ -1406,13 +1398,13 @@ fn typecheck_expr(
             type_params,
             body,
         } => {
+            trace!("Handling typector {}, {:?}, {:?}", name, type_params, body);
             let errmsg = format!("Unknown type constructor: {:?}", *name);
             let named_type: &Type = symtbl.get_type(*name).expect(&errmsg);
             trace!("Got type named {}: is {:?}", name, named_type);
             // Ok if we have declared type params we gotta instantiate them
             // to match the type's generics.
-            //let type_param_names = named_type.get_generic_args();
-            let type_param_names = named_type.get_type_params();
+            let type_param_names = named_type.get_toplevel_type_params();
             assert_eq!(
                 type_params.len(),
                 type_param_names.len(),
@@ -1476,7 +1468,7 @@ fn typecheck_expr(
             //
             // But then we have to bind those type params to
             // what we *know* about the type already...
-            let type_param_names = inner_type.get_type_params();
+            let type_param_names = inner_type.get_toplevel_type_params();
             let known_type_params = type_param_names
                 .iter()
                 .cloned()
@@ -1612,6 +1604,8 @@ fn predeclare_decls(tck: &mut Tck, symtbl: &mut Symtbl, decls: &[hir::Decl]) {
                 // to get the type params and make sure those match
                 // too...  or can we just wing it 'cause we always
                 // generate those so they're always correct?
+                // A typedef really needs to be a signature, not just
+                // a name...
                 trace!("Predeclaring type {:?} with decl {:?}", *name, typedecl);
                 // Remember that we know about a type with this name
                 // All the real work is done in typecheck()
@@ -1665,7 +1659,8 @@ pub fn typecheck(ast: &hir::Ir, symtbl: &mut Symtbl) -> Result<Tck, TypeError> {
                 // TODO: Handle recursive types properly?  Somehow.
                 // Make sure that there are no unbound generics in the typedef
                 // that aren't mentioned in the params.
-                let generic_names: BTreeSet<Sym> = typedecl.get_type_params().into_iter().collect();
+                let generic_names: BTreeSet<Sym> =
+                    typedecl.get_toplevel_type_params().into_iter().collect();
                 let param_names: BTreeSet<Sym> = params.iter().cloned().collect();
                 let difference: Vec<_> = generic_names.symmetric_difference(&param_names).collect();
                 if !difference.is_empty() {

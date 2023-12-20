@@ -366,7 +366,6 @@ fn type_map(typ: Type, f: &mut dyn FnMut(Type) -> Type) -> Type {
         Type::Prim(_) => typ,
         Type::Never => typ,
         Type::Enum(_) => typ,
-        Type::Generic(_) => typ,
         Type::Uniq(t) => {
             let new_t = type_map(*t, f);
             Type::Uniq(Box::new(new_t))
@@ -422,9 +421,6 @@ pub fn generate_type_name(typ: &Type) -> String {
                 .collect();
             let fieldstr = fieldnames.join("_");
             format!("__Sum__{}", fieldstr)
-        }
-        Type::Generic(name) => {
-            format!("__G{}", name)
         }
         Type::Named(name, fields) => {
             let field_names: Vec<_> = fields.iter().map(generate_type_name).collect();
