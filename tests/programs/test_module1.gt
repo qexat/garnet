@@ -14,9 +14,9 @@
 --
 -- No associated types either, so we just make it a type param for now,
 -- which surprisingly appears to work.
-type Hasher(Selff, Out) = struct
-    write: fn(Selff, I32) Selff,
-    finish: fn(Selff) Out,
+type Hasher(Self, Out) = struct(Self, Out)
+    write: fn(Self, I32) Self,
+    finish: fn(Self) Out,
 end
 
 type DumbHashState = I32

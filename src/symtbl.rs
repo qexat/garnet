@@ -320,7 +320,7 @@ impl Symtbl {
             Named(nm, type_params) => {
                 let nm = self
                     .get_type_binding(nm)
-                    .unwrap_or_else(|| panic!("Could not fine declared type {}", nm))
+                    .unwrap_or_else(|| panic!("Could not find declared type {}", nm))
                     .0;
                 let _guard = self.push_scope();
                 let new_type_params = self.handle_types(type_params);

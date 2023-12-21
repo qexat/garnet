@@ -108,9 +108,8 @@ impl fmt::Display for Decl {
                 typedecl,
                 params,
             } => {
-                let param_str = params
-                    .iter()
-                    .fold(String::new(), |res, t| res + &t.to_string());
+                let param_str: Vec<String> = params.iter().map(|t| t.to_string()).collect();
+                let param_str = param_str.join(", ");
                 writeln!(f, "type {}({}) = {}", name, param_str, typedecl.get_name())?;
             }
             D::Import { name, localname } => {

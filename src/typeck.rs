@@ -1124,7 +1124,7 @@ fn typecheck_expr(
             // We know this will work because we require full function signatures
             // on our functions.
             let actual_func_type: Type = tck.reconstruct(func_type)?;
-            let (actual_args, actual_rettype, actual_type_params) = match &actual_func_type {
+            let (_actual_args, _actual_rettype, actual_type_params) = match &actual_func_type {
                 Type::Func(args, rettype, typeparams) => {
                     //trace!("Calling function {:?} is {:?}", func, actual_func_type);
                     // So when we call a function we need to know what its
@@ -1154,12 +1154,6 @@ fn typecheck_expr(
             // expression is 'cause it may be a generic type.
             let rettype_typevar = tck.insert(TypeInfo::Unknown);
 
-            // This does the exact same as below but
-            // requires the type params for a function call
-            // be declared explicitly.
-            // let type_params_vars: Vec<_> =
-            //     type_params.iter().map(|t| tck.insert_known(t)).collect();
-
             // This attempts to infer function type params if they are absent.  If the wrong number of params are given the
             // unification below will just fail.
             let type_params_vars: Vec<_> = if type_params.len() == 0 {
@@ -1182,6 +1176,8 @@ fn typecheck_expr(
             ));
 
             // Instantiate the function's declared type params.
+            // Basically make unique copies of its type params for this
+            // one specific function call
             let input_type_params = type_params_vars
                 .iter()
                 .zip(actual_type_params.iter())
@@ -1197,88 +1193,6 @@ fn typecheck_expr(
             // Does it match the real function type?
             // tck.unify(symtbl, func_type, funcall_typeinfo)?;
             tck.unify(symtbl, heck, funcall_typeinfo)?;
-
-            /*
-            // Synthesize what we know about the function
-            // from the call.
-            let params_list: Result<Vec<_>, _> = params
-                .iter()
-                .map(|param| typecheck_expr(tck, symtbl, func_rettype, param))
-                .collect();
-            let params_list = params_list?;
-            // Also synthesize what we know about the generics passed, if any,
-            // or if there aren't any then figure them out from the params that
-            // are passed.
-            let type_param_vars = match (type_params.len(), actual_func_type_params.len()) {
-                // all is good, no inference needed
-                (0, 0) => vec![],
-                // Infer type params from function call
-                //
-                // TODO: Should this be Ref(expected) rather than
-                // Unknown?  For now let's just infer it from nothing
-                // and see what happens.
-                (0, _expected) => actual_func_type_params
-                    .iter()
-                    .map(|_| tck.insert(TypeInfo::Unknown))
-                    .collect(),
-                // Map the given type params to the ones the function expects.
-                (given, expected) if given == expected => {
-                    type_params.iter().map(|t| tck.insert_known(t)).collect()
-                }
-                // Wrong number of type params given.
-                (given, expected) => {
-                    let errmsg = format!(
-                        "Tried to call func with {} type parameters but it expects {} of them!",
-                        given, expected
-                    );
-                    return Err(errmsg.into());
-                }
-            };
-            // We don't know what the expected return type of the function call
-            // is yet; we make a type var that will get resolved when the enclosing
-            // expression is.
-            let rettype_var = tck.insert(TypeInfo::Unknown);
-            // So this is now the inferred type that the function has been
-            // called with.
-            let funcall_var = tck.insert(TypeInfo::Func(
-                params_list,
-                rettype_var,
-                type_param_vars.clone(),
-            ));
-
-            // Now I guess this is where we make a copy of the function
-            // with new generic types.
-            // Is this "instantiation"???
-            // Yes it is.  Differentiate "type parameters", which are the
-            // types a function takes as input (our `Generic` or `TypeParam`
-            // things I suppose), from "type variables" which are the TypeId
-            // we have to solve for.
-            //
-            // So we go through the generics the function declares and create
-            // new type vars for each of them.
-            //
-            // We also create type variables for any type paramss we've been
-            // given values to.
-            //
-            // Ok we *also* need to see if we can infer type params on function
-            // calls that haven't been passed them explicitly.
-            // like, if we have id(|T| thing T) T and we call id(|Bool| false)
-            // that is fine, if we call id(false) then we need to infer the
-            // Bool there. We require either all or no type params for these
-            // functions, so it's actually possible.
-            let input_type_params = type_param_vars
-                .iter()
-                .zip(actual_func_type_params.iter())
-                .filter_map(
-                    |(given_type_param, fnexpr_type_param)| match fnexpr_type_param {
-                        Type::Named(nm, _) => Some((*nm, *given_type_param)),
-                        _ => None,
-                    },
-                )
-                .collect();
-            let heck = tck.instantiate(&actual_func_type, Some(input_type_params));
-            tck.unify(symtbl, heck, funcall_var)?;
-            */
 
             tck.set_expr_type(expr, rettype_typevar);
             Ok(rettype_typevar)
@@ -1332,7 +1246,7 @@ fn typecheck_expr(
             let enumtype = symtbl.get_type(*name).expect(&errmsg);
             // Make sure type actually is an enum
             // Enums are terminal types so I guess we don't need to do
-            // any inference or unification or such here?
+            // any inference or unification or such here
             match &enumtype {
                 Type::Enum(body) => {
                     // make sure variant actually exists

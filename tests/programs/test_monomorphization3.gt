@@ -18,11 +18,11 @@ fn main() {} =
     __println_bool(y.1)
 end
 
-fn thing2(x A) {I32, A} =
+fn thing2(|A| x A) {I32, A} =
     thing1(3, x)
 end
 
-fn thing1(i I32, x A) {I32, A} =
+fn thing1(|A| i I32, x A) {I32, A} =
     {i, x}
 end
 
