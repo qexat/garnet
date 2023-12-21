@@ -812,6 +812,9 @@ impl Tck {
     /// This has to actually be an empty hashtable on the first instantitaion
     /// instead of the symtbl, since the symtbl is full of type parameter names from the
     /// enclosing function and those are what we explicitly want to get away from.
+    ///
+    /// TODO: We can get rid of the known_types shit now that we rename
+    /// all type params to unique things, I think
     fn instantiate(&mut self, t: &Type, known_types: Option<BTreeMap<Sym, TypeId>>) -> TypeId {
         fn helper(tck: &mut Tck, named_types: &mut BTreeMap<Sym, TypeId>, t: &Type) -> TypeId {
             let typeinfo = match t {
@@ -907,7 +910,7 @@ impl Symtbl {
         self.put_type_info2(var, ty.clone())
     }
 
-    fn get_type(&mut self, var: Sym) -> Option<&Type> {
+    fn get_type(&self, var: Sym) -> Option<&Type> {
         self.get_type_info2(var)
     }
 }
@@ -962,7 +965,7 @@ fn typecheck_block(
     let tparams = signature
         .typeparams
         .iter()
-        .map(|p| tck.insert_known(p))
+        .map(|p| tck.insert_known(&Type::named0(*p)))
         .collect();
     let f = tck.insert(TypeInfo::Func(params, rettype, tparams));
 
@@ -1107,14 +1110,14 @@ fn typecheck_expr(
             let func_type = typecheck_expr(tck, symtbl, func_rettype, func)?;
             // We know this will work because we require full function signatures
             // on our functions.
-            let actual_func_type = tck.reconstruct(func_type)?;
-            let actual_func_type_params = match &actual_func_type {
-                Type::Func(_args, _rettype, typeparams) => {
+            let actual_func_type: Type = tck.reconstruct(func_type)?;
+            let (actual_args, actual_rettype, actual_type_params) = match &actual_func_type {
+                Type::Func(args, rettype, typeparams) => {
                     //trace!("Calling function {:?} is {:?}", func, actual_func_type);
                     // So when we call a function we need to know what its
                     // type params are.  Then we bind those type parameters
                     // to things.
-                    typeparams
+                    (args, rettype, typeparams)
                 }
                 other => panic!(
                     "Tried to call something not a function, it is a {:?}",
@@ -1122,6 +1125,40 @@ fn typecheck_expr(
                 ),
             };
 
+            // Typecheck the function args
+            let params_list: Result<Vec<TypeId>, _> = params
+                .iter()
+                .map(|param| typecheck_expr(tck, symtbl, func_rettype, param))
+                .collect();
+
+            let params_list = params_list?;
+
+            // Instantiate shit
+
+            // We don't know what the expected return type of the function call
+            // is yet; we make a type var that will get resolved when the enclosing
+            // expression is.
+            let rettype_typevar = tck.insert(TypeInfo::Unknown);
+
+            let type_params_list: Vec<_> =
+                type_params.iter().map(|t| tck.insert_known(t)).collect();
+
+            // So this is now the inferred type that the function has been
+            // called with.
+            let funcall_typeinfo = tck.insert(TypeInfo::Func(
+                params_list,
+                rettype_typevar,
+                type_params_list.clone(),
+            ));
+
+            // Does it match the real function type?
+            tck.unify(symtbl, func_type, funcall_typeinfo)?;
+
+            todo!("Start here
+            Ok so what is written is better than the commented-out portion that it was, but still doesn't instantiate type params properly.  I think partially 'cause we never actually create a TypeInfo::TypeParam type anymore, and partially 'cause instantiation is just kinda fuuuuuucked.  So when we declare a type Foo(Thing_1) and create the initializer function with the signature fn Foo(|Thing_2| ...) then it just says 'Thing_1 != Thing_2' instead of creating new type vars and setting them as equal for that call.  Hmmmm.
+                ");
+
+            /*
             // Synthesize what we know about the function
             // from the call.
             let params_list: Result<Vec<_>, _> = params
@@ -1201,9 +1238,10 @@ fn typecheck_expr(
                 .collect();
             let heck = tck.instantiate(&actual_func_type, Some(input_type_params));
             tck.unify(symtbl, heck, funcall_var)?;
+            */
 
-            tck.set_expr_type(expr, rettype_var);
-            Ok(rettype_var)
+            tck.set_expr_type(expr, rettype_typevar);
+            Ok(rettype_typevar)
         }
         Let {
             varname,
@@ -1587,7 +1625,7 @@ fn predeclare_decls(tck: &mut Tck, symtbl: &mut Symtbl, decls: &[hir::Decl]) {
                 let typeparams = signature
                     .typeparams
                     .iter()
-                    .map(|t| tck.insert_known(t))
+                    .map(|t| tck.insert_known(&Type::named0(*t)))
                     .collect();
                 let f = tck.insert(TypeInfo::Func(params, rettype, typeparams));
                 symtbl.add_var(*name, f, false);
