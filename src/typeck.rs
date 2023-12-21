@@ -1154,8 +1154,24 @@ fn typecheck_expr(
             // expression is 'cause it may be a generic type.
             let rettype_typevar = tck.insert(TypeInfo::Unknown);
 
-            let type_params_vars: Vec<_> =
-                type_params.iter().map(|t| tck.insert_known(t)).collect();
+            // This does the exact same as below but
+            // requires the type params for a function call
+            // be declared explicitly.
+            // let type_params_vars: Vec<_> =
+            //     type_params.iter().map(|t| tck.insert_known(t)).collect();
+
+            // This attempts to infer function type params if they are absent.  If the wrong number of params are given the
+            // unification below will just fail.
+            let type_params_vars: Vec<_> = if type_params.len() == 0 {
+                actual_type_params
+                    .iter()
+                    .map(|_t| tck.insert(TypeInfo::Unknown))
+                    .collect()
+            } else {
+                // TODO: Oooooooh, we could make a _ type param work
+                // here just by having it become TypeInfo::Unknown
+                type_params.iter().map(|t| tck.insert_known(t)).collect()
+            };
 
             // So this is now the inferred type that the function has been
             // called with.
@@ -1165,6 +1181,7 @@ fn typecheck_expr(
                 type_params_vars.clone(),
             ));
 
+            // Instantiate the function's declared type params.
             let input_type_params = type_params_vars
                 .iter()
                 .zip(actual_type_params.iter())
@@ -1180,10 +1197,6 @@ fn typecheck_expr(
             // Does it match the real function type?
             // tck.unify(symtbl, func_type, funcall_typeinfo)?;
             tck.unify(symtbl, heck, funcall_typeinfo)?;
-
-            // todo!("Start here
-            // Ok so what is written is better than the commented-out portion that it was, but still doesn't instantiate type params properly.  I think partially 'cause we never actually create a TypeInfo::TypeParam type anymore, and partially 'cause instantiation is just kinda fuuuuuucked.  So when we declare a type Foo(Thing_1) and create the initializer function with the signature fn Foo(|Thing_2| ...) then it just says 'Thing_1 != Thing_2' instead of creating new type vars and setting them as equal for that call.  Hmmmm.
-            // ");
 
             /*
             // Synthesize what we know about the function

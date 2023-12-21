@@ -11,4 +11,6 @@ end
 
 fn main() {} =
     let a {I32, Bool, I32} = identity(|{I32, Bool, I32}| {1, false, 3})
+    let b {I32, Bool, I32} = identity({1, false, 3})
+    let c {I32, Bool, I32} = identity {1, false, 3}
 end
