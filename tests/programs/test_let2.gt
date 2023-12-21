@@ -25,9 +25,8 @@ fn main() {} =
         .b = false
     }))
 
+    -- Now can we infer the type parameters for id() and Foo?
 
-    -- For now we do not try to infer any of this.
-    /-
     -- id() has type annotations, type constructor does not
     let f3 = id(|Foo(I32)| Foo {
         .a = 3_I32,
@@ -60,5 +59,4 @@ fn main() {} =
         .a = true,
         .b = false
     } ) 
--/
 end
