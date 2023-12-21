@@ -384,7 +384,7 @@ fn signature_map(sig: hir::Signature, f: &mut dyn FnMut(Type) -> Type) -> hir::S
     hir::Signature {
         params: new_params,
         rettype: type_map(sig.rettype, f),
-        typeparams: types_map(sig.typeparams, f),
+        typeparams: sig.typeparams,
     }
 }
 

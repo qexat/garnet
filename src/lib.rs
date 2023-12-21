@@ -235,6 +235,24 @@ impl Type {
         Type::Named(s, vec![])
     }
 
+    /// Turns a bunch of Named types into a list of symbols.
+    /// Panics if it encounters a different type of type.
+    pub fn detype_names(ts: &[Type]) -> Vec<Sym> {
+        fn f(t: &Type) -> Sym {
+            match t {
+                Type::Named(nm, generics) => {
+                    assert!(generics.len() == 0);
+                    *nm
+                }
+                _ => panic!(
+                    "Tried to get a Named type out of a {:?}, should never happen",
+                    t
+                ),
+            }
+        }
+        ts.iter().map(f).collect()
+    }
+
     fn function(params: &[Type], rettype: &Type, generics: &[Type]) -> Self {
         Type::Func(
             Vec::from(params),
@@ -369,111 +387,6 @@ impl Type {
                 let inner = ty.get_name();
                 Cow::Owned(format!("&{}", inner))
             }
-        }
-    }
-
-    /// Takes two types and creates/adds to a map of substitutions
-    /// from generics in the first type to the corresponding concrete
-    /// types in the second types.
-    ///
-    /// Panics if non-generic types don't match.
-    ///
-    /// TODO someday: refactor with passes::type_map()?  Not sure how to make
-    /// that walk over two types.
-    fn _find_substs(&self, other: &Type, substitutions: &mut BTreeMap<Sym, Type>) {
-        match (self, other) {
-            // Types are identical, noop.
-            (s, o) if s == o => (),
-            (Type::Named(n1, args1), Type::Named(n2, args2)) if n1 == n2 => {
-                for (p1, p2) in (&**args1).iter().zip(&**args2) {
-                    p1._find_substs(p2, substitutions);
-                }
-            }
-            (
-                Type::Func(params1, rettype1, typeparams1),
-                Type::Func(params2, rettype2, typeparams2),
-            ) => {
-                if params1.len() != params2.len() {
-                    panic!("subst for function had incorrect param length")
-                }
-                if typeparams1.len() != typeparams2.len() {
-                    panic!("subst for function had incorrect typeparam length")
-                }
-                if typeparams1.len() > 0 {
-                    todo!()
-                }
-                for (p1, p2) in (&**params1).iter().zip(&**params2) {
-                    p1._find_substs(p2, substitutions);
-                }
-                rettype1._find_substs(rettype2, substitutions);
-            }
-            (Type::Struct(_, _), Type::Struct(_, _)) => {
-                unreachable!("Actually can't happen I think, 'cause we tuple-ify everything first?")
-            } /*
-            (Type::Struct(body1, generics1), Type::Struct(body2, generics2)) => {
-            if body1.len() != body2.len() || generics1.len() != generics2.len() {
-            panic!("subst for function had incorrect body or generics length")
-            }
-            if
-            }
-             */
-            (Type::Sum(body1, generics1), Type::Sum(body2, generics2)) => {
-                if body1.len() != body2.len() || generics1.len() != generics2.len() {
-                    panic!("subst for sum type had non-matching body or generics length")
-                }
-                if !body1.keys().eq(body2.keys()) {
-                    panic!("subst for sum type had non-matching keys")
-                }
-                for ((_nm1, t1), (_nm2, t2)) in body1.iter().zip(body2) {
-                    t1._find_substs(t2, substitutions);
-                }
-
-                for (p1, p2) in (&**generics1).iter().zip(generics2) {
-                    p1._find_substs(p2, substitutions);
-                }
-            }
-            (Type::Array(t1, len1), Type::Array(t2, len2)) if len1 == len2 => {
-                t1._find_substs(t2, substitutions);
-            }
-            // Types are not identical, panic
-            _ => panic!("Cannot substitute {:?} into {:?}", other, self),
-        }
-    }
-
-    /// Takes a type and a map of substitutions and swaps out any generics
-    /// with the substituted types.
-    ///
-    /// Panics if a generic type has no substitution.
-    ///
-    /// TODO someday: refactor with passes::type_map()?
-    fn _apply_substs(&self, substs: &BTreeMap<Sym, Type>) -> Type {
-        match self {
-            Type::Func(params1, rettype1, typeparams1) => {
-                let new_params = params1.iter().map(|p1| p1._apply_substs(substs)).collect();
-                let new_rettype = rettype1._apply_substs(substs);
-                if typeparams1.len() > 0 {
-                    todo!("Hsfjkdslfjs");
-                }
-                Type::Func(new_params, Box::new(new_rettype), vec![])
-            }
-            Type::Named(n1, args1) => {
-                let new_args = args1.iter().map(|p1| p1._apply_substs(substs)).collect();
-                Type::Named(*n1, new_args)
-            }
-            Type::Struct(_, _) => unreachable!("see other unreachable in substitute()"),
-            Type::Sum(body, generics) => {
-                let new_body = body
-                    .iter()
-                    .map(|(nm, ty)| (*nm, ty._apply_substs(substs)))
-                    .collect();
-                let new_generics = generics.iter().map(|p1| p1._apply_substs(substs)).collect();
-                Type::Sum(new_body, new_generics)
-            }
-            Type::Array(body, len) => Type::Array(Box::new(body._apply_substs(substs)), *len),
-            Type::Prim(_) => self.clone(),
-            Type::Enum(_) => self.clone(),
-            Type::Never => self.clone(),
-            Type::Uniq(_) => todo!(),
         }
     }
 }

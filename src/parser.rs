@@ -702,6 +702,7 @@ impl<'input> Parser<'input> {
     fn parse_fn_signature(&mut self) -> ast::Signature {
         let (params, typeparams) = self.parse_fn_args();
         let rettype = self.try_parse_type().unwrap_or(Type::unit());
+        let typeparams = Type::detype_names(&typeparams);
         ast::Signature {
             params,
             rettype,

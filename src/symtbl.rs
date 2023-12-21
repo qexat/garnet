@@ -313,8 +313,12 @@ impl Symtbl {
     fn handle_type(&mut self, ty: Type) -> Type {
         use crate::Type::*;
         match ty {
+            Named(nm, type_params) if &*nm.val() == "Tuple" => Named(nm, type_params),
             Named(nm, type_params) => {
-                let nm = self.get_type_binding(nm).unwrap().0;
+                let nm = self
+                    .get_type_binding(nm)
+                    .unwrap_or_else(|| panic!("Could not fine declared type {}", nm))
+                    .0;
                 let _guard = self.push_scope();
                 let new_type_params = self.handle_types(type_params);
                 Named(nm, new_type_params)
@@ -400,6 +404,7 @@ impl Symtbl {
             } => {
                 let func = self.handle_expr(func);
                 let params = self.handle_exprs(params);
+                let type_params = self.handle_types(type_params);
                 Funcall {
                     func,
                     params,
@@ -416,6 +421,7 @@ impl Symtbl {
                 // symbol name
                 let init = self.handle_expr(init);
                 let varname = self.bind_new_symbol(varname).0;
+                let typename = typename.map(|t| self.handle_type(t));
                 Let {
                     varname,
                     init,
@@ -477,10 +483,18 @@ impl Symtbl {
                     .into_iter()
                     .map(|(sym, typ)| (self.bind_new_symbol(sym).0, typ))
                     .collect();
+                // Here we DECLARE the types in the param
+                // and rettype, similar to in handle_decl()
+                let new_type_params = signature
+                    .typeparams
+                    .into_iter()
+                    .map(|sym| self.bind_new_type(sym).0)
+                    .collect();
+                let new_rettype = self.handle_type(signature.rettype);
                 let new_sig = hir::Signature {
                     params: new_params,
-                    rettype: signature.rettype,
-                    typeparams: signature.typeparams,
+                    rettype: new_rettype,
+                    typeparams: new_type_params,
                 };
                 let new_body = self.handle_exprs(body);
                 Lambda {
@@ -498,10 +512,12 @@ impl Symtbl {
             } => {
                 // Translate the type name
                 let new_name = self.really_get_type_binding(name).0;
+                // Translate the type params it's called with
+                let new_params = self.handle_types(type_params);
                 let body = self.handle_expr(body);
                 TypeCtor {
                     name: new_name,
-                    type_params,
+                    type_params: new_params,
                     body,
                 }
             }
@@ -592,20 +608,23 @@ fn handle_decl(symtbl: &mut Symtbl, decl: hir::Decl) -> hir::Decl {
             let fn_name = symtbl.really_get_binding(name).0;
 
             let _scope = symtbl.push_scope();
-            let new_params = signature
-                .params
-                .into_iter()
-                .map(|(sym, typ)| (symtbl.bind_new_symbol(sym).0, typ))
-                .collect();
+            // These must be handled first 'cause types in the
+            // function arguments can refer to them.
             let new_type_params = signature
                 .typeparams
                 .into_iter()
                 .map(|sym| symtbl.bind_new_type(sym).0)
                 .collect();
+            let new_params = signature
+                .params
+                .into_iter()
+                .map(|(sym, typ)| (symtbl.bind_new_symbol(sym).0, symtbl.handle_type(typ)))
+                .collect();
+            let new_rettype = symtbl.handle_type(signature.rettype);
             let new_sig = hir::Signature {
                 params: new_params,
-                rettype: signature.rettype,
-                typeparams: signature.typeparams,
+                rettype: new_rettype,
+                typeparams: new_type_params,
             };
             let new_body = symtbl.handle_exprs(body);
             Function {
