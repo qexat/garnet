@@ -21,7 +21,7 @@ fn main() {} =
     }))
 
     let f2 = id(|Foo(Bool)| Foo(|Bool| {
-        .a = 3_I32,
+        .a = true,
         .b = false
     }))
 
