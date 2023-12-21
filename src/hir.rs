@@ -386,7 +386,7 @@ impl Expr {
                 variant,
                 value,
             } => {
-                write!(f, "(enumval {} {} {})", name, &*variant.val(), value)?;
+                write!(f, "(enumctor {} {} {})", name, &*variant.val(), value)?;
             }
             TupleCtor { body } => {
                 write!(f, "(tuple ")?;

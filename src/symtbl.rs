@@ -313,7 +313,10 @@ impl Symtbl {
     fn handle_type(&mut self, ty: Type) -> Type {
         use crate::Type::*;
         match ty {
-            Named(nm, type_params) if &*nm.val() == "Tuple" => Named(nm, type_params),
+            Named(nm, type_params) if &*nm.val() == "Tuple" => {
+                let new_type_params = self.handle_types(type_params);
+                Named(nm, new_type_params)
+            }
             Named(nm, type_params) => {
                 let nm = self
                     .get_type_binding(nm)
@@ -448,11 +451,17 @@ impl Symtbl {
                 name,
                 variant,
                 value,
-            } => EnumCtor {
-                name,
-                variant,
-                value,
-            },
+            } => {
+                // Translate the type name
+                // No need to translate the variants 'cause
+                // they are namespaced anyway
+                let new_name = self.really_get_type_binding(name).0;
+                EnumCtor {
+                    name: new_name,
+                    variant,
+                    value,
+                }
+            }
             TupleCtor { body } => TupleCtor {
                 body: self.handle_exprs(body),
             },
@@ -655,10 +664,11 @@ fn handle_decl(symtbl: &mut Symtbl, decl: hir::Decl) -> hir::Decl {
         }
         Const { name, typ, init } => {
             let new_name = symtbl.really_get_binding(name).0;
+            let new_type = symtbl.handle_type(typ);
             let new_body = symtbl.handle_expr(init);
             Const {
                 name: new_name,
-                typ,
+                typ: new_type,
                 init: new_body,
             }
         }
