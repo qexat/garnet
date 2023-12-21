@@ -9,5 +9,5 @@ fn thing(|T1, T2| i {T1, T2}) {T1, T2} =
 end
 
 fn main() {} =
-    let a {I32, Bool} = thing{1, false}
+    let a {I32, Bool} = thing(|I32, Bool| {1, false})
 end

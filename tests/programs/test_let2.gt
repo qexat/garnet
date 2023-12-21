@@ -25,23 +25,38 @@ fn main() {} =
         .b = false
     }))
 
-/- For now we do not try to infer any of this.
-    let f1 = id(|Foo(I32)| Foo {
+
+    -- For now we do not try to infer any of this.
+    /-
+    -- id() has type annotations, type constructor does not
+    let f3 = id(|Foo(I32)| Foo {
         .a = 3_I32,
         .b = false
     })
  
-    let f2 = id(|Foo(Bool)| Foo {
+    let f4 = id(|Foo(Bool)| Foo {
         .a = true,
         .b = false
     })
 
-    let f3 = id(Foo {
+    -- type constructor has type annotations, id() does not
+    let f5 = id(Foo(|I32| {
+        .a = 3_I32,
+        .b = false
+    }))
+
+    let f6 = id(Foo(|Bool| {
+        .a = true,
+        .b = false
+    }))
+
+    -- Neither have type annotations
+    let f7 = id(Foo {
         .a = 3_I32,
         .b = false
     } )
  
-    let f4 = id(Foo {
+    let f8 = id(Foo {
         .a = true,
         .b = false
     } ) 

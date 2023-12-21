@@ -553,6 +553,9 @@ impl Tck {
     }
 
     /// Unify two lists of types.  They must be the same length.
+    ///
+    /// TODO: It'd be nice to have some reference to the EID or
+    /// such in the source code for better error handling.
     fn unify_lists(
         &mut self,
         symtbl: &Symtbl,
@@ -1312,7 +1315,8 @@ fn typecheck_expr(
             variant,
             value,
         } => {
-            let enumtype = symtbl.get_type(*name).expect("Unknown enum type!");
+            let errmsg = format!("Unknown enum type in enum constructor: {}", name);
+            let enumtype = symtbl.get_type(*name).expect(&errmsg);
             // Make sure type actually is an enum
             // Enums are terminal types so I guess we don't need to do
             // any inference or unification or such here?
