@@ -1,0 +1,22 @@
+-- Format:
+--   status: success
+-- Compile:
+--   status: success
+-- Run:
+--   status: success
+--   stdout:
+--     12
+
+  
+fn make_id(|T1|) fn(T1) T1 =
+    let id = fn(x T1) T1 =
+        x
+    end
+    id
+end
+
+fn main() {} =
+    let id = make_id()
+    let res = id(12)
+    __println(res)
+end

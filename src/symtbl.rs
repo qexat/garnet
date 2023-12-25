@@ -487,11 +487,6 @@ impl Symtbl {
             Break => Break,
             Lambda { signature, body } => {
                 let _scope = self.push_scope();
-                let new_params = signature
-                    .params
-                    .into_iter()
-                    .map(|(sym, typ)| (self.bind_new_symbol(sym).0, typ))
-                    .collect();
                 // Here we DECLARE the types in the param
                 // and rettype, similar to in handle_decl()
                 let new_type_params = signature
@@ -500,6 +495,15 @@ impl Symtbl {
                     .map(|sym| self.bind_new_type(sym).0)
                     .collect();
                 let new_rettype = self.handle_type(signature.rettype);
+
+                // We have to do this AFTER adding the type params
+                // because the function args can mention
+                // type params.
+                let new_params = signature
+                    .params
+                    .into_iter()
+                    .map(|(sym, typ)| (self.bind_new_symbol(sym).0, self.handle_type(typ)))
+                    .collect();
                 let new_sig = hir::Signature {
                     params: new_params,
                     rettype: new_rettype,

@@ -488,6 +488,8 @@ pub fn try_compile(
     };
     let hir = hir::lower(&ast);
     info!("HIR from AST lowering:\n{}", &hir);
+    let (hir, _symtbl) = symtbl::resolve_symbols(hir);
+    info!("HIR from symtbl renaming 1:\n{}", &hir);
     let hir = passes::run_passes(hir);
     info!("HIR from first passes:\n{}", &hir);
     // Symbol resolution has to happen after passes 'cause
