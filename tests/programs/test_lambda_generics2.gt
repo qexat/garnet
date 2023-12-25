@@ -1,0 +1,29 @@
+-- Format:
+--   status: success
+-- Compile:
+--   status: success
+-- Run:
+--   status: success
+--   stdout:
+--     12
+
+-- Can we stuff a lambda into a struct with type parameters,
+-- and have we want?
+type Thing(T1, T2) = struct(T1, T2)
+    do_stuff: fn(T1, T2) I32,
+end
+
+fn impl_thing(|T1, T2|) Thing(T1, T2) =
+    let my_thing = Thing(|T1, T2| {
+        .do_stuff = fn(x T1, y T2) I32 =
+            12
+        end
+    })
+    my_thing
+end
+
+fn main() {} =
+    let impl = impl_thing(|I32, I32|)
+    let res = impl.do_stuff(1_I32, 2_U32)
+    __println(res)
+end
