@@ -109,7 +109,7 @@ impl Symtbl {
         UniqueSym(Sym::new(name))
     }
 
-    fn push_scope(&self) -> ScopeGuard {
+    pub fn push_scope(&self) -> ScopeGuard {
         self.frames.borrow_mut().push(ScopeFrame::default());
         // TODO: This clone is a little cursed 'cause
         // it'll clone the whole `unique_symbols` map,
@@ -247,7 +247,7 @@ impl Symtbl {
     }
 
     /// Takes a name and generates a new type param name for it
-    fn bind_new_type(&mut self, sym: Sym) -> UniqueSym {
+    pub(crate) fn bind_new_type(&mut self, sym: Sym) -> UniqueSym {
         let newsym = self.gensym(sym);
         self.frames
             .borrow_mut()
@@ -570,7 +570,7 @@ impl Symtbl {
     }
 }
 
-fn predeclare_decls(symtbl: &mut Symtbl, decls: &[hir::Decl]) {
+pub(crate) fn predeclare_decls(symtbl: &mut Symtbl, decls: &[hir::Decl]) {
     use hir::Decl::*;
     for d in decls {
         match d {
