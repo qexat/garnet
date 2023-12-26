@@ -26,6 +26,7 @@
 // oh well.
 
 //mod enum_to_int;
+mod closure_convert;
 mod constinfer;
 mod double_typeck;
 mod generic_infer;
@@ -52,6 +53,7 @@ pub fn run_passes(ir: Ir) -> Ir {
     // Probably not *difficult*, but tricksy.
     let passes: &[Pass] = &[
         handle_imports::handle_imports,
+        closure_convert::closure_convert,
         lambda_lift::lambda_lift,
         generic_infer::generic_infer,
     ];
