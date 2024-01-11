@@ -1,0 +1,78 @@
+--- Basic module for equality...
+
+type Eq(T) = struct(T)
+    eq: fn(T, T) Bool,
+end
+
+
+const IntEq Eq(I32) = Eq {
+    .eq = fn(lhs I32, rhs I32) Bool = lhs == rhs end,
+}
+
+const BoolEq Eq(Bool) = Eq {
+    .eq = fn(lhs Bool, rhs Bool) Bool = lhs == rhs end,
+}
+
+fn all(|T| eq_impl Eq(T), val T, array [3]T) Bool =
+        let mut i I32 = 0
+        loop
+                if i == 3 then break end
+                let val2 = array[i]
+                if not eq_impl$.eq(val, val2) then return false end
+                i = i + 1
+        end
+        true
+end
+
+
+
+
+type Ordering = enum
+	Less = -1,
+	Equal = 0,
+	Greater = 1,
+end
+
+-- Methods on Ordering
+fn is_eq(self Ordering) Bool =
+	self == Ordering.Equal
+end
+
+fn is_ne(self Ordering) Bool =
+	self != Ordering.Equal
+end
+
+fn is_lt(self Ordering) Bool =
+	self == Ordering.Less
+end
+
+fn is_ge(self Ordering) Bool =
+	self != Ordering.Less
+end
+
+fn is_gt(self Ordering) Bool =
+	self == Ordering.Greater
+end
+
+fn is_le(self Ordering) Bool =
+	self != Ordering.Greater
+end
+
+type Ord(T) = struct
+	ord: fn(T, T) Ordering,
+
+	-- Default values, hmmm
+	fn max(self T, other T) T =
+		todo()
+	end
+
+	fn min(self T, other T) T =
+		todo()
+	end
+
+	fn clamp(self T, other T) T =
+		todo()
+	end
+end
+
+
