@@ -1,0 +1,186 @@
+--- General-purpose iterator module.
+--- We don't have borrowing yet per se, so for now this will just have
+--- owned iterators.
+
+--- Module definition for an iterator
+type Iterator(Self, Item) = struct(Self, Item)
+  next: fn(Uniq(Self)) Option(Item),
+end
+
+--- Once we have modular implicits this function would actually be useful
+fn next(|Self, Item| impl Iterator(Self, Item), iter Uniq(Self)) Option(Item) =
+  impl.next(iter)
+end
+
+--- A function using that module
+fn count(|Self, Item| impl Iterator(Self, Item), iter Uniq(Self)) U32 =
+  let mut counted = 0;
+  while impl.next(iter).is_some() do
+    counted += 1
+  end
+  counted
+end
+
+
+type ArrayIterator(Item) = struct(Item)
+  array: []Item,
+  counter: U32,
+end
+
+--- This consumes the array passed to it.
+--- The equivalent of into_iter(), more or less.  
+fn make_array_iterator(|Item| arr []Item) ArrayIterator(Item) =
+  ArrayIterator(Item) {
+    array: arr,
+    counter: 0,
+  }
+end
+
+--- impl Iterator for ArrayIterator(Item)
+fn iterator_array(|Item|) Iterator(ArrayIterator(Item), Item) =
+  Iterator {
+    .next = fn(self Uniq(ArrayIterator(Item))) Option(Item) =
+      if self^.counter >= self^.array:len() then
+        Option.None {}
+      else
+        let vl = self^.array[self.counter]
+        self.counter += 1
+        Option.Some vl
+      end
+    end
+  }
+end
+
+--- So if we use it, what does it look like?
+fn test_array_iterator() =
+  let arr []U32 = [1, 2, 3, 4, 5]
+  -- create the acutal iterator object
+  -- in Rust this would be `arr.into_iter()`
+  let mut iter = make_array_iterator(arr&)
+
+  -- Instantiate the Iterator module on that particular iterator type...?
+  let iter_impl = iterator_array(|U32|)
+
+  loop
+    let next_item = next(iter_impl, iter)
+    if next_item.is_none() then break end
+    -- actual loop body goes here
+  end
+end
+
+
+
+
+--- ok if we made a generic into_iter() then what would it look like?
+type IntoIter(Self, Item, IteratorType) = struct(Self, Item, IteratorType)
+  into_iter: fn(Uniq(Self)) {IteratorType, Iterator(Self, Item)},
+end
+
+fn make_array_iterator(|Item| arr []Item) ArrayIterator(Item) =
+  ArrayIterator(Item) {
+    array: arr,
+    counter: 0,
+  }
+end
+
+
+
+
+/- this never really worked right, is quite cursed
+type Enumerator(Self, Item) = struct(Self, Item)
+  inner: Uniq(Self),
+  impl: Iterator(Self, Item)
+  _counter: U32,
+end
+
+fn enumerate(|Self, Item| impl Iterator(Self, Item), iter Uniq(Self)) Enumerator(Self, Item) =
+  Enumerator {
+    .inner = iter,
+    .impl = impl,
+    ._counter = 0,
+  }
+end
+
+--- impl Iterator for Enumerate
+fn impl_iterator_enumerator(|Self, Item| impl Iterator(Self, Item, iter Uniq(Self))) Iterator(Enumerator(Self, Item), {U32, Item}) =
+  Iterator {
+    .next = fn(iter Uniq(Enumerator(Self, Item))) Option({U32, Item}) =
+      let val = iter.impl.next(iter.inner)
+      let current_count = iter._counter
+      iter._counter += 1
+      -- Trying out the Haskell-ish lambda syntax.  Still kinda don't hate it.
+      option.map(val, \i -> {current_count, i})
+    end
+  }
+end
+
+-/
+
+--- Honestly why don't we just make iterators a closure?
+fn make_iterator(|Self, Item| val Self) fn() Option(Item) =
+end
+
+
+
+
+
+--- Make the closure for iteratoring over an ArrayIterator
+fn into_iter(|Item| arr []Item) fn() Option(Item) =
+  let mut counter = 0
+  fn() Option(Item) =
+    if counter >= arr:len() then
+      Option.None {}
+    else
+      let vl = arr[counter]
+      counter += 1
+      Option.Some vl
+    end
+  end
+end
+
+--- So if we use it, what does it look like?
+fn test_array_iterator() =
+  let arr []U32 = [1, 2, 3, 4, 5]
+  let mut iter = arr:into_iter()
+
+  loop
+    let next_item = iter()
+    if next_item.is_none() then break end
+    -- actual loop body goes here
+  end
+end
+
+
+--- ok if we made a generic into_iter() module then what would it look like?
+type IntoIter(Self, Item) = struct(Self, Item)
+  into_iter: fn(Self) fn() Option(Item)
+end
+
+fn array_into_iter(|Item| arr []Item) IntoIter([]Item, Item) = 
+  let mut counter = 0
+  IntoIter {
+    .into_iter = fn() Option(Item) =
+      if counter >= arr:len() then
+        Option.None {}
+      else
+        let vl = arr[counter]
+        counter += 1
+        Option.Some vl
+      end
+    end
+  }
+end
+
+--- Honestly basically the same except kinda hideously verbose for no real reason.
+fn test_array_iterator() =
+  let arr []U32 = [1, 2, 3, 4, 5]
+  let impl = array_into_iter(|I32);
+  let mut iter = impl.into_iter()
+
+  loop
+    let next_item = iter()
+    if next_item.is_none() then break end
+    -- actual loop body goes here
+  end
+end
+
