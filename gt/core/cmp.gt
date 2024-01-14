@@ -1,132 +1,111 @@
 --- Basic module for equality and comparisons.
 
 type Eq(T) = struct(T)
-    eq: fn(T, T) Bool,
+  eq: fn(T, T) Bool,
 end
 
 
 const I32Eq Eq(I32) = Eq {
-    .eq = fn(lhs I32, rhs I32) Bool = lhs == rhs end,
+  .eq = fn(lhs I32, rhs I32) Bool = lhs == rhs end,
 }
 
 const BoolEq Eq(Bool) = Eq {
-    .eq = fn(lhs Bool, rhs Bool) Bool = lhs == rhs end,
+  .eq = fn(lhs Bool, rhs Bool) Bool = lhs == rhs end,
 }
 
 fn all(|T| eq_impl Eq(T), val T, array [3]T) Bool =
-    let mut i I32 = 0
-    loop
-        if i == 3 then break end
-        let val2 = array[i]
-        if not eq_impl$.eq(val, val2) then return false end
-        i = i + 1
-    end
-    true
+  let mut i I32 = 0
+  loop
+    if i == 3 then break end
+    let val2 = array[i]
+    if not eq_impl$.eq(val, val2) then return false end
+    i = i + 1
+  end
+  true
 end
-
-
-
+  
 
 type Ordering = enum
-	Less = -1,
-	Equal = 0,
-	Greater = 1,
+  Less = -1,
+  Equal = 0,
+  Greater = 1,
 end
 
 -- Methods on Ordering
 fn is_eq(self Ordering) Bool =
-	self == Ordering.Equal
+  self == Ordering.Equal
 end
 
 fn is_ne(self Ordering) Bool =
-	self != Ordering.Equal
+  self != Ordering.Equal
 end
 
 fn is_lt(self Ordering) Bool =
-	self == Ordering.Less
+  self == Ordering.Less
 end
 
 fn is_ge(self Ordering) Bool =
-	self != Ordering.Less
+  self != Ordering.Less
 end
 
 fn is_gt(self Ordering) Bool =
-	self == Ordering.Greater
+  self == Ordering.Greater
 end
 
 fn is_le(self Ordering) Bool =
-	self != Ordering.Greater
+  self != Ordering.Greater
 end
 
 type Ord(T) = struct
-	cmp: fn(T, T) Ordering,
-
-	max: fn(T, T) T, 
-	min: fn(T, T) T,
-	clamp: fn(T, T) T,
+  cmp: fn(T, T) Ordering,
 end
 
---- We need default values for structs but we can just
---- use a functor to create them for now.
-fn default_ord(|T| cmp_impl fn(T, T) Ordering) Ord(T) =
-	Ord(T) {
-		.max = fn(self T, other T) T =
-			if cmp_impl(self, other):is_lt() then
-				self
-			else
-				other
-			end
-		end,
-
-		.min = fn(self T, other T) T =
-			if cmp_impl(self, other):is_gt() then
-				self
-			else
-				other
-			end
-		end,
-
-		.clamp = fn(self T, min T, max T) T =
-			assert!(cmp_impl(min, max) != Ordering.Greater)
-			if cmp_impl(self, min).is_lt() then
-				min
-			elseif cmp_impl(self, max).is_gt() then
-				max
-			else
-				self
-			end
-		end
-	}
+fn max(|T| ord Ord(T), self T, other T) T =
+  if ord.cmp(self, other):is_lt() then
+    self
+  else
+    other
+  end
 end
 
-fn int_cmp(x I32, y I32) Ordering =
-	if x > y then Ordering.Greater
-	elseif x < y then Ordering.Less
-	else Ordering.Equal
-	end
+fn min(|T| ord Ord(T), self T, other T) T =
+  if ord.cmp(self, other):is_gt() then
+    self
+  else
+    other
+  end
+end,
+
+fn clamp(|T| ord Ord(T), self T, min T, max T) T =
+  assert!(ord.cmp(min, max) != Ordering.Greater)
+  if ord.cmp(self, min).is_lt() then min
+  elseif ord.cmp(self, max).is_gt() then max
+  else self
+  end
 end
 
-const OrdI32: Ord(I32) = default_ord(|I32| int_cmp)
-
---- Function to compare Option types with a given Ord impl.
---- Uses Rust's Some(_) > None ordering, which is as good a
---- convention as any.
-fn cmp_option(|T| cmp_impl Ord(T), x Option(T), y Option(T)) Ordering =
-	-- there HAS to be some clever combinator for this...
-	match {x, y} with
-		| {Some(x_inner), Some(y_inner)} -> cmp_impl.cmp(x_inner, y_inner)
-		| {None, None} -> Ordering.Equal
-		| {Some(_), None} -> Ordering.Greater
-		| {None, Some(_)} -> Ordering.Less
-	end
-end
+const OrdI32: Ord(I32) = Ord {
+  .cmp = fn(x I32, y I32) Ordering =
+    if x > y then Ordering.Greater
+    elseif x < y then Ordering.Less
+    else Ordering.Equal
+    end
+  end
+}
 
 --- A functor that implements "Ord(Option(T)) where T: Ord".
-fn make_option_ord(|T| ordering_impl Ord(T)) Ord(Option(T)) =
-	let cmp = fn(|T| x Option(T), y Option(T)) Ordering =
-		cmp_option(ordering_impl, x, y)
-	end
-	default_ord(|Option(T)| cmp)
+fn option_ord(|T| ord Ord(T)) Ord(Option(T)) =
+  Ord {
+    .cmp = fn(|T| x Option(T), y Option(T)) Ordering =
+      match {x, y} with
+        | {Some(x_inner), Some(y_inner)} -> ord.cmp(x_inner, y_inner)
+        | {None, None} -> Ordering.Equal
+        | {Some(_), None} -> Ordering.Greater
+        | {None, Some(_)} -> Ordering.Less
+      end
+    end
+  }
 end
 
-const OrdOptionI32: Ord(Option(I32)) = make_option_ord(I32Ord)
+const OrdOptionI32: Ord(Option(I32)) = option_ord(OrdI32)
+ 
