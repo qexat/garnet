@@ -1,23 +1,30 @@
---! Basic Result type
---!
---! TODO:
---! Match syntax --
---! Sum type details -- pattern match syntax, etc.
---! Panics, strings...
+--- Basic Result type
+---
+--- TODO:
+--- Match syntax --
+--- Sum type details -- pattern match syntax, etc.
+--- Panics, strings...
 
+--- Our general-purpose Result type.
 --- Properties: Copy, Clone, Debug, Zero, Pod when T is Pod...
-type Result[T,E] = sum
-    Ok{T}
-    Err{E},
+type Result(T, E) = sum(T, E)
+    Ok {T},
+    Err {E},
 end
 
+--- Takes a Result and returns the value contained if it is Ok, 
+--- otherwise panics.
+---
 --- Properties: Panics.
-fn unwrap(self: Result[T,E]): T =
-    self:expect("Unwrap failed")
+fn unwrap(|T, E| self Result(T,E) T =
+    expect(self, "Unwrap failed")
 end
 
+--- Takes a Result and returns the value contained if it is Ok, 
+--- otherwise panics with the given message
+---
 --- Properties: Panics.
-fn expect(self: Result[T,E], message: Str): T =
+fn expect(|T, E| self Result(T, E), message Str) T =
     match self with
       | Err{_} -> panic(message)
       | Ok{val} -> val
@@ -25,23 +32,43 @@ fn expect(self: Result[T,E], message: Str): T =
 end
 
 
-fn unwrap_or(self: Result[T,E], val: T): T =
+fn unwrap_or(|T, E| self Result(T, E), val T) T =
     match self with
       | Err{_} -> val
       | Ok{val} -> val
     end
 end
 
-fn unwrap_or_else(self: Result[T,E], f: fn(): T): T =
+fn unwrap_or_else(|T, E| self Result(T, E), f fn() T) T =
     match self with
       | Err{_} -> f()
       | Ok{val} -> val
     end
 end
 
-fn cloned(self: Result[T &, E]): Result[T,E] where T: Clone =
+fn is_ok(|T, E| self Result(T, E)) Bool =
     match self with
-      | Err{e} -> Err({e})
-      | Ok{val} -> Ok({T.clone(val)})
+      | Ok{_} -> true
+      | Err{_} -> false
+    end
+end
+
+fn is_err(|T, E| self Result(T, E)) Bool =
+	not is_ok(self)
+end
+
+--- Transforms a `Result(T, E)` into an `Option(T)`
+fn ok(|T, E| self Result(T, E)) Option(T) =
+    match self with
+      | Ok{val} -> Some(val)
+      | Err{_} -> None {}
+    end
+end
+
+--- Transforms a `Result(T, E)` into an `Option(E)`
+fn err(|T, E| self Result(T, E)) Option(T) =
+    match self with
+      | Ok{_} -> None {}
+      | Err{val} -> Some val
     end
 end

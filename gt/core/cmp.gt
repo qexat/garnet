@@ -5,14 +5,16 @@ type Eq(T) = struct(T)
 end
 
 
-const I32Eq Eq(I32) = Eq {
+const EqI32 Eq(I32) = Eq {
   .eq = fn(lhs I32, rhs I32) Bool = lhs == rhs end,
 }
 
-const BoolEq Eq(Bool) = Eq {
+const EqBool Eq(Bool) = Eq {
   .eq = fn(lhs Bool, rhs Bool) Bool = lhs == rhs end,
 }
 
+--- just for a specific length rn, can change once we have
+--- slices or const generics or such
 fn all(|T| eq_impl Eq(T), val T, array [3]T) Bool =
   let mut i I32 = 0
   loop
@@ -24,7 +26,7 @@ fn all(|T| eq_impl Eq(T), val T, array [3]T) Bool =
   true
 end
   
-
+--- The result of a comparison between two values.
 type Ordering = enum
   Less = -1,
   Equal = 0,
@@ -56,10 +58,12 @@ fn is_le(self Ordering) Bool =
   self != Ordering.Greater
 end
 
+--- A module that implements comparison for a particular type.
 type Ord(T) = struct
   cmp: fn(T, T) Ordering,
 end
 
+--- Returns the maximum of the two values passed.
 fn max(|T| ord Ord(T), self T, other T) T =
   if ord.cmp(self, other):is_lt() then
     self
@@ -68,6 +72,7 @@ fn max(|T| ord Ord(T), self T, other T) T =
   end
 end
 
+--- Returns the minimum of the two values passed.
 fn min(|T| ord Ord(T), self T, other T) T =
   if ord.cmp(self, other):is_gt() then
     self
@@ -76,6 +81,8 @@ fn min(|T| ord Ord(T), self T, other T) T =
   end
 end,
 
+--- Returns the value if it is between the min and max values
+--- passed, or returns the min or max if it is beyond those bounds.
 fn clamp(|T| ord Ord(T), self T, min T, max T) T =
   assert!(ord.cmp(min, max) != Ordering.Greater)
   if ord.cmp(self, min).is_lt() then min
@@ -84,7 +91,8 @@ fn clamp(|T| ord Ord(T), self T, min T, max T) T =
   end
 end
 
-const OrdI32: Ord(I32) = Ord {
+--- Implementation of `Ord` for I32
+const OrdI32 Ord(I32) = Ord {
   .cmp = fn(x I32, y I32) Ordering =
     if x > y then Ordering.Greater
     elseif x < y then Ordering.Less
@@ -94,9 +102,12 @@ const OrdI32: Ord(I32) = Ord {
 }
 
 --- A functor that implements "Ord(Option(T)) where T: Ord".
+--- `None` is always less than `Some(x)` for any `x`.
 fn option_ord(|T| ord Ord(T)) Ord(Option(T)) =
   Ord {
     .cmp = fn(|T| x Option(T), y Option(T)) Ordering =
+      -- There's probably some fancy Option combinator to use
+      -- here but I can never keep em straight.
       match {x, y} with
         | {Some(x_inner), Some(y_inner)} -> ord.cmp(x_inner, y_inner)
         | {None, None} -> Ordering.Equal
