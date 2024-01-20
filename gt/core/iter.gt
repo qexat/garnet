@@ -1,133 +1,159 @@
 --- General-purpose iterator module.
+---
 --- We don't have borrowing yet per se, so for now this will just have
---- owned iterators.
-
---- Module definition for an iterator
-type Iterator(Self, Item) = struct(Self, Item)
-  next: fn(Uniq(Self)) Option(Item),
-end
-
---- Once we have modular implicits this function would actually be useful
-fn next(|Self, Item| impl Iterator(Self, Item), iter Uniq(Self)) Option(Item) =
-  impl.next(iter)
-end
-
---- A function using that module
-fn count(|Self, Item| impl Iterator(Self, Item), iter Uniq(Self)) U32 =
-  let mut counted = 0;
-  while impl.next(iter).is_some() do
-    counted += 1
-  end
-  counted
-end
-
-
-type ArrayIterator(Item) = struct(Item)
-  array: []Item,
-  counter: U32,
-end
-
---- This consumes the array passed to it.
---- The equivalent of into_iter(), more or less.  
-fn make_array_iterator(|Item| arr []Item) ArrayIterator(Item) =
-  ArrayIterator(Item) {
-    array: arr,
-    counter: 0,
-  }
-end
-
---- impl Iterator for ArrayIterator(Item)
-fn iterator_array(|Item|) Iterator(ArrayIterator(Item), Item) =
-  Iterator {
-    .next = fn(self Uniq(ArrayIterator(Item))) Option(Item) =
-      if self^.counter >= self^.array:len() then
-        Option.None {}
-      else
-        let vl = self^.array[self.counter]
-        self.counter += 1
-        Option.Some vl
-      end
-    end
-  }
-end
-
---- So if we use it, what does it look like?
-fn test_array_iterator() =
-  let arr []U32 = [1, 2, 3, 4, 5]
-  -- create the acutal iterator object
-  -- in Rust this would be `arr.into_iter()`
-  let mut iter = make_array_iterator(arr&)
-
-  -- Instantiate the Iterator module on that particular iterator type...?
-  let iter_impl = iterator_array(|U32|)
-
-  loop
-    let next_item = next(iter_impl, iter)
-    if next_item.is_none() then break end
-    -- actual loop body goes here
-  end
-end
-
-
-
-
---- ok if we made a generic into_iter() then what would it look like?
-type IntoIter(Self, Item, IteratorType) = struct(Self, Item, IteratorType)
-  into_iter: fn(Uniq(Self)) {IteratorType, Iterator(Self, Item)},
-end
-
-fn make_array_iterator(|Item| arr []Item) ArrayIterator(Item) =
-  ArrayIterator(Item) {
-    array: arr,
-    counter: 0,
-  }
-end
-
-
-
-
-/- this never really worked right, is quite cursed
-type Enumerator(Self, Item) = struct(Self, Item)
-  inner: Uniq(Self),
-  impl: Iterator(Self, Item)
-  _counter: U32,
-end
-
-fn enumerate(|Self, Item| impl Iterator(Self, Item), iter Uniq(Self)) Enumerator(Self, Item) =
-  Enumerator {
-    .inner = iter,
-    .impl = impl,
-    ._counter = 0,
-  }
-end
-
---- impl Iterator for Enumerate
-fn impl_iterator_enumerator(|Self, Item| impl Iterator(Self, Item, iter Uniq(Self))) Iterator(Enumerator(Self, Item), {U32, Item}) =
-  Iterator {
-    .next = fn(iter Uniq(Enumerator(Self, Item))) Option({U32, Item}) =
-      let val = iter.impl.next(iter.inner)
-      let current_count = iter._counter
-      iter._counter += 1
-      -- Trying out the Haskell-ish lambda syntax.  Still kinda don't hate it.
-      option.map(val, \i -> {current_count, i})
-    end
-  }
-end
-
--/
+--- owned iterators.  We'll pretend everything can always be copied.
 
 --- Honestly why don't we just make iterators a closure?
-fn make_iterator(|Self, Item| val Self) fn() Option(Item) =
-end
+---
+--- The answer from scottmcm is basically because we want to
+--- be able to hang other information off of it, such as
+--- capacity, custom (more efficient/specialized) methods,
+--- etc.
+alias Iterator(Item) = fn() Option(Item) =
 
+/- See all this:
+𝔰𝔠𝔬𝔱𝔱𝔪𝔠𝔪 — Today at 6:01 PM
+That's basically just Iterator::next spelled FnMut() -> Option<T>, so it'll certainly work.  Though if you have Copy closures -- like rust now does (for better or worse) -- then you might hit the same issues.
 
+The big thing doing it with just a closure is that it keeps you from having a capacity hint for collect, so you're going to end up reallocating more than optimal.
 
+icefox — Today at 6:01 PM
+Heck you're right
 
+𝔰𝔠𝔬𝔱𝔱𝔪𝔠𝔪 — Today at 6:02 PM
+Indeed, you'll see that rust has https://doc.rust-lang.org/std/iter/fn.from_fn.html to make an iterator from such a closure
 
---- Make the closure for iteratoring over an ArrayIterator
-fn into_iter(|Item| arr []Item) fn() Option(Item) =
+icefox — Today at 6:02 PM
+Yep, it's just annoying to define ten million nearly identical Iterator structs
+And you get like 2.5 layers deep in type metaprogramming which is painful in Rust and more painful in Garnet
+
+danielrab — Today at 6:06 PM
+it's a little junk, but you could have methods on the FnMut trait with default implementation that only exist when the return type is Option<T>
+
+dawn ❧ — Today at 6:07 PM
+from_fn with TAIT sounds like it'll be real nice for iterators i think 
+
+danielrab — Today at 6:07 PM
+what's TAIT?
+
+dawn ❧ — Today at 6:07 PM
+type alias impl trait 
+they're existential
+
+icefox — Today at 6:09 PM
+I'm trying to think of a good way to do it the other way around
+
+danielrab — Today at 6:09 PM
+hmm?
+like auto-implement FnMut when Iterator is implemented or something?
+
+icefox — Today at 6:10 PM
+Basically have two types of iterator, one that provides a capacity method and one that doesn't
+
+danielrab — Today at 6:10 PM
+bad
+
+icefox — Today at 6:10 PM
+And the one that doesn't can be a closure, and the one that does can be turned into a closure if you want to ignore the capacity
+
+𝔰𝔠𝔬𝔱𝔱𝔪𝔠𝔪 — Today at 6:11 PM
+@icefox BTW, if you're starting from something new, you should start from https://github.com/rust-lang/rust/pull/45595, not from next.
+
+icefox — Today at 6:11 PM
+....ooo
+
+danielrab — Today at 6:11 PM
+well, I guess you could auto-implement that one that doesn't
+
+𝔰𝔠𝔬𝔱𝔱𝔪𝔠𝔪 — Today at 6:12 PM
+alias Iterator(Item) = for<A, B> fn(A, fn(A, Item) -> ControlFlow<B, A>) -> ControlFlow<B, A>; 
+
+danielrab — Today at 6:12 PM
+but like, iterators have a ton of optional methods, not just capacity
+
+icefox — Today at 6:12 PM
+Yes, and this is a problem for Future Fox but I have vague ideas for how to solve it
+@𝔰𝔠𝔬𝔱𝔱𝔪𝔠𝔪 I have a lot of reading to do apparently! Thanks.
+
+𝔰𝔠𝔬𝔱𝔱𝔪𝔠𝔪 — Today at 6:13 PM
+Because iter.next() can be implemented as iter.try_for_each(Err).err() , and thus you can still do external iteration if needed, but making the core thing have internal iteration makes a bunch of things faster.
+
+danielrab — Today at 6:14 PM
+Just have methods with default implementations on your Iterator trait, whether it is actually FnMut or not
+
+icefox — Today at 6:14 PM
+Default implementations are something I don't have yet, so~
+You can conjure them forth with a functor or you can just implement functions that operate on an Iterator(T)
+
+danielrab — Today at 6:17 PM
+iter.try_for_each(Err).err() feels like such a hack
+
+icefox — Today at 6:18 PM
+So worst case you have map(Iterator(X), fn(X) Y) Iterator(Y)
+And then my_thing::map(...) which does the same thing but faster
+Which isn't ideal, so I'd prefer to avoid it, but it won't murder any puppies
+Actually that gets ugly cause of composition
+Darn it
+Ok I'm gonna need to allow full-ass custom implementations for iterators after all
+
+𝔰𝔠𝔬𝔱𝔱𝔪𝔠𝔪 — Today at 6:20 PM
+It actually optimizes surprisingly well, because from the types and constants involved the compiler can see that the loop will never run more than once -- it's basically like it boils down to for x in blah { break Some(x) }, which also clearly executes 0 or 1 times, never more.
+
+icefox — Today at 6:20 PM
+Otherwise if you pass a my_thing to a function and it calls map() on it you have no way of telling it to use the better version of map()
+
+danielrab — Today at 6:25 PM
+I didn't say it was bad, I said it feels like a hack.
+
+𝔰𝔠𝔬𝔱𝔱𝔪𝔠𝔪 — Today at 6:26 PM
+In terms of how it's spelled or in terms of what it's doing or ...?
+
+danielrab — Today at 6:27 PM
+In terms of how it's spelled out mainly
+
+𝔰𝔠𝔬𝔱𝔱𝔪𝔠𝔪 — Today at 6:27 PM
+The actual spelling is .try_for_each(ControlFlow::Break).break_value(), but IIRC that break_value method isn't stable, so I use the short implementation in chat 
+
+danielrab — Today at 6:29 PM
+That's a little better, but it still has this "do this for each element until I tell you to stop, but actually stop immediately" weirdness
+
+𝔰𝔠𝔬𝔱𝔱𝔪𝔠𝔪 — Today at 6:29 PM
+Yeah.  Not something I'd want people to write regularly, but very good for a default implementation
+
+icefox — Today at 6:37 PM
+Something something coroutines something something
+
+𝔰𝔠𝔬𝔱𝔱𝔪𝔠𝔪 — Today at 6:46 PM
+I've yet to see a good answer for how to get collect hints from coroutines
+
+icefox — Today at 6:48 PM
+Easy, just make it return a tuple of (Option<usize>, ActualCoroutine) on first invocation
+Oh wait you said a good answer, nvm
+...actually...
+
+𝔰𝔠𝔬𝔱𝔱𝔪𝔠𝔪 — Today at 6:49 PM
+right, cause you can use a size_hint without iterating and you can get one in the middle of iteration
+
+icefox — Today at 6:50 PM
+I mean it'd only return the size hint once, so doing it without iterating isn't a problem
+Getting one in the middle of iteration... Hmm, not sure what one would want that for, but...
+The downside is basically there's always another step to starting the iteration at all
+
+𝔰𝔠𝔬𝔱𝔱𝔪𝔠𝔪 — Today at 6:51 PM
+Well Vec::extend calls it that way, for example.
+
+𝔰𝔠𝔬𝔱𝔱𝔪𝔠𝔪 — Today at 6:52 PM
+Also, ExactSizeIterator::len has the same "I want it in the middle of iterating without consuming an element" problem.
+
+icefox — Today at 6:53 PM
+Oh it only calls it if it runs out of reserved space? Interesting.
+
+-/
+    
+--- Make the closure for iterating over an array
+fn into_iter(|Item| arr []Item) Iterator(Item) =
   let mut counter = 0
-  fn() Option(Item) =
+  let thunk = fn() Option(Item) =
     if counter >= arr:len() then
       Option.None {}
     else
@@ -136,6 +162,7 @@ fn into_iter(|Item| arr []Item) fn() Option(Item) =
       Option.Some vl
     end
   end
+  thunk
 end
 
 --- So if we use it, what does it look like?
@@ -146,41 +173,42 @@ fn test_array_iterator() =
   loop
     let next_item = iter()
     if next_item.is_none() then break end
-    -- actual loop body goes here
+    __print_u32(next_item)
+  end
+
+  -- currently-hypothetical for loop syntax
+  for itm in arr:into_iter() do
+    __print_u32(itm)
   end
 end
 
 
---- ok if we made a generic into_iter() module then what would it look like?
-type IntoIter(Self, Item) = struct(Self, Item)
-  into_iter: fn(Self) fn() Option(Item)
+--- Ok let's make a module representing an iterator with some specific
+--- Self type with arbitrary state.  That way you can treat any object 
+--- as an iterator if you want to instead of having to use a closure.
+---
+--- Right now there's no way for `Self` to actually change so this isn't
+--- terribly useful, but hey.
+type IterImpl(Self, Item) = struct(Self, Item)
+  next: fn(Self) Option(Item)
 end
 
-fn array_into_iter(|Item| arr []Item) IntoIter([]Item, Item) = 
-  let mut counter = 0
-  IntoIter {
-    .into_iter = fn() Option(Item) =
-      if counter >= arr:len() then
-        Option.None {}
-      else
-        let vl = arr[counter]
-        counter += 1
-        Option.Some vl
-      end
-    end
-  }
-end
-
---- Honestly basically the same except kinda hideously verbose for no real reason.
-fn test_array_iterator() =
-  let arr []U32 = [1, 2, 3, 4, 5]
-  let impl = array_into_iter(|I32);
-  let mut iter = impl.into_iter()
-
-  loop
-    let next_item = iter()
-    if next_item.is_none() then break end
-    -- actual loop body goes here
+--- Create an iterator out of any type and an IntoIter implementation
+--- for it.
+fn make_iterator(|Self, Item| impl IterImpl(Self, Item), val Self) Iterator(Item) =
+  let thunk = fn() Option(Item) =
+    impl.next(val)
   end
+  thunk
+end
+ 
+fn iter_option(|T| self Option(T)) Iterator(T) =
 end
 
+fn iter_result(|T, E| self Result(T, E)) Iterator(T) =
+end
+
+--- I remember there's something squirrelly about Rust ranges and iterators
+--- but don't recall what, check it out sometime.
+fn iter_range(self Range(Size)) Iterator(Size) =
+end
