@@ -1,0 +1,16 @@
+--- Conversion modules/interfaces.
+--- 
+--- Design ticket for stuff here:
+--- from/tryfrom
+--- try (? operator)
+
+
+--- Infallible conversions
+type From(Self, Out) = struct(Self, Out) =
+  from: fn(Self) Out
+end
+
+--- Fallible conversions
+type TryFrom(Self, Out, E) = struct(Self, Out) =
+  try_from: fn(Self) Result(Out, E)
+end

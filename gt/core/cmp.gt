@@ -1,4 +1,11 @@
 --- Basic module for equality and comparisons.
+---
+--- Now that I think of it, we don't have PartialEq or
+--- PartialOrd.  We don't need them yet 'cause we don't
+--- have floats.  I'm kinda okay with this tbh, iirc there's
+--- a semi-official standard out for ordering NaN's we
+--- should look into, and there's a broad design space of
+--- Rust crates for NaN-preventing floats and such.
 
 type Eq(T) = struct(T)
   eq: fn(T, T) Bool,
@@ -105,7 +112,7 @@ const OrdI32 Ord(I32) = Ord {
 --- `None` is always less than `Some(x)` for any `x`.
 fn option_ord(|T| ord Ord(T)) Ord(Option(T)) =
   Ord {
-    .cmp = fn(|T| x Option(T), y Option(T)) Ordering =
+    .cmp = fn(x Option(T), y Option(T)) Ordering =
       -- There's probably some fancy Option combinator to use
       -- here but I can never keep em straight.
       match {x, y} with
@@ -119,4 +126,30 @@ fn option_ord(|T| ord Ord(T)) Ord(Option(T)) =
 end
 
 const OrdOptionI32: Ord(Option(I32)) = option_ord(OrdI32)
- 
+
+--- A functor that implements `Ord(Result(T, E)) where T, E: Ord`.
+---
+--- We take Rust's approch, ofc, any Ok is less than any Err
+fn result_ord(|T, E| ord_t Ord(T), ord_e Ord(E)) Ord(Result(T, E)) =
+  .cmp = fn(x Result(T, E), y Result(T, E)) Ordering =
+    match {x, y} with
+      | {Ok xx, Ok yy} -> ord_t.cmp(xx, yy)
+      | {Err xx, Err yy} -> ord_e.cmp(xx, yy)
+      | {Ok _, Err _} -> Ordering.Less
+      | {Err _, Ok _} -> Ordering.Greater
+  end
+end
+
+--- Create an implementation of Eq from the given implementation
+--- of Ord.
+---
+--- TODO: This is also kinda a classic coherence problem with modules
+--- iirc, so investigate further.  I thiiiiink we have to bundle
+--- the Ord impl into the Eq one?
+fn eq_from_ord(|T| ord Ord(T)) Eq(T) =
+  Ord {
+    .eq = fn(x T, y T) Bool =
+      ord.ord(x, y).is_eq()
+    end
+  }
+end
