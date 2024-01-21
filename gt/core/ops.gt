@@ -1,3 +1,8 @@
+--- Fundamental operators.  In Rust this is anything that is overloadable.
+--- We don't really have any overloading yet, so it's more a a place to
+--- play with ideas for such things.
+
+
 --- Kinda an equivalent of Rust's Fn() trait.
 ---
 --- Just pretend borrowing doesn't matter right now.
@@ -40,3 +45,10 @@ fn use_apply() =
   apply(thing2, {}) -- 102
 end
 
+
+--- Module for indexing values, a la `foo[3]`
+type Index(Self, Out, Idx) = struct(Self, Out, Idx)
+  --- Technically maybe should borrow Self and Out,
+  --- this isn't terriblt interesting without that distinction.
+  index: fn(Self, Idx) Out
+end

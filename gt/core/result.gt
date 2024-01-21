@@ -1,8 +1,6 @@
 --- Basic Result type
 ---
 --- TODO:
---- Match syntax --
---- Sum type details -- pattern match syntax, etc.
 --- Panics, strings...
 
 --- Our general-purpose Result type.
@@ -22,6 +20,11 @@ end
 
 --- Takes a Result and returns the value contained if it is Ok, 
 --- otherwise panics with the given message
+---
+--- TODO: I honestly kinda don't like how hard it is to stick a sane
+--- format string in here in Rust, where you have to do
+--- `thing.expect_with(|e| format!("help I got an {}", e))`.
+--- But that's a problem for Future Garnet.
 ---
 --- Properties: Panics.
 fn expect(|T, E| self Result(T, E), message Str) T =
