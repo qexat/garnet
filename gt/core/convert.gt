@@ -1,16 +1,39 @@
 --- Conversion modules/interfaces.
 --- 
---- Design ticket for stuff here:
+--- Design ticket for stuff here: TODO
 --- from/tryfrom
 --- try (? operator)
+---
+--- Rust's `Try` trait is absolutely fascinating and bonkers, so
+--- look into it a bit more.
 
 
---- Infallible conversions
+--- Infallible conversions.
 type From(Self, Out) = struct(Self, Out) =
   from: fn(Self) Out
 end
 
---- Fallible conversions
-type TryFrom(Self, Out, E) = struct(Self, Out) =
+--- Fallible conversions.
+type TryFrom(Self, Out, E) = struct(Self, Out, E) =
   try_from: fn(Self) Result(Out, E)
+end
+
+--- Truncation, for example cutting off half of an U64 to make
+--- a U32.
+type Truncate(Self, Out) = struct(Self, Out) =
+  trunc: fn(Self) Out
+end
+
+--- Extend, for example sign-extending I32->I64 or zero-extending
+--- U32->U64
+type Extend(Self, Out) = struct(Self, Out) =
+  extend: fn(Self) Out
+end
+
+--- Bitcast.  For example converting an I32 into a U32 or F32.
+---
+--- TODO: Should require both types have the same size and
+--- compatible layouts.
+type bitcast(Self, Out) = struct(Self, Out) =
+  bitcast: fn(Self) Out
 end

@@ -41,4 +41,21 @@ fn is_empty(|Idx| ord Ord(Idx), self Range(Idx)) Bool =
   ord.ord(self.start, self.end).is_eq()
 end
 
+--- Basically Python's range function that creates an iterator
+---
+--- TODO: Figure out how we're implementing iterators.
+fn range(|Idx| start Idx, end Idx) Iterator(Idx) =
+  todo()
+  Range {
+    .start = start,
+    .end = end,
+  }
+end
+
+--- Should return an iterator that steps multiple items at a time,
+--- ideally more efficiently than the naive approach...
+fn step_by(|Idx| self Range(Idx)) Iterator(Idx) =
+  todo()
+end
+
 -- todo: Iterator, Index(?)
