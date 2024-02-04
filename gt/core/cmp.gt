@@ -74,7 +74,7 @@ fn min(|T| ord Ord(T), self T, other T) T =
   else
     other
   end
-end,
+end
 
 fn clamp(|T| ord Ord(T), self T, min T, max T) T =
   assert!(ord.cmp(min, max) != Ordering.Greater)

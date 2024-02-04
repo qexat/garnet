@@ -117,15 +117,13 @@ end
 -/
 
 --- Honestly why don't we just make iterators a closure?
-fn make_iterator(|Self, Item| val Self) fn() Option(Item) =
+type IntoIter(Self, Item) = struct(Self, Item)
+  make_iterator: fn(|Self, Item| val Self) fn() Option(Item),
 end
 
-
-
-
-
---- Make the closure for iteratoring over an ArrayIterator
-fn into_iter(|Item| arr []Item) fn() Option(Item) =
+   
+--- Make the closure for iterating over an array
+fn array_into_iter(|Item| arr []Item) fn() Option(Item) =
   let mut counter = 0
   fn() Option(Item) =
     if counter >= arr:len() then
@@ -158,6 +156,7 @@ end
 
 fn array_into_iter(|Item| arr []Item) IntoIter([]Item, Item) = 
   let mut counter = 0
+  -- Casually capture `counter` as if it's easy
   IntoIter {
     .into_iter = fn() Option(Item) =
       if counter >= arr:len() then
@@ -174,7 +173,7 @@ end
 --- Honestly basically the same except kinda hideously verbose for no real reason.
 fn test_array_iterator() =
   let arr []U32 = [1, 2, 3, 4, 5]
-  let impl = array_into_iter(|I32);
+  let impl = array_into_iter(|U32|)
   let mut iter = impl.into_iter()
 
   loop

@@ -25,7 +25,53 @@ use crate::passes::*;
 // scope bit and the renamed table.
 use crate::symtbl::{self, Symtbl};
 
-fn cc_expr(symtbl: &mut Symtbl, expr: ExprNode) -> ExprNode {
+#[derive(Debug, Default)]
+struct ScopeThing {
+    type_params: Vec<HashSet<Sym>>,
+}
+
+impl ScopeThing {
+    fn push_scope(&mut self) {
+        self.type_params.push(Default::default())
+    }
+
+    fn pop_scope(&mut self) {
+        self.type_params
+            .pop()
+            .expect("Scope stack underflow aieeee");
+    }
+
+    fn add_type_params(&mut self, params: &[Sym]) {
+        let top = self.type_params.last_mut().expect("Scope stack underflow");
+        top.extend(params.iter().cloned());
+    }
+
+    fn is_type_param(&self, ty: Sym) -> bool {
+        for scope in self.type_params.iter().rev() {
+            if scope.contains(&ty) {
+                return true;
+            }
+        }
+        return false;
+    }
+}
+
+fn cc_type(scope: &mut ScopeThing, ty: Type) -> Type {
+    match &ty {
+        Type::Struct(fields, params) => ty,
+        Type::Sum(fields, generics) => ty,
+        Type::Array(ty, len) => *ty.clone(),
+        Type::Func(args, rettype, typeparams) => ty,
+        // Not super sure whether this is necessary, but can't hurt.
+        Type::Named(nm, tys) => ty,
+        Type::Prim(_) => ty,
+        Type::Never => ty,
+        Type::Enum(_) => ty,
+        Type::Uniq(t) => ty,
+    }
+}
+
+fn cc_expr(symtbl: &mut Symtbl, scope: &mut ScopeThing, expr: ExprNode) -> ExprNode {
     let result = &mut |e| match e {
         Expr::Lambda { signature, body } => {
             // Ok, so what we need to do is look at the signature
@@ -37,6 +83,17 @@ fn cc_expr(symtbl: &mut Symtbl, expr: ExprNode) -> ExprNode {
             // We will also need to look for mentions of it
             // in the function body, such as in let statements
             // or function calls or further lambdas
+            //
+            // ....hmmm, this is kinda screwy 'cause the type param
+            // may not be mentioned at the toplevel of the type.
+            // For example it could be ^[]T or such.
+            // See Type::get_toplevel_type_params() and uncurse
+            // it as appropriate.
+            //
+            // Well what we really need to check is whether a mentioned
+            // type is a type param, so we just recurse through any type
+            // we see and do that...
+            // We can do that with type_map(), right?
             Expr::Lambda { signature, body }
         }
         x => x,
@@ -46,6 +103,8 @@ fn cc_expr(symtbl: &mut Symtbl, expr: ExprNode) -> ExprNode {
 
 fn cc_decl(symtbl: &mut Symtbl, decl: Decl) -> Decl {
     //let type_params: &mut Vec<HashSet<Sym>> = &mut Default::default();
+    let scope = &mut ScopeThing::default();
+    scope.push_scope();
     match decl {
         D::Function {
             name,
@@ -65,16 +124,18 @@ fn cc_decl(symtbl: &mut Symtbl, decl: Decl) -> Decl {
                 .map(|sym| symtbl.bind_new_type(sym).0)
                 .collect();
 
+            scope.add_type_params(&signature.typeparams);
+
             D::Function {
                 name,
                 signature,
-                body: exprs_map(body, &mut |e| cc_expr(symtbl, e), &mut |e| e),
+                body: exprs_map(body, &mut |e| cc_expr(symtbl, scope, e), &mut |e| e),
             }
         }
         D::Const { name, typ, init } => D::Const {
             name,
             typ,
-            init: cc_expr(symtbl, init),
+            init: cc_expr(symtbl, scope, init),
         },
         D::TypeDef {
             name,
