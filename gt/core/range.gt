@@ -1,0 +1,22 @@
+
+
+
+/-
+ icefox — Today at 5:30 PM
+I recall people once talking about a misdesign with Rust's iterators and Range, does anyone recall what the heck it was?
+
+Serayen — Today at 5:31 PM
+Ranges implement Iterator directly
+Means they can't be Copy, which is really annoying
+
+icefox — Today at 5:31 PM
+I think-- right, that was it
+Thanks
+Why can't Iterator's be Copy though, then?
+
+triadic bite — Today at 5:34 PM
+it results in unexpected behavior (hopefully someone has an example)
+
+𝔰𝔠𝔬𝔱𝔱𝔪𝔠𝔪 — Today at 5:58 PM
+see https://github.com/rust-lang/rfcs/pull/3550
+-/
