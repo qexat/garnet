@@ -14,7 +14,7 @@ end
 
 --- Properties: Panics.
 fn unwrap(|T| self Option(T)) T =
-    self:expect("Unwrap failed")
+    expect(self, "Unwrap failed")
 end
 
 --- Properties: Panics.
@@ -43,12 +43,19 @@ end
 fn cloned(|T| self Option(Borrow(T)) Option(T) where T: Clone =
     match self with
       | None {} -> None
-      | Someval -> Some({T.clone(val)})
+      | Some val -> Some({T.clone(val)})
     end
 end
 
 fn is_some(|T| self Option(T)) Bool =
-	todo()
+    match self with
+      | None {} -> false
+      | Some val -> true
+	end
+end
+
+fn is_none(|T| self Option(T)) Bool =
+	not is_some(self)
 end
 
 -- todo:
