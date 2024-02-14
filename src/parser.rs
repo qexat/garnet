@@ -2119,4 +2119,34 @@ fn foo() {} = {} end
         let res = p.parse();
         assert_eq!(&res.module_docstring, "");
     }
+
+    /// This tests a kinda horrible edge case in mixing line and block comments, 
+    /// but it's a rare enough one that I don't care about it right now.
+    #[test]
+    #[should_panic]
+    fn parse_evil_nested_comment() {
+        let thing1 = r#"
+
+/- Block comments work fine
+-/
+
+/- Block comments work fine
+/- And nested block comments work fine
+-/
+-/
+
+-- Line comments work fine with a -/ in them
+-- Line comments work fine with a /- in them
+-- and no closing delimiter ever
+
+/-
+-- But if a line comment is commented out by a block comment and contains a 
+-- surprising end delimiter like "-/" then the block comment is closed
+
+"#;
+
+        let mut p = Parser::new("unittest.gt", thing1);
+        let _res = p.parse();
+    }
+
 }
