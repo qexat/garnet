@@ -20,3 +20,42 @@ it results in unexpected behavior (hopefully someone has an example)
 𝔰𝔠𝔬𝔱𝔱𝔪𝔠𝔪 — Today at 5:58 PM
 see https://github.com/rust-lang/rfcs/pull/3550
 -/
+
+--- A half-open range bounded between
+--- `[start, end)`.
+---
+--- TODO: Should this contain an Ord impl?  Not very
+--- meaningful without it.  For now I'll leave it as no, though.
+type Range(Idx) = struct(Idx)
+  start: Idx,
+  end: Idx,
+end
+
+--- Whether the range contains the item.
+fn contains(|Idx| ord Ord(Idx), self Range(Idx), itm Idx) Bool =
+  ord.ord(self.start, itm).is_ge() and ord.ord(self.end, itm).is_lt()
+end
+
+--- Technically this only needs Eq, not Ord.
+fn is_empty(|Idx| ord Ord(Idx), self Range(Idx)) Bool =
+  ord.ord(self.start, self.end).is_eq()
+end
+
+--- Basically Python's range function that creates an iterator
+---
+--- TODO: Figure out how we're implementing iterators.
+fn range(|Idx| start Idx, end Idx) Iterator(Idx) =
+  todo()
+  Range {
+    .start = start,
+    .end = end,
+  }
+end
+
+--- Should return an iterator that steps multiple items at a time,
+--- ideally more efficiently than the naive approach...
+fn step_by(|Idx| self Range(Idx)) Iterator(Idx) =
+  todo()
+end
+
+-- todo: Iterator, Index(?)
