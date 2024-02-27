@@ -248,6 +248,75 @@ pub fn expr_map_post(expr: ExprNode, f: &mut dyn FnMut(ExprNode) -> ExprNode) ->
     expr_map(expr, &mut id, f)
 }
 
+fn exprs_iter(exprs: &[ExprNode], callback: &mut dyn FnMut(&ExprNode)) {
+    exprs.iter().for_each(|e| expr_iter(e, callback));
+}
+
+/// Recursion scheme for non-mutating iteration.
+///
+/// `expr_map()` except it doesn't alter the nodes, it just takes a callback it
+/// executes on each node for its side-effects
+pub fn expr_iter(expr: &ExprNode, callback: &mut dyn FnMut(&ExprNode)) {
+    // BUGGO: *heck*
+    // This *could* be written in terms of expr_map() but the ownership gets fucky.
+    /*
+    let dirty_ownership_hack = expr.clone();
+    let thonk = &mut |e: ExprNode| {
+        callback(&e);
+        e
+    };
+    expr_map_pre(dirty_ownership_hack, thonk);
+    */
+    use hir::Expr::*;
+    callback(expr);
+    match &*expr.e {
+        Lit { .. } => (),
+        Var { .. } => (),
+        BinOp { lhs, rhs, .. } => {
+            expr_iter(lhs, callback);
+            expr_iter(rhs, callback);
+        }
+        UniOp { rhs, .. } => expr_iter(rhs, callback),
+        Block { body } => exprs_iter(body, callback),
+        Loop { body } => exprs_iter(body, callback),
+        Funcall { func, params, .. } => {
+            expr_iter(func, callback);
+            exprs_iter(params, callback);
+        }
+        Let { init, .. } => expr_iter(init, callback),
+        If { cases } => {
+            for (test, body) in cases {
+                expr_iter(test, callback);
+                exprs_iter(body, callback);
+            }
+        }
+        EnumCtor { .. } => (),
+        TupleCtor { body } => exprs_iter(body, callback),
+        TupleRef { expr, .. } => expr_iter(expr, callback),
+        StructCtor { body } => {
+            for (_name, body) in body {
+                expr_iter(body, callback)
+            }
+        }
+        StructRef { expr, .. } => expr_iter(expr, callback),
+        Assign { rhs, .. } => expr_iter(rhs, callback),
+        Break => (),
+        Lambda { body, .. } => exprs_iter(body, callback),
+        Return { retval } => expr_iter(retval, callback),
+        TypeCtor { body, .. } => expr_iter(body, callback),
+        TypeUnwrap { expr } => expr_iter(expr, callback),
+        SumCtor { body, .. } => expr_iter(body, callback),
+        ArrayCtor { body } => exprs_iter(body, callback),
+        ArrayRef { expr, idx } => {
+            expr_iter(expr, callback);
+            expr_iter(idx, callback);
+        }
+        Typecast { .. } => todo!(),
+        Ref { expr } => expr_iter(expr, callback),
+        Deref { expr } => expr_iter(expr, callback),
+    }
+}
+
 /// Map functions over a list of exprs.
 fn exprs_map(
     exprs: Vec<ExprNode>,
