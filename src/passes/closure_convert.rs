@@ -71,6 +71,62 @@ fn cc_type(scope: &mut ScopeThing, ty: Type) -> Type {
     }
 }
 
+fn get_mentioned_type_params(expr: &ExprNode, scope: &ScopeThing) -> Vec<Sym> {
+    let mut accm = vec![];
+    fn add_mentioned_type(t: &Type, scope: &ScopeThing, accm: &mut Vec<Sym>) {
+        match t {
+            Type::Named(nm, params) => {
+                if scope.is_type_param(*nm) {
+                    accm.push(nm.clone());
+                }
+                for ty in params {
+                    add_mentioned_type(ty, scope, accm);
+                }
+            }
+            _ => todo!(),
+        }
+    }
+    let inner = &mut |expr: &ExprNode| {
+        let f = &mut |t| add_mentioned_type(t, scope, &mut accm);
+        use hir::Expr::*;
+        match &*expr.e {
+            Funcall {
+                func,
+                params,
+                type_params,
+            } => {
+                type_params.iter().for_each(f);
+            }
+            Let {
+                typename: None,
+                init,
+                ..
+            } => todo!(),
+            Let {
+                typename: Some(typename),
+                init,
+                ..
+            } => todo!(),
+            Lambda { .. } => todo!(),
+            TypeCtor { .. } => todo!(),
+            SumCtor { .. } => todo!(),
+            Typecast { .. } => todo!(),
+            _ => (),
+        }
+    };
+    expr_iter(expr, inner);
+    accm
+}
+
+fn expr_contains_type_param(expr: &ExprNode, scope: &ScopeThing) -> bool {
+    false
+}
+
+fn exprs_contains_type_param(expr: &[ExprNode], scope: &ScopeThing) -> bool {
+    let f = |e| expr_contains_type_param(e, scope);
+    expr.iter().any(f)
+}
+
 fn cc_expr(symtbl: &mut Symtbl, scope: &mut ScopeThing, expr: ExprNode) -> ExprNode {
     let result = &mut |e| match e {
         Expr::Lambda { signature, body } => {
@@ -94,7 +150,15 @@ fn cc_expr(symtbl: &mut Symtbl, scope: &mut ScopeThing, expr: ExprNode) -> ExprN
             // type is a type param, so we just recurse through any type
             // we see and do that...
             // We can do that with type_map(), right?
-            Expr::Lambda { signature, body }
+
+            if exprs_contains_type_param(&body, scope) {
+                // ...which is not mentioned in the lambda's type params...
+                // Then rewrite the signature to contain the type params the body uses.
+                Expr::Lambda { signature, body }
+            } else {
+                // no change necessary
+                Expr::Lambda { signature, body }
+            }
         }
         x => x,
     };
@@ -114,8 +178,7 @@ fn cc_decl(symtbl: &mut Symtbl, decl: Decl) -> Decl {
             let _guard = symtbl.push_scope();
             // Currently, let's just look at the type parameters
             // in the signature, since that's the only way to
-            // introduce new types inside the wossname.
-            //
+            // introduce new types inside the body of the closure.
             let _renamed_type_params: Vec<_> = signature
                 .typeparams
                 .clone()
