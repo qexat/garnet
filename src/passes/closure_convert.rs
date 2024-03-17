@@ -90,13 +90,95 @@ fn cc_type(scope: &mut ScopeThing, ty: Type) -> Type {
     }
 }
 
+/// Is a more limited form of recursion scheme what we actually want?
+/// This only recurses one level deep, if you want to recurse deeper
+/// than that you have to call it explicitly.
+/// But that also allows you more control over pre/post/around traversal
+/// order.
+///
+/// Basically the idea is that you can handle the expr types that you
+/// want to, and just call do_to_children(...) on the rest.
+///
+/// You can imagine this as being equivalent to a get_children()
+/// function that returns a list of the immediate subexpr's of an expr,
+/// and then calls the given function on each item in it.  The advantage
+/// of this form being that you don't need to allocate a vec.
+/// The result seems to be some kind of weird mutant hybrid of imperative
+/// and functional which also seems to be just what I need...
+fn do_to_children(expr: &ExprNode, f: &mut dyn FnMut(&ExprNode)) {
+    use Expr::*;
+    match &*expr.e {
+        BinOp { lhs, rhs, .. } => {
+            f(lhs);
+            f(rhs);
+        }
+        UniOp { rhs, .. } => f(rhs),
+        TupleCtor { body }
+        | ArrayCtor { body }
+        | Block { body }
+        | Loop { body }
+        | Lambda { body, .. } => {
+            for expr in body {
+                f(expr);
+            }
+        }
+        TupleRef { expr, .. }
+        | StructRef { expr, .. }
+        | Ref { expr }
+        | TypeUnwrap { expr }
+        | Deref { expr } => f(expr),
+        Funcall {
+            func,
+            params,
+            type_params: _,
+        } => {
+            f(func);
+            for vl in params {
+                f(vl);
+            }
+        }
+        Let { init, .. } => f(init),
+        If { cases } => {
+            for (test, exprs) in cases {
+                f(test);
+                for expr in exprs {
+                    f(expr);
+                }
+            }
+        }
+        TypeCtor { .. } => todo!(),
+        SumCtor { .. } => todo!(),
+        Typecast { .. } => todo!(),
+        Return { retval } => f(retval),
+        StructCtor { body } => {
+            for (_nm, expr) in body {
+                f(expr);
+            }
+        }
+        ArrayRef { expr, idx } => {
+            f(expr);
+            f(idx);
+        }
+        Assign { lhs, rhs } => {
+            f(lhs);
+            f(rhs);
+        }
+        // No sub-expressions to these terminals
+        Lit { .. } | Var { .. } | EnumCtor { .. } | Break => (),
+        // other => expr_iter(expr, &mut |e| {
+        //     let res = get_free_type_params(e, scope);
+        //     accm.extend(res);
+        // }),
+    }
+}
+
 /// Returns a list of type parameters that are not defined in the given scope.
 fn get_free_type_params(expr: &ExprNode, scope: &mut ScopeThing) -> HashSet<Sym> {
     let mut accm = HashSet::new();
     /// Take a type and collect any named types that aren't in the symbol table
     ///  into an array
     ///
-    /// TODO: Eventually we can probably refactor this into using type_iter()
+    /// Eventually we can probably refactor this into using type_iter()
     /// but handling type params is weird enough that for now I want to keep
     /// it separate.
     fn collect_free_types(t: &Type, scope: &mut ScopeThing, accm: &mut HashSet<Sym>) {
@@ -136,72 +218,55 @@ fn get_free_type_params(expr: &ExprNode, scope: &mut ScopeThing) -> HashSet<Sym>
     }
     use hir::Expr::*;
     match &*expr.e {
-        BinOp { lhs, rhs, .. } => {
-            accm.extend(get_free_type_params(lhs, scope));
-            accm.extend(get_free_type_params(rhs, scope));
-        }
-        UniOp { rhs, .. } => accm.extend(get_free_type_params(rhs, scope)),
-        Block { body } | Loop { body } => {
-            for expr in body {
-                accm.extend(get_free_type_params(expr, scope));
-            }
-        }
         Funcall {
-            func: _,
-            params: _,
+            func,
+            params,
             type_params,
         } => {
-            // Can't raise this closure definition above the match
-            // because the lifetimes of scope get squirrelly when
-            // we borrow it.
-            //
-            // We could make ScopeThing use internal mutability
-            // but it's not really worth it yet.
-            let f = &mut |t| collect_free_types(t, scope, &mut accm);
-            // These are type params *passed into* the funcall
-            type_params.iter().for_each(f);
+            type_params
+                .iter()
+                .for_each(&mut |t| collect_free_types(t, scope, &mut accm));
+            do_to_children(func, &mut |e| accm.extend(get_free_type_params(e, scope)));
+            for param in params {
+                do_to_children(param, &mut |e| accm.extend(get_free_type_params(e, scope)));
+            }
         }
         Let {
-            typename: None,
-            init: _,
-            ..
-        } => (),
-        Let {
             typename: Some(ty),
-            init: _,
+            init,
             ..
         } => {
             collect_free_types(ty, scope, &mut accm);
+            do_to_children(init, &mut |e| accm.extend(get_free_type_params(e, scope)));
         }
-        If { cases } => {
-            for (test, exprs) in cases {
-                accm.extend(get_free_type_params(test, scope));
-                for expr in exprs {
-                    accm.extend(get_free_type_params(expr, scope));
-                }
-            }
-        }
-        Lambda { signature, body: _ } => {
+        Lambda { signature, body } => {
             // These are type params *defined by* the funcall
             let guard = scope.push_scope();
             guard.scope.add_type_params(&signature.typeparams);
             let ty = signature.to_type();
             collect_free_types(&ty, guard.scope, &mut accm);
 
-            // TODO: uhhhhhh this might not recurse properly because
-            // we have to have the push/pop *around* the body
-            // traversal.
-            // would a scope guard work?
+            // This recuses into the lambda's body *before* we
+            // release the scope guard.
+            for expr in body {
+                do_to_children(expr, &mut |e| {
+                    accm.extend(get_free_type_params(e, guard.scope))
+                });
+            }
         }
-        TypeCtor { .. } => todo!(),
-        SumCtor { .. } => todo!(),
+        TypeCtor {
+            type_params, body, ..
+        } => {
+            // Like a funcall,
+            // These are type params *passed into* the constructor
+            let f = &mut |t| collect_free_types(t, scope, &mut accm);
+            type_params.iter().for_each(f);
+            do_to_children(body, &mut |e| accm.extend(get_free_type_params(e, scope)));
+        }
         Typecast { .. } => todo!(),
-        Lit { .. } | Var { .. } | EnumCtor { .. } => (),
-        _other => todo!(),
-        // other => expr_iter(expr, &mut |e| {
-        //     let res = get_free_type_params(e, scope);
-        //     accm.extend(res);
-        // }),
+        // Nothing else binds new type parameters, so we just walk down
+        // them looking for expressions that do.
+        _other => do_to_children(expr, &mut |e| accm.extend(get_free_type_params(e, scope))),
     }
     accm
 }
@@ -343,6 +408,24 @@ mod tests {
     f(x)
 end"#,
                 vec![],
+            ),
+            (
+                r#"fn(|A| x A) A = 
+    let f = fn(x A) A = x end
+    -- Shadow the type param A
+    let g = fn(|A| x A) A = x end
+    f(x)
+end"#,
+                vec![],
+            ),
+            (
+                r#"fn(|A| x A) A = 
+    let f = fn(x A) A = x end
+    -- Use the unbound type param B
+    let g = fn(x B) B = x end
+    f(x)
+end"#,
+                vec![Sym::new("B")],
             ),
         ];
         let scope = &mut ScopeThing::default();
