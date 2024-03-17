@@ -509,6 +509,18 @@ pub fn compile(filename: &str, src: &str, backend: backend::Backend) -> Vec<u8> 
     try_compile(filename, src, backend).unwrap_or_else(|e| panic!("Type check error: {}", e))
 }
 
+/// Turns source code into HIR, panicking on any error.
+/// Useful for unit tests.
+#[cfg(test)]
+fn compile_to_hir_expr(src: &str) -> hir::ExprNode {
+    let ast = {
+        let mut parser = parser::Parser::new("__None__", src);
+        let res = parser.parse_expr(0);
+        res.expect("input to compile_to_hir_expr had a syntax error!")
+    };
+    hir::lower_expr(&ast)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

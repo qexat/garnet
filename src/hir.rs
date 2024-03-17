@@ -578,7 +578,7 @@ fn lower_signature(sig: &ast::Signature) -> Signature {
 }
 
 /// This is the biggie currently
-fn lower_expr(expr: &ast::Expr) -> ExprNode {
+pub fn lower_expr(expr: &ast::Expr) -> ExprNode {
     use ast::Expr as E;
     use Expr::*;
     let new_exp = match expr {

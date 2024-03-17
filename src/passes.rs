@@ -103,6 +103,8 @@ fn id<T>(thing: T) -> T {
 /// sub-nodes, and one to call after.  Use expr_map_pre()
 /// and expr_map_post() to just do a pre-traversal or a post-traversal
 /// specifically.
+///
+/// ...must resist the urge to rewrite all of this in terms of fold()...
 fn expr_map(
     expr: ExprNode,
     f_pre: &mut dyn FnMut(ExprNode) -> ExprNode,
@@ -445,6 +447,49 @@ fn type_map(typ: Type, f: &mut dyn FnMut(Type) -> Type) -> Type {
     f(res)
 }
 
+/// Does NOT iterate over type parameter inputs.  Is that what we want?
+/// Not sure.
+pub fn _type_iter(ty: &Type, callback: &mut dyn FnMut(&Type)) {
+    fn types_iter(tys: &[Type], callback: &mut dyn FnMut(&Type)) {
+        for ty in tys {
+            callback(ty);
+            _type_iter(ty, callback);
+        }
+    }
+
+    match ty {
+        /*
+            Type::Struct(fields, generics) => {
+                let fields = types_map_btree(fields, f);
+                Type::Struct(fields, generics)
+            }
+            Type::Sum(fields, generics) => {
+                let new_fields = types_map_btree(fields, f);
+                Type::Sum(new_fields, generics)
+            }
+        */
+        Type::Struct(body, typeparams) | Type::Sum(body, typeparams) => {
+            for (_nm, ty) in body {
+                _type_iter(ty, callback);
+            }
+            for ty in typeparams {
+                _type_iter(ty, callback);
+            }
+        }
+        Type::Func(args, rettype, _typeparams) => {
+            types_iter(args, callback);
+            _type_iter(rettype, callback);
+        }
+        Type::Uniq(t) => {
+            _type_iter(&*t, callback);
+        }
+        Type::Array(ty, _len) => _type_iter(&*ty, callback),
+        // Not super sure whether this is necessary, but can't hurt.
+        Type::Named(_, _) | Type::Prim(_) | Type::Never | Type::Enum(_) => (),
+    };
+    callback(ty);
+}
+
 /// Produce a new signature by transforming the types
 fn signature_map(sig: hir::Signature, f: &mut dyn FnMut(Type) -> Type) -> hir::Signature {
     let new_params = sig
@@ -459,6 +504,9 @@ fn signature_map(sig: hir::Signature, f: &mut dyn FnMut(Type) -> Type) -> hir::S
     }
 }
 
+/// Makes a unique, alphanum+underscores-only type name for the given
+/// type based off its structure.  Prooooooobably mostly works.
+/// Probably doesn't handle nested types well though.
 pub fn generate_type_name(typ: &Type) -> String {
     match typ {
         Type::Enum(fields) => {

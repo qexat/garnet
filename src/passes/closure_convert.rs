@@ -25,14 +25,29 @@ use crate::passes::*;
 // scope bit and the renamed table.
 use crate::symtbl::{self, Symtbl};
 
+/// A dumb and simple scope for type params.
+/// Will eventually get folded into Symtbl but I want to
+/// be able to figure out what shape it needs to be first without
+/// needing to alter anything that touches Symtbl.
 #[derive(Debug, Default)]
 struct ScopeThing {
     type_params: Vec<HashSet<Sym>>,
 }
 
+struct ScopeGuard<'a> {
+    scope: &'a mut ScopeThing,
+}
+
+impl<'a> Drop for ScopeGuard<'a> {
+    fn drop(&mut self) {
+        self.scope.pop_scope()
+    }
+}
+
 impl ScopeThing {
-    fn push_scope(&mut self) {
-        self.type_params.push(Default::default())
+    fn push_scope(&mut self) -> ScopeGuard<'_> {
+        self.type_params.push(Default::default());
+        ScopeGuard { scope: self }
     }
 
     fn pop_scope(&mut self) {
@@ -47,7 +62,11 @@ impl ScopeThing {
     }
 
     fn is_type_param(&self, ty: Sym) -> bool {
+        let msg = format!("Walking down scope {:?}", self);
+        dbg!(msg);
         for scope in self.type_params.iter().rev() {
+            let msg = format!("is {} a type param? {}", ty, scope.contains(&ty));
+            dbg!(&msg);
             if scope.contains(&ty) {
                 return true;
             }
@@ -71,43 +90,92 @@ fn cc_type(scope: &mut ScopeThing, ty: Type) -> Type {
     }
 }
 
-fn get_mentioned_type_params(expr: &ExprNode, scope: &ScopeThing) -> Vec<Sym> {
-    let mut accm = vec![];
-    fn add_mentioned_type(t: &Type, scope: &ScopeThing, accm: &mut Vec<Sym>) {
+/// Returns a list of type parameters that are not defined in the given scope.
+fn get_free_type_params(expr: &ExprNode, scope: &mut ScopeThing) -> HashSet<Sym> {
+    let mut accm = HashSet::new();
+    /// Take a type and collect any named types that aren't in the symbol table
+    ///  into an array
+    ///
+    /// TODO: Eventually we can probably refactor this into using type_iter()
+    /// but handling type params is weird enough that for now I want to keep
+    /// it separate.
+    fn collect_free_types(t: &Type, scope: &mut ScopeThing, accm: &mut HashSet<Sym>) {
+        use Type::*;
         match t {
-            Type::Named(nm, params) => {
-                if scope.is_type_param(*nm) {
-                    accm.push(nm.clone());
+            Named(nm, params) => {
+                if !scope.is_type_param(*nm) {
+                    accm.insert(nm.clone());
                 }
                 for ty in params {
-                    add_mentioned_type(ty, scope, accm);
+                    collect_free_types(ty, scope, accm);
                 }
             }
-            _ => todo!(),
+            Func(params, rettype, typeparams) => {
+                for ty in params {
+                    collect_free_types(ty, scope, accm);
+                }
+                collect_free_types(rettype, scope, accm);
+                for ty in typeparams {
+                    collect_free_types(ty, scope, accm);
+                }
+            }
+            Struct(body, typeparams) | Sum(body, typeparams) => {
+                for (_nm, ty) in body {
+                    collect_free_types(ty, scope, accm);
+                }
+                for ty in typeparams {
+                    collect_free_types(ty, scope, accm);
+                }
+            }
+            Array(ty, _) | Uniq(ty) => {
+                collect_free_types(ty, scope, accm);
+            }
+            // No type parameters for these types
+            Prim(_) | Never | Enum(_) => (),
         }
     }
     let inner = &mut |expr: &ExprNode| {
-        let f = &mut |t| add_mentioned_type(t, scope, &mut accm);
         use hir::Expr::*;
         match &*expr.e {
             Funcall {
-                func,
-                params,
+                func: _,
+                params: _,
                 type_params,
             } => {
+                // Can't raise this closure definition above the match
+                // because the lifetimes of scope get squirrelly when
+                // we borrow it.
+                //
+                // We could make ScopeThing use internal mutability
+                // but it's not really worth it yet.
+                let f = &mut |t| collect_free_types(t, scope, &mut accm);
+                // These are type params *passed into* the funcall
                 type_params.iter().for_each(f);
             }
             Let {
                 typename: None,
-                init,
+                init: _,
                 ..
-            } => todo!(),
+            } => (),
             Let {
-                typename: Some(typename),
-                init,
+                typename: Some(ty),
+                init: _,
                 ..
-            } => todo!(),
-            Lambda { .. } => todo!(),
+            } => {
+                collect_free_types(ty, scope, &mut accm);
+            }
+            Lambda { signature, body: _ } => {
+                // These are type params *defined by* the funcall
+                let guard = scope.push_scope();
+                guard.scope.add_type_params(&signature.typeparams);
+                let ty = signature.to_type();
+                collect_free_types(&ty, guard.scope, &mut accm);
+
+                // TODO: uhhhhhh this might not recurse properly because
+                // we have to have the push/pop *around* the body
+                // traversal.
+                // would a scope guard work?
+            }
             TypeCtor { .. } => todo!(),
             SumCtor { .. } => todo!(),
             Typecast { .. } => todo!(),
@@ -229,5 +297,41 @@ pub fn closure_convert(ir: Ir) -> Ir {
     Ir {
         decls: new_decls,
         ..ir
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn test_free_type_param() {
+        let test_cases = vec![
+            ("3", vec![]),
+            ("let foo = bar", vec![]),
+            ("let foo I32 = bar", vec![]),
+            ("let foo T = bar", vec![Sym::new("T")]),
+            (
+                "let foo T(Thing) = bar",
+                vec![Sym::new("T"), Sym::new("Thing")],
+            ),
+            ("fn(x I32) I32 = x end", vec![]),
+            ("fn(x T) T = x end", vec![Sym::new("T")]),
+            ("fn(|T| x T) T = x end", vec![]),
+            (
+                r#"fn(|A| x A) A = 
+    let f = fn(x A) A = x end
+    f(x)
+end"#,
+                vec![],
+            ),
+        ];
+        let scope = &mut ScopeThing::default();
+        for (src, expected) in test_cases {
+            let ir = compile_to_hir_expr(src);
+            let frees = get_free_type_params(&ir, scope);
+            use std::iter::FromIterator;
+            let expected: HashSet<Sym> = HashSet::from_iter(expected);
+            assert_eq!(frees, expected);
+        }
     }
 }
