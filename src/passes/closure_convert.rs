@@ -134,55 +134,75 @@ fn get_free_type_params(expr: &ExprNode, scope: &mut ScopeThing) -> HashSet<Sym>
             Prim(_) | Never | Enum(_) => (),
         }
     }
-    let inner = &mut |expr: &ExprNode| {
-        use hir::Expr::*;
-        match &*expr.e {
-            Funcall {
-                func: _,
-                params: _,
-                type_params,
-            } => {
-                // Can't raise this closure definition above the match
-                // because the lifetimes of scope get squirrelly when
-                // we borrow it.
-                //
-                // We could make ScopeThing use internal mutability
-                // but it's not really worth it yet.
-                let f = &mut |t| collect_free_types(t, scope, &mut accm);
-                // These are type params *passed into* the funcall
-                type_params.iter().for_each(f);
-            }
-            Let {
-                typename: None,
-                init: _,
-                ..
-            } => (),
-            Let {
-                typename: Some(ty),
-                init: _,
-                ..
-            } => {
-                collect_free_types(ty, scope, &mut accm);
-            }
-            Lambda { signature, body: _ } => {
-                // These are type params *defined by* the funcall
-                let guard = scope.push_scope();
-                guard.scope.add_type_params(&signature.typeparams);
-                let ty = signature.to_type();
-                collect_free_types(&ty, guard.scope, &mut accm);
-
-                // TODO: uhhhhhh this might not recurse properly because
-                // we have to have the push/pop *around* the body
-                // traversal.
-                // would a scope guard work?
-            }
-            TypeCtor { .. } => todo!(),
-            SumCtor { .. } => todo!(),
-            Typecast { .. } => todo!(),
-            _ => (),
+    use hir::Expr::*;
+    match &*expr.e {
+        BinOp { lhs, rhs, .. } => {
+            accm.extend(get_free_type_params(lhs, scope));
+            accm.extend(get_free_type_params(rhs, scope));
         }
-    };
-    expr_iter(expr, inner);
+        UniOp { rhs, .. } => accm.extend(get_free_type_params(rhs, scope)),
+        Block { body } | Loop { body } => {
+            for expr in body {
+                accm.extend(get_free_type_params(expr, scope));
+            }
+        }
+        Funcall {
+            func: _,
+            params: _,
+            type_params,
+        } => {
+            // Can't raise this closure definition above the match
+            // because the lifetimes of scope get squirrelly when
+            // we borrow it.
+            //
+            // We could make ScopeThing use internal mutability
+            // but it's not really worth it yet.
+            let f = &mut |t| collect_free_types(t, scope, &mut accm);
+            // These are type params *passed into* the funcall
+            type_params.iter().for_each(f);
+        }
+        Let {
+            typename: None,
+            init: _,
+            ..
+        } => (),
+        Let {
+            typename: Some(ty),
+            init: _,
+            ..
+        } => {
+            collect_free_types(ty, scope, &mut accm);
+        }
+        If { cases } => {
+            for (test, exprs) in cases {
+                accm.extend(get_free_type_params(test, scope));
+                for expr in exprs {
+                    accm.extend(get_free_type_params(expr, scope));
+                }
+            }
+        }
+        Lambda { signature, body: _ } => {
+            // These are type params *defined by* the funcall
+            let guard = scope.push_scope();
+            guard.scope.add_type_params(&signature.typeparams);
+            let ty = signature.to_type();
+            collect_free_types(&ty, guard.scope, &mut accm);
+
+            // TODO: uhhhhhh this might not recurse properly because
+            // we have to have the push/pop *around* the body
+            // traversal.
+            // would a scope guard work?
+        }
+        TypeCtor { .. } => todo!(),
+        SumCtor { .. } => todo!(),
+        Typecast { .. } => todo!(),
+        Lit { .. } | Var { .. } | EnumCtor { .. } => (),
+        _other => todo!(),
+        // other => expr_iter(expr, &mut |e| {
+        //     let res = get_free_type_params(e, scope);
+        //     accm.extend(res);
+        // }),
+    }
     accm
 }
 
