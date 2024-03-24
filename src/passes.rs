@@ -54,7 +54,7 @@ pub fn run_passes(ir: Ir) -> Ir {
     let passes: &[Pass] = &[
         handle_imports::handle_imports,
         // closure_convert::closure_convert,
-        lambda_lift::lambda_lift,
+        // lambda_lift::lambda_lift,
         generic_infer::generic_infer,
     ];
     passes.iter().fold(ir, |prev_ir, f| f(prev_ir))
@@ -63,8 +63,13 @@ pub fn run_passes(ir: Ir) -> Ir {
 pub fn run_typechecked_passes(ir: Ir, tck: &mut typeck::Tck) -> Ir {
     // let passes: &[TckPass] = &[nameify, enum_to_int];
     //let passes: &[TckPass] = &[nameify, struct_to_tuple];
+    fn ll(ir: Ir, _tck: &mut typeck::Tck) -> Ir {
+        lambda_lift::lambda_lift(ir)
+    }
     let passes: &[TckPass] = &[
         double_typeck::double_typeck,
+        closure_convert::closure_convert,
+        ll,
         constinfer::constinfer,
         struct_to_tuple::struct_to_tuple,
         //monomorphization::monomorphize,
