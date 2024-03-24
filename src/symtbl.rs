@@ -180,6 +180,15 @@ impl Symtbl {
             .and_then(|anymap| anymap.insert(info));
     }
 
+    pub fn type_exists(&self, sym: Sym) -> bool {
+        let thing = self.unique_types.get(&UniqueSym(sym));
+        // fuck combinators
+        match thing {
+            Some(anymap) => true,
+            None => false,
+        }
+    }
+
     fn get_type_info<T>(&self, sym: UniqueSym) -> Option<&T>
     where
         T: anymap::any::CloneAny,

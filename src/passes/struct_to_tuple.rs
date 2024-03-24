@@ -129,7 +129,7 @@ fn tuplize_expr(expr: ExprNode, tck: &mut typeck::Tck) -> ExprNode {
 /// kinda squirrelly, because we don't really have a decl that translates
 /// directly into a Rust struct without being wrapped in a typedef first.  So I
 /// think I will translate them to tuples after all.
-pub(super) fn struct_to_tuple(ir: Ir, tck: &mut typeck::Tck) -> Ir {
+pub(super) fn struct_to_tuple(ir: Ir, _: &symtbl::Symtbl, tck: &mut typeck::Tck) -> Ir {
     let mut new_decls = vec![];
     let tuplize_expr = &mut |e| tuplize_expr(e, tck);
 

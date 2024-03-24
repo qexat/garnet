@@ -42,7 +42,7 @@ type Pass = fn(Ir) -> Ir;
 
 /// Tck has to be mutable because we may change the return type
 /// of expr nodes.
-type TckPass = fn(Ir, &mut typeck::Tck) -> Ir;
+type TckPass = fn(Ir, &symtbl::Symtbl, &mut typeck::Tck) -> Ir;
 
 pub fn run_passes(ir: Ir) -> Ir {
     // TODO: It may be more efficient to compose passes rather than fold them?
@@ -60,10 +60,10 @@ pub fn run_passes(ir: Ir) -> Ir {
     passes.iter().fold(ir, |prev_ir, f| f(prev_ir))
 }
 
-pub fn run_typechecked_passes(ir: Ir, tck: &mut typeck::Tck) -> Ir {
+pub fn run_typechecked_passes(ir: Ir, symtbl: &symtbl::Symtbl, tck: &mut typeck::Tck) -> Ir {
     // let passes: &[TckPass] = &[nameify, enum_to_int];
     //let passes: &[TckPass] = &[nameify, struct_to_tuple];
-    fn ll(ir: Ir, _tck: &mut typeck::Tck) -> Ir {
+    fn ll(ir: Ir, _: &symtbl::Symtbl, _tck: &mut typeck::Tck) -> Ir {
         lambda_lift::lambda_lift(ir)
     }
     let passes: &[TckPass] = &[
@@ -75,7 +75,7 @@ pub fn run_typechecked_passes(ir: Ir, tck: &mut typeck::Tck) -> Ir {
         //monomorphization::monomorphize,
         //type_erasure::type_erasure,
     ];
-    let res = passes.iter().fold(ir, |prev_ir, f| f(prev_ir, tck));
+    let res = passes.iter().fold(ir, |prev_ir, f| f(prev_ir, symtbl, tck));
     res
 }
 

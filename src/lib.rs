@@ -499,7 +499,7 @@ pub fn try_compile(
     // info!("Symtbl from AST:\n{:#?}", &symtbl);
     let tck = &mut typeck::typecheck(&hir, &mut symtbl)?;
     borrowck::borrowck(&hir, tck).unwrap();
-    let hir = passes::run_typechecked_passes(hir, tck);
+    let hir = passes::run_typechecked_passes(hir, &mut symtbl, tck);
     info!("HIR after transform passes:\n{}", &hir);
     Ok(backend::output(backend, &hir, tck))
 }

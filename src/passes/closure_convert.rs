@@ -173,12 +173,8 @@ fn do_to_children(expr: &ExprNode, f: &mut dyn FnMut(&ExprNode)) {
     }
 }
 
-fn get_free_type_params_expr(expr: &Expr, scope: &mut ScopeThing) -> BTreeSet<Sym> {
-    todo!()
-}
-
 /// Returns a list of type parameters that are not defined in the given scope.
-fn get_free_type_params(expr: &ExprNode, scope: &mut ScopeThing) -> BTreeSet<Sym> {
+fn get_free_type_params(expr: &ExprNode, scope: &mut ScopeThing, symtbl: &Symtbl) -> BTreeSet<Sym> {
     let mut accm = BTreeSet::new();
     /// Take a type and collect any named types that aren't in the symbol table
     /// into an array
@@ -186,36 +182,41 @@ fn get_free_type_params(expr: &ExprNode, scope: &mut ScopeThing) -> BTreeSet<Sym
     /// Eventually we can probably refactor this into using type_iter()
     /// but handling type params is weird enough that for now I want to keep
     /// it separate.
-    fn collect_free_types(t: &Type, scope: &mut ScopeThing, accm: &mut BTreeSet<Sym>) {
+    fn collect_free_types(
+        t: &Type,
+        scope: &mut ScopeThing,
+        symtbl: &Symtbl,
+        accm: &mut BTreeSet<Sym>,
+    ) {
         use Type::*;
         match t {
             Named(nm, params) => {
-                if !scope.is_type_param(*nm) {
+                if !symtbl.type_exists(*nm) && !scope.is_type_param(*nm) {
                     accm.insert(nm.clone());
                 }
                 for ty in params {
-                    collect_free_types(ty, scope, accm);
+                    collect_free_types(ty, scope, symtbl, accm);
                 }
             }
             Func(params, rettype, typeparams) => {
                 for ty in params {
-                    collect_free_types(ty, scope, accm);
+                    collect_free_types(ty, scope, symtbl, accm);
                 }
-                collect_free_types(rettype, scope, accm);
+                collect_free_types(rettype, scope, symtbl, accm);
                 for ty in typeparams {
-                    collect_free_types(ty, scope, accm);
+                    collect_free_types(ty, scope, symtbl, accm);
                 }
             }
             Struct(body, typeparams) | Sum(body, typeparams) => {
                 for (_nm, ty) in body {
-                    collect_free_types(ty, scope, accm);
+                    collect_free_types(ty, scope, symtbl, accm);
                 }
                 for ty in typeparams {
-                    collect_free_types(ty, scope, accm);
+                    collect_free_types(ty, scope, symtbl, accm);
                 }
             }
             Array(ty, _) | Uniq(ty) => {
-                collect_free_types(ty, scope, accm);
+                collect_free_types(ty, scope, symtbl, accm);
             }
             // No type parameters for these types
             Prim(_) | Never | Enum(_) => (),
@@ -230,10 +231,14 @@ fn get_free_type_params(expr: &ExprNode, scope: &mut ScopeThing) -> BTreeSet<Sym
         } => {
             type_params
                 .iter()
-                .for_each(&mut |t| collect_free_types(t, scope, &mut accm));
-            do_to_children(func, &mut |e| accm.extend(get_free_type_params(e, scope)));
+                .for_each(&mut |t| collect_free_types(t, scope, symtbl, &mut accm));
+            do_to_children(func, &mut |e| {
+                accm.extend(get_free_type_params(e, scope, symtbl))
+            });
             for param in params {
-                do_to_children(param, &mut |e| accm.extend(get_free_type_params(e, scope)));
+                do_to_children(param, &mut |e| {
+                    accm.extend(get_free_type_params(e, scope, symtbl))
+                });
             }
         }
         Let {
@@ -241,21 +246,23 @@ fn get_free_type_params(expr: &ExprNode, scope: &mut ScopeThing) -> BTreeSet<Sym
             init,
             ..
         } => {
-            collect_free_types(ty, scope, &mut accm);
-            do_to_children(init, &mut |e| accm.extend(get_free_type_params(e, scope)));
+            collect_free_types(ty, scope, symtbl, &mut accm);
+            do_to_children(init, &mut |e| {
+                accm.extend(get_free_type_params(e, scope, symtbl))
+            });
         }
         Lambda { signature, body } => {
             // These are type params *defined by* the funcall
             let guard = scope.push_scope();
             guard.scope.add_type_params(&signature.typeparams);
             let ty = signature.to_type();
-            collect_free_types(&ty, guard.scope, &mut accm);
+            collect_free_types(&ty, guard.scope, symtbl, &mut accm);
 
             // This recuses into the lambda's body *before* we
             // release the scope guard.
             for expr in body {
                 do_to_children(expr, &mut |e| {
-                    accm.extend(get_free_type_params(e, guard.scope))
+                    accm.extend(get_free_type_params(e, guard.scope, symtbl))
                 });
             }
         }
@@ -272,37 +279,22 @@ fn get_free_type_params(expr: &ExprNode, scope: &mut ScopeThing) -> BTreeSet<Sym
 
             type_params
                 .iter()
-                .for_each(&mut |t| collect_free_types(t, scope, &mut accm));
-            do_to_children(body, &mut |e| accm.extend(get_free_type_params(e, scope)));
+                .for_each(&mut |t| collect_free_types(t, scope, symtbl, &mut accm));
+            do_to_children(body, &mut |e| {
+                accm.extend(get_free_type_params(e, scope, symtbl))
+            });
         }
         Typecast { .. } => todo!(),
         // Nothing else binds new type parameters, so we just walk down
         // them looking for expressions that do.
-        _other => do_to_children(expr, &mut |e| accm.extend(get_free_type_params(e, scope))),
+        _other => do_to_children(expr, &mut |e| {
+            accm.extend(get_free_type_params(e, scope, symtbl))
+        }),
     }
     accm
 }
 
-fn expr_contains_type_param(expr: &ExprNode, scope: &ScopeThing) -> bool {
-    false
-}
-
-fn exprs_contains_type_param(expr: &[ExprNode], scope: &ScopeThing) -> bool {
-    let f = |e| expr_contains_type_param(e, scope);
-    expr.iter().any(f)
-}
-
-/// TODO: This feels... wrong, like it's a reimplementation of
-/// typeck::typecheck_expr().  And that it can't work in all
-/// the cases that typecheck_expr() does.
-///
-/// But let's try anyway, take an arbitrary expression and if
-/// it leads us to a lambda then
-fn get_fn_sig(expr: ExprNode) -> Option<ExprNode> {
-    None
-}
-
-fn cc_expr(scope: &mut ScopeThing, tck: &mut Tck, expr: ExprNode) -> ExprNode {
+fn cc_expr(scope: &mut ScopeThing, symtbl: &Symtbl, tck: &mut Tck, expr: ExprNode) -> ExprNode {
     let f = &mut |e: Expr| {
         // BUGGO:
         // Not sure whether get_free_type_params() etc should take
@@ -316,12 +308,12 @@ fn cc_expr(scope: &mut ScopeThing, tck: &mut Tck, expr: ExprNode) -> ExprNode {
                 // and if we see any of them in the
                 // signature we will need to add type params to this
                 // lambda.
-                let free_type_params = get_free_type_params(&hackhackhack, scope);
+                let free_type_params = get_free_type_params(&hackhackhack, scope, symtbl);
                 if free_type_params.is_empty() {
                     // no change necessary
                     Expr::Lambda {
                         signature: signature.clone(),
-                        body: exprs_map_pre(body, &mut |e| cc_expr(scope, tck, e)),
+                        body: exprs_map_pre(body, &mut |e| cc_expr(scope, symtbl, tck, e)),
                     }
                 } else {
                     // Rewrite lambda into an expression that contains the type params.
@@ -329,7 +321,7 @@ fn cc_expr(scope: &mut ScopeThing, tck: &mut Tck, expr: ExprNode) -> ExprNode {
                     new_sig.typeparams.extend(free_type_params.into_iter());
                     Expr::Lambda {
                         signature: new_sig.clone(),
-                        body: exprs_map_pre(body, &mut |e| cc_expr(scope, tck, e)),
+                        body: exprs_map_pre(body, &mut |e| cc_expr(scope, symtbl, tck, e)),
                     }
                 }
             }
@@ -350,14 +342,19 @@ fn cc_expr(scope: &mut ScopeThing, tck: &mut Tck, expr: ExprNode) -> ExprNode {
     expr.map(f)
 }
 
-fn cc_exprs(scope: &mut ScopeThing, tck: &mut Tck, exprs: &[ExprNode]) -> Vec<ExprNode> {
+fn cc_exprs(
+    scope: &mut ScopeThing,
+    symtbl: &Symtbl,
+    tck: &mut Tck,
+    exprs: &[ExprNode],
+) -> Vec<ExprNode> {
     exprs
         .into_iter()
-        .map(|e| cc_expr(scope, tck, e.clone()))
+        .map(|e| cc_expr(scope, symtbl, tck, e.clone()))
         .collect()
 }
 
-fn cc_decl(tck: &mut Tck, decl: Decl) -> Decl {
+fn cc_decl(tck: &mut Tck, symtbl: &Symtbl, decl: Decl) -> Decl {
     let scope = &mut ScopeThing::default();
     scope.push_scope();
     match decl {
@@ -368,12 +365,12 @@ fn cc_decl(tck: &mut Tck, decl: Decl) -> Decl {
         } => D::Function {
             name,
             signature,
-            body: exprs_map_pre(body, &mut |e| cc_expr(scope, tck, e)),
+            body: exprs_map_pre(body, &mut |e| cc_expr(scope, symtbl, tck, e)),
         },
         D::Const { name, typ, init } => D::Const {
             name,
             typ,
-            init: expr_map_pre(init, &mut |e| cc_expr(scope, tck, e)),
+            init: expr_map_pre(init, &mut |e| cc_expr(scope, symtbl, tck, e)),
         },
         D::TypeDef {
             name,
@@ -393,11 +390,11 @@ fn cc_decl(tck: &mut Tck, decl: Decl) -> Decl {
 /// the symtbl alpha-renaming, but oh well.  They're different
 /// things, this adds information and the renaming just
 /// transforms it into something more convenient.
-pub fn closure_convert(ir: Ir, tck: &mut typeck::Tck) -> Ir {
+pub fn closure_convert(ir: Ir, symtbl: &symtbl::Symtbl, tck: &mut typeck::Tck) -> Ir {
     let new_decls: Vec<Decl> = ir
         .decls
         .into_iter()
-        .map(|decl| cc_decl(tck, decl))
+        .map(|decl| cc_decl(tck, symtbl, decl))
         .collect();
     Ir {
         decls: new_decls,
@@ -450,9 +447,10 @@ end"#,
             ),
         ];
         let scope = &mut ScopeThing::default();
+        let symtbl = &symtbl::Symtbl::default();
         for (src, expected) in test_cases {
             let ir = compile_to_hir_expr(src);
-            let frees = get_free_type_params(&ir, scope);
+            let frees = get_free_type_params(&ir, scope, symtbl);
             use std::iter::FromIterator;
             let expected: BTreeSet<Sym> = BTreeSet::from_iter(expected);
             assert_eq!(frees, expected);

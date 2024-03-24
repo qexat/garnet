@@ -72,7 +72,7 @@ fn constinfer_expr(expr: ExprNode) -> ExprNode {
     expr
 }
 
-pub fn constinfer(ir: Ir, _tck: &mut typeck::Tck) -> Ir {
+pub fn constinfer(ir: Ir, _: &symtbl::Symtbl, _tck: &mut typeck::Tck) -> Ir {
     let type_map = &mut |t| t;
     let new_decls = ir
         .decls
