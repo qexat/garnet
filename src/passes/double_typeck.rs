@@ -21,7 +21,7 @@ fn check_expr(expr: ExprNode, tck: &mut typeck::Tck) -> ExprNode {
     expr
 }
 
-pub(super) fn double_typeck(ir: Ir, tck: &mut typeck::Tck) -> Ir {
+pub(super) fn double_typeck(ir: Ir, _: &symtbl::Symtbl, tck: &mut typeck::Tck) -> Ir {
     let type_map = &mut |t| t;
     let new_decls = ir
         .decls
