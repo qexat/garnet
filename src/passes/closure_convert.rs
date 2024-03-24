@@ -16,7 +16,7 @@
 //! So for a first stab at this, let us merely worry about type
 //! parameters.
 
-use std::collections::HashSet;
+use std::collections::BTreeSet;
 
 use crate::hir::{Decl, Expr, Ir};
 use crate::passes::*;
@@ -31,7 +31,7 @@ use crate::symtbl::{self, Symtbl};
 /// needing to alter anything that touches Symtbl.
 #[derive(Debug, Default)]
 struct ScopeThing {
-    type_params: Vec<HashSet<Sym>>,
+    type_params: Vec<BTreeSet<Sym>>,
 }
 
 struct ScopeGuard<'a> {
@@ -172,16 +172,20 @@ fn do_to_children(expr: &ExprNode, f: &mut dyn FnMut(&ExprNode)) {
     }
 }
 
+fn get_free_type_params_expr(expr: &Expr, scope: &mut ScopeThing) -> BTreeSet<Sym> {
+    todo!()
+}
+
 /// Returns a list of type parameters that are not defined in the given scope.
-fn get_free_type_params(expr: &ExprNode, scope: &mut ScopeThing) -> HashSet<Sym> {
-    let mut accm = HashSet::new();
+fn get_free_type_params(expr: &ExprNode, scope: &mut ScopeThing) -> BTreeSet<Sym> {
+    let mut accm = BTreeSet::new();
     /// Take a type and collect any named types that aren't in the symbol table
     /// into an array
     ///
     /// Eventually we can probably refactor this into using type_iter()
     /// but handling type params is weird enough that for now I want to keep
     /// it separate.
-    fn collect_free_types(t: &Type, scope: &mut ScopeThing, accm: &mut HashSet<Sym>) {
+    fn collect_free_types(t: &Type, scope: &mut ScopeThing, accm: &mut BTreeSet<Sym>) {
         use Type::*;
         match t {
             Named(nm, params) => {
@@ -281,31 +285,40 @@ fn exprs_contains_type_param(expr: &[ExprNode], scope: &ScopeThing) -> bool {
 }
 
 fn cc_expr(scope: &mut ScopeThing, expr: ExprNode) -> ExprNode {
-    let rewritten = match &*expr.e {
-        Expr::Lambda { signature, body } => {
-            // Ok, so what we need to do is look at the body of the closure
-            // for types that are not declared in its type params,
-            // and if we see any of them in the
-            // signature we will need to add type params to this
-            // lambda.
-            let free_type_params = get_free_type_params(&expr, scope);
-            if free_type_params.is_empty() {
-                // no change necessary
-                Expr::Lambda {
-                    signature: signature.clone(),
-                    body: body.clone(),
-                }
-            } else {
-                // Rewrite lambda into an expression that contains the type params.
-                Expr::Lambda {
-                    signature: signature.clone(),
-                    body: body.clone(),
+    let f = &mut |e: Expr| {
+        // BUGGO:
+        // Not sure whether get_free_type_params() etc should take
+        // Expr or ExprNode here, so for now we do this ugly and maybe
+        // broken thing
+        let hackhackhack = ExprNode::new(e.clone());
+        match e {
+            Expr::Lambda { signature, body } => {
+                // Ok, so what we need to do is look at the body of the closure
+                // for types that are not declared in its type params,
+                // and if we see any of them in the
+                // signature we will need to add type params to this
+                // lambda.
+                let free_type_params = get_free_type_params(&hackhackhack, scope);
+                if free_type_params.is_empty() {
+                    // no change necessary
+                    Expr::Lambda {
+                        signature: signature.clone(),
+                        body: exprs_map_pre(body, &mut |e| cc_expr(scope, e)),
+                    }
+                } else {
+                    // Rewrite lambda into an expression that contains the type params.
+                    let mut new_sig = signature.clone();
+                    new_sig.typeparams.extend(free_type_params.into_iter());
+                    Expr::Lambda {
+                        signature: new_sig.clone(),
+                        body: exprs_map_pre(body, &mut |e| cc_expr(scope, e)),
+                    }
                 }
             }
+            x => x.clone(),
         }
-        x => x.clone(),
     };
-    expr.map(&mut |_| rewritten.clone())
+    expr.map(f)
 }
 
 fn cc_exprs(scope: &mut ScopeThing, exprs: &[ExprNode]) -> Vec<ExprNode> {
@@ -316,7 +329,7 @@ fn cc_exprs(scope: &mut ScopeThing, exprs: &[ExprNode]) -> Vec<ExprNode> {
 }
 
 fn cc_decl(symtbl: &mut Symtbl, decl: Decl) -> Decl {
-    //let type_params: &mut Vec<HashSet<Sym>> = &mut Default::default();
+    //let type_params: &mut Vec<BTreeSet<Sym>> = &mut Default::default();
     let scope = &mut ScopeThing::default();
     scope.push_scope();
     match decl {
@@ -342,7 +355,7 @@ fn cc_decl(symtbl: &mut Symtbl, decl: Decl) -> Decl {
             D::Function {
                 name,
                 signature,
-                body: exprs_map(body, &mut |e| cc_expr(scope, e), &mut |e| e),
+                body: exprs_map_pre(body, &mut |e| cc_expr(scope, e)),
             }
         }
         D::Const { name, typ, init } => D::Const {
@@ -431,13 +444,30 @@ end"#,
             let ir = compile_to_hir_expr(src);
             let frees = get_free_type_params(&ir, scope);
             use std::iter::FromIterator;
-            let expected: HashSet<Sym> = HashSet::from_iter(expected);
+            let expected: BTreeSet<Sym> = BTreeSet::from_iter(expected);
             assert_eq!(frees, expected);
         }
     }
+
     #[test]
     fn test_cc_exprs() {
-        let test_cases = vec![(r#"3; fn(x A) A = x end"#, r#"3; fn(|A| x A) A = x end"#)];
+        let test_cases = vec![
+            (r#"3; fn(x A) A = x end"#, r#"3; fn(|A| x A) A = x end"#),
+            (
+                r#"fn(x A) A = 
+    let f = fn(x A) A = x end
+    -- Use the unbound type param B
+    let g = fn(x B) B = x end
+    f(x)
+end"#,
+                r#"fn(|A, B| x A) A = 
+    let f = fn(|A| x A) A = x end
+    -- Use the unbound type param B
+    let g = fn(|B| x B) B = x end
+    f(x)
+end"#,
+            ),
+        ];
         let scope = &mut ScopeThing::default();
         for (src, expected) in test_cases {
             let ir = compile_to_hir_exprs(src);
@@ -447,7 +477,7 @@ end"#,
             assert_eq!(
                 res,
                 expected_ir,
-                "exprs do not match:\n{}\n{}\n",
+                "exprs do not match.  Got:\n{}Expected:\n{}\n",
                 Expr::Block { body: res.clone() },
                 Expr::Block {
                     body: expected_ir.clone()
