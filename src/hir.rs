@@ -120,6 +120,12 @@ impl fmt::Display for Decl {
     }
 }
 
+impl fmt::Display for Expr {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.write(0, f)
+    }
+}
+
 impl ExprNode {
     pub fn new(e: Expr) -> Self {
         ExprNode {
@@ -742,7 +748,7 @@ pub fn lower_expr(expr: &ast::Expr) -> ExprNode {
 }
 
 /// handy shortcut to lower Vec<ast::Expr>
-fn lower_exprs(exprs: &[ast::Expr]) -> Vec<ExprNode> {
+pub fn lower_exprs(exprs: &[ast::Expr]) -> Vec<ExprNode> {
     exprs.iter().map(lower_expr).collect()
 }
 fn lower_typedef(accm: &mut Vec<Decl>, name: Sym, ty: &Type, params: &[Sym]) {
