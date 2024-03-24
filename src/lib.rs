@@ -522,6 +522,15 @@ fn compile_to_hir_expr(src: &str) -> hir::ExprNode {
 }
 
 #[cfg(test)]
+fn compile_to_hir_exprs(src: &str) -> Vec<hir::ExprNode> {
+    let ast = {
+        let mut parser = parser::Parser::new("__None__", src);
+        parser.parse_exprs()
+    };
+    hir::lower_exprs(&ast)
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
     /// Make sure outputting a lambda's name gives us something we expect.

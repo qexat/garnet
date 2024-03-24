@@ -942,7 +942,7 @@ impl<'input> Parser<'input> {
         Type::Sum(fields, generics)
     }
 
-    fn parse_exprs(&mut self) -> Vec<ast::Expr> {
+    pub fn parse_exprs(&mut self) -> Vec<ast::Expr> {
         let mut exprs = vec![];
         let tok = self.peek();
         while let Some(e) = self.parse_expr(0) {

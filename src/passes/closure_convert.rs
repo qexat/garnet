@@ -176,7 +176,7 @@ fn do_to_children(expr: &ExprNode, f: &mut dyn FnMut(&ExprNode)) {
 fn get_free_type_params(expr: &ExprNode, scope: &mut ScopeThing) -> HashSet<Sym> {
     let mut accm = HashSet::new();
     /// Take a type and collect any named types that aren't in the symbol table
-    ///  into an array
+    /// into an array
     ///
     /// Eventually we can probably refactor this into using type_iter()
     /// but handling type params is weird enough that for now I want to keep
@@ -280,42 +280,39 @@ fn exprs_contains_type_param(expr: &[ExprNode], scope: &ScopeThing) -> bool {
     expr.iter().any(f)
 }
 
-fn cc_expr(symtbl: &mut Symtbl, scope: &mut ScopeThing, expr: ExprNode) -> ExprNode {
-    let result = &mut |e| match e {
+fn cc_expr(scope: &mut ScopeThing, expr: ExprNode) -> ExprNode {
+    let rewritten = match &*expr.e {
         Expr::Lambda { signature, body } => {
-            // Ok, so what we need to do is look at the signature
-            // for types that are declared in the type params of
-            // upper scopes, and if we see any of them in the
-            // signature wwe will need to add type params to this
+            // Ok, so what we need to do is look at the body of the closure
+            // for types that are not declared in its type params,
+            // and if we see any of them in the
+            // signature we will need to add type params to this
             // lambda.
-            //
-            // We will also need to look for mentions of it
-            // in the function body, such as in let statements
-            // or function calls or further lambdas
-            //
-            // ....hmmm, this is kinda screwy 'cause the type param
-            // may not be mentioned at the toplevel of the type.
-            // For example it could be ^[]T or such.
-            // See Type::get_toplevel_type_params() and uncurse
-            // it as appropriate.
-            //
-            // Well what we really need to check is whether a mentioned
-            // type is a type param, so we just recurse through any type
-            // we see and do that...
-            // We can do that with type_map(), right?
-
-            if exprs_contains_type_param(&body, scope) {
-                // ...which is not mentioned in the lambda's type params...
-                // Then rewrite the signature to contain the type params the body uses.
-                Expr::Lambda { signature, body }
-            } else {
+            let free_type_params = get_free_type_params(&expr, scope);
+            if free_type_params.is_empty() {
                 // no change necessary
-                Expr::Lambda { signature, body }
+                Expr::Lambda {
+                    signature: signature.clone(),
+                    body: body.clone(),
+                }
+            } else {
+                // Rewrite lambda into an expression that contains the type params.
+                Expr::Lambda {
+                    signature: signature.clone(),
+                    body: body.clone(),
+                }
             }
         }
-        x => x,
+        x => x.clone(),
     };
-    expr.map(result)
+    expr.map(&mut |_| rewritten.clone())
+}
+
+fn cc_exprs(scope: &mut ScopeThing, exprs: &[ExprNode]) -> Vec<ExprNode> {
+    exprs
+        .into_iter()
+        .map(|e| cc_expr(scope, e.clone()))
+        .collect()
 }
 
 fn cc_decl(symtbl: &mut Symtbl, decl: Decl) -> Decl {
@@ -345,13 +342,13 @@ fn cc_decl(symtbl: &mut Symtbl, decl: Decl) -> Decl {
             D::Function {
                 name,
                 signature,
-                body: exprs_map(body, &mut |e| cc_expr(symtbl, scope, e), &mut |e| e),
+                body: exprs_map(body, &mut |e| cc_expr(scope, e), &mut |e| e),
             }
         }
         D::Const { name, typ, init } => D::Const {
             name,
             typ,
-            init: cc_expr(symtbl, scope, init),
+            init: cc_expr(scope, init),
         },
         D::TypeDef {
             name,
@@ -403,6 +400,7 @@ mod tests {
             ("fn(x T) T = x end", vec![Sym::new("T")]),
             ("fn(|T| x T) T = x end", vec![]),
             (
+                // We can't have leading newlines in these strings, alas.
                 r#"fn(|A| x A) A = 
     let f = fn(x A) A = x end
     f(x)
@@ -435,6 +433,26 @@ end"#,
             use std::iter::FromIterator;
             let expected: HashSet<Sym> = HashSet::from_iter(expected);
             assert_eq!(frees, expected);
+        }
+    }
+    #[test]
+    fn test_cc_exprs() {
+        let test_cases = vec![(r#"3; fn(x A) A = x end"#, r#"3; fn(|A| x A) A = x end"#)];
+        let scope = &mut ScopeThing::default();
+        for (src, expected) in test_cases {
+            let ir = compile_to_hir_exprs(src);
+            let res = cc_exprs(scope, &ir);
+            dbg!(&res);
+            let expected_ir = compile_to_hir_exprs(expected);
+            assert_eq!(
+                res,
+                expected_ir,
+                "exprs do not match:\n{}\n{}\n",
+                Expr::Block { body: res.clone() },
+                Expr::Block {
+                    body: expected_ir.clone()
+                },
+            );
         }
     }
 }
