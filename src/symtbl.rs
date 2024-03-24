@@ -181,10 +181,13 @@ impl Symtbl {
     }
 
     pub fn type_exists(&self, sym: Sym) -> bool {
+        if sym == Sym::new("Tuple") {
+            return true;
+        }
         let thing = self.unique_types.get(&UniqueSym(sym));
         // fuck combinators
         match thing {
-            Some(anymap) => true,
+            Some(_anymap) => true,
             None => false,
         }
     }

@@ -372,6 +372,8 @@ fn cc_decl(tck: &mut Tck, symtbl: &Symtbl, decl: Decl) -> Decl {
             typ,
             init: expr_map_pre(init, &mut |e| cc_expr(scope, symtbl, tck, e)),
         },
+        // If our typedecl contains a lambda, we have to closure-convert
+        // that too.
         D::TypeDef {
             name,
             params,
@@ -444,6 +446,30 @@ end"#,
     f(x)
 end"#,
                 vec![Sym::new("B")],
+            ),
+            (
+                r#"let my_thing = Thing( {
+    .do_stuff = fn(x T1, y T2) I32 =
+        12
+    end
+})
+                        
+                    "#,
+                vec![Sym::new("T1"), Sym::new("T2")],
+            ),
+            (
+                r#"fn(|T1, T2|) {T1, T2} =
+    let my_thing = {
+        .do_stuff = fn(x T1, y T2) I32 =
+            12
+        end
+    }
+    my_thing
+end
+})
+                        
+                    "#,
+                vec![],
             ),
         ];
         let scope = &mut ScopeThing::default();
