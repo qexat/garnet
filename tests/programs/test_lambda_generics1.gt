@@ -16,7 +16,7 @@ fn make_id(|T1|) fn(T1) T1 =
 end
 
 fn main() {} =
-    let id = make_id()
+    let id = make_id(|I32|)
     let res = id(12)
     __println(res)
 end

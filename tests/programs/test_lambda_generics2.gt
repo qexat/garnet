@@ -14,7 +14,7 @@ type Thing(T1, T2) = struct(T1, T2)
 end
 
 fn impl_thing(|T1, T2|) Thing(T1, T2) =
-    let my_thing = Thing(|T1, T2| {
+    let my_thing = Thing( {
         .do_stuff = fn(x T1, y T2) I32 =
             12
         end
@@ -23,7 +23,7 @@ fn impl_thing(|T1, T2|) Thing(T1, T2) =
 end
 
 fn main() {} =
-    let impl = impl_thing(|I32, I32|)
-    let res = impl.do_stuff(1_I32, 2_U32)
+    let impl = impl_thing(|I32, U32|)
+    let res = impl$.do_stuff(1_I32, 2_U32)
     __println(res)
 end

@@ -492,7 +492,7 @@ pub fn try_compile(
     info!("HIR from symtbl renaming 1:\n{}", &hir);
     let hir = passes::run_passes(hir);
     info!("HIR from first passes:\n{}", &hir);
-    // Symbol resolution has to happen after passes 'cause
+    // Symbol resolution has to happen (again???) after passes 'cause
     // the passes may generate new code.
     let (hir, mut symtbl) = symtbl::resolve_symbols(hir);
     info!("HIR from symtbl renaming:\n{}", &hir);
