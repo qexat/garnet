@@ -90,7 +90,7 @@ fn unparse_sig(sig: &Signature, out: &mut dyn io::Write) -> io::Result<()> {
             } else {
                 first = false;
             }
-            write!(out, "{}", name.get_name())?;
+            write!(out, "{}", name)?;
         }
         write!(out, "| ")?;
     }

@@ -9,7 +9,7 @@
 --     true
 
 
-type Eq(T) = struct
+type Eq(T) = struct(T)
     eq: fn(T, T) Bool,
 end
 

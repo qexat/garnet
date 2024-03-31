@@ -38,7 +38,9 @@ fn tuplize_type(typ: Type) -> Type {
             // on the field names.
 
             // TODO: What do we do with generics?  Anything?
-            let tuple_fields = fields.values().map(|ty| type_map(ty.clone(), &mut tuplize_type))
+            let tuple_fields = fields
+                .values()
+                .map(|ty| type_map(ty.clone(), &mut tuplize_type))
                 .collect();
             Type::tuple(tuple_fields)
         }
@@ -77,10 +79,7 @@ fn tuplize_expr(expr: ExprNode, tck: &mut typeck::Tck) -> ExprNode {
                     .map(|(ky, vl)| (offset_of_field(type_body, ky), vl))
                     .collect();
                 ordered_body.sort_by(|a, b| a.0.cmp(&b.0));
-                let new_body = ordered_body
-                    .into_iter()
-                    .map(|(_i, expr)| expr)
-                    .collect();
+                let new_body = ordered_body.into_iter().map(|(_i, expr)| expr).collect();
 
                 E::TupleCtor { body: new_body }
             }
@@ -130,7 +129,7 @@ fn tuplize_expr(expr: ExprNode, tck: &mut typeck::Tck) -> ExprNode {
 /// kinda squirrelly, because we don't really have a decl that translates
 /// directly into a Rust struct without being wrapped in a typedef first.  So I
 /// think I will translate them to tuples after all.
-pub(super) fn struct_to_tuple(ir: Ir, tck: &mut typeck::Tck) -> Ir {
+pub(super) fn struct_to_tuple(ir: Ir, _: &symtbl::Symtbl, tck: &mut typeck::Tck) -> Ir {
     let mut new_decls = vec![];
     let tuplize_expr = &mut |e| tuplize_expr(e, tck);
 
@@ -151,9 +150,11 @@ pub(super) fn struct_to_tuple(ir: Ir, tck: &mut typeck::Tck) -> Ir {
     // passes::expr_map that does a post-traversal instead of a pre-traversal?
     //
     // So for now we just throw away all type info and regenerate it!
-    let new_tck =
-        typeck::typecheck(&new_ir).expect("Generated monomorphized IR that doesn't typecheck");
-    *tck = new_tck;
+    // However this seems to be part of messy monomorph, so yanking it out
+    // for now seems fine.
+    // let new_tck =
+    //     typeck::typecheck(&new_ir).expect("Generated monomorphized IR that doesn't typecheck");
+    // *tck = new_tck;
     new_ir
 }
 

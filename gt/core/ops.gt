@@ -1,0 +1,54 @@
+--- Fundamental operators.  In Rust this is anything that is overloadable.
+--- We don't really have any overloading yet, so it's more a a place to
+--- play with ideas for such things.
+
+
+--- Kinda an equivalent of Rust's Fn() trait.
+---
+--- Just pretend borrowing doesn't matter right now.
+type Apply(Self, Inputs, Outputs) = struct(Inputs, Outputs)
+  apply: fn(Self, Inputs) Outputs
+end
+
+type MyThing = struct
+  environment: U32
+end
+
+-- impl Apply for MyThing
+const ApplyMyThing: Apply(MyThing, {}, U32) = Apply {
+  .apply = fn(self MyThing, _ {}) U32 =
+    self.environment += 1
+    self.environment
+  end
+}
+
+--- Thunk-ish thingy for modular implicits
+fn apply(|Self, Inputs, Outputs| impl Apply(Self), inputs Inputs) Outputs =
+  impl.apply(inputs)
+end
+ 
+fn use_apply() =
+  let mut thing1 = MyThing {
+    .environment = 0
+  }
+  let mut thing2 = MyThing {
+    .environment = 100
+  }
+
+  -- I guess the secret is inferring this to call
+  -- ApplyMyThing.apply(thing1, {})
+  thing1({}) -- 1
+  thing2({}) -- 101
+
+  -- So if we have modular implicits we can do this:
+  apply(thing1, {}) -- 2
+  apply(thing2, {}) -- 102
+end
+
+
+--- Module for indexing values, a la `foo[3]`
+type Index(Self, Out, Idx) = struct(Self, Out, Idx)
+  --- Technically maybe should borrow Self and Out,
+  --- this isn't terriblt interesting without that distinction.
+  index: fn(Self, Idx) Out
+end

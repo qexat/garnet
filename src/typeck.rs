@@ -2,15 +2,14 @@
 //! Operates on the HIR.
 
 use std::borrow::Cow;
-use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
-use std::rc::Rc;
 
 use log::*;
 
 use crate::*;
 
 use crate::hir;
+use crate::symtbl::Symtbl;
 use crate::{Sym, Type};
 
 /// A identifier to uniquely refer to our `TypeInfo`'s
@@ -418,6 +417,7 @@ impl Tck {
             Type::Never => TypeInfo::Never,
             Type::Enum(vals) => TypeInfo::Enum(vals.clone()),
             Type::Named(s, args) => {
+                // BUGGO: These can be type params sometimes, hrmm
                 let new_args = args.iter().map(|t| self.insert_known(t)).collect();
                 TypeInfo::Named(*s, new_args)
             }
@@ -427,7 +427,6 @@ impl Tck {
                 let new_typeparams = typeparams.iter().map(|t| self.insert_known(t)).collect();
                 TypeInfo::Func(new_args, new_rettype, new_typeparams)
             }
-            Type::Generic(s) => TypeInfo::TypeParam(*s),
             Type::Array(ty, len) => {
                 let new_body = self.insert_known(ty);
                 TypeInfo::Array(new_body, Some(*len))
@@ -552,6 +551,9 @@ impl Tck {
     }
 
     /// Unify two lists of types.  They must be the same length.
+    ///
+    /// TODO: It'd be nice to have some reference to the EID or
+    /// such in the source code for better error handling.
     fn unify_lists(
         &mut self,
         symtbl: &Symtbl,
@@ -624,10 +626,6 @@ impl Tck {
             (Ref(a), _) => self.unify(symtbl, a, b),
             (_, Ref(b)) => self.unify(symtbl, a, b),
 
-            /*
-            (Prim(PrimType::UnknownInt), Unknown) => Ok(()),
-            (Unknown, Prim(PrimType::UnknownInt)) => Ok(()),
-            */
             // When we don't know anything about either term, assume that
             // they match and make the one we know nothing about reference the
             // one we may know something about
@@ -643,6 +641,8 @@ impl Tck {
             // For type constructors, if their names are the same we try
             // to unify their args
             (Named(n1, args1), Named(n2, args2)) => {
+                // Ok they may be generics so we need to look up their
+                // actual types in the symbol table...?
                 if n1 == n2 {
                     self.unify_lists(symtbl, &args1, &args2)
                 } else {
@@ -667,6 +667,12 @@ impl Tck {
             // same basic idea
             (Struct(body1), Struct(body2)) => {
                 for (nm, t1) in body1.iter() {
+                    assert!(
+                        body2.contains_key(nm),
+                        "struct {:?} does not contain key '{}'",
+                        body1,
+                        nm
+                    );
                     let t2 = body2[nm];
                     self.unify(symtbl, *t1, t2)?;
                 }
@@ -752,7 +758,7 @@ impl Tck {
                     type_param_types?,
                 ))
             }
-            TypeParam(name) => Ok(Type::Generic(*name)),
+            TypeParam(name) => Ok(Type::named0(*name)),
             Struct(body) => {
                 let real_body: Result<BTreeMap<_, _>, TypeError> = body
                     .iter()
@@ -807,23 +813,28 @@ impl Tck {
     /// This has to actually be an empty hashtable on the first instantitaion
     /// instead of the symtbl, since the symtbl is full of type parameter names from the
     /// enclosing function and those are what we explicitly want to get away from.
+    ///
+    /// TODO: We can get rid of the known_types shit now that we rename
+    /// all type params to unique things, I think
     fn instantiate(&mut self, t: &Type, known_types: Option<BTreeMap<Sym, TypeId>>) -> TypeId {
         fn helper(tck: &mut Tck, named_types: &mut BTreeMap<Sym, TypeId>, t: &Type) -> TypeId {
             let typeinfo = match t {
                 Type::Prim(val) => TypeInfo::Prim(*val),
                 Type::Never => TypeInfo::Never,
                 Type::Enum(vals) => TypeInfo::Enum(vals.clone()),
-                Type::Named(s, args) => {
-                    let inst_args: Vec<_> =
-                        args.iter().map(|t| helper(tck, named_types, t)).collect();
-                    TypeInfo::Named(*s, inst_args)
-                }
-                Type::Generic(s) => {
-                    // If we know this is is a particular generic, match wiht it
+                Type::Named(s, typeparams) => {
+                    // If we know this is a type params that has been declared, refer to it
                     if let Some(ty) = named_types.get(s) {
+                        if typeparams.len() != 0 {
+                            panic!("halp, HKT here");
+                        }
                         TypeInfo::Ref(*ty)
                     } else {
-                        panic!("Referred to unknown generic named {}", s);
+                        let inst_args: Vec<_> = typeparams
+                            .iter()
+                            .map(|t| helper(tck, named_types, t))
+                            .collect();
+                        TypeInfo::Named(*s, inst_args)
                     }
                 }
                 Type::Func(args, rettype, typeparams) => {
@@ -868,7 +879,7 @@ impl Tck {
         // We do have to take any of those unknowns that are actually
         // known and preserve that knowledge though.
         let known_types = &mut known_types.unwrap_or_default();
-        let type_params = t.get_type_params();
+        let type_params = t.get_toplevel_type_params();
         // Probably a cleaner way to do this but oh well.
         // We to through the type params, and if any of them
         // are unknown we put a new TypeInfo::Unknown in for them.
@@ -881,96 +892,37 @@ impl Tck {
     }
 }
 
-#[derive(Clone, Default)]
-struct ScopeFrame {
-    /// Values are (type, mutability)
-    symbols: BTreeMap<Sym, (TypeId, bool)>,
-    types: BTreeMap<Sym, Type>,
-}
-
-/// Basic symbol table that maps names to type ID's
-/// and manages scope.
-/// Looks ugly, works well.
-#[derive(Clone)]
-pub struct Symtbl {
-    frames: Rc<RefCell<Vec<ScopeFrame>>>,
-}
-
-impl Default for Symtbl {
-    /// We start with an empty toplevel scope existing,
-    /// then add some builtin's to it.
-    fn default() -> Self {
-        Self {
-            frames: Rc::new(RefCell::new(vec![ScopeFrame::default()])),
-        }
-    }
-}
-
-pub struct ScopeGuard {
-    scope: Symtbl,
-}
-
-impl Drop for ScopeGuard {
-    fn drop(&mut self) {
-        self.scope
-            .frames
-            .borrow_mut()
-            .pop()
-            .expect("Scope stack underflow");
-    }
+#[derive(Debug, Clone)]
+struct TckInfo {
+    ty: TypeId,
+    mutable: bool,
 }
 
 impl Symtbl {
-    fn add_builtins(&self, tck: &mut Tck) {
+    fn add_var(&mut self, var: Sym, ty: TypeId, mutable: bool) {
+        let info = TckInfo { ty, mutable };
+        self.put_info(symtbl::UniqueSym(var), info)
+    }
+
+    /// Checks whether the var exists in the currently alive scopes
+    fn get_var_binding(&self, var: Sym) -> Option<&TckInfo> {
+        let sym = symtbl::UniqueSym(var);
+        self.get_info::<TckInfo>(sym)
+    }
+
+    fn add_builtin_typeinfo(&mut self, tck: &mut Tck) {
         for builtin in &*builtins::BUILTINS {
             let ty = tck.insert_known(&builtin.sig);
             self.add_var(builtin.name, ty, false);
         }
     }
-    pub(crate) fn push_scope(&self) -> ScopeGuard {
-        self.frames.borrow_mut().push(ScopeFrame::default());
-        ScopeGuard {
-            scope: self.clone(),
-        }
+
+    fn add_type(&mut self, var: Sym, ty: &Type) {
+        self.put_type_info2(var, ty.clone())
     }
 
-    fn add_var(&self, var: Sym, ty: TypeId, mutable: bool) {
-        self.frames
-            .borrow_mut()
-            .last_mut()
-            .expect("Scope stack underflow")
-            .symbols
-            .insert(var, (ty, mutable));
-    }
-
-    /// Checks whether the var exists in the currently alive scopes
-    fn get_var_binding(&self, var: Sym) -> Option<(TypeId, bool)> {
-        for scope in self.frames.borrow().iter().rev() {
-            let v = scope.symbols.get(&var);
-            if v.is_some() {
-                return v.cloned();
-            }
-        }
-        None
-    }
-
-    pub(crate) fn add_type(&self, name: Sym, ty: &Type) {
-        self.frames
-            .borrow_mut()
-            .last_mut()
-            .expect("Scope stack underflow")
-            .types
-            .insert(name, ty.to_owned());
-    }
-
-    pub(crate) fn get_type(&self, ty: Sym) -> Option<Type> {
-        for scope in self.frames.borrow().iter().rev() {
-            let v = scope.types.get(&ty);
-            if v.is_some() {
-                return v.cloned();
-            }
-        }
-        None
+    fn get_type(&self, var: Sym) -> Option<&Type> {
+        self.get_type_info2(var)
     }
 }
 
@@ -989,8 +941,8 @@ fn is_mutable_lvalue(symtbl: &Symtbl, expr: &hir::ExprNode) -> bool {
     use hir::Expr::*;
     match &*expr.e {
         Var { name } => {
-            let (_ty, mutable) = symtbl.get_var_binding(*name).unwrap();
-            mutable
+            let info = symtbl.get_var_binding(*name).unwrap();
+            info.mutable
         }
         StructRef { expr, .. } => is_mutable_lvalue(symtbl, expr),
         TupleRef { expr, .. } => is_mutable_lvalue(symtbl, expr),
@@ -999,12 +951,12 @@ fn is_mutable_lvalue(symtbl: &Symtbl, expr: &hir::ExprNode) -> bool {
     }
 }
 
-/// TODO: This doesn't necessarily handle a func body as much
-/// as a block with its own scope, which is what we actually want.
-fn typecheck_func_body(
+/// This typechecks a block with its own scope, such as a function
+/// body or if arm.
+fn typecheck_block(
     name: Option<Sym>,
     tck: &mut Tck,
-    symtbl: &Symtbl,
+    symtbl: &mut Symtbl,
     signature: &hir::Signature,
     body: &[hir::ExprNode],
 ) -> Result<TypeId, TypeError> {
@@ -1024,7 +976,7 @@ fn typecheck_func_body(
     let tparams = signature
         .typeparams
         .iter()
-        .map(|p| tck.insert_known(p))
+        .map(|p| tck.insert_known(&Type::named0(*p)))
         .collect();
     let f = tck.insert(TypeInfo::Func(params, rettype, tparams));
 
@@ -1037,8 +989,7 @@ fn typecheck_func_body(
         symtbl.add_var(n, f, false);
     }
 
-    // Add params to function's scope
-    let _guard = symtbl.push_scope();
+    // Add type info for params.
     for (paramname, paramtype) in &signature.params {
         let p = tck.insert_known(paramtype);
         symtbl.add_var(*paramname, p, false);
@@ -1073,7 +1024,7 @@ fn typecheck_func_body(
 /// or unit if the list is empty.  Does NOT push a new scope.
 fn typecheck_exprs(
     tck: &mut Tck,
-    symtbl: &Symtbl,
+    symtbl: &mut Symtbl,
     func_rettype: TypeId,
     exprs: &[hir::ExprNode],
 ) -> Result<TypeId, TypeError> {
@@ -1090,11 +1041,12 @@ fn typecheck_exprs(
 
 fn typecheck_expr(
     tck: &mut Tck,
-    symtbl: &Symtbl,
+    symtbl: &mut Symtbl,
     func_rettype: TypeId,
     expr: &hir::ExprNode,
 ) -> Result<TypeId, TypeError> {
     use hir::Expr::*;
+    trace!("Typechecking expr {:?}", expr);
     let rettype: Result<_, TypeError> = match &*expr.e {
         Lit { val } => {
             let lit_type = infer_lit(val);
@@ -1103,11 +1055,12 @@ fn typecheck_expr(
             Ok(typeid)
         }
         Var { name } => {
-            let (ty, _mutable) = symtbl
+            trace!("Looking up var {}", name);
+            let varinfo = symtbl
                 .get_var_binding(*name)
                 .unwrap_or_else(|| panic!("unbound var: {:?}", name));
-            tck.set_expr_type(expr, ty);
-            Ok(ty)
+            tck.set_expr_type(expr, varinfo.ty);
+            Ok(varinfo.ty)
         }
         BinOp { op, lhs, rhs } => {
             let t1 = typecheck_expr(tck, symtbl, func_rettype, lhs)?;
@@ -1139,7 +1092,7 @@ fn typecheck_expr(
             let expr_in = typecheck_expr(tck, symtbl, func_rettype, rhs)?;
             let expected_in = tck.uop_input_type(*op);
             tck.unify(symtbl, expr_in, expected_in)?;
-            // Similar problem as BOp
+            // BUGGO: Similar problem as BOp
             let expected_output = tck.uop_output_type(*op, expected_in);
             //tck.unify(symtbl, expr_in, expected_output)?;
             tck.set_expr_type(expr, expected_output);
@@ -1168,14 +1121,14 @@ fn typecheck_expr(
             let func_type = typecheck_expr(tck, symtbl, func_rettype, func)?;
             // We know this will work because we require full function signatures
             // on our functions.
-            let actual_func_type = tck.reconstruct(func_type)?;
-            let actual_func_type_params = match &actual_func_type {
-                Type::Func(_args, _rettype, typeparams) => {
+            let actual_func_type: Type = tck.reconstruct(func_type)?;
+            let (_actual_args, _actual_rettype, actual_type_params) = match &actual_func_type {
+                Type::Func(args, rettype, typeparams) => {
                     //trace!("Calling function {:?} is {:?}", func, actual_func_type);
                     // So when we call a function we need to know what its
                     // type params are.  Then we bind those type parameters
                     // to things.
-                    typeparams
+                    (args, rettype, typeparams)
                 }
                 other => panic!(
                     "Tried to call something not a function, it is a {:?}",
@@ -1183,88 +1136,64 @@ fn typecheck_expr(
                 ),
             };
 
-            // Synthesize what we know about the function
-            // from the call.
-            let params_list: Result<Vec<_>, _> = params
+            // Typecheck the function args
+            let params_list: Result<Vec<TypeId>, _> = params
                 .iter()
                 .map(|param| typecheck_expr(tck, symtbl, func_rettype, param))
                 .collect();
+
             let params_list = params_list?;
-            // Also synthesize what we know about the generics passed, if any,
-            // or if there aren't any then figure them out from the params that
-            // are passed.
-            let type_param_vars = match (type_params.len(), actual_func_type_params.len()) {
-                // all is good, no inference needed
-                (0, 0) => vec![],
-                // Infer type params from function call
-                //
-                // TODO: Should this be Ref(expected) rather than
-                // Unknown?  For now let's just infer it from nothing
-                // and see what happens.
-                (0, _expected) => actual_func_type_params
-                    .iter()
-                    .map(|_| tck.insert(TypeInfo::Unknown))
-                    .collect(),
-                // Map the given type params to the ones the function expects.
-                (given, expected) if given == expected => {
-                    type_params.iter().map(|t| tck.insert_known(t)).collect()
-                }
-                // Wrong number of type params given.
-                (given, expected) => {
-                    let errmsg = format!(
-                        "Tried to call func with {} type parameters but it expects {} of them!",
-                        given, expected
-                    );
-                    return Err(errmsg.into());
-                }
-            };
+
+            // Instantiate the function's type params with the types that
+            // we have passed to it
+
             // We don't know what the expected return type of the function call
             // is yet; we make a type var that will get resolved when the enclosing
-            // expression is.
-            let rettype_var = tck.insert(TypeInfo::Unknown);
+            // expression is 'cause it may be a generic type.
+            let rettype_typevar = tck.insert(TypeInfo::Unknown);
+
+            // This attempts to infer function type params if they are absent.  If the wrong number of params are given the
+            // unification below will just fail.
+            let type_params_vars: Vec<_> = if type_params.len() == 0 {
+                actual_type_params
+                    .iter()
+                    .map(|_t| tck.insert(TypeInfo::Unknown))
+                    .collect()
+            } else {
+                // TODO: Oooooooh, we could make a _ type param work
+                // here just by having it become TypeInfo::Unknown
+                type_params.iter().map(|t| tck.insert_known(t)).collect()
+            };
+
             // So this is now the inferred type that the function has been
             // called with.
-            let funcall_var = tck.insert(TypeInfo::Func(
+            let funcall_typeinfo = tck.insert(TypeInfo::Func(
                 params_list,
-                rettype_var,
-                type_param_vars.clone(),
+                rettype_typevar,
+                type_params_vars.clone(),
             ));
 
-            // Now I guess this is where we make a copy of the function
-            // with new generic types.
-            // Is this "instantiation"???
-            // Yes it is.  Differentiate "type parameters", which are the
-            // types a function takes as input (our `Generic` or `TypeParam`
-            // things I suppose), from "type variables" which are the TypeId
-            // we have to solve for.
-            //
-            // So we go through the generics the function declares and create
-            // new type vars for each of them.
-            //
-            // We also create type variables for any type paramss we've been
-            // given values to.
-            //
-            // Ok we *also* need to see if we can infer type params on function
-            // calls that haven't been passed them explicitly.
-            // like, if we have id(thing @T | @T) @T and we call id(false | Bool)
-            // that is fine, if we call id(false) then we need to infer the
-            // Bool there. We require either all or no type params for these
-            // functions, so it's actually possible.
-            let input_type_params = type_param_vars
+            // Instantiate the function's declared type params.
+            // Basically make unique copies of its type params for this
+            // one specific function call
+            let input_type_params = type_params_vars
                 .iter()
-                .zip(actual_func_type_params.iter())
+                .zip(actual_type_params.iter())
                 .filter_map(
                     |(given_type_param, fnexpr_type_param)| match fnexpr_type_param {
-                        Type::Generic(nm) => Some((*nm, *given_type_param)),
+                        Type::Named(nm, _) => Some((*nm, *given_type_param)),
                         _ => None,
                     },
                 )
                 .collect();
             let heck = tck.instantiate(&actual_func_type, Some(input_type_params));
-            tck.unify(symtbl, heck, funcall_var)?;
 
-            tck.set_expr_type(expr, rettype_var);
-            Ok(rettype_var)
+            // Does it match the real function type?
+            // tck.unify(symtbl, func_type, funcall_typeinfo)?;
+            tck.unify(symtbl, heck, funcall_typeinfo)?;
+
+            tck.set_expr_type(expr, rettype_typevar);
+            Ok(rettype_typevar)
         }
         Let {
             varname,
@@ -1300,7 +1229,6 @@ fn typecheck_expr(
                 let case_type = typecheck_expr(tck, symtbl, func_rettype, case)?;
                 tck.unify(symtbl, case_type, booltype)?;
 
-                let _guard = symtbl.push_scope();
                 let body_type = typecheck_exprs(tck, symtbl, func_rettype, body)?;
                 tck.unify(symtbl, body_type, rettype)?;
             }
@@ -1312,10 +1240,11 @@ fn typecheck_expr(
             variant,
             value,
         } => {
-            let enumtype = symtbl.get_type(*name).expect("Unknown enum type!");
+            let errmsg = format!("Unknown enum type in enum constructor: {}", name);
+            let enumtype = symtbl.get_type(*name).expect(&errmsg);
             // Make sure type actually is an enum
             // Enums are terminal types so I guess we don't need to do
-            // any inference or unification or such here?
+            // any inference or unification or such here
             match &enumtype {
                 Type::Enum(body) => {
                     // make sure variant actually exists
@@ -1440,7 +1369,7 @@ fn typecheck_expr(
             Ok(unit)
         }
         Lambda { signature, body } => {
-            let t = typecheck_func_body(None, tck, symtbl, signature, body)?;
+            let t = typecheck_block(None, tck, symtbl, signature, body)?;
             tck.set_expr_type(expr, t);
             Ok(t)
         }
@@ -1458,16 +1387,17 @@ fn typecheck_expr(
             type_params,
             body,
         } => {
-            let named_type = symtbl.get_type(*name).expect("Unknown type constructor");
+            trace!("Handling typector {}, {:?}, {:?}", name, type_params, body);
+            let errmsg = format!("Unknown type constructor: {:?}", *name);
+            let named_type: &Type = symtbl.get_type(*name).expect(&errmsg);
             trace!("Got type named {}: is {:?}", name, named_type);
             // Ok if we have declared type params we gotta instantiate them
             // to match the type's generics.
-            //let type_param_names = named_type.get_generic_args();
-            let type_param_names = named_type.get_type_params();
+            let type_param_names = named_type.get_toplevel_type_params();
             assert_eq!(
                 type_params.len(),
                 type_param_names.len(),
-                "Type '{}' expected params {:?} but got params {:?}",
+                "Type constructor '{}' expected params {:?} but got params {:?}",
                 name,
                 type_param_names,
                 type_params
@@ -1516,7 +1446,7 @@ fn typecheck_expr(
 
             let body_type = typecheck_expr(tck, symtbl, func_rettype, inner_expr)?;
             let (nm, params) = try_resolve_named_type(tck, symtbl, body_type)?;
-            let inner_type = symtbl
+            let inner_type: &Type = symtbl
                 .get_type(nm)
                 .ok_or(format!("Named type {} is not known!", nm))?;
             trace!("Inner type is {:?}", inner_type);
@@ -1527,7 +1457,7 @@ fn typecheck_expr(
             //
             // But then we have to bind those type params to
             // what we *know* about the type already...
-            let type_param_names = inner_type.get_type_params();
+            let type_param_names = inner_type.get_toplevel_type_params();
             let known_type_params = type_param_names
                 .iter()
                 .cloned()
@@ -1545,7 +1475,8 @@ fn typecheck_expr(
         } => {
             let named_type = symtbl
                 .get_type(*name)
-                .expect("Unknown sum type constructor");
+                .expect("Unknown sum type constructor")
+                .clone();
 
             // This might be wrong, we can probably do it the other way around
             // like we do with TypeUnwrap: start by checking the inner expr type and make
@@ -1625,6 +1556,9 @@ fn typecheck_expr(
     rettype
 }
 
+/// TODO: I am a little miffed because the alpha-renaming was supposed
+/// to make it so this had been done already, but we still need to do all
+/// the type-y things for it.
 fn predeclare_decls(tck: &mut Tck, symtbl: &mut Symtbl, decls: &[hir::Decl]) {
     use hir::Decl::*;
     for d in decls {
@@ -1644,32 +1578,26 @@ fn predeclare_decls(tck: &mut Tck, symtbl: &mut Symtbl, decls: &[hir::Decl]) {
                 let typeparams = signature
                     .typeparams
                     .iter()
-                    .map(|t| tck.insert_known(t))
+                    .map(|t| tck.insert_known(&Type::named0(*t)))
                     .collect();
                 let f = tck.insert(TypeInfo::Func(params, rettype, typeparams));
                 symtbl.add_var(*name, f, false);
             }
             TypeDef {
                 name,
-                params,
+                params: _,
                 typedecl,
             } => {
-                // Make sure that there are no unbound generics in the typedef
-                // that aren't mentioned in the params.
-                let generic_names: BTreeSet<Sym> = typedecl.get_type_params().into_iter().collect();
-                let param_names: BTreeSet<Sym> = params.iter().cloned().collect();
-                let difference: Vec<_> = generic_names.symmetric_difference(&param_names).collect();
-                if !difference.is_empty() {
-                    // gramble gramble strings
-                    let differences: Vec<_> = difference
-                        .into_iter()
-                        .map(|sym| (*sym.val()).clone())
-                        .collect();
-                    let differences = differences.join(", ");
-                    panic!("Error in typedef {}: Type params do not match generics mentioned in body.  Unmatched types: {}", name, differences);
-                }
-
+                //todo!("Start here");
+                // ...ok but when checking the typector it needs
+                // to get the type params and make sure those match
+                // too...  or can we just wing it 'cause we always
+                // generate those so they're always correct?
+                // A typedef really needs to be a signature, not just
+                // a name...
+                trace!("Predeclaring type {:?} with decl {:?}", *name, typedecl);
                 // Remember that we know about a type with this name
+                // All the real work is done in typecheck()
                 symtbl.add_type(*name, typedecl)
             }
             Const {
@@ -1691,11 +1619,10 @@ fn predeclare_decls(tck: &mut Tck, symtbl: &mut Symtbl, decls: &[hir::Decl]) {
 /// terms to each of your nodes with whatever information you have available. You
 /// will also need to call `engine.unify(x, y)` when you know two nodes have the
 /// same type, such as in the statement `x = y;`."
-pub fn typecheck(ast: &hir::Ir) -> Result<Tck, TypeError> {
+pub fn typecheck(ast: &hir::Ir, symtbl: &mut Symtbl) -> Result<Tck, TypeError> {
     let mut t = Tck::default();
     let tck = &mut t;
-    let symtbl = &mut Symtbl::default();
-    symtbl.add_builtins(tck);
+    symtbl.add_builtin_typeinfo(tck);
     predeclare_decls(tck, symtbl, &ast.decls);
     for decl in &ast.decls {
         use hir::Decl::*;
@@ -1706,7 +1633,7 @@ pub fn typecheck(ast: &hir::Ir) -> Result<Tck, TypeError> {
                 signature,
                 body,
             } => {
-                let t = typecheck_func_body(Some(*name), tck, symtbl, signature, body);
+                let t = typecheck_block(Some(*name), tck, symtbl, signature, body);
                 t.unwrap_or_else(|e| {
                     error!("Error, type context is:");
                     tck.print_types();
@@ -1721,7 +1648,8 @@ pub fn typecheck(ast: &hir::Ir) -> Result<Tck, TypeError> {
                 // TODO: Handle recursive types properly?  Somehow.
                 // Make sure that there are no unbound generics in the typedef
                 // that aren't mentioned in the params.
-                let generic_names: BTreeSet<Sym> = typedecl.get_type_params().into_iter().collect();
+                let generic_names: BTreeSet<Sym> =
+                    typedecl.get_toplevel_type_params().into_iter().collect();
                 let param_names: BTreeSet<Sym> = params.iter().cloned().collect();
                 let difference: Vec<_> = generic_names.symmetric_difference(&param_names).collect();
                 if !difference.is_empty() {
@@ -1732,8 +1660,7 @@ pub fn typecheck(ast: &hir::Ir) -> Result<Tck, TypeError> {
                     panic!("Error in typedef {}: Type params do not match generics mentioned in body.  Unmatched types: {:?}", name, differences);
                 }
 
-                // Remember that we know about a type with this name
-                symtbl.add_type(*name, typedecl)
+                // Unnecessary to call add_type() since we've already predeclared it
             }
             Const {
                 name: _,
@@ -1744,11 +1671,7 @@ pub fn typecheck(ast: &hir::Ir) -> Result<Tck, TypeError> {
                 // scope, since it may theoretically be a `let` or
                 // something that introduces new names inside it.
                 let desired_type = tck.insert_known(typename);
-                let init_type = {
-                    let _guard = symtbl.push_scope();
-
-                    typecheck_expr(tck, symtbl, desired_type, init).unwrap()
-                };
+                let init_type = { typecheck_expr(tck, symtbl, desired_type, init).unwrap() };
                 tck.unify(symtbl, desired_type, init_type)
                     .expect("Error typechecking const decl");
                 //println!("Typechecked const {}, type is {:?}", name, init_type);
@@ -1757,13 +1680,13 @@ pub fn typecheck(ast: &hir::Ir) -> Result<Tck, TypeError> {
         }
     }
     // Print out toplevel symbols
-    for (name, id) in &symtbl.frames.borrow().last().unwrap().symbols {
-        info!(
-            "value {} type is {:?}",
-            name,
-            tck.reconstruct(id.0).map(|t| t.get_name())
-        );
-    }
+    // for (name, id) in &symtbl.frames.borrow().last().unwrap().symbols {
+    //     info!(
+    //         "value {} type is {:?}",
+    //         name,
+    //         tck.reconstruct(id.0).map(|t| t.get_name())
+    //     );
+    // }
     trace!("Type variables:");
     for (id, info) in &tck.vars {
         trace!("  ${} = {info:?}", id.0);
