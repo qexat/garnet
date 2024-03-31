@@ -6,7 +6,6 @@ fn fib(x I32) I32 =
     end
 end
 
-fn main(): {} =
+fn main() {} =
     __println(fib(40))
-    {}
 end

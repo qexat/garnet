@@ -1,46 +1,43 @@
 --- Messing about with vectors, as a way to experiment with structures
 --- and such.  Mainly just syntax.
 
-struct Vec3 {
-    x: F32,
-    y: F32,
-    z: F32,
-}
+type Vec3 = struct
+    x: I32,
+    y: I32,
+    z: I32,
+end
 
-fn add(lhs: Vec3, rhs: Vec3): Vec3 =
+fn add(lhs Vec3, rhs Vec3) Vec3 =
     Vec3 {
-        x = lhs.x + rhs.x,
-        y = lhs.y + rhs.y,
-        z = lhs.z + rhs.z,
+        .x = lhs$.x + rhs$.x,
+        .y = lhs$.y + rhs$.y,
+        .z = lhs$.z + rhs$.z,
     }
 end
 
-const VecAdd: Add[Vec3] = Add[Vec3] {
-    Output = Vec3,
-    add = add,
-}
-
-fn foo(a: Vec3, b: Vec3): Vec3 =
-    -- So all these are equivalent...
-    add(a, b)
-    a.add(b)
-    a + b
-    VecAdd.add(a, b)
+type Add(T) = struct(T)
+    add: fn(T, T) T
 end
 
-
+const AddI32 Add(I32) = Add {
+    .add = fn(x I32, y I32) I32 = x + y end,
+}
+ 
 --- hm hm generics.
-struct Vec3[T] =
-    x: T
-    y: T
-    z: T
+type GVec3(T) = struct(T)
+    x: T,
+    y: T,
+    z: T,
 end
 
-fn add(lhs: Vec3[T], rhs: Vec3[T]): Vec3[T]
-where T: Add =
-    Vec3 {
-        x = lhs.x + rhs.x,
-        y = lhs.y + rhs.y,
-        z = lhs.z + rhs.z,
+fn add(|T| impl Add(T), lhs GVec3(T), rhs GVec3(T)) GVec3(T) =
+    GVec3 {
+        .x = impl$.add(lhs$.x, rhs$.x),
+        .y = impl$.add(lhs$.y, rhs$.y),
+        .z = impl$.add(lhs$.z, rhs$.z),
     }
+end
+
+fn main() =
+    __println(42)
 end

@@ -1,4 +1,6 @@
-Subdirectories contain prototype stuff for a vestigial stdlib.
+This dir contains random test programs.
+
+Subdirectories contain prototype files for a vestigial stdlib.
 
 See https://todo.sr.ht/~icefox/garnet/9 for design notes and discussion.
 

@@ -5,16 +5,16 @@
 
 --- Our general-purpose Result type.
 --- Properties: Copy, Clone, Debug, Zero, Pod when T is Pod...
-type Result(T, E) = sum(T, E)
-    Ok {T},
-    Err {E},
+type Result(T, E) = sum(T, E) 
+	Ok {T}, 
+	Err {E},
 end
 
 --- Takes a Result and returns the value contained if it is Ok, 
 --- otherwise panics.
 ---
 --- Properties: Panics.
-fn unwrap(|T, E| self Result(T,E) T =
+fn unwrap(|T, E| self Result(T,E)) T =
     expect(self, "Unwrap failed")
 end
 
