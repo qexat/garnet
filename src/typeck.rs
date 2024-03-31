@@ -6,11 +6,11 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use log::*;
 
-use crate::*;
-
 use crate::hir;
 use crate::symtbl::Symtbl;
-use crate::{Sym, Type};
+use crate::types::*;
+use crate::Sym;
+use crate::*;
 
 /// A identifier to uniquely refer to our `TypeInfo`'s
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
@@ -957,7 +957,7 @@ fn typecheck_block(
     name: Option<Sym>,
     tck: &mut Tck,
     symtbl: &mut Symtbl,
-    signature: &hir::Signature,
+    signature: &Signature,
     body: &[hir::ExprNode],
 ) -> Result<TypeId, TypeError> {
     /*

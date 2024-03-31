@@ -16,6 +16,7 @@ use codespan_reporting::diagnostic::{Diagnostic, Label};
 use logos::{Lexer, Logos};
 
 use crate::ast;
+use crate::types::*;
 use crate::*;
 
 /// Checks whether the given value can fit in `int_size` number
@@ -699,11 +700,11 @@ impl<'input> Parser<'input> {
     }
 
     /// signature = fn_args [typename]
-    fn parse_fn_signature(&mut self) -> ast::Signature {
+    fn parse_fn_signature(&mut self) -> Signature {
         let (params, typeparams) = self.parse_fn_args();
         let rettype = self.try_parse_type().unwrap_or(Type::unit());
         let typeparams = Type::detype_names(&typeparams);
-        ast::Signature {
+        Signature {
             params,
             rettype,
             typeparams,
@@ -1489,7 +1490,6 @@ fn infix_binding_power(op: &TokenKind) -> Option<(usize, usize)> {
 mod tests {
     use crate::ast::{self, Expr};
     use crate::parser::*;
-    use crate::Type;
 
     /// Take a list of strings and try parsing them with the given function.
     /// Is ok iff the parsing succeeds, does no checking that the produced
@@ -1528,7 +1528,7 @@ mod tests {
     }
 
     /// And again with types
-    fn test_type_is(s: &str, f: impl Fn() -> crate::Type) {
+    fn test_type_is(s: &str, f: impl Fn() -> Type) {
         let ast = f();
         let mut p = Parser::new("unittest.gt", s);
         let parsed_type = p.parse_type();
@@ -1556,7 +1556,7 @@ mod tests {
             let i32_t = Type::i32();
             ast::Decl::Function {
                 name: Sym::new("foo"),
-                signature: ast::Signature {
+                signature: Signature {
                     params: vec![(Sym::new("x"), i32_t.clone())],
                     rettype: i32_t,
                     typeparams: vec![],
@@ -2130,7 +2130,7 @@ fn foo() {} = {} end
         assert_eq!(&res.module_docstring, "");
     }
 
-    /// This tests a kinda horrible edge case in mixing line and block comments, 
+    /// This tests a kinda horrible edge case in mixing line and block comments,
     /// but it's a rare enough one that I don't care about it right now.
     #[test]
     #[should_panic]
@@ -2158,5 +2158,4 @@ fn foo() {} = {} end
         let mut p = Parser::new("unittest.gt", thing1);
         let _res = p.parse();
     }
-
 }

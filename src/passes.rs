@@ -35,7 +35,9 @@ mod lambda_lift;
 //mod monomorphization;
 mod struct_to_tuple;
 //mod type_erasure;
+
 use crate::hir::{Decl as D, Expr as E, ExprNode, Ir};
+use crate::types::*;
 use crate::*;
 
 type Pass = fn(Ir) -> Ir;
@@ -497,13 +499,13 @@ pub fn _type_iter(ty: &Type, callback: &mut dyn FnMut(&Type)) {
 }
 
 /// Produce a new signature by transforming the types
-fn signature_map(sig: hir::Signature, f: &mut dyn FnMut(Type) -> Type) -> hir::Signature {
+fn signature_map(sig: Signature, f: &mut dyn FnMut(Type) -> Type) -> Signature {
     let new_params = sig
         .params
         .into_iter()
         .map(|(sym, ty)| (sym, type_map(ty, f)))
         .collect();
-    hir::Signature {
+    Signature {
         params: new_params,
         rettype: type_map(sig.rettype, f),
         typeparams: sig.typeparams,

@@ -10,6 +10,7 @@
 
 use std::fmt;
 
+use crate::types::*;
 use crate::*;
 
 /// Literal value
@@ -90,49 +91,6 @@ pub struct IfCase {
     pub condition: Box<Expr>,
     /// The body of the if expr
     pub body: Vec<Expr>,
-}
-
-/// A function type signature
-#[derive(Debug, Clone, PartialEq)]
-pub struct Signature {
-    /// Parameters
-    pub params: Vec<(Sym, Type)>,
-    /// Return type
-    pub rettype: Type,
-    /// Type parameters
-    pub typeparams: Vec<Sym>,
-}
-
-impl Signature {
-    /// Returns a lambda typedef representing the signature
-    pub fn to_type(&self) -> Type {
-        let paramtypes = self.params.iter().map(|(_nm, ty)| ty.clone()).collect();
-        let typeparams = self.typeparams.iter().map(|nm| Type::named0(*nm)).collect();
-        Type::Func(paramtypes, Box::new(self.rettype.clone()), typeparams)
-    }
-
-    /// Get all the generic params out of this function sig
-    pub fn type_params(&self) -> Vec<Sym> {
-        self.to_type().get_toplevel_type_params()
-    }
-
-    /// Returns a string containing just the params and rettype bits of the sig
-    pub fn to_name(&self) -> String {
-        let names: Vec<_> = self
-            .params
-            .iter()
-            .map(|(s, t)| format!("{} {}", &*s.val(), t.get_name()))
-            .collect();
-        let args = names.join(", ");
-
-        let typenames: Vec<_> = self
-            .typeparams
-            .iter()
-            .map(|t| (t.val().as_str()).to_string())
-            .collect();
-        let typeargs = typenames.join(", ");
-        format!("(|{}| {}) {}", typeargs, args, self.rettype.get_name())
-    }
 }
 
 /// Any expression.

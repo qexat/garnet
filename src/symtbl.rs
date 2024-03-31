@@ -12,6 +12,7 @@ use std::rc::Rc;
 
 use anymap::Map;
 
+use crate::types::*;
 use crate::*;
 
 /// A symbol that has been renamed to be globally unique.
@@ -323,7 +324,7 @@ impl Symtbl {
 
     /// Replace any generic names in the type with unique ones
     fn handle_type(&mut self, ty: Type) -> Type {
-        use crate::Type::*;
+        use crate::types::Type::*;
         match ty {
             Named(nm, type_params) if &*nm.val() == "Tuple" => {
                 let new_type_params = self.handle_types(type_params);
@@ -516,7 +517,7 @@ impl Symtbl {
                     .into_iter()
                     .map(|(sym, typ)| (self.bind_new_symbol(sym).0, self.handle_type(typ)))
                     .collect();
-                let new_sig = hir::Signature {
+                let new_sig = Signature {
                     params: new_params,
                     rettype: new_rettype,
                     typeparams: new_type_params,
@@ -646,7 +647,7 @@ fn handle_decl(symtbl: &mut Symtbl, decl: hir::Decl) -> hir::Decl {
                 .map(|(sym, typ)| (symtbl.bind_new_symbol(sym).0, symtbl.handle_type(typ)))
                 .collect();
             let new_rettype = symtbl.handle_type(signature.rettype);
-            let new_sig = hir::Signature {
+            let new_sig = Signature {
                 params: new_params,
                 rettype: new_rettype,
                 typeparams: new_type_params,
