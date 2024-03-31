@@ -11,7 +11,8 @@ use std::fmt;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use crate::ast;
-pub use crate::ast::{BOp, IfCase, Literal, Signature, UOp};
+pub use crate::ast::{BOp, IfCase, Literal, UOp};
+use crate::types::*;
 use crate::*;
 
 /// Expression ID.  Used for associating individual expressions to types, and whatever
@@ -576,7 +577,7 @@ fn lower_uop(uop: &ast::UOp) -> UOp {
     *uop
 }
 
-fn lower_signature(sig: &ast::Signature) -> Signature {
+fn lower_signature(sig: &Signature) -> Signature {
     sig.clone()
 }
 
@@ -813,7 +814,7 @@ fn lower_typedef(accm: &mut Vec<Decl>, name: Sym, ty: &Type, params: &[Sym]) {
                 .iter()
                 .map(|(variant_name, variant_type)| {
                     let paramname = Sym::new("x");
-                    let signature = ast::Signature {
+                    let signature = Signature {
                         params: vec![(paramname, variant_type.clone())],
                         rettype: Type::Named(name, type_params.clone()),
                         typeparams: new_type_params.clone(),
@@ -860,7 +861,7 @@ fn lower_typedef(accm: &mut Vec<Decl>, name: Sym, ty: &Type, params: &[Sym]) {
             let s = Sym::new("x");
             trace!("Lowering params {:?}", params);
             let type_params: Vec<_> = params.iter().map(|s| Type::named0(*s)).collect();
-            let signature = ast::Signature {
+            let signature = Signature {
                 params: vec![(s, other.clone())],
                 rettype: Type::Named(name.to_owned(), type_params.clone()),
                 typeparams: params.to_owned(),

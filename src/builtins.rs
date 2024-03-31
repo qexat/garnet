@@ -6,6 +6,7 @@ use std::collections::BTreeMap;
 use once_cell::sync::Lazy;
 
 use crate::backend::Backend;
+use crate::types::*;
 use crate::*;
 
 /// A single built-in value that is just included into the generated program.

@@ -15,11 +15,12 @@ use log::*;
 
 use crate::hir;
 use crate::typeck::Tck;
+use crate::types::*;
 use crate::*;
 
 /// Compiles a `Type` into a a valid Rust type.
 fn compile_typename(t: &Type) -> Cow<'static, str> {
-    use crate::Type::*;
+    use crate::types::Type::*;
     match t {
         Prim(PrimType::Int(16, true)) => "i128".into(),
         Prim(PrimType::Int(8, true)) => "i64".into(),
@@ -249,7 +250,7 @@ fn compile_decl(w: &mut impl Write, decl: &hir::Decl, tck: &Tck) -> io::Result<(
 }
 
 /// Compile a function signature
-fn compile_fn_signature(sig: &ast::Signature) -> String {
+fn compile_fn_signature(sig: &Signature) -> String {
     let mut accm = String::from("");
     let generics = sig.type_params();
 
