@@ -1092,9 +1092,8 @@ fn typecheck_expr(
             let expr_in = typecheck_expr(tck, symtbl, func_rettype, rhs)?;
             let expected_in = tck.uop_input_type(*op);
             tck.unify(symtbl, expr_in, expected_in)?;
-            // BUGGO: Similar problem as BOp
+            // Similar problem as BOp, similar solution.
             let expected_output = tck.uop_output_type(*op, expected_in);
-            //tck.unify(symtbl, expr_in, expected_output)?;
             tck.set_expr_type(expr, expected_output);
             Ok(expected_output)
         }
