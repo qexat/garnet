@@ -9,7 +9,8 @@
 
 fn main() {} =
     let x I32 = do
-        12
+        -- See https://todo.sr.ht/~icefox/garnetc/28
+        12_I64
         42
     end
     __println(x)

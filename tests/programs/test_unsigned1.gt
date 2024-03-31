@@ -1,0 +1,18 @@
+-- Format:
+--   status: success
+-- Compile:
+--   status: success
+-- Run:
+--   status: success
+--   stdout:
+--     15
+
+
+fn foo(x U64) U64 =
+    x + 3
+end
+
+fn main() {} =
+    let x U64 = 12
+    __println_u64(foo(x))
+end

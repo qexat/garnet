@@ -3,12 +3,12 @@
 -- Compile:
 --   status: error
 
-type Foo(@Thing) = struct
-    a: @Blarg,
+type Foo(Thing) = struct
+    a: Blarg,
     b: Bool
 end
 
-fn id(x @T) @T =
+fn id(x T) T =
     x
 end
 

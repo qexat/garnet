@@ -43,6 +43,9 @@ fn lambda_lift_expr(expr: ExprNode, output_funcs: &mut Vec<D>) -> ExprNode {
 /// Eeeeeeeeh we might just have to check on it later one way or another,
 /// either when doing codegen or when transforming our HIR to a lower-level IR.
 pub(super) fn lambda_lift(ir: Ir) -> Ir {
+    // Ok we do some limited symbol table type stuff in here
+    // cause we have to know what scopes we are adjusting
+    // let symtbl = Symtbl::new();
     let mut new_functions = vec![];
     let new_decls: Vec<D> = ir
         .decls

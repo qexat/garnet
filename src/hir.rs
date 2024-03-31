@@ -99,7 +99,7 @@ impl fmt::Display for Decl {
                 typ: typename,
                 init,
             } => {
-                write!(f, "const {}: {} = ", name, typename.get_name())?;
+                write!(f, "const {} {} = ", name, typename.get_name())?;
                 init.write(1, f)?;
                 writeln!(f)?;
             }
@@ -108,13 +108,21 @@ impl fmt::Display for Decl {
                 typedecl,
                 params,
             } => {
-                writeln!(f, "type {}({:?}) = {}", name, params, typedecl.get_name())?;
+                let param_str: Vec<String> = params.iter().map(|t| t.to_string()).collect();
+                let param_str = param_str.join(", ");
+                writeln!(f, "type {}({}) = {}", name, param_str, typedecl.get_name())?;
             }
             D::Import { name, localname } => {
                 writeln!(f, "import {} as {}", name, localname)?;
             }
         }
         Ok(())
+    }
+}
+
+impl fmt::Display for Expr {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.write(0, f)
     }
 }
 
@@ -255,14 +263,12 @@ pub enum Expr {
         e: ExprNode,
         to: Type,
     },
-    /*
     Deref {
         expr: ExprNode,
     },
     Ref {
         expr: ExprNode,
     },
-    */
 }
 
 impl Expr {
@@ -285,6 +291,8 @@ impl Expr {
         Self::TupleCtor { body: vec![] }
     }
 
+    /// A fairly janky pretty-printer for IR, that is at least better
+    /// than using Debug on the raw structures.
     pub fn write(&self, indent: usize, f: &mut dyn fmt::Write) -> fmt::Result {
         use Expr::*;
         for _ in 0..(indent * 2) {
@@ -322,7 +330,7 @@ impl Expr {
                 let m = if *mutable { " mut" } else { "" };
                 let type_str = typename
                     .as_ref()
-                    .map(|inner| Cow::from(inner.get_name()))
+                    .map(|inner| inner.get_name())
                     .unwrap_or(Cow::from(""));
                 write!(f, "(let {}{} {} = ", &*varname.val(), m, type_str)?;
                 init.write(0, f)?;
@@ -359,13 +367,14 @@ impl Expr {
             } => {
                 write!(f, "(funcall ")?;
                 func.write(0, f)?;
+                write!(f, " |")?;
+                for ty in type_params {
+                    write!(f, "{}, ", ty.get_name())?;
+                }
+                write!(f, "|")?;
                 for b in params {
                     b.write(indent + 1, f)?;
                     write!(f, " ")?;
-                }
-                write!(f, "|")?;
-                for ty in type_params {
-                    write!(f, "{},", ty.get_name())?;
                 }
                 write!(f, ")")?;
             }
@@ -382,7 +391,7 @@ impl Expr {
                 variant,
                 value,
             } => {
-                write!(f, "(enumval {} {} {})", name, &*variant.val(), value)?;
+                write!(f, "(enumctor {} {} {})", name, &*variant.val(), value)?;
             }
             TupleCtor { body } => {
                 write!(f, "(tuple ")?;
@@ -419,11 +428,15 @@ impl Expr {
             }
             TypeCtor {
                 name,
-                type_params: _,
+                type_params,
                 body,
             } => {
                 // TODO: type_params
-                write!(f, "(typector {} ", name)?;
+                write!(f, "(typector |")?;
+                for ty in type_params {
+                    write!(f, "{} ", ty.get_name())?;
+                }
+                write!(f, "| {} ", name)?;
                 body.write(0, f)?;
                 write!(f, ")")?;
             }
@@ -461,6 +474,16 @@ impl Expr {
                 e.write(0, f)?;
                 write!(f, ")")?;
             }
+            Deref { expr } => {
+                write!(f, "(ref ")?;
+                expr.write(0, f)?;
+                write!(f, ")")?;
+            }
+            Ref { expr } => {
+                write!(f, "(ref ")?;
+                expr.write(0, f)?;
+                write!(f, ")")?;
+            }
         }
         Ok(())
     }
@@ -469,23 +492,20 @@ impl Expr {
 impl ExprNode {
     /// Shortcut function for making literal bools
     pub fn bool(b: bool) -> Self {
-        Self::new(Expr::Lit {
-            val: Literal::Bool(b),
-        })
+        Self::new(Expr::bool(b))
     }
 
     /// Shortcut function for making literal integers
     pub fn int(i: i128) -> Self {
-        Self::new(Expr::Lit {
-            val: Literal::Integer(i),
-        })
+        Self::new(Expr::int(i))
     }
 
     /// Shortcut function for making literal unit
     pub fn unit() -> Self {
-        Self::new(Expr::TupleCtor { body: vec![] })
+        Self::new(Expr::unit())
     }
 }
+
 /// A top-level declaration in the source file.
 /// Like ExprNode, contains a type annotation.
 #[derive(Debug, Clone, PartialEq)]
@@ -537,12 +557,11 @@ pub fn lower(ast: &ast::Ast) -> Ir {
         lower_decl(&mut accm, d)
     }
 
-    let i = Ir {
+    Ir {
         decls: accm,
         filename: ast.filename.clone(),
         modulename: ast.modulename.clone(),
-    };
-    i
+    }
 }
 
 fn lower_lit(lit: &ast::Literal) -> Literal {
@@ -562,7 +581,7 @@ fn lower_signature(sig: &ast::Signature) -> Signature {
 }
 
 /// This is the biggie currently
-fn lower_expr(expr: &ast::Expr) -> ExprNode {
+pub fn lower_expr(expr: &ast::Expr) -> ExprNode {
     use ast::Expr as E;
     use Expr::*;
     let new_exp = match expr {
@@ -586,7 +605,7 @@ fn lower_expr(expr: &ast::Expr) -> ExprNode {
             UniOp { op: nop, rhs: nrhs }
         }
         E::Block { body } => {
-            let nbody = body.iter().map(|e| lower_expr(e)).collect();
+            let nbody = body.iter().map(lower_expr).collect();
             Block { body: nbody }
         }
         E::Let {
@@ -605,20 +624,20 @@ fn lower_expr(expr: &ast::Expr) -> ExprNode {
         }
         E::If { cases, falseblock } => {
             // One of the actual transformations, this makes all if/else statements
-            // into essentially a switch: `if ... else if ... else if ... else if true ... end`
+            // into essentially a cond: `if ... else if ... else if ... else if true ... end`
             // This is more consistent and easier to handle for typechecking.
             assert!(!cases.is_empty(), "Should never happen");
             let mut cases: Vec<_> = cases
                 .iter()
-                .map(|case| (lower_expr(&*case.condition), lower_exprs(&case.body)))
+                .map(|case| (lower_expr(&case.condition), lower_exprs(&case.body)))
                 .collect();
             // Add the "else" case, which we can just make `else if true then...`
             // No idea if this is a good idea, but it makes life easier right
             // this instant, so.  Hasn't bit me yet, so it's not a *bad* idea.
             let nelse_case = ExprNode::bool(true);
             // Empty false block becomes a false block that returns unit
-            let false_exprs = if falseblock.len() == 0 {
-                lower_exprs(&vec![ast::Expr::TupleCtor { body: vec![] }])
+            let false_exprs = if falseblock.is_empty() {
+                lower_exprs(&[ast::Expr::TupleCtor { body: vec![] }])
             } else {
                 lower_exprs(falseblock)
             };
@@ -627,6 +646,25 @@ fn lower_expr(expr: &ast::Expr) -> ExprNode {
         }
         E::Loop { body } => {
             let nbody = lower_exprs(body);
+            Loop { body: nbody }
+        }
+        E::While { cond, body } => {
+            // While loops just get turned into a Loop containing
+            // `if not cond then break end`
+            let inverted_cond = E::UniOp {
+                op: UOp::Not,
+                rhs: cond.clone(),
+            };
+            let test = lower_expr(&inverted_cond);
+            let brk = vec![ExprNode::new(Break)];
+            // As per above, we need to always have an "else" end case
+            let else_case = ExprNode::bool(true);
+            let else_exprs = lower_exprs(&[ast::Expr::TupleCtor { body: vec![] }]);
+            let if_expr = ExprNode::new(If {
+                cases: vec![(test, brk), (else_case, else_exprs)],
+            });
+            let mut nbody = lower_exprs(body);
+            nbody.insert(0, if_expr);
             Loop { body: nbody }
         }
         E::Lambda { signature, body } => {
@@ -689,8 +727,12 @@ fn lower_expr(expr: &ast::Expr) -> ExprNode {
         E::TypeUnwrap { expr } => Expr::TypeUnwrap {
             expr: lower_expr(expr),
         },
-        E::Deref { expr: _ } => todo!(),
-        E::Ref { expr: _ } => todo!(),
+        E::Deref { expr } => Expr::Deref {
+            expr: lower_expr(expr),
+        },
+        E::Ref { expr } => Expr::Ref {
+            expr: lower_expr(expr),
+        },
         E::Assign { lhs, rhs } => Expr::Assign {
             lhs: lower_expr(lhs),
             rhs: lower_expr(rhs),
@@ -703,9 +745,10 @@ fn lower_expr(expr: &ast::Expr) -> ExprNode {
 }
 
 /// handy shortcut to lower Vec<ast::Expr>
-fn lower_exprs(exprs: &[ast::Expr]) -> Vec<ExprNode> {
-    exprs.iter().map(|e| lower_expr(e)).collect()
+pub fn lower_exprs(exprs: &[ast::Expr]) -> Vec<ExprNode> {
+    exprs.iter().map(lower_expr).collect()
 }
+
 fn lower_typedef(accm: &mut Vec<Decl>, name: Sym, ty: &Type, params: &[Sym]) {
     use Decl::*;
     match ty {
@@ -749,6 +792,7 @@ fn lower_typedef(accm: &mut Vec<Decl>, name: Sym, ty: &Type, params: &[Sym]) {
             };
             accm.push(new_constdef);
         }
+
         // For `type Foo = sum X {}, Y Thing end`
         // synthesize
         // const Foo = {
@@ -761,27 +805,29 @@ fn lower_typedef(accm: &mut Vec<Decl>, name: Sym, ty: &Type, params: &[Sym]) {
         // type Y = Thing
         // TODO: What do we do with the generics...  Right now they just
         // get stuffed into the constructor functions verbatim.
-        Type::Sum(body, generics) => {
+        Type::Sum(body, type_params) => {
             trace!("Lowering sum type {}", name);
+            let new_type_params = Type::detype_names(type_params);
+
             let struct_body: Vec<_> = body
                 .iter()
                 .map(|(variant_name, variant_type)| {
                     let paramname = Sym::new("x");
                     let signature = ast::Signature {
                         params: vec![(paramname, variant_type.clone())],
-                        rettype: Type::Named(name, generics.clone()),
-                        typeparams: generics.clone(),
+                        rettype: Type::Named(name, type_params.clone()),
+                        typeparams: new_type_params.clone(),
                     };
                     // Just return the value passed to it wrapped
                     // in a constructor of some kind...?
                     let body = vec![ExprNode::new(Expr::SumCtor {
-                        name: name,
+                        name,
                         variant: *variant_name,
                         body: ExprNode::new(Expr::Var { name: paramname }),
                     })];
                     let e = ExprNode::new(Expr::Lambda { signature, body });
                     //println!("{} is {:#?}", variant_name, e);
-                    (variant_name.clone(), e)
+                    (*variant_name, e)
                 })
                 .collect();
             let init_val = ExprNode::new(Expr::StructCtor { body: struct_body });
@@ -794,13 +840,13 @@ fn lower_typedef(accm: &mut Vec<Decl>, name: Sym, ty: &Type, params: &[Sym]) {
                         *variant_name,
                         Type::Func(
                             vec![variant_type.clone()],
-                            Box::new(Type::Named(name, generics.clone())),
-                            generics.clone(),
+                            Box::new(Type::Named(name, type_params.clone())),
+                            type_params.clone(),
                         ),
                     )
                 })
                 .collect();
-            let struct_type = Type::Struct(struct_typebody, generics.clone());
+            let struct_type = Type::Struct(struct_typebody, type_params.clone());
             let new_constdef = Const {
                 name: name.to_owned(),
                 typ: struct_type,
@@ -813,16 +859,16 @@ fn lower_typedef(accm: &mut Vec<Decl>, name: Sym, ty: &Type, params: &[Sym]) {
         other => {
             let s = Sym::new("x");
             trace!("Lowering params {:?}", params);
-            let type_params: Vec<_> = params.iter().map(|s| Type::Generic(*s)).collect();
+            let type_params: Vec<_> = params.iter().map(|s| Type::named0(*s)).collect();
             let signature = ast::Signature {
                 params: vec![(s, other.clone())],
                 rettype: Type::Named(name.to_owned(), type_params.clone()),
-                typeparams: type_params.clone(),
+                typeparams: params.to_owned(),
             };
             // The generated function just returns the value passed to it wrapped
             // in a type constructor
             let body = vec![ExprNode::new(Expr::TypeCtor {
-                name: name.into(),
+                name,
                 type_params,
                 body: ExprNode::new(Expr::Var { name: s }),
             })];
@@ -872,7 +918,7 @@ fn lower_decl(accm: &mut Vec<Decl>, decl: &ast::Decl) {
             doc_comment: _,
             params,
         } => {
-            lower_typedef(accm, *name, typedecl, &params);
+            lower_typedef(accm, *name, typedecl, params);
             accm.push(Decl::TypeDef {
                 name: *name,
                 params: params.clone(),

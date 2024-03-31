@@ -4,13 +4,13 @@
 --   status: success
 
 
-fn id(|@T| x @T) @T =
+fn id(|T| x T) T =
     x
 end
 
 
 fn main() {} =
-    let f1 = id(|I32| 3_I32)
-    let f2 = id(3_I32)
-    let f3 I32 = id(3)
+    let f1 = id(|I32| 3)
+    let f2 = id(|I32| 3_I32)
+    let f3 I32 = id(|I32| 3)
 end

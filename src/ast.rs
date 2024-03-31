@@ -17,12 +17,14 @@ use crate::*;
 pub enum Literal {
     /// An integer of some kind
     Integer(i128),
-    /// An integer with a known size
+    /// An integer with a known size and signedness
     SizedInteger {
         /// Literal value
         vl: i128,
         /// The size of the integer, in bytes
         bytes: u8,
+        /// is_signed
+        signed: bool,
     },
     /// A bool literal
     Bool(bool),
@@ -32,9 +34,13 @@ impl fmt::Display for Literal {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Literal::Integer(i) => write!(f, "{}", i),
-            Literal::SizedInteger { vl, bytes } => {
+            Literal::SizedInteger { vl, bytes, signed } => {
                 let size = bytes * 8;
-                write!(f, "{}_I{}", vl, size)
+                if *signed {
+                    write!(f, "{}_I{}", vl, size)
+                } else {
+                    write!(f, "{}_U{}", vl, size)
+                }
             }
             Literal::Bool(b) => write!(f, "{}", b),
         }
@@ -94,23 +100,20 @@ pub struct Signature {
     /// Return type
     pub rettype: Type,
     /// Type parameters
-    pub typeparams: Vec<Type>,
+    pub typeparams: Vec<Sym>,
 }
 
 impl Signature {
     /// Returns a lambda typedef representing the signature
     pub fn to_type(&self) -> Type {
         let paramtypes = self.params.iter().map(|(_nm, ty)| ty.clone()).collect();
-        Type::Func(
-            paramtypes,
-            Box::new(self.rettype.clone()),
-            self.typeparams.clone(),
-        )
+        let typeparams = self.typeparams.iter().map(|nm| Type::named0(*nm)).collect();
+        Type::Func(paramtypes, Box::new(self.rettype.clone()), typeparams)
     }
 
     /// Get all the generic params out of this function sig
-    pub fn generic_type_names(&self) -> Vec<Sym> {
-        self.to_type().get_type_params()
+    pub fn type_params(&self) -> Vec<Sym> {
+        self.to_type().get_toplevel_type_params()
     }
 
     /// Returns a string containing just the params and rettype bits of the sig
@@ -122,41 +125,13 @@ impl Signature {
             .collect();
         let args = names.join(", ");
 
-        let typenames: Vec<_> = self.typeparams.iter().map(|t| t.get_name()).collect();
+        let typenames: Vec<_> = self
+            .typeparams
+            .iter()
+            .map(|t| (t.val().as_str()).to_string())
+            .collect();
         let typeargs = typenames.join(", ");
-        format!("({} | {}) {}", args, typeargs, self.rettype.get_name())
-    }
-
-    /// Transforms this signature into a new type.
-    ///
-    /// Panics if the types are not compatible,
-    /// ie, the given type is not a function with the
-    /// same number of params.
-    fn _map_type(&self, new_type: &Type) -> Self {
-        match new_type {
-            Type::Func(params, rettype, typeparams) => {
-                if self.params.len() != params.len() {
-                    panic!("given type has wrong number of params");
-                }
-                if self.typeparams.len() != typeparams.len() {
-                    panic!("Given type has wrong number of type params");
-                }
-                let new_params = self
-                    .params
-                    .iter()
-                    .zip(params)
-                    .map(|((nm, _t1), t2)| (*nm, t2.clone()))
-                    .collect();
-                let new_rettype = rettype.clone();
-                let new_type_params = typeparams.clone();
-                Self {
-                    params: new_params,
-                    rettype: *new_rettype,
-                    typeparams: new_type_params,
-                }
-            }
-            _ => panic!("Not a function type: {:?}", new_type),
-        }
+        format!("(|{}| {}) {}", typeargs, args, self.rettype.get_name())
     }
 }
 
@@ -194,6 +169,10 @@ pub enum Expr {
         falseblock: Vec<Expr>,
     },
     Loop {
+        body: Vec<Expr>,
+    },
+    While {
+        cond: Box<Expr>,
         body: Vec<Expr>,
     },
     Lambda {
@@ -266,9 +245,13 @@ impl Expr {
     }
 
     /// Shortcut function for making literal integers of a known size
-    pub const fn sized_int(i: i128, bytes: u8) -> Expr {
+    pub const fn sized_int(i: i128, bytes: u8, signed: bool) -> Expr {
         Expr::Lit {
-            val: Literal::SizedInteger { vl: i, bytes },
+            val: Literal::SizedInteger {
+                vl: i,
+                bytes,
+                signed,
+            },
         }
     }
 

@@ -4,7 +4,7 @@
 --   status: success
 
 
-fn apply(f fn(@T) @T, arg @T) @T =
+fn apply(|T| f fn(T) T, arg T) T =
     f(arg)
 end
 

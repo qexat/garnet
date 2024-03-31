@@ -1,0 +1,15 @@
+-- Format:
+--   status: success
+-- Compile:
+--   status: error
+--   stderr:
+--     ...
+--     ...Unknown int in expr Lit...
+--     ...
+
+fn main() {} =
+    let x = 3
+    let y = 4
+    let z = x + y
+end
+

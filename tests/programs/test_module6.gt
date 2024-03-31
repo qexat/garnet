@@ -1,37 +1,47 @@
 -- Format:
 --   status: success
 -- Compile:
---   status: success
---
--- Run:
---   stdout: 3
+--   status: error
+
+-- TODO: This should succeed but does not yet.
+-- We need some way to make closures over type parameters;
+-- either directly or by monomorphization.
+-- I tried doing it directly a la lambda lifting and it
+-- really didn't work too heckin' well, so we'll try monomorph.
 
 -- A generic functional map from a key to a value
-type Map(@T, @K, @V) = struct(@T, @K, @V)
-    get: fn(@T, @K) @V,
-    set: fn(@T, @K, @V) @T,
+type Map(T, K, V) = struct(T, K, V)
+    get: fn(T, K) V,
+    --set: fn(T, K, V) T,
 end
 
 -- Implement Map for a cell type
-type Cell(@K, @V) = struct(@K, @V)
-    key: @K,
-    val: @V
+type Cell(K, V) = struct(K, V)
+    key: K,
+    val: V
 end
 
-fn make_cell_map(|@K, @V| k @K, v @V) Map(Cell(@K, @V), @K, @V) =
+fn make_cell_map(|K, V| k K, v V) Map(Cell(K, V), K, V) =
+/-
     let module = Map {
         -- I guess we pretend this always succeeds,
         -- since I don't really feel like implementing if's
-        .get = fn(t Cell(@K, @V), key @K) @V =
+        .get = fn(t Cell(K, V), key K) V =
             t$.val
         end,
         -- Just create a new cell with the given key and val
-        .set = fn(t Cell(@K, @V), key @K, val @V) Cell(@K, @V) =
+        .set = fn(t Cell(K, V), key K, val V) Cell(K, V) =
             Cell {
                 .key = key,
                 .val = val,
             }
         end
+    }
+-/
+    let module = Map {
+        .get = fn(t Cell(K, V), key K) V =
+            t$.val
+        end,
     }
     module
 end

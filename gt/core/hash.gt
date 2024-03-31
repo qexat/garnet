@@ -1,11 +1,14 @@
---! Basic hashing function.
---!
---! For now this is SipHash 2-4, shamelessly stolen from
---! Rust's `std::hash::SipHasher`.  Implemented from the
---! reference impl at https://github.com/veorq/SipHash
---!
---! We might want a stable hash function sometime too,
---! probably FNV.
+--- Basic hashing function.
+---
+--- For now this is SipHash 2-4, shamelessly stolen from
+--- Rust's `std::hash::SipHasher`.  Implemented from the
+--- reference impl at https://github.com/veorq/SipHash
+---
+--- We might want a stable hash function sometime too,
+--- probably FNV.  (There's also fxHash, xxHash, wyhash, etc...)
+---
+--- TODO: clean up with our built-in bit ops and conversions.
+--- Heck, just implement bit ops.
 
 const C_ROUNDS: U32 = 2
 const D_ROUNDS: U32 = 4
@@ -18,11 +21,11 @@ fn u64_from_bytes_le(bytes ^[]U8) U64 =
     todo("this")
 end
 
-fn u64_to_bytes_le(bytes: U64): [8]U8 =
+fn u64_to_bytes_le(bytes U64) [8]U8 =
     todo("this too")
 end
 
-fn sipround(v0: U64, v1: U64, v2: U64, v3: U64): {U64, U64, U64, U64} =
+fn sipround(v0 U64, v1 U64, v2 U64, v3 U64) {U64, U64, U64, U64} =
     let v0 = v0 + v1
     let v1 = rotl(v1, 13)
     let v1 = v1 bxor v0
@@ -41,38 +44,28 @@ fn sipround(v0: U64, v1: U64, v2: U64, v3: U64): {U64, U64, U64, U64} =
 end
 
 
-fn siphash(input: ^[]U8, k: U128, out: ^uniq[]U8): {} =
-    assert(out.len() == 8 or out.len() == 16)
-    let mut v0: U64 = 0x736f6d6570736575
-    let mut v1: U64 = 0x646f72616e646f6d
-    let mut v2: U64 = 0x6c7967656e657261
-    let mut v3: U64 = 0x7465646279746573
+fn siphash(input ^[]U8, k U128, out ^uniq[]U8) {} =
+    assert(out:len() == 8 or out:len() == 16)
+    let mut v0 U64 = 0x736f6d6570736575
+    let mut v1 U64 = 0x646f72616e646f6d
+    let mut v2 U64 = 0x6c7967656e657261
+    let mut v3 U64 = 0x7465646279746573
     -- TODO: Figure out how casts work
-    -- Erlang-like bit patterns?
-    -- let <<k0:64, k1:64>> = k
-    -- Or maybe the bit pattern is an operator that extracts bits
-    -- and returns a tuple, and then we define what types those
-    -- turn into?
-    -- https://www.erlang.org/docs/25/programming_examples/bit_syntax.html#segments
-    -- has some info on it, basically we need to say both how many bits
-    -- we extract and what type those bits get turned into.
-    -- let {k0, k1}: {U64, U64} = <<k0:64, k1:64>> k
-    -- let {k0, k1} = <<k0:64/U64, k1:64/U64>> k
-    let k0: U64 = (k band 0xFFFF_FFFF) as U32
-    let k1: U64 = ((k >> 32) band 0xFFFF_FFFF) as U32
-    let left: Size = input.len() band 7
-    let mut b: U64 = input.len() << 56
+    -- Using convert.gt seems like a fine place to start.
+    let k0 U64 = Convert.trunc(|U128, U64| k band 0xFFFF_FFFF)
+    let k1 U64 = Convert.trunc(|U128, U64| (k >> 32) band 0xFFFF_FFFF)
+    let left Size = input:len() band 7
+    let mut b U64 = input:len() << 56
     v3 = v3 bxor k1
     v2 = v2 bxor k0
     v1 = v1 bxor k1
     v0 = v0 bxor k0
 
-    if out.len() == 16 then
+    if out:len() == 16 then
         v1 = v1 bxor 0xEE
     end
 
-    -- TODO: This hypothetical `range()` function is `start, end, step` like Python's
-    for i in range(0, input.len(), 8) do
+    for i in range(0, input:len()):step_by(8) do
         -- TODO: We assume Rust's slice syntax for now?
         let bytes = input[i..(i+8)]
         let m = u64_from_bytes_le(bytes)
@@ -89,7 +82,7 @@ fn siphash(input: ^[]U8, k: U128, out: ^uniq[]U8): {} =
     -- for us.
     for i in range(1,8) do
         -- Round input.len() down to the closest multiple of 8
-        let input_tail_idx = (input.len() / 8) * 8;
+        let input_tail_idx = (input:len() / 8) * 8;
         b = b bor (input[input_tail_idx + i] << i * 8)
     end
 

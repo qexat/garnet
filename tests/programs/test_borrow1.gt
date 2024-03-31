@@ -1,0 +1,17 @@
+-- Format:
+--   status: success
+-- Compile:
+--   status: error
+
+
+fn should_fail() &{I32, I32} = 
+    let f1 = {1, 2}
+    -- for now this should be just a unique reference
+    let f2 &{I32, I32} = f1&
+    f2
+end
+
+fn main() {} =
+    should_fail()
+    {}
+end
