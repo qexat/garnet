@@ -1,11 +1,20 @@
 -- Format:
 --   status: success
 -- Compile:
---   status: success
+--   status: error
+
+
 -- Run:
 --   status: success
 --   stdout:
 --     12
+
+
+-- TODO: This should succeed but does not yet.
+-- We need some way to make closures over type parameters;
+-- either directly or by monomorphization.
+-- I tried doing it directly a la lambda lifting and it
+-- really didn't work too heckin' well, so we'll try monomorph.
 
 -- Can we stuff a lambda into a struct with type parameters,
 -- and have we want?
