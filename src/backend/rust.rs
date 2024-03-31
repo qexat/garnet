@@ -1,8 +1,7 @@
 //! Compile our HIR to Rust.
 //! This is kinda silly, but hey why not.
 //!
-//!
-//! Potential improvements:
+//! Potential optimizations:
 //!  * Use something smarter than strings to collect output -- could just
 //!    output to a stream like the formatter does.  This is a little weird though 'cause
 //!    we often want to build pieces of code, and then combine them together at the end.
@@ -22,32 +21,37 @@ use crate::*;
 fn compile_typename(t: &Type) -> Cow<'static, str> {
     use crate::Type::*;
     match t {
-        Prim(PrimType::SInt(16)) => "i128".into(),
-        Prim(PrimType::SInt(8)) => "i64".into(),
-        Prim(PrimType::SInt(4)) => "i32".into(),
-        Prim(PrimType::SInt(2)) => "i16".into(),
-        Prim(PrimType::SInt(1)) => "i8".into(),
-        Prim(PrimType::SInt(e)) => {
-            unreachable!("Invalid integer size: {}", e)
+        Prim(PrimType::Int(16, true)) => "i128".into(),
+        Prim(PrimType::Int(8, true)) => "i64".into(),
+        Prim(PrimType::Int(4, true)) => "i32".into(),
+        Prim(PrimType::Int(2, true)) => "i16".into(),
+        Prim(PrimType::Int(1, true)) => "i8".into(),
+        Prim(PrimType::Int(16, false)) => "u128".into(),
+        Prim(PrimType::Int(8, false)) => "u64".into(),
+        Prim(PrimType::Int(4, false)) => "u32".into(),
+        Prim(PrimType::Int(2, false)) => "u16".into(),
+        Prim(PrimType::Int(1, false)) => "u8".into(),
+        Prim(PrimType::Int(e, is_signed)) => {
+            unreachable!("Invalid integer size: {} (is_signed: {})", e, is_signed)
         }
         Prim(PrimType::UnknownInt) => {
             unreachable!("Backend got an integer of unknown size, should never happen!")
         }
         Prim(PrimType::Bool) => "bool".into(),
-        Prim(PrimType::AnyPtr) => format!("*const u8").into(),
+        Prim(PrimType::AnyPtr) => "*const u8".to_string().into(),
         Never => unreachable!(),
         Named(s, types) if s == &Sym::new("Tuple") => {
             trace!("Compiling tuple {:?}...", t);
             let mut accm = String::from("(");
             for typ in types {
-                accm += &compile_typename(&*typ);
+                accm += &compile_typename(typ);
                 accm += ", ";
             }
             accm += ")";
             accm.into()
         }
         Func(params, rettype, typeparams) => {
-            if typeparams.len() > 0 {
+            if !typeparams.is_empty() {
                 todo!("Function pointer types containing generics need monomorph to work");
             }
             let mut accm = String::from("fn ");
@@ -64,11 +68,11 @@ fn compile_typename(t: &Type) -> Cow<'static, str> {
             */
             accm += "(";
             for p in params {
-                accm += &compile_typename(&*p);
+                accm += &compile_typename(p);
                 accm += ", ";
             }
             accm += ") -> ";
-            accm += &compile_typename(&*rettype);
+            accm += &compile_typename(rettype);
             accm.into()
         }
         Struct(_fields, _generics) => {
@@ -91,7 +95,7 @@ fn compile_typename(t: &Type) -> Cow<'static, str> {
             //         }
             //         accm += ")";
             //         accm.into()
-            passes::generate_type_name(t).into()
+            passes::mangled_type_name(t).into()
         }
         Enum(_things) => {
             // Construct names for anonymous enums by concat'ing the member
@@ -104,16 +108,14 @@ fn compile_typename(t: &Type) -> Cow<'static, str> {
             //     accm += &*nm.val();
             // }
             // accm.into()
-            passes::generate_type_name(t).into()
+            passes::mangled_type_name(t).into()
         }
-        Generic(s) => mangle_name(&*s.val()).into(),
         Array(t, len) => format!("[{};{}]", compile_typename(t), len).into(),
         Named(sym, generics) => {
-            if generics.len() == 0 {
+            if generics.is_empty() {
                 format!("{}", sym).into()
             } else {
-                let generic_strings: Vec<_> =
-                    generics.iter().map(|t| compile_typename(t)).collect();
+                let generic_strings: Vec<_> = generics.iter().map(compile_typename).collect();
                 let args = generic_strings.join(", ");
                 format!("{}<{}>", sym, args).into()
             }
@@ -134,6 +136,10 @@ fn compile_typename(t: &Type) -> Cow<'static, str> {
             */
             //format!("SomeSum").into()
             unimplemented!()
+        }
+        Uniq(t) => {
+            let res = compile_typename(t);
+            format!("&mut {}", res).into()
         }
     }
 }
@@ -156,7 +162,7 @@ pub(super) fn output(lir: &hir::Ir, tck: &Tck) -> Vec<u8> {
 /// TODO: There might be a better way to make lambda's un-nameable.
 /// Probably, really.
 fn mangle_name(s: &str) -> String {
-    s.replace("!", "__")
+    s.replace('!', "__")
 }
 
 /// Compile a single decl
@@ -167,7 +173,7 @@ fn compile_decl(w: &mut impl Write, decl: &hir::Decl, tck: &Tck) -> io::Result<(
             signature,
             body,
         } => {
-            let nstr = mangle_name(&*INT.fetch(*name));
+            let nstr = mangle_name(&INT.fetch(*name));
             let sstr = compile_fn_signature(signature);
             let bstr = compile_exprs(body, ";\n", tck);
             if body.iter().all(|expr| expr.is_const) {
@@ -184,7 +190,7 @@ fn compile_decl(w: &mut impl Write, decl: &hir::Decl, tck: &Tck) -> io::Result<(
             init,
         } => {
             let nstr = mangle_name(&INT.fetch(*name));
-            let tstr = compile_typename(&*typename);
+            let tstr = compile_typename(typename);
             let istr = compile_expr(init, tck);
             writeln!(w, "const {}: {} = {};", nstr, tstr, istr)
         }
@@ -206,13 +212,13 @@ fn compile_decl(w: &mut impl Write, decl: &hir::Decl, tck: &Tck) -> io::Result<(
                         params.is_empty(),
                         "Bruh you have generic params on an enum type"
                     );
-                    writeln!(w, "pub type {} = i32;", mangle_name(&*name.val()))?;
+                    writeln!(w, "pub type {} = i32;", mangle_name(&name.val()))?;
                     Ok(())
                 }
                 Type::Sum(body, _generics) => {
-                    let nstr = mangle_name(&*name.val());
+                    let nstr = mangle_name(&name.val());
                     let param_strings: Vec<_> =
-                        params.iter().map(|sym| (&*sym.val()).clone()).collect();
+                        params.iter().map(|sym| (*sym.val()).clone()).collect();
                     let args = param_strings.join(", ");
                     writeln!(w, "pub enum {}<{}> {{ ", nstr, args)?;
                     for (nm, ty) in body {
@@ -223,17 +229,17 @@ fn compile_decl(w: &mut impl Write, decl: &hir::Decl, tck: &Tck) -> io::Result<(
                 }
                 // For everything else we just make a fairly literal alias to the existing type.
                 _other => {
-                    let nstr = mangle_name(&*name.val());
+                    let nstr = mangle_name(&name.val());
                     let tstr = compile_typename(typedecl);
                     //writeln!(w, "pub struct {}({});", nstr, tstr)
                     // TODO: <> is a valid generic param decl in Rust
-                    if params.len() == 0 {
+                    if params.is_empty() {
                         writeln!(w, "pub type {} = {};", nstr, tstr)
                     } else {
                         let param_strings: Vec<_> =
-                            params.iter().map(|sym| (&*sym.val()).clone()).collect();
+                            params.iter().map(|sym| (*sym.val()).clone()).collect();
                         let args = param_strings.join(", ");
-                        writeln!(w, "pub type {}<{}> = {};", nstr, args, tstr).into()
+                        writeln!(w, "pub type {}<{}> = {};", nstr, args, tstr)
                     }
                 }
             }
@@ -245,12 +251,12 @@ fn compile_decl(w: &mut impl Write, decl: &hir::Decl, tck: &Tck) -> io::Result<(
 /// Compile a function signature
 fn compile_fn_signature(sig: &ast::Signature) -> String {
     let mut accm = String::from("");
-    let generics = sig.generic_type_names();
+    let generics = sig.type_params();
 
-    if generics.len() > 0 {
+    if !generics.is_empty() {
         accm += "<";
         for generic in generics.iter() {
-            accm += &mangle_name(&*generic.val());
+            accm += &mangle_name(&generic.val());
             accm += ", ";
         }
         accm += ">";
@@ -259,15 +265,15 @@ fn compile_fn_signature(sig: &ast::Signature) -> String {
     for (varsym, typesym) in sig.params.iter() {
         accm += &*INT.fetch(*varsym);
         accm += ": ";
-        accm += &compile_typename(&typesym);
+        accm += &compile_typename(typesym);
         accm += ", ";
     }
     accm += ") -> ";
     accm += &compile_typename(&sig.rettype);
-    if generics.len() > 0 {
+    if !generics.is_empty() {
         accm += " where ";
         for generic in generics.iter() {
-            accm += &mangle_name(&*generic.val());
+            accm += &mangle_name(&generic.val());
             accm += ": Copy,";
         }
     }
@@ -328,7 +334,6 @@ fn contains_anyptr(t: &Type) -> bool {
         Struct(_body, _generics) => todo!(),
         Sum(_body, _generics) => todo!(),
         Array(t, _) => contains_anyptr(t),
-        Generic(_) => unreachable!(),
         _ => false,
     }
 }
@@ -344,12 +349,28 @@ fn compile_expr(expr: &hir::ExprNode, tck: &Tck) -> String {
             val: ast::Literal::Bool(b),
         } => format!("{}", b),
         E::Lit {
-            val: ast::Literal::SizedInteger { vl, bytes },
+            val:
+                ast::Literal::SizedInteger {
+                    vl,
+                    bytes,
+                    signed: true,
+                },
         } => {
             let bits = bytes * 8;
             format!("{}i{}", vl, bits)
         }
-        E::Var { name, .. } => mangle_name(&*INT.fetch(*name)),
+        E::Lit {
+            val:
+                ast::Literal::SizedInteger {
+                    vl,
+                    bytes,
+                    signed: false,
+                },
+        } => {
+            let bits = bytes * 8;
+            format!("{}u{}", vl, bits)
+        }
+        E::Var { name, .. } => mangle_name(&INT.fetch(*name)),
         E::BinOp { op, lhs, rhs } => format!(
             "({} {} {})",
             compile_expr(lhs, tck),
@@ -366,7 +387,7 @@ fn compile_expr(expr: &hir::ExprNode, tck: &Tck) -> String {
             init,
             mutable,
         } => {
-            let vstr = mangle_name(&*INT.fetch(*varname));
+            let vstr = mangle_name(&INT.fetch(*varname));
             // typename may be elided, so we get the real type from the tck
             // TODO: Someday this should just be filled in by a lowering pass
             let type_id = tck.get_expr_type(init);
@@ -392,7 +413,7 @@ fn compile_expr(expr: &hir::ExprNode, tck: &Tck) -> String {
                 }
                 accm += &compile_expr(cond, tck);
                 accm += " {\n";
-                accm += &compile_exprs(&body, ";\n", tck);
+                accm += &compile_exprs(body, ";\n", tck);
                 accm += "} \n";
             }
             accm += "else {\n";
@@ -433,7 +454,7 @@ fn compile_expr(expr: &hir::ExprNode, tck: &Tck) -> String {
             format!("return {};", compile_expr(retval, tck))
         }
         // Unit type
-        E::TupleCtor { body } if body.len() == 0 => String::from(" ()\n"),
+        E::TupleCtor { body } if body.is_empty() => String::from(" ()\n"),
         E::TupleCtor { body } => {
             let contents = compile_exprs(body, ",", tck);
             format!("({},)", contents)
@@ -445,9 +466,8 @@ fn compile_expr(expr: &hir::ExprNode, tck: &Tck) -> String {
             body,
             type_params: _,
         } => {
-            let contents = compile_expr(body, tck);
             //format!("{}({})", &*name.val(), contents)
-            format!("{}", contents)
+            compile_expr(body, tck)
         }
         E::StructCtor { body } => {
             /*
@@ -526,6 +546,7 @@ fn compile_expr(expr: &hir::ExprNode, tck: &Tck) -> String {
         } => {
             format!("{}", value)
         }
+        E::Ref { expr } => format!("&mut {}", compile_expr(expr, tck)),
         other => todo!("{:?}", other),
     };
     expr_str

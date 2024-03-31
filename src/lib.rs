@@ -1,4 +1,4 @@
-//! Garnet compiler guts.
+//! Garnet compiler driver functions and utility funcs.
 
 //#![deny(missing_docs)]
 
@@ -12,12 +12,14 @@ use once_cell::sync::Lazy;
 
 mod ast;
 pub mod backend;
+pub mod borrowck;
 mod builtins;
 pub mod format;
 pub mod hir;
 mod intern;
 pub mod parser;
 pub mod passes;
+pub mod symtbl;
 pub mod typeck;
 
 /// The interner.  It's the ONLY part we have to actually
@@ -29,7 +31,8 @@ static INT: Lazy<Cx> = Lazy::new(Cx::new);
 /// and can't contain other types, so.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum PrimType {
-    SInt(u8),
+    /// size in bytes, is-signed
+    Int(u8, bool),
     UnknownInt,
     Bool,
     /// erased type, currently unused
@@ -39,12 +42,20 @@ pub enum PrimType {
 impl PrimType {
     fn get_name(&self) -> Cow<'static, str> {
         match self {
-            PrimType::SInt(16) => Cow::Borrowed("I128"),
-            PrimType::SInt(8) => Cow::Borrowed("I64"),
-            PrimType::SInt(4) => Cow::Borrowed("I32"),
-            PrimType::SInt(2) => Cow::Borrowed("I16"),
-            PrimType::SInt(1) => Cow::Borrowed("I8"),
-            PrimType::SInt(s) => panic!("Undefined integer size {}!", s),
+            PrimType::Int(16, true) => Cow::Borrowed("I128"),
+            PrimType::Int(8, true) => Cow::Borrowed("I64"),
+            PrimType::Int(4, true) => Cow::Borrowed("I32"),
+            PrimType::Int(2, true) => Cow::Borrowed("I16"),
+            PrimType::Int(1, true) => Cow::Borrowed("I8"),
+            PrimType::Int(16, false) => Cow::Borrowed("U128"),
+            PrimType::Int(8, false) => Cow::Borrowed("U64"),
+            PrimType::Int(4, false) => Cow::Borrowed("U32"),
+            PrimType::Int(2, false) => Cow::Borrowed("U16"),
+            PrimType::Int(1, false) => Cow::Borrowed("U8"),
+            PrimType::Int(s, is_signed) => {
+                let prefix = if *is_signed { "I" } else { "U" };
+                panic!("Undefined integer size {}{}!", prefix, s);
+            }
             PrimType::UnknownInt => Cow::Borrowed("{number}"),
             PrimType::Bool => Cow::Borrowed("Bool"),
             PrimType::AnyPtr => Cow::Borrowed("AnyPtr"),
@@ -56,7 +67,7 @@ impl PrimType {
 ///
 /// TODO someday: We should make a consistent and very good
 /// name-mangling scheme for types, will make some backend stuff
-/// simpler.
+/// simpler.  Also see passes::generate_type_name.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Type {
     /// Primitive type with no subtypes
@@ -80,8 +91,8 @@ pub enum Type {
     Sum(BTreeMap<Sym, Type>, Vec<Type>),
     /// Arrays are just a type and a number.
     Array(Box<Type>, usize),
-    /// A generic type parameter that has been given an explicit name.
-    Generic(Sym),
+    /// Unique borrow
+    Uniq(Box<Type>),
 }
 
 impl Type {
@@ -93,62 +104,39 @@ impl Type {
     /// and it's actually really nice.  And also fiddly af so touching it
     /// breaks lots of things that currently work.
     /// plz unfuck this, it's not THAT hard.
-    fn get_type_params(&self) -> Vec<Sym> {
-        fn helper(t: &Type, accm: &mut Vec<Sym>) {
-            match t {
-                Type::Prim(_) => (),
-                Type::Never => (),
-                Type::Enum(_ts) => (),
-                Type::Named(_, generics) => {
-                    for g in generics {
-                        helper(g, accm);
+    fn get_toplevel_type_params(&self) -> Vec<Sym> {
+        fn get_toplevel_names(t: &[Type]) -> Vec<Sym> {
+            t.iter()
+                .flat_map(|t| match t {
+                    Type::Named(nm, generics) => {
+                        assert!(generics.len() == 0);
+                        Some(*nm)
                     }
-                }
-                Type::Func(args, rettype, typeparams) => {
-                    for t in args {
-                        helper(t, accm);
-                    }
-                    for t in typeparams {
-                        helper(t, accm);
-                    }
-                    helper(rettype, accm)
-                }
-                Type::Struct(body, generics) => {
-                    for (_, ty) in body {
-                        helper(ty, accm);
-                    }
-                    for g in generics {
-                        helper(g, accm);
-                    }
-                }
-                Type::Sum(body, generics) => {
-                    for (_, ty) in body {
-                        helper(ty, accm);
-                    }
-                    for g in generics {
-                        helper(g, accm);
-                    }
-                }
-                Type::Array(ty, _size) => {
-                    helper(ty, accm);
-                }
-                Type::Generic(s) => {
-                    // Deduplicating these things while maintaining ordering
-                    // is kinda screwy.
-                    // This works, it's just, yanno, also O(n^2)
-                    // Could use a set to check membership , but fuckit for now.
-                    if accm.contains(s) {
-                        //todo!("This is probably always wrong 'cause type param names will shadow each other, but, uh...")
-                    } else {
-                        accm.push(*s)
-                    }
-                }
-            }
+                    _ => None,
+                })
+                .collect()
         }
-        let mut accm = vec![];
-        helper(self, &mut accm);
-        //trace!("Found type params for {:?}: {:?}", self, accm);
-        accm
+
+        let params = match self {
+            Type::Prim(_) => vec![],
+            Type::Never => vec![],
+            Type::Enum(_ts) => vec![],
+            Type::Named(_, typeparams) => get_toplevel_names(typeparams),
+            Type::Func(_args, _rettype, typeparams) => get_toplevel_names(typeparams),
+            Type::Struct(_body, typeparams) => get_toplevel_names(typeparams),
+            Type::Sum(_body, typeparams) => get_toplevel_names(typeparams),
+            Type::Array(_ty, _size) => {
+                // BUGGO: What to do here?????
+                // Arrays and ptrs kiiiiinda have type params, but only
+                // one???
+                vec![]
+            }
+            Type::Uniq(_ty) => {
+                // BUGGO: What to do here?????
+                vec![]
+            }
+        };
+        params
     }
 
     /// Shortcut for getting the type for an unknown int
@@ -156,9 +144,14 @@ impl Type {
         Self::Prim(PrimType::UnknownInt)
     }
 
-    /// Shortcut for getting the Type for an int of a particular size
+    /// Shortcut for getting the Type for a signed int of a particular size
     pub fn isize(size: u8) -> Self {
-        Self::Prim(PrimType::SInt(size))
+        Self::Prim(PrimType::Int(size, true))
+    }
+
+    /// Shortcut for getting the Type for an unsigned signed int of a particular size
+    pub fn usize(size: u8) -> Self {
+        Self::Prim(PrimType::Int(size, false))
     }
 
     /// Shortcut for getting the Type for I128
@@ -186,6 +179,31 @@ impl Type {
         Self::isize(1)
     }
 
+    /// Shortcut for getting the Type for U128
+    pub fn u128() -> Self {
+        Self::usize(16)
+    }
+
+    /// Shortcut for getting the Type for U64
+    pub fn u64() -> Self {
+        Self::usize(8)
+    }
+
+    /// Shortcut for getting the Type for U32
+    pub fn u32() -> Self {
+        Self::usize(4)
+    }
+
+    /// Shortcut for getting the type for U16
+    pub fn u16() -> Self {
+        Self::usize(2)
+    }
+
+    /// Shortcut for getting the type for U8
+    pub fn u8() -> Self {
+        Self::usize(1)
+    }
+
     /// Shortcut for getting the type for Bool
     pub fn bool() -> Self {
         Self::Prim(PrimType::Bool)
@@ -211,9 +229,41 @@ impl Type {
         Self::Array(Box::new(t.clone()), len)
     }
 
+    /// Shortcut for a named type with no type params
+    // pub fn named0(s: impl AsRef<str>) -> Self {
+    pub fn named0(s: Sym) -> Self {
+        Type::Named(s, vec![])
+    }
+
+    /// Turns a bunch of Named types into a list of symbols.
+    /// Panics if it encounters a different type of type.
+    pub fn detype_names(ts: &[Type]) -> Vec<Sym> {
+        fn f(t: &Type) -> Sym {
+            match t {
+                Type::Named(nm, generics) => {
+                    assert!(generics.len() == 0);
+                    *nm
+                }
+                _ => panic!(
+                    "Tried to get a Named type out of a {:?}, should never happen",
+                    t
+                ),
+            }
+        }
+        ts.iter().map(f).collect()
+    }
+
+    fn function(params: &[Type], rettype: &Type, generics: &[Type]) -> Self {
+        Type::Func(
+            Vec::from(params),
+            Box::new(rettype.clone()),
+            Vec::from(generics),
+        )
+    }
+
     fn _is_integer(&self) -> bool {
         match self {
-            Self::Prim(PrimType::SInt(_)) => true,
+            Self::Prim(PrimType::Int(_, _)) => true,
             Self::Prim(PrimType::UnknownInt) => true,
             _ => false,
         }
@@ -235,6 +285,11 @@ impl Type {
             "I32" => Some(Type::i32()),
             "I64" => Some(Type::i64()),
             "I128" => Some(Type::i128()),
+            "U8" => Some(Type::u8()),
+            "U16" => Some(Type::u16()),
+            "U32" => Some(Type::u32()),
+            "U64" => Some(Type::u64()),
+            "U128" => Some(Type::u128()),
             "Bool" => Some(Type::bool()),
             "Never" => Some(Type::never()),
             _ => None,
@@ -328,127 +383,10 @@ impl Type {
                 let inner_name = body.get_name();
                 Cow::Owned(format!("[{}]{}", len, inner_name))
             }
-            Type::Generic(name) => Cow::Owned(format!("@{}", name)),
-        }
-    }
-
-    /// Takes two types and creates/adds to a map of substitutions
-    /// from generics in the first type to the corresponding concrete
-    /// types in the second types.
-    ///
-    /// Panics if non-generic types don't match.
-    ///
-    /// TODO someday: refactor with passes::type_map()?  Not sure how to make
-    /// that walk over two types.
-    fn _find_substs(&self, other: &Type, substitutions: &mut BTreeMap<Sym, Type>) {
-        match (self, other) {
-            // Types are identical, noop.
-            (s, o) if s == o => (),
-            (Type::Named(n1, args1), Type::Named(n2, args2)) if n1 == n2 => {
-                for (p1, p2) in args1.iter().zip(args2) {
-                    p1._find_substs(p2, substitutions);
-                }
+            Type::Uniq(ty) => {
+                let inner = ty.get_name();
+                Cow::Owned(format!("&{}", inner))
             }
-            (
-                Type::Func(params1, rettype1, typeparams1),
-                Type::Func(params2, rettype2, typeparams2),
-            ) => {
-                if params1.len() != params2.len() {
-                    panic!("subst for function had incorrect param length")
-                }
-                if typeparams1.len() != typeparams2.len() {
-                    panic!("subst for function had incorrect typeparam length")
-                }
-                if typeparams1.len() > 0 {
-                    todo!()
-                }
-                for (p1, p2) in params1.iter().zip(params2) {
-                    p1._find_substs(p2, substitutions);
-                }
-                rettype1._find_substs(rettype2, substitutions);
-            }
-            (Type::Struct(_, _), Type::Struct(_, _)) => {
-                unreachable!("Actually can't happen I think, 'cause we tuple-ify everything first?")
-            } /*
-            (Type::Struct(body1, generics1), Type::Struct(body2, generics2)) => {
-            if body1.len() != body2.len() || generics1.len() != generics2.len() {
-            panic!("subst for function had incorrect body or generics length")
-            }
-            if
-            }
-             */
-            (Type::Sum(body1, generics1), Type::Sum(body2, generics2)) => {
-                if body1.len() != body2.len() || generics1.len() != generics2.len() {
-                    panic!("subst for sum type had non-matching body or generics length")
-                }
-                if !body1.keys().eq(body2.keys()) {
-                    panic!("subst for sum type had non-matching keys")
-                }
-                for ((_nm1, t1), (_nm2, t2)) in body1.iter().zip(body2) {
-                    t1._find_substs(t2, substitutions);
-                }
-
-                for (p1, p2) in generics1.iter().zip(generics2) {
-                    p1._find_substs(p2, substitutions);
-                }
-            }
-            (Type::Array(t1, len1), Type::Array(t2, len2)) if len1 == len2 => {
-                t1._find_substs(t2, substitutions);
-            }
-            (Type::Generic(nm), p2) => {
-                // If we have an existing substitution, does it conflict?
-                // Not 100% sure this handles generics right, but should work
-                // for now.
-                if let Some(other_ty) = substitutions.get(nm) {
-                    if other_ty != p2 {
-                        panic!("Conflicting subtitution");
-                    }
-                } else {
-                    substitutions.insert(*nm, p2.clone());
-                }
-            }
-            // Types are not identical, panic
-            _ => panic!("Cannot substitute {:?} into {:?}", other, self),
-        }
-    }
-
-    /// Takes a type and a map of substitutions and swaps out any generics
-    /// with the substituted types.
-    ///
-    /// Panics if a generic type has no substitution.
-    ///
-    /// TODO someday: refactor with passes::type_map()?
-    fn _apply_substs(&self, substs: &BTreeMap<Sym, Type>) -> Type {
-        match self {
-            Type::Func(params1, rettype1, typeparams1) => {
-                let new_params = params1.iter().map(|p1| p1._apply_substs(substs)).collect();
-                let new_rettype = rettype1._apply_substs(substs);
-                if typeparams1.len() > 0 {
-                    todo!("Hsfjkdslfjs");
-                }
-                Type::Func(new_params, Box::new(new_rettype), vec![])
-            }
-            Type::Named(n1, args1) => {
-                let new_args = args1.iter().map(|p1| p1._apply_substs(substs)).collect();
-                Type::Named(*n1, new_args)
-            }
-            Type::Struct(_, _) => unreachable!("see other unreachable in substitute()"),
-            Type::Sum(body, generics) => {
-                let new_body = body
-                    .iter()
-                    .map(|(nm, ty)| (*nm, ty._apply_substs(substs)))
-                    .collect();
-                let new_generics = generics.iter().map(|p1| p1._apply_substs(substs)).collect();
-                Type::Sum(new_body, new_generics)
-            }
-            Type::Array(body, len) => Type::Array(Box::new(body._apply_substs(substs)), *len),
-            Type::Generic(nm) => substs
-                .get(&nm)
-                .unwrap_or_else(|| panic!("No substitution found for generic named {}!", nm))
-                .to_owned(),
-            Type::Prim(_) => self.clone(),
-            Type::Enum(_) => self.clone(),
-            Type::Never => self.clone(),
         }
     }
 }
@@ -535,7 +473,7 @@ impl Cx {
 
 /// Main driver function.
 /// Compile a given source string to Rust source code, or return an error.
-/// TODO: Better parser errors with locations
+/// TODO: Better errors with locations
 ///
 /// Parse -> lower to IR -> run transformation passes
 /// -> typecheck -> more passes -> codegen
@@ -550,9 +488,18 @@ pub fn try_compile(
     };
     let hir = hir::lower(&ast);
     info!("HIR from AST lowering:\n{}", &hir);
+    let (hir, _symtbl) = symtbl::resolve_symbols(hir);
+    info!("HIR from symtbl renaming 1:\n{}", &hir);
     let hir = passes::run_passes(hir);
-    let tck = &mut typeck::typecheck(&hir)?;
-    let hir = passes::run_typechecked_passes(hir, tck);
+    info!("HIR from first passes:\n{}", &hir);
+    // Symbol resolution has to happen (again???) after passes 'cause
+    // the passes may generate new code.
+    let (hir, mut symtbl) = symtbl::resolve_symbols(hir);
+    info!("HIR from symtbl renaming:\n{}", &hir);
+    // info!("Symtbl from AST:\n{:#?}", &symtbl);
+    let tck = &mut typeck::typecheck(&hir, &mut symtbl)?;
+    borrowck::borrowck(&hir, tck).unwrap();
+    let hir = passes::run_typechecked_passes(hir, &mut symtbl, tck);
     info!("HIR after transform passes:\n{}", &hir);
     Ok(backend::output(backend, &hir, tck))
 }
@@ -562,6 +509,27 @@ pub fn compile(filename: &str, src: &str, backend: backend::Backend) -> Vec<u8> 
     try_compile(filename, src, backend).unwrap_or_else(|e| panic!("Type check error: {}", e))
 }
 
+/// Turns source code into HIR, panicking on any error.
+/// Useful for unit tests.
+#[cfg(test)]
+fn _compile_to_hir_expr(src: &str) -> hir::ExprNode {
+    let ast = {
+        let mut parser = parser::Parser::new("__None__", src);
+        let res = parser.parse_expr(0);
+        res.expect("input to compile_to_hir_expr had a syntax error!")
+    };
+    hir::lower_expr(&ast)
+}
+
+#[cfg(test)]
+fn _compile_to_hir_exprs(src: &str) -> Vec<hir::ExprNode> {
+    let ast = {
+        let mut parser = parser::Parser::new("__None__", src);
+        parser.parse_exprs()
+    };
+    hir::lower_exprs(&ast)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -569,7 +537,7 @@ mod tests {
     #[test]
     fn check_name_format() {
         let args = vec![Type::i32(), Type::bool()];
-        let def = Type::Func(args, Box::new(Type::i32()), vec![]);
+        let def = Type::function(&args, &Type::i32(), &vec![]);
         let gotten_name = def.get_name();
         let desired_name = "fn(I32, Bool) I32";
         assert_eq!(&gotten_name, desired_name);

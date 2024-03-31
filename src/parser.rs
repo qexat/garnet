@@ -20,9 +20,18 @@ use crate::*;
 
 /// Checks whether the given value can fit in `int_size` number
 /// of bits.
-fn bounds_check(val: i128, int_size: u8) -> Option<(i128, u8)> {
+fn bounds_check_signed(val: i128, int_size: u8) -> Option<(i128, u8)> {
     let bound = 2_i128.pow(int_size as u32 * 8);
     if val > (bound / 2) - 1 || val <= -(bound / 2) {
+        None
+    } else {
+        Some((val, int_size))
+    }
+}
+
+fn bounds_check_unsigned(val: i128, int_size: u8) -> Option<(i128, u8)> {
+    let bound = 2_i128.pow(int_size as u32 * 8);
+    if val > bound || val <= 0 {
         None
     } else {
         Some((val, int_size))
@@ -48,36 +57,15 @@ fn extract_digits(s: &str) -> String {
         .collect()
 }
 
-fn make_i8(lex: &mut Lexer<TokenKind>) -> Option<(i128, u8)> {
+fn make_int(lex: &mut Lexer<TokenKind>, size: u8, signed: bool) -> Option<(i128, u8, bool)> {
     let digits = extract_digits(lex.slice());
     let m = digits.parse().ok()?;
-    bounds_check(m, 1)
-}
-
-fn make_i16(lex: &mut Lexer<TokenKind>) -> Option<(i128, u8)> {
-    let digits = extract_digits(lex.slice());
-    let m = digits.parse().ok()?;
-    bounds_check(m, 2)
-}
-
-fn make_i32(lex: &mut Lexer<TokenKind>) -> Option<(i128, u8)> {
-    let digits = extract_digits(lex.slice());
-    let m = digits.parse().ok()?;
-    bounds_check(m, 4)
-}
-
-fn make_i64(lex: &mut Lexer<TokenKind>) -> Option<(i128, u8)> {
-    let digits = extract_digits(lex.slice());
-    let m = digits.parse().ok()?;
-    bounds_check(m, 8)
-}
-
-fn make_i128(lex: &mut Lexer<TokenKind>) -> Option<(i128, u8)> {
-    let digits = extract_digits(lex.slice());
-    let m = digits.parse().ok()?;
-    // No bounds check, since our internal type is i128 anyway.
-    //bounds_check(m, 16)
-    Some((m, 16))
+    let (val, size) = if signed {
+        bounds_check_signed(m, size)?
+    } else {
+        bounds_check_unsigned(m, size)?
+    };
+    Some((val, size, signed))
 }
 
 fn eat_block_comment(lex: &mut Lexer<TokenKind>) -> String {
@@ -114,16 +102,17 @@ fn eat_block_comment(lex: &mut Lexer<TokenKind>) -> String {
 pub enum TokenKind {
     #[regex("[a-zA-Z_][a-zA-Z0-9_]*", |lex| lex.slice().to_owned())]
     Ident(String),
-    //#[regex("@[a-zA-Z_][a-zA-Z0-9_]*", |lex| lex.slice().to_owned())]
-    //TypeIdent(String),
     #[regex("true|false", |lex| lex.slice().parse())]
     Bool(bool),
-    #[regex("[0-9][0-9_]*I8", make_i8)]
-    #[regex("[0-9][0-9_]*I16", make_i16)]
-    #[regex("[0-9][0-9_]*I32", make_i32)]
-    #[regex("[0-9][0-9_]*I64", make_i64)]
-    #[regex("[0-9][0-9_]*I128", make_i128)]
-    IntegerSize((i128, u8)),
+    #[regex("[0-9][0-9_]*I8",   |lex| make_int(lex, 1, true))]
+    #[regex("[0-9][0-9_]*I16",  |lex| make_int(lex, 2, true))]
+    #[regex("[0-9][0-9_]*I32",  |lex| make_int(lex, 4, true))]
+    #[regex("[0-9][0-9_]*I64",  |lex| make_int(lex, 8, true))]
+    #[regex("[0-9][0-9_]*U8",   |lex| make_int(lex, 1, false))]
+    #[regex("[0-9][0-9_]*U16",  |lex| make_int(lex, 2, false))]
+    #[regex("[0-9][0-9_]*U32",  |lex| make_int(lex, 4, false))]
+    #[regex("[0-9][0-9_]*U64",  |lex| make_int(lex, 8, false))]
+    IntegerSize((i128, u8, bool)),
     #[regex("[0-9][0-9_]*", |lex| lex.slice().parse())]
     Integer(i128),
 
@@ -150,6 +139,8 @@ pub enum TokenKind {
     Else,
     #[regex("loop[ \n]*")]
     Loop,
+    #[regex("while[ \n]*")]
+    While,
     #[regex("do[ \n]*")]
     Do,
     #[token("return")]
@@ -336,10 +327,13 @@ impl ErrorReporter {
         // and the default test runner truncates 'em anyway.  Leave this
         // the way it is 'cause the lang_tester tests are set up to look
         // for specific strings on failure.
+        //
+        // TODO: It really would be nice to have the test harness capture things
+        // properly.  Why isn't it?
         #[cfg(not(test))]
         {
             use codespan_reporting::term::termcolor::{ColorChoice, StandardStream};
-            let writer = StandardStream::stderr(ColorChoice::Always);
+            let writer = StandardStream::stdout(ColorChoice::Always);
             cs::term::emit(&mut writer.lock(), &self.config, &self.files, _diag)
                 .expect("Could not print error message");
         }
@@ -371,9 +365,10 @@ macro_rules! parse_delimited {
 /// The core parser struct.  It provides basic methods for
 /// manipulating the input stream, and the `parse()` method to
 /// try to drive the given input to completion.
+#[derive(Clone)]
 pub struct Parser<'input> {
+    // Honestly, just cloning the lexer is easier than dealing with Peekable
     lex: logos::Lexer<'input, TokenKind>,
-    //lex: std::iter::Peekable<logos::SpannedIter<'input, TokenKind>>,
     source: &'input str,
     err: ErrorReporter,
 }
@@ -401,7 +396,7 @@ impl<'input> Parser<'input> {
             }) => {
                 self.drop();
                 s
-            },
+            }
             _ => String::new(),
         };
         self.eat_delimiters();
@@ -587,7 +582,7 @@ impl<'input> Parser<'input> {
                 ..
             }) => s,
             Some(Token {
-                kind: T::IntegerSize((s, _)),
+                kind: T::IntegerSize((s, _, _)),
                 ..
             }) => s,
             Some(Token { kind, span }) => {
@@ -673,7 +668,6 @@ impl<'input> Parser<'input> {
                 if self.peek_is(T::RParen.discr()) {
                     break;
                 } else {
-                    self.expect(T::At);
                     let name = self.expect_ident();
                     params.push(name);
                 }
@@ -704,11 +698,11 @@ impl<'input> Parser<'input> {
         ast::Decl::Import { name, rename }
     }
 
-    /// signature = fn_args [":" typename]
+    /// signature = fn_args [typename]
     fn parse_fn_signature(&mut self) -> ast::Signature {
-        // TODO: Elide trailing unit type?
         let (params, typeparams) = self.parse_fn_args();
-        let rettype = self.parse_type();
+        let rettype = self.try_parse_type().unwrap_or(Type::unit());
+        let typeparams = Type::detype_names(&typeparams);
         ast::Signature {
             params,
             rettype,
@@ -716,18 +710,8 @@ impl<'input> Parser<'input> {
         }
     }
 
-    /// Ok, this is where the grammar gets slightly cursed, but I
-    /// think I can isolate the curse here.  Basically this parses
-    /// type args like `type, type, type |` up until the closing
-    /// `|`, or if there IS no closing `|` and it reads something
-    /// not a type then it *backtracks* and returns an empty list.
-    fn _parse_type_args(&mut self) -> Vec<Type> {
-        //let new_lexer = self.lex.into_inner().deref().clone();
-        vec![]
-    }
-
     /// sig = ident typename
-    /// fn_args = "(" [sig {"," sig} [","]] ["|" types...] ")"
+    /// fn_args = "(" ["|" types... "|"] [sig {"," sig} [","]] ["|" types...] ")"
     fn parse_fn_args(&mut self) -> (Vec<(Sym, Type)>, Vec<Type>) {
         let mut args = vec![];
         let mut typeparams = vec![];
@@ -781,7 +765,10 @@ impl<'input> Parser<'input> {
         self.expect(T::LParen);
         if self.peek_expect(T::Bar.discr()) {
             parse_delimited!(self, T::Comma, {
-                if !self.peek_is(T::RParen.discr()) {
+                if self.peek_is(T::Bar.discr()) {
+                    // Bit of a hack, but (||) is a valid sig
+                    break;
+                } else if !self.peek_is(T::RParen.discr()) {
                     let tname = self.parse_type();
                     typeparams.push(tname);
                 } else {
@@ -805,8 +792,8 @@ impl<'input> Parser<'input> {
 
     fn parse_fn_type(&mut self) -> Type {
         let (params, typeparams) = self.parse_type_list_with_typeparams();
-        let rettype = self.parse_type();
-        Type::Func(params, Box::new(rettype), typeparams)
+        let rettype = self.try_parse_type().unwrap_or(Type::unit());
+        Type::function(&params, &rettype, &typeparams)
     }
 
     /// Parse the fields for a struct *type decl*
@@ -955,7 +942,7 @@ impl<'input> Parser<'input> {
         Type::Sum(fields, generics)
     }
 
-    fn parse_exprs(&mut self) -> Vec<ast::Expr> {
+    pub fn parse_exprs(&mut self) -> Vec<ast::Expr> {
         let mut exprs = vec![];
         let tok = self.peek();
         while let Some(e) = self.parse_expr(0) {
@@ -983,7 +970,10 @@ impl<'input> Parser<'input> {
     /// parser to parse math expressions and such.  It's a big chonky
     /// boi of a function, but really just tries a bunch of matches
     /// in sequence.
-    fn parse_expr(&mut self, min_bp: usize) -> Option<ast::Expr> {
+    ///
+    /// The min_bp is the binding power used in the pratt parser; if
+    /// you are calling this standalone the min_bp should be 0.
+    pub fn parse_expr(&mut self, min_bp: usize) -> Option<ast::Expr> {
         let t = self.peek()?;
         let token = &t.kind;
         let mut lhs = match token {
@@ -992,7 +982,9 @@ impl<'input> Parser<'input> {
                 ast::Expr::bool(*b)
             }
             T::Integer(_) => ast::Expr::int(self.expect_int() as i128),
-            T::IntegerSize((_str, size)) => ast::Expr::sized_int(self.expect_int() as i128, *size),
+            T::IntegerSize((_str, size, signed)) => {
+                ast::Expr::sized_int(self.expect_int() as i128, *size, *signed)
+            }
             // Tuple/struct literal
             T::LBrace => self.parse_constructor(),
             // Array literal
@@ -1010,6 +1002,7 @@ impl<'input> Parser<'input> {
             T::Let => self.parse_let(),
             T::If => self.parse_if(),
             T::Loop => self.parse_loop(),
+            T::While => self.parse_while_loop(),
             T::Do => self.parse_block(),
             T::Fn => self.parse_lambda(),
             T::Return => self.parse_return(),
@@ -1290,6 +1283,21 @@ impl<'input> Parser<'input> {
         ast::Expr::Loop { body }
     }
 
+    /// while = "while" expr "do" {expr} "end"
+    fn parse_while_loop(&mut self) -> ast::Expr {
+        self.expect(T::While);
+        let cond = self
+            .parse_expr(0)
+            .expect("While loop condition was not an expression?");
+        self.expect(T::Do);
+        let body = self.parse_exprs();
+        self.expect(T::End);
+        ast::Expr::While {
+            cond: Box::new(cond),
+            body,
+        }
+    }
+
     /// block = "do" {expr} "end"
     fn parse_block(&mut self) -> ast::Expr {
         self.expect(T::Do);
@@ -1298,7 +1306,7 @@ impl<'input> Parser<'input> {
         ast::Expr::Block { body }
     }
 
-    /// lambda = "fn" "(" ...args... ")" [":" typename] = {exprs} "end"
+    /// lambda = "fn" "(" ...args... ")" [typename] = {exprs} "end"
     fn parse_lambda(&mut self) -> ast::Expr {
         self.expect(T::Fn);
         let signature = self.parse_fn_signature();
@@ -1361,7 +1369,11 @@ impl<'input> Parser<'input> {
         self.try_parse_type().expect("Type expected")
     }
 
+    /// If this can't parse a valid type, it will rewind
+    /// back to where it started.  Magic!
+    /// Also, you know, arbitrary lookahead/backtracking, but that's ok.
     fn try_parse_type(&mut self) -> Option<Type> {
+        let old_lexer = self.lex.clone();
         let t = self.next()?;
         let x = match t.kind {
             T::Ident(ref s) => {
@@ -1376,10 +1388,12 @@ impl<'input> Parser<'input> {
                     Type::Named(Sym::new(s), type_params)
                 }
             }
-            T::At => {
-                let s = self.expect_ident();
-                Type::Generic(s)
-            }
+            /*
+                    T::At => {
+                        let s = self.expect_ident();
+                        Type::Generic(s)
+                    }
+            */
             T::LBrace => self.try_parse_tuple_type()?,
             T::Fn => self.parse_fn_type(),
             T::Struct => self.try_parse_struct_type()?,
@@ -1392,7 +1406,17 @@ impl<'input> Parser<'input> {
                 let inner = self.parse_type();
                 Type::Array(Box::new(inner), len as usize)
             }
-            _ => return None,
+            T::Ampersand => {
+                let next = self.try_parse_type()?;
+                Type::Uniq(Box::new(next))
+            }
+            _ => {
+                // Wind the parse stream back to wherever we started
+                // TODO LATER: We should maybe think about making a better way
+                // of doing this, but so far this is the only place it happens.
+                self.lex = old_lexer;
+                return None;
+            }
         };
         Some(x)
     }
@@ -1555,9 +1579,9 @@ mod tests {
 
     #[test]
     fn test_typedef_generics() {
-        test_decl_is("type bop(@T) = @T", || ast::Decl::TypeDef {
+        test_decl_is("type bop(T) = T", || ast::Decl::TypeDef {
             name: Sym::new("bop"),
-            typedecl: Type::Generic(Sym::new("T")),
+            typedecl: Type::Named(Sym::new("T"), vec![]),
             doc_comment: vec![],
             params: vec![Sym::new("T")],
         });
@@ -1627,7 +1651,7 @@ type blar = I8
             "(x  Bool)",
             "(x  Bool,)",
             "(x  I32, y  Bool)",
-            "(x @X, y @Y)",
+            "(x X, y Y)",
             "(x  I32, y  Bool,)",
         ];
         test_parse_with(|p| p.parse_fn_args(), &valid_args)
@@ -1636,13 +1660,28 @@ type blar = I8
     fn parse_fn_signature() {
         let valid_args = vec![
             "() {}",
-            "(x  Bool) I32",
-            "(x  Bool) {}",
-            "(x  I16, y  Bool) {}",
-            "(x  I64, y  Bool) Bool",
-            "(x  I8, y  Bool,) {}",
-            "(x  I32, y  Bool,) Bool",
-            "(f  fn(I32) I128, x  I32) Bool",
+            "(x Bool) I32",
+            "(x Bool) {}",
+            "(x I16, y Bool) {}",
+            "(x I64, y Bool) Bool",
+            "(x I8, y Bool,) {}",
+            "(x I32, y Bool,) Bool",
+            "(f fn(I32) I64, x I32) Bool",
+            "(f fn(|| I32) I64, x I32) Bool",
+            "(f fn(||) I64, x I32) Bool",
+            "(f fn(|T| I32) I64, x I32) Bool",
+            // now without explicit return types
+            "()",
+            "(x Bool)",
+            "(x Bool)",
+            "(x I16, y Bool)",
+            "(x I64, y Bool)",
+            "(x I8, y Bool,)",
+            "(x I32, y Bool,)",
+            "(f fn(I32), x I32)",
+            "(f fn(|| I32), x I32)",
+            "(f fn(||), x I32)",
+            "(f fn(|T| I32), x I32)",
         ];
         test_parse_with(|p| p.parse_fn_signature(), &valid_args)
     }
@@ -1714,6 +1753,12 @@ type blar = I8
             "fn(x I32, i Bool) I32 = x end",
             "fn(f fn(I32) I32, x I32) {} = f(x) end",
             "fn() {} = {} end",
+            // for parse_expr there must be no leading newlines
+            // but there can be trailing ones.
+            r#"fn() {} = 
+    {} 
+end
+"#,
         ];
         test_parse_with(|p| p.parse_lambda(), &valid_args);
         test_parse_with(|p| p.parse_expr(0), &valid_args);
@@ -1742,12 +1787,12 @@ type blar = I8
     fn parse_fn_decls() {
         let valid_args = vec![
             "fn foo1(f I32) I32 = f end",
-            "fn foo2(|@T| f I32 ) I32 = f end",
-            "fn foo3(|@T|) {} = f end",
+            "fn foo2(|T| f I32 ) I32 = f end",
+            "fn foo3(|T|) {} = f end",
             "fn foo4(||) {} = f end",
             "fn foo5() {} = f end",
-            "fn foo6(f @T) @T = f end",
-            "fn foo7(|@T1, @T2, | f I32, g Bool, ) I32 = f end",
+            "fn foo6(f T) T = f end",
+            "fn foo7(|T1, T2, | f I32, g Bool, ) I32 = f end",
         ];
         test_parse_with(|p| p.parse_decl().unwrap(), &valid_args);
     }
@@ -1919,13 +1964,12 @@ type blar = I8
             ("22_I16", 22, 2),
             ("33_I32", 33, 4),
             ("91_I64", 91, 8),
-            ("9_I128", 9, 16),
         ];
         for (s, expected_int, expected_bytes) in tests {
             let mut p = Parser::new("unittest.gt", s);
             assert_eq!(
                 p.next().unwrap().kind,
-                TokenKind::IntegerSize((*expected_int, *expected_bytes))
+                TokenKind::IntegerSize((*expected_int, *expected_bytes, true))
             );
             // Make sure we don't lex the "i128" or whatever as the start of
             // another token
@@ -1956,7 +2000,7 @@ type blar = I8
 
     #[test]
     fn parse_integer_values() {
-        test_expr_is("43_I8", || Expr::sized_int(43, 1));
+        test_expr_is("43_I8", || Expr::sized_int(43, 1, true));
         /*
         test_expr_is("{1,2,3}", |_cx| Expr::TupleCtor {
             body: vec![Expr::int(1), Expr::int(2), Expr::int(3)],
@@ -2085,4 +2129,34 @@ fn foo() {} = {} end
         let res = p.parse();
         assert_eq!(&res.module_docstring, "");
     }
+
+    /// This tests a kinda horrible edge case in mixing line and block comments, 
+    /// but it's a rare enough one that I don't care about it right now.
+    #[test]
+    #[should_panic]
+    fn parse_evil_nested_comment() {
+        let thing1 = r#"
+
+/- Block comments work fine
+-/
+
+/- Block comments work fine
+/- And nested block comments work fine
+-/
+-/
+
+-- Line comments work fine with a -/ in them
+-- Line comments work fine with a /- in them
+-- and no closing delimiter ever
+
+/-
+-- But if a line comment is commented out by a block comment and contains a 
+-- surprising end delimiter like "-/" then the block comment is closed
+
+"#;
+
+        let mut p = Parser::new("unittest.gt", thing1);
+        let _res = p.parse();
+    }
+
 }

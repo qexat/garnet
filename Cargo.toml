@@ -4,6 +4,7 @@ version = "0.1.0"
 authors = ["Simon Heath <icefox@dreamquest.io>"]
 edition = "2018"
 license = "LGPL-3.0-only"
+default-run = "garnetc"
 
 
 [[test]]
@@ -26,6 +27,7 @@ once_cell = "1"
 logos = "0.12"
 log = "0.4"
 pretty_env_logger = "0.4"
+anymap = "0.12"
 
 
 [dev-dependencies]

@@ -52,7 +52,7 @@ fn main() {
             // succeed on others where actual compilation fails (like type errors).
             // Ah well.
             let mut fmt = Command::new("cargo");
-            fmt.args(&[
+            fmt.args([
                 "run",
                 "--bin",
                 "garnetfmt",
@@ -66,7 +66,7 @@ fn main() {
             exe.push(&tempdir);
             exe.push(p.file_stem().unwrap());
             let mut compile = Command::new("cargo");
-            compile.args(&[
+            compile.args([
                 "run",
                 "--bin",
                 "garnetc",

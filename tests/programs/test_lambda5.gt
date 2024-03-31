@@ -4,7 +4,7 @@
 --   status: error
 
 
-fn apply(f fn(@In) @Out, arg @In) @Out =
+fn apply(f fn(In) Out, arg In) Out =
     f(arg)
 end
 

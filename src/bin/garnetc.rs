@@ -4,7 +4,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 use argh::FromArgs;
-use pretty_env_logger;
+
 
 use garnet::backend::Backend;
 
@@ -47,11 +47,11 @@ fn compile_rust(input_file: &Path, exe_name: &Path) -> io::Result<PathBuf> {
     let mut rust_file;
     // Output to file
     {
-        let src = std::fs::read_to_string(&input_file)?;
-        let output = garnet::compile(&input_file.to_str().unwrap(), &src, Backend::Rust);
+        let src = std::fs::read_to_string(input_file)?;
+        let output = garnet::compile(input_file.to_str().unwrap(), &src, Backend::Rust);
         rust_file = input_file.to_owned();
         rust_file.set_extension("rs");
-        std::fs::write(&rust_file, &output)?;
+        std::fs::write(&rust_file, output)?;
     }
     use std::process::{Command, Stdio};
     // Invoke rustc
@@ -61,7 +61,7 @@ fn compile_rust(input_file: &Path, exe_name: &Path) -> io::Result<PathBuf> {
         .arg("-C")
         .arg("opt-level=3")
         .arg("-o")
-        .arg(&exe_name)
+        .arg(exe_name)
         .arg(&rust_file)
         .output()
         .expect("Failed to execute rustc");

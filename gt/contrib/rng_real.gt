@@ -1,0 +1,40 @@
+--- A simple PCG RNG.
+--- Does not actually produce the correct answer,  but is something
+--- that compiles with current Garnet.
+
+type Rand32 = struct
+    state: I64,
+	inc: I64,
+end
+
+const RAND32_DEFAULT_INC I64 = 1442695040888963407
+const RAND32_MULTIPLIER I64 = 6364136223846793005
+
+--- Creates a new Rand32 with the given state and seed
+fn new_inc(seed I64, increment I64) Rand32 =
+  let mut rng = Rand32 {
+	.state = 0,
+	.inc = __bor_i64(__lshift_i64(increment, 1), 1),
+  }
+  let _ = rand_u32(rng)
+  rng$.state = rng$.state + seed
+  let _ = rand_u32(rng)
+  rng
+end
+
+
+--- Produces a random `u32` in the range `[0, u32::MAX]`.
+fn rand_u32(st Rand32) I64 =
+    let mut oldstate I64 = st$.state
+    let mut st Rand32 = st
+    st$.state = oldstate * RAND32_MULTIPLIER + st$.inc
+    let xorshifted I64 = __rshift_i64(__bxor_i64(__rshift_i64(oldstate, 18), oldstate), 27)
+    let rot I64 = __rshift_i64(oldstate, 59)
+    __rshift_i64(xorshifted, rot)
+end
+
+fn main() =
+    let mut rng = new_inc(3, 4)
+    let number I64 = rand_u32(rng)
+    __println_i64(number)
+end

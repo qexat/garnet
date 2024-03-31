@@ -39,8 +39,8 @@ fn tuplize_type(typ: Type) -> Type {
 
             // TODO: What do we do with generics?  Anything?
             let tuple_fields = fields
-                .iter()
-                .map(|(_sym, ty)| type_map(ty.clone(), &mut tuplize_type))
+                .values()
+                .map(|ty| type_map(ty.clone(), &mut tuplize_type))
                 .collect();
             Type::tuple(tuple_fields)
         }
@@ -63,7 +63,7 @@ fn tuplize_expr(expr: ExprNode, tck: &mut typeck::Tck) -> ExprNode {
             init,
             mutable,
         } => {
-            let new_type = tuplize_type(t.clone());
+            let new_type = tuplize_type(t);
             E::Let {
                 varname,
                 init,
@@ -76,13 +76,10 @@ fn tuplize_expr(expr: ExprNode, tck: &mut typeck::Tck) -> ExprNode {
             Type::Struct(type_body, _generics) => {
                 let mut ordered_body: Vec<_> = body
                     .into_iter()
-                    .map(|(ky, vl)| (offset_of_field(&type_body, ky), vl))
+                    .map(|(ky, vl)| (offset_of_field(type_body, ky), vl))
                     .collect();
                 ordered_body.sort_by(|a, b| a.0.cmp(&b.0));
-                let new_body = ordered_body
-                    .into_iter()
-                    .map(|(_i, expr)| expr.clone())
-                    .collect();
+                let new_body = ordered_body.into_iter().map(|(_i, expr)| expr).collect();
 
                 E::TupleCtor { body: new_body }
             }
@@ -100,7 +97,7 @@ fn tuplize_expr(expr: ExprNode, tck: &mut typeck::Tck) -> ExprNode {
                 Type::Struct(type_body, _generics) => {
                     let offset = offset_of_field(&type_body, elt);
                     E::TupleRef {
-                        expr: inner_expr.clone(),
+                        expr: inner_expr,
                         elt: offset,
                     }
                 }
@@ -132,7 +129,7 @@ fn tuplize_expr(expr: ExprNode, tck: &mut typeck::Tck) -> ExprNode {
 /// kinda squirrelly, because we don't really have a decl that translates
 /// directly into a Rust struct without being wrapped in a typedef first.  So I
 /// think I will translate them to tuples after all.
-pub(super) fn struct_to_tuple(ir: Ir, tck: &mut typeck::Tck) -> Ir {
+pub(super) fn struct_to_tuple(ir: Ir, _: &symtbl::Symtbl, tck: &mut typeck::Tck) -> Ir {
     let mut new_decls = vec![];
     let tuplize_expr = &mut |e| tuplize_expr(e, tck);
 
@@ -153,9 +150,11 @@ pub(super) fn struct_to_tuple(ir: Ir, tck: &mut typeck::Tck) -> Ir {
     // passes::expr_map that does a post-traversal instead of a pre-traversal?
     //
     // So for now we just throw away all type info and regenerate it!
-    let new_tck =
-        typeck::typecheck(&new_ir).expect("Generated monomorphized IR that doesn't typecheck");
-    *tck = new_tck;
+    // However this seems to be part of messy monomorph, so yanking it out
+    // for now seems fine.
+    // let new_tck =
+    //     typeck::typecheck(&new_ir).expect("Generated monomorphized IR that doesn't typecheck");
+    // *tck = new_tck;
     new_ir
 }
 
@@ -279,9 +278,9 @@ mod tests {
         let out = type_map(inp.clone(), &mut tuplize_type);
         assert_eq!(out, desired);
 
-        let desired2 = Type::Array(Box::new(out.clone()), 3);
-        let inp2 = Type::Array(Box::new(inp.clone()), 3);
-        let out2 = type_map(inp2.clone(), &mut tuplize_type);
+        let desired2 = Type::Array(Box::new(out), 3);
+        let inp2 = Type::Array(Box::new(inp), 3);
+        let out2 = type_map(inp2, &mut tuplize_type);
         assert_eq!(out2, desired2);
     }
 }

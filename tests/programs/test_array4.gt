@@ -29,6 +29,5 @@ fn main() {} =
     let b = a[1][1]
     __println(b)
 
-    __println(actually_use_array([1, 2, 3, 4, 5]))
-
+    __println(actually_use_array([1, 2, 3, 4, 5])) 
 end
