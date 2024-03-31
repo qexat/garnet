@@ -108,18 +108,21 @@ impl fmt::Display for Decl {
                 typedecl,
                 params,
             } => {
-                let mut buf = String::new();
-                for param in params {
-                    buf += &*param.val();
-                    buf += ", ";
-                }
-                writeln!(f, "type {}({}) = {}", name, buf, typedecl.get_name())?;
+                let param_str: Vec<String> = params.iter().map(|t| t.to_string()).collect();
+                let param_str = param_str.join(", ");
+                writeln!(f, "type {}({}) = {}", name, param_str, typedecl.get_name())?;
             }
             D::Import { name, localname } => {
                 writeln!(f, "import {} as {}", name, localname)?;
             }
         }
         Ok(())
+    }
+}
+
+impl fmt::Display for Expr {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.write(0, f)
     }
 }
 
@@ -288,8 +291,8 @@ impl Expr {
         Self::TupleCtor { body: vec![] }
     }
 
-    /// Write the given HIR expr as a slightly-jank sexpr-y format.
-    /// It's not too pretty, but is way easier to eyeball than derive(Debug) output.
+    /// A fairly janky pretty-printer for IR, that is at least better
+    /// than using Debug on the raw structures.
     pub fn write(&self, indent: usize, f: &mut dyn fmt::Write) -> fmt::Result {
         use Expr::*;
         for _ in 0..(indent * 2) {
@@ -366,7 +369,7 @@ impl Expr {
                 func.write(0, f)?;
                 write!(f, " |")?;
                 for ty in type_params {
-                    write!(f, "{},", ty.get_name())?;
+                    write!(f, "{}, ", ty.get_name())?;
                 }
                 write!(f, "|")?;
                 for b in params {
@@ -388,7 +391,7 @@ impl Expr {
                 variant,
                 value,
             } => {
-                write!(f, "(enumval {} {} {})", name, &*variant.val(), value)?;
+                write!(f, "(enumctor {} {} {})", name, &*variant.val(), value)?;
             }
             TupleCtor { body } => {
                 write!(f, "(tuple ")?;
@@ -425,11 +428,15 @@ impl Expr {
             }
             TypeCtor {
                 name,
-                type_params: _,
+                type_params,
                 body,
             } => {
                 // TODO: type_params
-                write!(f, "(typector {} ", name)?;
+                write!(f, "(typector |")?;
+                for ty in type_params {
+                    write!(f, "{} ", ty.get_name())?;
+                }
+                write!(f, "| {} ", name)?;
                 body.write(0, f)?;
                 write!(f, ")")?;
             }
@@ -574,7 +581,7 @@ fn lower_signature(sig: &ast::Signature) -> Signature {
 }
 
 /// This is the biggie currently
-fn lower_expr(expr: &ast::Expr) -> ExprNode {
+pub fn lower_expr(expr: &ast::Expr) -> ExprNode {
     use ast::Expr as E;
     use Expr::*;
     let new_exp = match expr {
@@ -738,7 +745,7 @@ fn lower_expr(expr: &ast::Expr) -> ExprNode {
 }
 
 /// handy shortcut to lower Vec<ast::Expr>
-fn lower_exprs(exprs: &[ast::Expr]) -> Vec<ExprNode> {
+pub fn lower_exprs(exprs: &[ast::Expr]) -> Vec<ExprNode> {
     exprs.iter().map(lower_expr).collect()
 }
 
@@ -798,16 +805,18 @@ fn lower_typedef(accm: &mut Vec<Decl>, name: Sym, ty: &Type, params: &[Sym]) {
         // type Y = Thing
         // TODO: What do we do with the generics...  Right now they just
         // get stuffed into the constructor functions verbatim.
-        Type::Sum(body, generics) => {
+        Type::Sum(body, type_params) => {
             trace!("Lowering sum type {}", name);
+            let new_type_params = Type::detype_names(type_params);
+
             let struct_body: Vec<_> = body
                 .iter()
                 .map(|(variant_name, variant_type)| {
                     let paramname = Sym::new("x");
                     let signature = ast::Signature {
                         params: vec![(paramname, variant_type.clone())],
-                        rettype: Type::Named(name, generics.clone()),
-                        typeparams: generics.clone(),
+                        rettype: Type::Named(name, type_params.clone()),
+                        typeparams: new_type_params.clone(),
                     };
                     // Just return the value passed to it wrapped
                     // in a constructor of some kind...?
@@ -831,13 +840,13 @@ fn lower_typedef(accm: &mut Vec<Decl>, name: Sym, ty: &Type, params: &[Sym]) {
                         *variant_name,
                         Type::Func(
                             vec![variant_type.clone()],
-                            Box::new(Type::Named(name, generics.clone())),
-                            generics.clone(),
+                            Box::new(Type::Named(name, type_params.clone())),
+                            type_params.clone(),
                         ),
                     )
                 })
                 .collect();
-            let struct_type = Type::Struct(struct_typebody, generics.clone());
+            let struct_type = Type::Struct(struct_typebody, type_params.clone());
             let new_constdef = Const {
                 name: name.to_owned(),
                 typ: struct_type,
@@ -850,11 +859,11 @@ fn lower_typedef(accm: &mut Vec<Decl>, name: Sym, ty: &Type, params: &[Sym]) {
         other => {
             let s = Sym::new("x");
             trace!("Lowering params {:?}", params);
-            let type_params: Vec<_> = params.iter().map(|s| Type::Generic(*s)).collect();
+            let type_params: Vec<_> = params.iter().map(|s| Type::named0(*s)).collect();
             let signature = ast::Signature {
                 params: vec![(s, other.clone())],
                 rettype: Type::Named(name.to_owned(), type_params.clone()),
-                typeparams: type_params.clone(),
+                typeparams: params.to_owned(),
             };
             // The generated function just returns the value passed to it wrapped
             // in a type constructor

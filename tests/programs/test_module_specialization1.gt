@@ -8,12 +8,12 @@
 --     4
 
 
-type List(T) = struct
+type List(T) = struct(T)
     dummy_data: T,
 end
 
 
-type Idx(Selff, Output) = struct
+type Idx(Selff, Output) = struct(Selff, Output)
     idx: fn(Selff, I32) Output,
 end
 
@@ -23,10 +23,7 @@ const IntListIdx Idx(List(I32), I32) = Idx {
 }
 
 fn main() {} =
-/-
     let x = List { .dummy_data = 4_I32 }
     let y = IntListIdx$.idx(x, 3)
-    __println(y); -- gfd parser ambiguity
-    -/
-    {}
+    __println(y)
 end

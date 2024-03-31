@@ -4,9 +4,7 @@
 
 use crate::passes::*;
 
-// This is slightly bonkers and a big dependency inversion but it also does
-// *exactly* what we want.  :thonk:
-use crate::typeck::Symtbl;
+use crate::symtbl::Symtbl;
 
 fn generic_infer_type(symtbl: &Symtbl, ty: Type) -> Type {
     match ty {

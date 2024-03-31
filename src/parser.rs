@@ -702,6 +702,7 @@ impl<'input> Parser<'input> {
     fn parse_fn_signature(&mut self) -> ast::Signature {
         let (params, typeparams) = self.parse_fn_args();
         let rettype = self.try_parse_type().unwrap_or(Type::unit());
+        let typeparams = Type::detype_names(&typeparams);
         ast::Signature {
             params,
             rettype,
@@ -941,7 +942,7 @@ impl<'input> Parser<'input> {
         Type::Sum(fields, generics)
     }
 
-    fn parse_exprs(&mut self) -> Vec<ast::Expr> {
+    pub fn parse_exprs(&mut self) -> Vec<ast::Expr> {
         let mut exprs = vec![];
         let tok = self.peek();
         while let Some(e) = self.parse_expr(0) {
@@ -969,7 +970,10 @@ impl<'input> Parser<'input> {
     /// parser to parse math expressions and such.  It's a big chonky
     /// boi of a function, but really just tries a bunch of matches
     /// in sequence.
-    fn parse_expr(&mut self, min_bp: usize) -> Option<ast::Expr> {
+    ///
+    /// The min_bp is the binding power used in the pratt parser; if
+    /// you are calling this standalone the min_bp should be 0.
+    pub fn parse_expr(&mut self, min_bp: usize) -> Option<ast::Expr> {
         let t = self.peek()?;
         let token = &t.kind;
         let mut lhs = match token {
@@ -1302,7 +1306,7 @@ impl<'input> Parser<'input> {
         ast::Expr::Block { body }
     }
 
-    /// lambda = "fn" "(" ...args... ")" [":" typename] = {exprs} "end"
+    /// lambda = "fn" "(" ...args... ")" [typename] = {exprs} "end"
     fn parse_lambda(&mut self) -> ast::Expr {
         self.expect(T::Fn);
         let signature = self.parse_fn_signature();
@@ -1749,6 +1753,12 @@ type blar = I8
             "fn(x I32, i Bool) I32 = x end",
             "fn(f fn(I32) I32, x I32) {} = f(x) end",
             "fn() {} = {} end",
+            // for parse_expr there must be no leading newlines
+            // but there can be trailing ones.
+            r#"fn() {} = 
+    {} 
+end
+"#,
         ];
         test_parse_with(|p| p.parse_lambda(), &valid_args);
         test_parse_with(|p| p.parse_expr(0), &valid_args);

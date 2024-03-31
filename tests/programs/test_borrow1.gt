@@ -1,7 +1,7 @@
 -- Format:
 --   status: success
 -- Compile:
---   status: success
+--   status: error
 
 
 fn should_fail() &{I32, I32} = 

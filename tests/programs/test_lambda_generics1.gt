@@ -1,0 +1,30 @@
+-- Format:
+--   status: success
+-- Compile:
+--   status: error
+
+
+-- Run:
+--   status: success
+--   stdout:
+--     12
+
+-- TODO: This should succeed but does not yet.
+-- We need some way to make closures over type parameters;
+-- either directly or by monomorphization.
+-- I tried doing it directly a la lambda lifting and it
+-- really didn't work too heckin' well, so we'll try monomorph.
+
+  
+fn make_id(|T1|) fn(T1) T1 =
+    let id = fn(x T1) T1 =
+        x
+    end
+    id
+end
+
+fn main() {} =
+    let id = make_id(|I32|)
+    let res = id(12)
+    __println(res)
+end
