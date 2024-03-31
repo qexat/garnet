@@ -1,0 +1,32 @@
+-- Format:
+--   status: error
+-- Compile:
+--   status: success
+
+
+-- Can we make sum types with type params?
+-- BUGGO: why tf does this not work?
+type Foo(A,B) = sum(A,B)
+    X A,
+    Y B,
+    Z struct
+        a: I32,
+        b: I32
+    end,
+end
+
+fn thing(|A,B| i Foo(A,B)) Foo(A,B) =
+    i
+end
+
+
+fn main() {} =
+/-
+    let x Foo = Foo.X 3
+    let y Foo = Foo.Y { 12, true, false }
+    let z Foo = Foo.Z { .a = 12, .b = 40 }
+    let a = thing(y)
+    -/
+    __println(42)
+end
+

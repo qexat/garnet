@@ -353,8 +353,15 @@ impl Type {
                 res += " end";
                 Cow::Owned(res)
             }
-            Type::Sum(body, _generics) => {
-                let mut res = String::from("sum ");
+            Type::Sum(body, generics) => {
+                let mut res = String::from("sum");
+                if generics.is_empty() {
+                    res += " "
+                } else {
+                    res += "(";
+                    res += &join_types_with_commas(generics);
+                    res += ") ";
+                }
                 res += &join_vars_with_commas(body);
                 res += " end";
                 Cow::Owned(res)

@@ -920,6 +920,7 @@ impl<'input> Parser<'input> {
                 }
             });
             self.expect(T::RParen);
+            self.eat_delimiters();
         }
         parse_delimited!(self, T::Comma, {
             trace!("Parsing body for sum type");
@@ -930,16 +931,6 @@ impl<'input> Parser<'input> {
             }
         });
         self.expect(T::End);
-        /*
-        // Pull any @Foo types out of the structure's
-        // declared types,
-        let generic_names: Vec<_> = fields
-            .iter()
-            .map(|(_nm, ty)| ty.get_type_params())
-            .flatten()
-            .map(|ty| Type::Generic(ty))
-            .collect();
-        */
         Type::Sum(fields, generics)
     }
 
