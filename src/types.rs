@@ -105,16 +105,8 @@ impl Type {
             Type::Func(_args, _rettype, typeparams) => get_toplevel_names(typeparams),
             Type::Struct(_body, typeparams) => get_toplevel_names(typeparams),
             Type::Sum(_body, typeparams) => get_toplevel_names(typeparams),
-            Type::Array(_ty, _size) => {
-                // BUGGO: What to do here?????
-                // Arrays and ptrs kiiiiinda have type params, but only
-                // one???
-                vec![]
-            }
-            Type::Uniq(_ty) => {
-                // BUGGO: What to do here?????
-                vec![]
-            }
+            Type::Array(typeparam, _size) => get_toplevel_names(&[(**typeparam).clone()]),
+            Type::Uniq(typeparam) => get_toplevel_names(&[(**typeparam).clone()]),
         };
         params
     }
