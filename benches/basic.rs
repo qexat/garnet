@@ -118,7 +118,7 @@ fn bench_stages(c: &mut Criterion) {
 
     let hir = hir::lower(black_box(&ast));
     let hir = passes::run_passes(hir);
-    let (hir, mut symtbl) = symtbl::resolve_symbols(hir);
+    let (hir, mut symtbl) = symtbl::make_symbols_unique(hir);
 
     c.bench_function("typecheck and borrowcheck", |b| {
         b.iter(|| {

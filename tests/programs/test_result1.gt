@@ -1,5 +1,5 @@
 -- Format:
---   status: error
+--   status: success
 -- Compile:
 --   status: error
 
@@ -9,6 +9,7 @@ type Result(T, E) = sum
 end
 
 -- TODO: This should probably succeed
+-- related: test_sum3.gt
 
 fn main() {} =
     let x = Result.Ok 42

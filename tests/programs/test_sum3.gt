@@ -1,11 +1,13 @@
 -- Format:
---   status: error
--- Compile:
 --   status: success
+-- Compile:
+--   status: error
 
 
 -- Can we make sum types with type params?
 -- BUGGO: why tf does this not work?
+-- There's something cursed going on in alpha renaming
+-- related: test_result1.gt
 type Foo(A,B) = sum(A,B)
     X A,
     Y B,

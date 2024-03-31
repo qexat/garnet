@@ -1,9 +1,7 @@
 -- Format:
---   status: error
+--   status: success
 -- Compile:
 --   status: success
-
--- TODO: Fix formatting
 
 type Foo = sum
     -- For now sum type things *must* have a type argument,

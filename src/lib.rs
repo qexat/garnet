@@ -125,13 +125,13 @@ pub fn try_compile(
     };
     let hir = hir::lower(&ast);
     info!("HIR from AST lowering:\n{}", &hir);
-    let (hir, _symtbl) = symtbl::resolve_symbols(hir);
-    info!("HIR from symtbl renaming 1:\n{}", &hir);
+    // let (hir, _symtbl) = symtbl::make_symbols_unique(hir);
+    // info!("HIR from symtbl renaming 1:\n{}", &hir);
     let hir = passes::run_passes(hir);
     info!("HIR from first passes:\n{}", &hir);
     // Symbol resolution has to happen (again???) after passes 'cause
     // the passes may generate new code.
-    let (hir, mut symtbl) = symtbl::resolve_symbols(hir);
+    let (hir, mut symtbl) = symtbl::make_symbols_unique(hir);
     info!("HIR from symtbl renaming:\n{}", &hir);
     // info!("Symtbl from AST:\n{:#?}", &symtbl);
     let tck = &mut typeck::typecheck(&hir, &mut symtbl)?;
