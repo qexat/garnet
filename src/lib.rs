@@ -512,7 +512,7 @@ pub fn compile(filename: &str, src: &str, backend: backend::Backend) -> Vec<u8> 
 /// Turns source code into HIR, panicking on any error.
 /// Useful for unit tests.
 #[cfg(test)]
-fn compile_to_hir_expr(src: &str) -> hir::ExprNode {
+fn _compile_to_hir_expr(src: &str) -> hir::ExprNode {
     let ast = {
         let mut parser = parser::Parser::new("__None__", src);
         let res = parser.parse_expr(0);
@@ -522,7 +522,7 @@ fn compile_to_hir_expr(src: &str) -> hir::ExprNode {
 }
 
 #[cfg(test)]
-fn compile_to_hir_exprs(src: &str) -> Vec<hir::ExprNode> {
+fn _compile_to_hir_exprs(src: &str) -> Vec<hir::ExprNode> {
     let ast = {
         let mut parser = parser::Parser::new("__None__", src);
         parser.parse_exprs()

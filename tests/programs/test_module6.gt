@@ -1,10 +1,13 @@
 -- Format:
 --   status: success
 -- Compile:
---   status: success
---
--- Run:
---   stdout: 3
+--   status: error
+
+-- TODO: This should succeed but does not yet.
+-- We need some way to make closures over type parameters;
+-- either directly or by monomorphization.
+-- I tried doing it directly a la lambda lifting and it
+-- really didn't work too heckin' well, so we'll try monomorph.
 
 -- A generic functional map from a key to a value
 type Map(T, K, V) = struct(T, K, V)

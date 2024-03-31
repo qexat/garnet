@@ -26,7 +26,7 @@
 // oh well.
 
 //mod enum_to_int;
-mod closure_convert;
+//mod closure_convert;
 mod constinfer;
 mod double_typeck;
 mod generic_infer;
@@ -51,24 +51,19 @@ pub fn run_passes(ir: Ir) -> Ir {
     // That will take some nontrivial restructuring of expr_map though, will also need
     // a decl_map or something that can compose multiple passes together.
     // Probably not *difficult*, but tricksy.
-    let passes: &[Pass] = &[
-        handle_imports::handle_imports,
-        // closure_convert::closure_convert,
-        // lambda_lift::lambda_lift,
-        generic_infer::generic_infer,
-    ];
+    let passes: &[Pass] = &[handle_imports::handle_imports, generic_infer::generic_infer];
     passes.iter().fold(ir, |prev_ir, f| f(prev_ir))
 }
 
 pub fn run_typechecked_passes(ir: Ir, symtbl: &symtbl::Symtbl, tck: &mut typeck::Tck) -> Ir {
-    // let passes: &[TckPass] = &[nameify, enum_to_int];
-    //let passes: &[TckPass] = &[nameify, struct_to_tuple];
+    // If we want to do closure conversion of some kind we need to know types of things,
+    // so for now we just stub this out
     fn ll(ir: Ir, _: &symtbl::Symtbl, _tck: &mut typeck::Tck) -> Ir {
         lambda_lift::lambda_lift(ir)
     }
     let passes: &[TckPass] = &[
         double_typeck::double_typeck,
-        closure_convert::closure_convert,
+        // closure_convert::closure_convert,
         ll,
         constinfer::constinfer,
         struct_to_tuple::struct_to_tuple,
