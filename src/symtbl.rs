@@ -318,16 +318,16 @@ impl Symtbl {
         }
     }
 
-    fn handle_types(&mut self, tys: Vec<Type>) -> Vec<Type> {
-        tys.into_iter().map(|t| self.handle_type(t)).collect()
+    fn rename_types(&mut self, tys: Vec<Type>) -> Vec<Type> {
+        tys.into_iter().map(|t| self.rename_type(t)).collect()
     }
 
     /// Replace any generic names in the type with unique ones
-    fn handle_type(&mut self, ty: Type) -> Type {
+    fn rename_type(&mut self, ty: Type) -> Type {
         use crate::types::Type::*;
         match ty {
             Named(nm, type_params) if &*nm.val() == "Tuple" => {
-                let new_type_params = self.handle_types(type_params);
+                let new_type_params = self.rename_types(type_params);
                 Named(nm, new_type_params)
             }
             Named(nm, type_params) => {
@@ -336,36 +336,36 @@ impl Symtbl {
                     .unwrap_or_else(|| panic!("Could not find declared type {}", nm))
                     .0;
                 let _guard = self.push_scope();
-                let new_type_params = self.handle_types(type_params);
+                let new_type_params = self.rename_types(type_params);
                 Named(nm, new_type_params)
             }
             Func(args, rettype, type_params) => {
                 let _guard = self.push_scope();
-                let new_args = self.handle_types(args);
-                let new_rettype = Box::new(self.handle_type(*rettype));
-                let new_type_params = self.handle_types(type_params);
+                let new_args = self.rename_types(args);
+                let new_rettype = Box::new(self.rename_type(*rettype));
+                let new_type_params = self.rename_types(type_params);
                 Func(new_args, new_rettype, new_type_params)
             }
             Struct(body, type_params) => {
                 let _guard = self.push_scope();
-                let new_type_params = self.handle_types(type_params);
+                let new_type_params = self.rename_types(type_params);
                 let new_body = body
                     .into_iter()
-                    .map(|(nm, ty)| (nm, self.handle_type(ty)))
+                    .map(|(nm, ty)| (nm, self.rename_type(ty)))
                     .collect();
                 Struct(new_body, new_type_params)
             }
             Sum(body, type_params) => {
                 let _guard = self.push_scope();
-                let new_type_params = self.handle_types(type_params);
+                let new_type_params = self.rename_types(type_params);
                 let new_body = body
                     .into_iter()
-                    .map(|(nm, ty)| (nm, self.handle_type(ty)))
+                    .map(|(nm, ty)| (nm, self.rename_type(ty)))
                     .collect();
                 Sum(new_body, new_type_params)
             }
-            Array(t, size) => Array(Box::new(self.handle_type(*t)), size),
-            Uniq(inner) => Uniq(Box::new(self.handle_type(*inner))),
+            Array(t, size) => Array(Box::new(self.rename_type(*t)), size),
+            Uniq(inner) => Uniq(Box::new(self.rename_type(*inner))),
 
             // all these have no subtypes
             Prim(_) => ty,
@@ -374,11 +374,9 @@ impl Symtbl {
         }
     }
 
-    fn handle_exprs(&mut self, exprs: Vec<hir::ExprNode>) -> Vec<hir::ExprNode> {
+    fn rename_exprs(&mut self, exprs: Vec<hir::ExprNode>) -> Vec<hir::ExprNode> {
         trace!("Handling exprs");
-        //let f = &mut |e| self.handle_expr2(e);
-        exprs.into_iter().map(|e| self.handle_expr(e)).collect()
-        //passes::exprs_map_pre(exprs, f)
+        exprs.into_iter().map(|e| self.rename_expr(e)).collect()
     }
 
     /// TODO: These can't *quite* be part of the Pass framework,
@@ -388,7 +386,10 @@ impl Symtbl {
     /// probably make it fit if we tried hard enough but I'm not
     /// sure it's worth it, so for now we'll just brute-force
     /// it and see how it looks at the end.
-    fn handle_expr(&mut self, expr: hir::ExprNode) -> hir::ExprNode {
+    ///
+    /// closure_convert::do_to_children() might be a
+    /// way of making it more generic?
+    fn rename_expr(&mut self, expr: hir::ExprNode) -> hir::ExprNode {
         use hir::Expr::*;
         let f = &mut |e| match e {
             Lit { val } => Lit { val },
@@ -398,29 +399,29 @@ impl Symtbl {
             }
             BinOp { op, lhs, rhs } => BinOp {
                 op,
-                lhs: self.handle_expr(lhs),
-                rhs: self.handle_expr(rhs),
+                lhs: self.rename_expr(lhs),
+                rhs: self.rename_expr(rhs),
             },
             UniOp { rhs, op } => UniOp {
                 op,
-                rhs: self.handle_expr(rhs),
+                rhs: self.rename_expr(rhs),
             },
             Block { body } => {
                 let _guard = self.push_scope();
-                let new_body = self.handle_exprs(body);
+                let new_body = self.rename_exprs(body);
                 Block { body: new_body }
             }
             Loop { body } => Loop {
-                body: self.handle_exprs(body),
+                body: self.rename_exprs(body),
             },
             Funcall {
                 func,
                 params,
                 type_params,
             } => {
-                let func = self.handle_expr(func);
-                let params = self.handle_exprs(params);
-                let type_params = self.handle_types(type_params);
+                let func = self.rename_expr(func);
+                let params = self.rename_exprs(params);
+                let type_params = self.rename_types(type_params);
                 Funcall {
                     func,
                     params,
@@ -435,9 +436,9 @@ impl Symtbl {
             } => {
                 // init expression cannot refer to the same
                 // symbol name
-                let init = self.handle_expr(init);
+                let init = self.rename_expr(init);
                 let varname = self.bind_new_symbol(varname).0;
-                let typename = typename.map(|t| self.handle_type(t));
+                let typename = typename.map(|t| self.rename_type(t));
                 Let {
                     varname,
                     init,
@@ -452,9 +453,9 @@ impl Symtbl {
                         // The test cannot introduce a new scope unless
                         // it contains some cursed structure like a block
                         // or fn that introduces a new scope anyway, so.
-                        let t = self.handle_expr(test);
+                        let t = self.rename_expr(test);
                         let _guard = self.push_scope();
-                        let b = self.handle_exprs(body);
+                        let b = self.rename_exprs(body);
                         (t, b)
                     })
                     .collect();
@@ -476,26 +477,26 @@ impl Symtbl {
                 }
             }
             TupleCtor { body } => TupleCtor {
-                body: self.handle_exprs(body),
+                body: self.rename_exprs(body),
             },
             TupleRef { expr, elt } => TupleRef {
-                expr: self.handle_expr(expr),
+                expr: self.rename_expr(expr),
                 elt,
             },
             StructCtor { body } => {
                 let body = body
                     .into_iter()
-                    .map(|(nm, expr)| (nm, self.handle_expr(expr)))
+                    .map(|(nm, expr)| (nm, self.rename_expr(expr)))
                     .collect();
                 StructCtor { body }
             }
             StructRef { expr, elt } => StructRef {
-                expr: self.handle_expr(expr),
+                expr: self.rename_expr(expr),
                 elt,
             },
             Assign { lhs, rhs } => Assign {
-                lhs: self.handle_expr(lhs),
-                rhs: self.handle_expr(rhs),
+                lhs: self.rename_expr(lhs),
+                rhs: self.rename_expr(rhs),
             },
             Break => Break,
             Lambda { signature, body } => {
@@ -507,7 +508,7 @@ impl Symtbl {
                     .into_iter()
                     .map(|sym| self.bind_new_type(sym).0)
                     .collect();
-                let new_rettype = self.handle_type(signature.rettype);
+                let new_rettype = self.rename_type(signature.rettype);
 
                 // We have to do this AFTER adding the type params
                 // because the function args can mention
@@ -515,21 +516,21 @@ impl Symtbl {
                 let new_params = signature
                     .params
                     .into_iter()
-                    .map(|(sym, typ)| (self.bind_new_symbol(sym).0, self.handle_type(typ)))
+                    .map(|(sym, typ)| (self.bind_new_symbol(sym).0, self.rename_type(typ)))
                     .collect();
                 let new_sig = Signature {
                     params: new_params,
                     rettype: new_rettype,
                     typeparams: new_type_params,
                 };
-                let new_body = self.handle_exprs(body);
+                let new_body = self.rename_exprs(body);
                 Lambda {
                     signature: new_sig,
                     body: new_body,
                 }
             }
             Return { retval } => Return {
-                retval: self.handle_expr(retval),
+                retval: self.rename_expr(retval),
             },
             TypeCtor {
                 name,
@@ -539,8 +540,8 @@ impl Symtbl {
                 // Translate the type name
                 let new_name = self.really_get_type_binding(name).0;
                 // Translate the type params it's called with
-                let new_params = self.handle_types(type_params);
-                let body = self.handle_expr(body);
+                let new_params = self.rename_types(type_params);
+                let body = self.rename_expr(body);
                 TypeCtor {
                     name: new_name,
                     type_params: new_params,
@@ -548,7 +549,7 @@ impl Symtbl {
                 }
             }
             TypeUnwrap { expr } => TypeUnwrap {
-                expr: self.handle_expr(expr),
+                expr: self.rename_expr(expr),
             },
             SumCtor {
                 name,
@@ -559,15 +560,15 @@ impl Symtbl {
                 SumCtor {
                     name: new_name,
                     variant,
-                    body: self.handle_expr(body),
+                    body: self.rename_expr(body),
                 }
             }
             ArrayCtor { body } => ArrayCtor {
-                body: self.handle_exprs(body),
+                body: self.rename_exprs(body),
             },
             ArrayRef { expr, idx } => ArrayRef {
-                expr: self.handle_expr(expr),
-                idx: self.handle_expr(idx),
+                expr: self.rename_expr(expr),
+                idx: self.rename_expr(idx),
             },
             Typecast { .. } => {
                 todo!()
@@ -620,7 +621,7 @@ pub(crate) fn predeclare_decls(symtbl: &mut Symtbl, decls: &[hir::Decl]) {
     }
 }
 
-fn handle_decl(symtbl: &mut Symtbl, decl: hir::Decl) -> hir::Decl {
+fn rename_decl(symtbl: &mut Symtbl, decl: hir::Decl) -> hir::Decl {
     use hir::Decl::*;
     match decl {
         Function {
@@ -644,15 +645,15 @@ fn handle_decl(symtbl: &mut Symtbl, decl: hir::Decl) -> hir::Decl {
             let new_params = signature
                 .params
                 .into_iter()
-                .map(|(sym, typ)| (symtbl.bind_new_symbol(sym).0, symtbl.handle_type(typ)))
+                .map(|(sym, typ)| (symtbl.bind_new_symbol(sym).0, symtbl.rename_type(typ)))
                 .collect();
-            let new_rettype = symtbl.handle_type(signature.rettype);
+            let new_rettype = symtbl.rename_type(signature.rettype);
             let new_sig = Signature {
                 params: new_params,
                 rettype: new_rettype,
                 typeparams: new_type_params,
             };
-            let new_body = symtbl.handle_exprs(body);
+            let new_body = symtbl.rename_exprs(body);
             Function {
                 name: fn_name,
                 signature: new_sig,
@@ -676,13 +677,13 @@ fn handle_decl(symtbl: &mut Symtbl, decl: hir::Decl) -> hir::Decl {
             TypeDef {
                 name: ty_name,
                 params: new_params,
-                typedecl: symtbl.handle_type(typedecl),
+                typedecl: symtbl.rename_type(typedecl),
             }
         }
         Const { name, typ, init } => {
             let new_name = symtbl.really_get_binding(name).0;
-            let new_type = symtbl.handle_type(typ);
-            let new_body = symtbl.handle_expr(init);
+            let new_type = symtbl.rename_type(typ);
+            let new_body = symtbl.rename_expr(init);
             Const {
                 name: new_name,
                 typ: new_type,
@@ -697,7 +698,7 @@ fn handle_decl(symtbl: &mut Symtbl, decl: hir::Decl) -> hir::Decl {
 /// remove scope dependence.
 ///
 /// aka alpha-renaming
-pub fn resolve_symbols(ir: hir::Ir) -> (hir::Ir, Symtbl) {
+pub fn make_symbols_unique(ir: hir::Ir) -> (hir::Ir, Symtbl) {
     let mut s = Symtbl::default();
     s.add_builtins();
     predeclare_decls(&mut s, &ir.decls);
@@ -705,7 +706,7 @@ pub fn resolve_symbols(ir: hir::Ir) -> (hir::Ir, Symtbl) {
     ir.decls = ir
         .decls
         .into_iter()
-        .map(|d| handle_decl(&mut s, d))
+        .map(|d| rename_decl(&mut s, d))
         .collect();
     (ir, s)
 }

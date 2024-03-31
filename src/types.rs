@@ -283,12 +283,14 @@ impl Type {
             let p_strs = lst.iter().map(Type::get_name).collect::<Vec<_>>();
             p_strs.join(", ")
         };
-        let join_vars_with_commas = |lst: &BTreeMap<Sym, Type>| {
+        // Takes (var, type) vars and ouputs `var type`
+        // with a delimiter between them
+        let join_vars_with_commas = |lst: &BTreeMap<Sym, Type>, delim: &str| {
             let p_strs = lst
                 .iter()
                 .map(|(pname, ptype)| {
                     let pname = pname.val();
-                    format!("{}: {}", pname, ptype.get_name())
+                    format!("{}{} {}", pname, delim, ptype.get_name())
                 })
                 .collect::<Vec<_>>();
             p_strs.join(", ")
@@ -349,7 +351,7 @@ impl Type {
                     res += &join_types_with_commas(generics);
                     res += ") ";
                 }
-                res += &join_vars_with_commas(body);
+                res += &join_vars_with_commas(body, ":");
                 res += " end";
                 Cow::Owned(res)
             }
@@ -362,7 +364,7 @@ impl Type {
                     res += &join_types_with_commas(generics);
                     res += ") ";
                 }
-                res += &join_vars_with_commas(body);
+                res += &join_vars_with_commas(body, "");
                 res += " end";
                 Cow::Owned(res)
             }

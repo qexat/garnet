@@ -1358,7 +1358,10 @@ impl<'input> Parser<'input> {
     /// Types compose prefix.
     /// So "array(3) of T" is "[3]T"
     fn parse_type(&mut self) -> Type {
-        self.try_parse_type().expect("Type expected")
+        self.try_parse_type().unwrap_or_else(|| {
+            let tok = self.peek();
+            self.error("type", tok)
+        })
     }
 
     /// If this can't parse a valid type, it will rewind
