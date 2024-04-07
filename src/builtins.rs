@@ -1,10 +1,6 @@
 //! A place for us to stick compiler builtins and the metadata they need,
 //! instead of having them scattered all over.
 
-use std::collections::BTreeMap;
-
-use once_cell::sync::Lazy;
-
 use crate::backend::Backend;
 use crate::types::*;
 use crate::*;

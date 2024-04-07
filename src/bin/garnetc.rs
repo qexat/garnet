@@ -5,7 +5,6 @@ use std::path::{Path, PathBuf};
 
 use argh::FromArgs;
 
-
 use garnet::backend::Backend;
 
 /// Garnet compiler

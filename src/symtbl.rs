@@ -7,7 +7,6 @@
 //! we're done with it.
 
 use std::cell::RefCell;
-use std::collections::BTreeMap;
 use std::rc::Rc;
 
 use anymap::Map;

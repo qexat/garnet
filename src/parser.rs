@@ -7,7 +7,6 @@
 //! with a precendence that's defined trivially by a simple look-up function.
 //! I like it a lot.
 
-use std::collections::BTreeMap;
 use std::mem::Discriminant as Discr;
 use std::ops::Range;
 
@@ -15,7 +14,6 @@ use codespan_reporting as cs;
 use codespan_reporting::diagnostic::{Diagnostic, Label};
 use logos::{Lexer, Logos};
 
-use crate::ast;
 use crate::types::*;
 use crate::*;
 
