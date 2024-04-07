@@ -344,7 +344,9 @@ pub struct Tck {
     vars: BTreeMap<TypeId, TypeInfo>,
     /// What we know about the type of each node in the AST.
     types: BTreeMap<hir::Eid, TypeId>,
-    instances: BTreeSet<TypeId>,
+    /// This keeps track of what monomorphized function instances we need, and
+    /// their values.
+    instances: BTreeSet<(TypeId, hir::Eid)>,
 }
 
 impl Tck {
@@ -1183,7 +1185,7 @@ fn typecheck_expr(
                 )
                 .collect();
             let heck = tck.instantiate(&actual_func_type, Some(input_type_params));
-            tck.instances.insert(heck);
+            tck.instances.insert((heck, func.id));
 
             // Does it match the real function type?
             // tck.unify(symtbl, func_type, funcall_typeinfo)?;
@@ -1400,7 +1402,7 @@ fn typecheck_expr(
                 type_params
             );
             let tid = tck.instantiate(&named_type, None);
-            tck.instances.insert(tid);
+            tck.instances.insert((tid, expr.id));
             trace!("Instantiated {:?} into {:?}", named_type, tid);
 
             let body_type = typecheck_expr(tck, symtbl, func_rettype, body)?;
@@ -1690,9 +1692,10 @@ pub fn typecheck(ast: &hir::Ir, symtbl: &mut Symtbl) -> Result<Tck, TypeError> {
         trace!("  ${} = {info:?}", id.0);
     }
 
-    for instance in &tck.instances {
+    for (instance, eid) in &tck.instances {
         trace!(
-            "Instances: {}",
+            "Instances: {}, type {}",
+            ast.get_expr_by_id(*eid),
             tck.reconstruct(*instance).unwrap().get_name()
         );
     }
