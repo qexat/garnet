@@ -125,6 +125,12 @@ impl fmt::Display for Expr {
     }
 }
 
+impl fmt::Display for ExprNode {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.e.write(0, f)
+    }
+}
+
 impl ExprNode {
     pub fn new(e: Expr) -> Self {
         ExprNode {
@@ -531,6 +537,86 @@ impl fmt::Display for Ir {
             write!(f, "{}", decl)?;
         }
         Ok(())
+    }
+}
+
+impl Ir {
+    /// Walks through the entire IR and returns the exprnode
+    /// with the given expression ID.
+    ///
+    /// The borrowing here is a little cursed but omg it actually
+    /// seems to work
+    pub fn get_expr_by_id<'a>(&'a self, id: Eid) -> &'a ExprNode {
+        // Yet another big ugly pattern match I can't figure out how to
+        // generalize :|
+        fn find_expr<'a>(id: Eid, expr: &'a ExprNode) -> Option<&'a ExprNode> {
+            use Expr::*;
+            //trace!("Searching for {:?} in expr {:?}", id, &expr);
+            if expr.id == id {
+                Some(expr)
+            } else {
+                let res = match &*expr.e {
+                    BinOp { lhs, rhs, .. } => find_expr(id, lhs).or_else(|| find_expr(id, rhs)),
+                    UniOp { rhs, .. } => find_expr(id, rhs),
+                    TupleCtor { body }
+                    | ArrayCtor { body }
+                    | Block { body }
+                    | Loop { body }
+                    | Lambda { body, .. } => body.iter().find_map(|e| find_expr(id, e)),
+                    TupleRef { expr, .. }
+                    | StructRef { expr, .. }
+                    | Ref { expr }
+                    | TypeUnwrap { expr }
+                    | Deref { expr } => find_expr(id, expr),
+                    Funcall {
+                        func,
+                        params,
+                        type_params: _,
+                    } => {
+                        find_expr(id, func).or_else(|| params.iter().find_map(|e| find_expr(id, e)))
+                    }
+                    Let { init, .. } => find_expr(id, init),
+                    If { cases } =>
+                    /*
+                    for (test, exprs) in cases {
+                        find_expr(id, test);
+                        for expr in exprs {
+                            find_expr(id, expr);
+                        }
+                    }
+                    */
+                    {
+                        todo!()
+                    }
+                    TypeCtor { body, .. } => find_expr(id, body),
+                    SumCtor { .. } => todo!(),
+                    Typecast { .. } => todo!(),
+                    Return { retval } => find_expr(id, retval),
+                    StructCtor { body } => body.iter().find_map(|(_nm, val)| find_expr(id, val)),
+                    ArrayRef { expr, idx } => find_expr(id, expr).or_else(|| find_expr(id, idx)),
+                    Assign { lhs, rhs } => find_expr(id, lhs).or_else(|| find_expr(id, rhs)),
+                    // No sub-expressions to these terminals
+                    Lit { .. } | Var { .. } | EnumCtor { .. } | Break => None,
+                };
+                res
+            }
+        }
+
+        let find_decl = |decl: &'a Decl| {
+            use Decl as D;
+            match decl {
+                D::Function { body, .. } => body.iter().find_map(|e| find_expr(id, e)),
+                D::Const { init, .. } => find_expr(id, init),
+                D::TypeDef { .. } => None,
+                D::Import { .. } => None,
+            }
+        };
+        let found_expr = self.decls.iter().find_map(find_decl);
+        let msg = format!(
+            "Could not find expr with id {:?}, should never happen!\nExpr tree is:\n{:#?}",
+            id, &self.decls
+        );
+        found_expr.expect(&msg)
     }
 }
 

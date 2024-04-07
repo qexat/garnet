@@ -32,10 +32,7 @@ fn impl_thing(|T1, T2|) Thing(T1, T2) =
 end
 
 fn main() {} =
-/-
     let impl = impl_thing(|I32, U32|)
     let res = impl$.do_stuff(1_I32, 2_U32)
     __println(res)
-    -/
-    __println(12)
 end
