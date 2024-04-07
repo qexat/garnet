@@ -73,27 +73,41 @@ fn eat_block_comment(lex: &mut Lexer<TokenKind>) -> String {
     let mut nest_depth = 1;
     while nest_depth != 0 {
         const DELIMITER_BYTES: usize = 2;
-        let next_bit = &lex.remainder().get(..DELIMITER_BYTES);
-        // Lexer::bump() works in bytes, not chars, so we have to track the
-        // number of bytes we are stepping forward so we don't try to lex
-        // the middle of a UTF-8 char.
-        let bytes_to_advance = match next_bit {
-            Some("/-") => {
-                nest_depth += 1;
-                DELIMITER_BYTES
-            }
-            Some("-/") => {
-                nest_depth -= 1;
-                DELIMITER_BYTES
-            }
-            Some(other) => other
-                .chars()
-                .next()
-                .unwrap_or_else(|| panic!("Invalid UTF-8 in input file?  This should probably never happen otherwise."))
-                .len_utf8(),
-            None => panic!("Unclosed block comment?"),
-        };
-        lex.bump(bytes_to_advance);
+        // bytes left in the file to lex
+        let remaining_bytes = lex.remainder().len();
+        if remaining_bytes < DELIMITER_BYTES {
+            panic!("Unclosed block comment!")
+        } else {
+            let next_bit = &lex.remainder().get(..DELIMITER_BYTES);
+            // Lexer::bump() works in bytes, not chars, so we have to track the
+            // number of bytes we are stepping forward so we don't try to lex
+            // the middle of a UTF-8 char.
+            let bytes_to_advance = match next_bit {
+                Some("/-") => {
+                    nest_depth += 1;
+                    DELIMITER_BYTES
+                }
+                Some("-/") => {
+                    nest_depth -= 1;
+                    DELIMITER_BYTES
+                }
+                // Not a comment-closing token, so we just step to the next char and keep going.
+                // lex.bump() requires a position at the start of a valid character, so we can't just loop
+                // through bytes to the start of the next char, we have to tell it where the start of the
+                // next char is.
+
+                // Invalid or truncated UTF-8 character, just keep stepping forward until we are past it.
+                // The get(..DELIMITER_BYTES) call above will happily chop off the first 2 bytes of a 3+-byte character
+                // and then say "oops this is invalid" and return None.
+                Some(_) | None => lex.remainder()
+                    .chars()
+                    .next()
+                    .unwrap_or_else(|| panic!("Invalid UTF-8 in input file?  This should probably never happen otherwise."))
+                    .len_utf8(),
+
+            };
+            lex.bump(bytes_to_advance);
+        }
     }
     String::from("")
 }
@@ -2146,6 +2160,26 @@ fn foo() {} = {} end
 /-
 -- But if a line comment is commented out by a block comment and contains a 
 -- surprising end delimiter like "-/" then the block comment is closed
+
+"#;
+
+        let mut p = Parser::new("unittest.gt", thing1);
+        let _res = p.parse();
+    }
+
+    #[test]
+    fn parse_big_chars_in_comments() {
+        let thing1 = r#"
+
+/- Block comments work fine with long unicode characters in them:
+ 霹靂
+-/
+
+/- Block comments work fine
+/- And nested block comments work fine
+-/
+-/
+
 
 "#;
 
