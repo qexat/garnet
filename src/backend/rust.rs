@@ -8,12 +8,10 @@
 //!    An aggressively closure-y model might work wiht that tbh
 //!  * Use `syn` or something to generate tokens for output rather than strings???
 
-use std::borrow::Cow;
 use std::io::{self, Write};
 
 use log::*;
 
-use crate::hir;
 use crate::typeck::Tck;
 use crate::types::*;
 use crate::*;

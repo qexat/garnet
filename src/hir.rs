@@ -7,10 +7,8 @@
 //! It's mostly a layer of indirection for further stuff to happen to, so we can change
 //! the parser without changing the typechecking and codegen.
 
-use std::fmt;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use crate::ast;
 pub use crate::ast::{BOp, IfCase, Literal, UOp};
 use crate::types::*;
 use crate::*;

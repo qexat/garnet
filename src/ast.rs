@@ -8,8 +8,6 @@
 //! Though code formatters have different constraints and priorities, if they have line wrapping
 //! and stuff at least.  So, it might not be a particularly great code formatter.
 
-use std::fmt;
-
 use crate::types::*;
 use crate::*;
 

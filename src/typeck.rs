@@ -1,15 +1,11 @@
 //! Typechecking and other semantic checking.
 //! Operates on the HIR.
 
-use std::borrow::Cow;
-use std::collections::{BTreeMap, BTreeSet};
-
 use log::*;
+use std::collections::BTreeSet;
 
-use crate::hir;
 use crate::symtbl::Symtbl;
 use crate::types::*;
-use crate::Sym;
 use crate::*;
 
 /// A identifier to uniquely refer to our `TypeInfo`'s

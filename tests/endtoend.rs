@@ -52,15 +52,8 @@ fn main() {
             // succeed on others where actual compilation fails (like type errors).
             // Ah well.
             let mut fmt = Command::new("cargo");
-            fmt.args([
-                "run",
-                "--bin",
-                "garnetfmt",
-                "--",
-                "-c",
-                p.to_str().unwrap()
-            ]);
-            
+            fmt.args(["run", "--bin", "garnetfmt", "--", "-c", p.to_str().unwrap()]);
+
             // Test command 1: Compile `x.gt` into `tempdir/x`.
             let mut exe = PathBuf::new();
             exe.push(&tempdir);
