@@ -32,7 +32,7 @@ mod double_typeck;
 // mod generic_infer;
 mod handle_imports;
 mod lambda_lift;
-//mod monomorphization;
+mod monomorphization;
 mod struct_to_tuple;
 //mod type_erasure;
 
@@ -70,9 +70,9 @@ pub fn run_typechecked_passes(ir: Ir, symtbl: &symtbl::Symtbl, tck: &mut typeck:
         double_typeck::double_typeck,
         // closure_convert::closure_convert,
         ll,
+        monomorphization::monomorphize,
         constinfer::constinfer,
         struct_to_tuple::struct_to_tuple,
-        //monomorphization::monomorphize,
         //type_erasure::type_erasure,
     ];
     let res = passes.iter().fold(ir, |prev_ir, f| f(prev_ir, symtbl, tck));
@@ -277,7 +277,7 @@ pub fn exprs_map_pre(
     exprs_map(exprs, f, &mut id, &mut id)
 }
 
-fn _exprs_map_post(exprs: Vec<ExprNode>, f: &mut dyn FnMut(ExprNode) -> ExprNode) -> Vec<ExprNode> {
+fn exprs_map_post(exprs: Vec<ExprNode>, f: &mut dyn FnMut(ExprNode) -> ExprNode) -> Vec<ExprNode> {
     exprs_map(exprs, &mut id, f, &mut id)
 }
 
