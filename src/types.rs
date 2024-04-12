@@ -4,6 +4,7 @@
 
 use std::borrow::Cow;
 use std::collections::BTreeMap;
+use std::fmt;
 
 use crate::Sym;
 
@@ -73,6 +74,12 @@ pub enum Type {
     Array(Box<Type>, usize),
     /// Unique borrow
     Uniq(Box<Type>),
+}
+
+impl fmt::Display for Type {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.get_name())
+    }
 }
 
 impl Type {
@@ -321,12 +328,13 @@ impl Type {
             Type::Func(params, rettype, typeparams) => {
                 let mut t = String::from("fn");
                 t += "(";
-                t += &join_types_with_commas(params);
 
                 if typeparams.len() > 0 {
-                    t += "| ";
+                    t += "|";
                     t += &join_types_with_commas(typeparams);
+                    t += "| ";
                 }
+                t += &join_types_with_commas(params);
 
                 t += ")";
                 let rettype_str = rettype.get_name();

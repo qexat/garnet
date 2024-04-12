@@ -30,31 +30,49 @@ impl MonoCtx {}
 /// Walk up every expression tree from leaf to root and, when encountering a call
 /// to a generic function, look at the concrete type arguments the function is being
 /// called with.  
-fn mono_expr(expr: ExprNode, tck: &mut typeck::Tck) -> ExprNode {
-    debug!("Mono'ing expr {:?}", &expr);
-    let new_e = match &*expr.e {
+fn mono_expr(expr: ExprNode, tck: &typeck::Tck) -> ExprNode {
+    let f = &mut |e| match &e {
         E::Funcall {
             func,
             params,
             type_params,
         } => {
-            // Get the type of `func` and if it has generic parameters that are real...
-            todo!()
+            // Get the type of `func` and if it has generic parameters that are concrete, create a monomorph for it.
+            let fn_typevar = tck.get_expr_type(&func);
+            let concrete_type = tck.reconstruct(fn_typevar).unwrap();
+            // Hmmmm, this needs to be where we actually *use* Tck.instances I think
+            trace!(
+                "mono_expr function call:\n  func {:?}\n  type {}\n  params {:?}\n  type_params {:?}",
+                func,
+                concrete_type,
+                params,
+                type_params
+            );
+            e
         }
         E::Lambda { .. } => {
             panic!("Should never happen, lambda-lifting has to happen first")
         }
         other => other.clone(),
     };
-    ExprNode {
-        e: Box::new(new_e),
-        ..expr
-    }
+    expr.map(f)
 }
 
-/// Takes the given function and, if it
-fn mono_function_decl(nm: Sym, sig: &Signature, body: &[ExprNode]) {
-    todo!()
+/// Takes the given function decl and, for all functions it calls, generate
+/// instances for them as necessary.  
+///
+/// I think this implies that the current function *must* not have type
+/// parameters, but since `main()` doesn't have type params and we start
+/// from there we basically always ensure this invariant is upheld.
+fn mono_function_decl(tck: &typeck::Tck, nm: Sym, sig: &Signature, body: &[ExprNode]) {
+    assert!(
+        sig.typeparams.is_empty(),
+        "Tried to monomorphize function that isn't itself monomorphic yet: {} {:?}",
+        nm,
+        sig
+    );
+    let f = &mut |e| mono_expr(e, tck);
+    let _ = exprs_map_post(body.to_vec(), f);
 }
 
 /// I want to be able to look up functions easily by name, so
@@ -161,8 +179,9 @@ impl From<&SplitIr> for Ir {
 /// So to start off, we just walk the AST and, from bottom to top, find all the places a
 /// generic type is instantiated or a generic function is called with type params.
 pub(super) fn monomorphize(ir: Ir, _symtbl: &symtbl::Symtbl, tck: &mut typeck::Tck) -> Ir {
-    let type_map = &mut |t| t;
-    let expr_map = &mut |e| mono_expr(e, tck);
+    // let type_map = &mut |t| t;
+    //let expr_map = &mut |e| mono_expr(e, tck);
+
     // hmmm, we really need to start from `main()` and walk to the functions it calls.
     let sir = SplitIr::from(&ir);
     // We know the main function exists and has typechecked correctly
@@ -182,8 +201,7 @@ pub(super) fn monomorphize(ir: Ir, _symtbl: &symtbl::Symtbl, tck: &mut typeck::T
                 continue;
             }
             // *do magic here*
-            mono_function_decl(nm, sig, body);
-            // let _new_exprs = exprs_map_post(body.clone(), expr_map);
+            mono_function_decl(tck, nm, sig, body);
 
             functions_monoed.insert(nm);
         } else {
@@ -191,13 +209,13 @@ pub(super) fn monomorphize(ir: Ir, _symtbl: &symtbl::Symtbl, tck: &mut typeck::T
             break;
         }
     }
-    let new_decls = ir
-        .decls
-        .into_iter()
-        .map(|d| decl_map_post(d, expr_map, type_map))
-        .collect();
+    // let new_decls = ir
+    //     .decls
+    //     .into_iter()
+    //     .map(|d| decl_map_post(d, expr_map, type_map))
+    //     .collect();
     Ir {
-        decls: new_decls,
+        // decls: new_decls,
         ..ir
     }
 }
