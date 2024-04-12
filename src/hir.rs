@@ -576,7 +576,7 @@ impl Ir {
                         find_expr(id, func).or_else(|| params.iter().find_map(|e| find_expr(id, e)))
                     }
                     Let { init, .. } => find_expr(id, init),
-                    If { cases } =>
+                    If { cases: _ } =>
                     /*
                     for (test, exprs) in cases {
                         find_expr(id, test);
