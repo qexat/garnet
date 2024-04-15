@@ -1,0 +1,66 @@
+/* Not complete or authoratitive as of April 2024, just a WIP description.
+Designed to be visualized with https://rr.red-dove.com/ui 
+*/
+
+Program ::= (DocComments Newline)? (Decl | Delimiters)*
+
+DocComment ::= '---' .* Newline
+
+DocComments ::= DocComment+
+
+Decl ::= DocComments? (FnDecl | TypeDecl | ConstDecl | ImportDecl | Newline)
+
+TypeDecl ::= 'type' Ident TypeParams? '=' Type
+
+TypeParams ::= '(' TypeList ')'
+
+ConstDecl ::= 'const' Ident Type '=' Expr
+
+ImportDecl ::= 'import' Ident ('as' Ident)?
+
+FnDecl ::= 'fn' Ident Signature '=' Delimiters Exprs 'end'
+
+// This slightly cursed structure is how you allow trailing separators, apparently.
+Signature ::= '(' FnTypeParams? (Ident Type (',' Ident Type)* ','?)? ')' Type?
+
+FnTypeParams ::= '|' TypeList '|'
+
+TypeList ::= (Type (',' Type)* ','?)?
+
+Type ::= FnType | TupleType | StructType | EnumType | SumType | ArrayType | NamedType TypeParams? | PrimitiveType
+
+FnType ::= 'fn' '(' FnTypeParams? TypeList ')' Type?
+
+TupleType ::= '{' TypeList '}'
+
+StructType ::= 'struct' TypeParams? (StructField (',' StructField)* ','?)? 'end'
+
+StructField ::= Ident ':' Type Delimiters
+
+EnumType ::= 'enum' (EnumField (',' EnumField)* ','?)? 'end'
+
+EnumField ::= Ident ('=' Integer)?
+
+SumType ::= 'sum'
+
+ArrayType ::= '[' Integer ']' Type
+
+NamedType ::= Ident
+
+PrimitiveType ::= U8' | 'I8' | 'U16' | 'I16' |  'U32' | 'I32' |  'U64' | 'I64' | 'Bool' | 'Never'
+
+Expr ::= Integer
+
+Exprs ::= Expr+
+
+Ident ::= [a-zA-Z_][a-zA-Z_0-9]*
+
+Integer ::= [0-9]+ (SizeSpecifier)?
+
+SizeSpecifier ::= 'U8' | 'I8' | 'U16' | 'I16' |  'U32' | 'I32' |  'U64' | 'I64'
+
+Newline ::= #x20
+
+Delimiters ::= (';' | Newline)*
+
+
