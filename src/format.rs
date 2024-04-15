@@ -114,7 +114,7 @@ fn unparse_sig(sig: &Signature, out: &mut dyn io::Write) -> io::Result<()> {
     write!(out, "{}", rettype)
 }
 
-fn unparse_exprs(exprs: &[Expr], indent: usize, out: &mut dyn io::Write) -> io::Result<()> {
+fn unparse_exprs(exprs: &[ExprNode], indent: usize, out: &mut dyn io::Write) -> io::Result<()> {
     for expr in exprs {
         unparse_expr(expr, indent, out)?;
         writeln!(out)?;
@@ -129,10 +129,10 @@ fn write_indent(indent: usize, out: &mut dyn io::Write) -> io::Result<()> {
     Ok(())
 }
 
-fn unparse_expr(e: &Expr, indent: usize, out: &mut dyn io::Write) -> io::Result<()> {
+fn unparse_expr(e: &ExprNode, indent: usize, out: &mut dyn io::Write) -> io::Result<()> {
     use Expr as E;
     write_indent(indent, out)?;
-    match e {
+    match &*e.e {
         E::Lit { val } => write!(out, "{}", val),
         E::Var { name } => {
             let name = name.val();

@@ -8,6 +8,8 @@
 //! Though code formatters have different constraints and priorities, if they have line wrapping
 //! and stuff at least.  So, it might not be a particularly great code formatter.
 
+use std::ops::Range;
+
 use crate::types::*;
 use crate::*;
 
@@ -86,9 +88,9 @@ pub enum UOp {
 #[derive(Debug, Clone, PartialEq)]
 pub struct IfCase {
     /// the expr in `if expr then body ...`
-    pub condition: Box<Expr>,
+    pub condition: ExprNode,
     /// The body of the if expr
-    pub body: Vec<Expr>,
+    pub body: Vec<ExprNode>,
 }
 
 /// Any expression.
@@ -104,84 +106,84 @@ pub enum Expr {
     },
     BinOp {
         op: BOp,
-        lhs: Box<Expr>,
-        rhs: Box<Expr>,
+        lhs: ExprNode,
+        rhs: ExprNode,
     },
     UniOp {
         op: UOp,
-        rhs: Box<Expr>,
+        rhs: ExprNode,
     },
     Block {
-        body: Vec<Expr>,
+        body: Vec<ExprNode>,
     },
     Let {
         varname: Sym,
         typename: Option<Type>,
-        init: Box<Expr>,
+        init: ExprNode,
         mutable: bool,
     },
     If {
         cases: Vec<IfCase>,
-        falseblock: Vec<Expr>,
+        falseblock: Vec<ExprNode>,
     },
     Loop {
-        body: Vec<Expr>,
+        body: Vec<ExprNode>,
     },
     While {
-        cond: Box<Expr>,
-        body: Vec<Expr>,
+        cond: ExprNode,
+        body: Vec<ExprNode>,
     },
     Lambda {
         signature: Signature,
-        body: Vec<Expr>,
+        body: Vec<ExprNode>,
     },
     Funcall {
-        func: Box<Expr>,
-        params: Vec<Expr>,
+        func: ExprNode,
+        params: Vec<ExprNode>,
         typeparams: Vec<Type>,
     },
     Break,
     Return {
-        retval: Box<Expr>,
+        retval: ExprNode,
     },
     /// Tuple constructor
     TupleCtor {
-        body: Vec<Expr>,
+        body: Vec<ExprNode>,
     },
     StructCtor {
-        body: BTreeMap<Sym, Expr>,
+        body: BTreeMap<Sym, ExprNode>,
     },
     ArrayCtor {
-        body: Vec<Expr>,
+        body: Vec<ExprNode>,
     },
     /// Array element reference
     ArrayRef {
-        expr: Box<Expr>,
-        idx: Box<Expr>,
+        expr: ExprNode,
+        idx: ExprNode,
     },
     /// Tuple element reference
     TupleRef {
-        expr: Box<Expr>,
+        expr: ExprNode,
         elt: usize,
     },
     /// Struct element reference
     StructRef {
-        expr: Box<Expr>,
+        expr: ExprNode,
         elt: Sym,
     },
     /// Separate from a BinOp because its typechecking rules are different.
     Assign {
-        lhs: Box<Expr>,
-        rhs: Box<Expr>,
+        lhs: ExprNode,
+        rhs: ExprNode,
     },
     TypeUnwrap {
-        expr: Box<Expr>,
+        expr: ExprNode,
     },
     Ref {
-        expr: Box<Expr>,
+        expr: ExprNode,
     },
     Deref {
-        expr: Box<Expr>,
+        expr: ExprNode,
     },
 }
 
@@ -224,19 +226,93 @@ impl Expr {
     }
 }
 
+/// An expression node with source info
+#[derive(Debug, Clone)]
+pub struct ExprNode {
+    /// expression
+    pub e: Box<Expr>,
+    /// origin span
+    /// We'll put files in someday but for now let's just see what life looks like
+    /// without them.  None means placeholder/invalid/unknown.
+    pub origin: Option<Range<usize>>,
+}
+
+/// ExprNode's are comparable but we ignore the origin info for them.
+/// Otherwise unit tests would require accurate range info to test against,
+/// which seems excessively fragile.
+impl PartialEq for ExprNode {
+    fn eq(&self, other: &Self) -> bool {
+        self.e == other.e
+    }
+}
+
+impl ExprNode {
+    pub fn new(e: Expr) -> Self {
+        Self {
+            e: Box::new(e),
+            origin: None,
+        }
+    }
+
+    /// New with source range
+    pub fn new_r(e: Expr, range: Range<usize>) -> Self {
+        Self {
+            e: Box::new(e),
+            origin: Some(range),
+        }
+    }
+
+    /// Shortcut function for making literal bools
+    pub fn bool(b: bool) -> Self {
+        Self::new(Expr::Lit {
+            val: Literal::Bool(b),
+        })
+    }
+
+    /// Shortcut function for making literal integers
+    pub fn int(i: i128) -> Self {
+        Self::new(Expr::Lit {
+            val: Literal::Integer(i),
+        })
+    }
+
+    /// Shortcut function for making literal integers of a known size
+    pub fn sized_int(i: i128, bytes: u8, signed: bool) -> Self {
+        Self::new(Expr::Lit {
+            val: Literal::SizedInteger {
+                vl: i,
+                bytes,
+                signed,
+            },
+        })
+    }
+
+    /// Shortcut function for making literal unit
+    pub fn unit() -> Self {
+        Self::new(Expr::TupleCtor { body: vec![] })
+    }
+
+    /// Shortcuts for making vars
+    pub fn var(name: &str) -> Self {
+        Self::new(Expr::Var {
+            name: Sym::new(name),
+        })
+    }
+}
+
 /// A top-level declaration in the source file.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Decl {
     Function {
         name: Sym,
         signature: Signature,
-        body: Vec<Expr>,
+        body: Vec<ExprNode>,
         doc_comment: Vec<String>,
     },
     Const {
         name: Sym,
         typename: Type,
-        init: Expr,
+        init: ExprNode,
         doc_comment: Vec<String>,
     },
     TypeDef {
