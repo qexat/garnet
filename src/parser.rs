@@ -1155,9 +1155,6 @@ impl<'input> Parser<'input> {
                     }
                     _ => return None,
                 });
-                // Update token's location info
-                let span = self.end_loc();
-                lhs.origin = Some(span);
                 continue;
             }
             // Is our token an infix op?

@@ -7,6 +7,7 @@
 //! It's mostly a layer of indirection for further stuff to happen to, so we can change
 //! the parser without changing the typechecking and codegen.
 
+use std::ops::Range;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 pub use crate::ast::{BOp, IfCase, Literal, UOp};
@@ -52,6 +53,11 @@ pub struct ExprNode {
     /// Whether or not the expression is constant,
     /// ie can be entirely evaluated at compile time.
     pub is_const: bool,
+
+    /// origin span
+    /// We'll put files in someday but for now let's just see what life looks like
+    /// without them.  None means placeholder/invalid/unknown.
+    pub origin: Option<Range<usize>>,
 }
 
 impl PartialEq for ExprNode {
@@ -137,6 +143,16 @@ impl ExprNode {
             e: Box::new(e),
             id: Eid::new(),
             is_const: false,
+            origin: None,
+        }
+    }
+
+    pub fn new_r(e: Expr, origin: Option<Range<usize>>) -> Self {
+        ExprNode {
+            e: Box::new(e),
+            id: Eid::new(),
+            is_const: false,
+            origin,
         }
     }
 
@@ -812,7 +828,7 @@ pub fn lower_expr(expr: &ast::ExprNode) -> ExprNode {
             body: lower_exprs(body.as_slice()),
         },
     };
-    ExprNode::new(new_exp)
+    ExprNode::new_r(new_exp, expr.origin.clone())
 }
 
 /// handy shortcut to lower Vec<ast::Expr>
