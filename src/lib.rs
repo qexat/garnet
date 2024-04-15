@@ -123,6 +123,7 @@ pub fn try_compile(
         let mut parser = parser::Parser::new(filename, src);
         parser.parse()
     };
+    debug!("AST: {:#?}", ast);
     let hir = hir::lower(&ast);
     info!("HIR from AST lowering:\n{}", &hir);
     // let (hir, _symtbl) = symtbl::make_symbols_unique(hir);
