@@ -14,6 +14,7 @@ use codespan_reporting as cs;
 use codespan_reporting::diagnostic::{Diagnostic, Label};
 use logos::{Lexer, Logos};
 
+use crate::ast::ExprNode;
 use crate::types::*;
 use crate::*;
 
@@ -844,7 +845,7 @@ impl<'input> Parser<'input> {
     }
 
     /// Parse the fields for a struct *type literal*
-    fn parse_struct_lit_fields(&mut self) -> BTreeMap<Sym, ast::Expr> {
+    fn parse_struct_lit_fields(&mut self) -> BTreeMap<Sym, ExprNode> {
         let mut fields = BTreeMap::default();
 
         parse_delimited!(self, T::Comma, {
@@ -946,7 +947,7 @@ impl<'input> Parser<'input> {
         Type::Sum(fields, generics)
     }
 
-    pub fn parse_exprs(&mut self) -> Vec<ast::Expr> {
+    pub fn parse_exprs(&mut self) -> Vec<ExprNode> {
         let mut exprs = vec![];
         let tok = self.peek();
         while let Some(e) = self.parse_expr(0) {
@@ -977,31 +978,28 @@ impl<'input> Parser<'input> {
     ///
     /// The min_bp is the binding power used in the pratt parser; if
     /// you are calling this standalone the min_bp should be 0.
-    pub fn parse_expr(&mut self, min_bp: usize) -> Option<ast::Expr> {
+    pub fn parse_expr(&mut self, min_bp: usize) -> Option<ExprNode> {
         let t = self.peek()?;
         let token = &t.kind;
-        let mut lhs = match token {
+        let mut lhs: ExprNode = match token {
             T::Bool(b) => {
                 self.drop();
-                ast::Expr::bool(*b)
+                ExprNode::new(ast::Expr::bool(*b))
             }
-            T::Integer(_) => ast::Expr::int(self.expect_int() as i128),
-            T::IntegerSize((_str, size, signed)) => {
-                ast::Expr::sized_int(self.expect_int() as i128, *size, *signed)
-            }
+            T::Integer(_) => ExprNode::new(ast::Expr::int(self.expect_int() as i128)),
+            T::IntegerSize((_str, size, signed)) => ExprNode::new(ast::Expr::sized_int(
+                self.expect_int() as i128,
+                *size,
+                *signed,
+            )),
             // Tuple/struct literal
             T::LBrace => self.parse_constructor(),
             // Array literal
             T::LBracket => self.parse_array_constructor(),
-            T::Struct => {
-                // TODO: Bikeshed syntax more
-                // { .foo = 1, .bar = 2 }
-                // ???
-                self.parse_struct_literal()
-            }
+            T::Struct => self.parse_struct_literal(),
             T::Ident(_) => {
                 let ident = self.expect_ident();
-                ast::Expr::Var { name: ident }
+                ExprNode::new(ast::Expr::Var { name: ident })
             }
             T::Let => self.parse_let(),
             T::If => self.parse_if(),
@@ -1012,7 +1010,7 @@ impl<'input> Parser<'input> {
             T::Return => self.parse_return(),
             T::Break => {
                 self.expect(T::Break);
-                ast::Expr::Break
+                ExprNode::new(ast::Expr::Break)
             }
             // Parenthesized expr's
             T::LParen => {
@@ -1028,10 +1026,7 @@ impl<'input> Parser<'input> {
                 let ((), r_bp) = prefix_binding_power(&x);
                 let op = uop_for(&x).expect("Should never happen");
                 let rhs = self.parse_expr(r_bp)?;
-                ast::Expr::UniOp {
-                    op,
-                    rhs: Box::new(rhs),
-                }
+                ExprNode::new(ast::Expr::UniOp { op, rhs })
             }
             // Something else not a valid expr
             _x => return None,
@@ -1047,11 +1042,11 @@ impl<'input> Parser<'input> {
                     break;
                 }
                 // TODO: Figure out some kind of turbofish for function calls???
-                lhs = match op_token {
+                lhs = ExprNode::new(match op_token {
                     T::LParen => {
                         let (params, typeparams) = self.parse_function_args();
                         ast::Expr::Funcall {
-                            func: Box::new(lhs),
+                            func: lhs,
                             params,
                             typeparams,
                         }
@@ -1062,7 +1057,7 @@ impl<'input> Parser<'input> {
                     T::LBrace => {
                         let params = self.parse_constructor();
                         ast::Expr::Funcall {
-                            func: Box::new(lhs),
+                            func: lhs,
                             params: vec![params],
                             typeparams: vec![],
                         }
@@ -1072,15 +1067,13 @@ impl<'input> Parser<'input> {
                         let param = self.parse_expr(0)?;
                         self.expect(T::RBracket);
                         ast::Expr::ArrayRef {
-                            expr: Box::new(lhs),
-                            idx: Box::new(param),
+                            expr: lhs,
+                            idx: param,
                         }
                     }
                     T::Dollar => {
                         self.expect(T::Dollar);
-                        ast::Expr::TypeUnwrap {
-                            expr: Box::new(lhs),
-                        }
+                        ast::Expr::TypeUnwrap { expr: lhs }
                     }
                     T::Colon => {
                         self.expect(T::Colon);
@@ -1089,7 +1082,7 @@ impl<'input> Parser<'input> {
                         let (mut params, typeparams) = self.parse_function_args();
                         params.insert(0, lhs);
                         ast::Expr::Funcall {
-                            func: Box::new(ident_expr),
+                            func: ExprNode::new(ident_expr),
                             params,
                             typeparams,
                         }
@@ -1101,7 +1094,7 @@ impl<'input> Parser<'input> {
                         let tok = self.next();
                         match tok.as_ref().map(|t| &t.kind) {
                             Some(T::Ident(i)) => ast::Expr::StructRef {
-                                expr: Box::new(lhs),
+                                expr: lhs,
                                 elt: Sym::new(i),
                             },
                             // Following Rust, we do not allow numbers
@@ -1109,7 +1102,7 @@ impl<'input> Parser<'input> {
                             Some(T::Integer(elt)) => {
                                 assert!(*elt > -1);
                                 ast::Expr::TupleRef {
-                                    expr: Box::new(lhs),
+                                    expr: lhs,
                                     elt: *elt as usize,
                                 }
                             }
@@ -1118,18 +1111,14 @@ impl<'input> Parser<'input> {
                     }
                     T::Ampersand => {
                         self.expect(T::Ampersand);
-                        ast::Expr::Ref {
-                            expr: Box::new(lhs),
-                        }
+                        ast::Expr::Ref { expr: lhs }
                     }
                     T::Carat => {
                         self.expect(T::Carat);
-                        ast::Expr::Deref {
-                            expr: Box::new(lhs),
-                        }
+                        ast::Expr::Deref { expr: lhs }
                     }
                     _ => return None,
-                };
+                });
                 continue;
             }
             // Is our token an infix op?
@@ -1141,21 +1130,14 @@ impl<'input> Parser<'input> {
                 let rhs = self.parse_expr(r_bp).unwrap();
                 // Not all things that parse like binary operations
                 // actually produce the "BinOp" expression type.
-                lhs = match op_token {
+                lhs = ExprNode::new(match op_token {
                     // x = y
-                    T::Equals => ast::Expr::Assign {
-                        lhs: Box::new(lhs),
-                        rhs: Box::new(rhs),
-                    },
+                    T::Equals => ast::Expr::Assign { lhs, rhs },
                     _ => {
                         let bop = bop_for(&op_token).unwrap();
-                        ast::Expr::BinOp {
-                            op: bop,
-                            lhs: Box::new(lhs),
-                            rhs: Box::new(rhs),
-                        }
+                        ast::Expr::BinOp { op: bop, lhs, rhs }
                     }
-                };
+                });
                 continue;
             }
             // None of the above, so we are done parsing the expr
@@ -1164,7 +1146,7 @@ impl<'input> Parser<'input> {
         Some(lhs)
     }
 
-    fn parse_function_args(&mut self) -> (Vec<ast::Expr>, Vec<Type>) {
+    fn parse_function_args(&mut self) -> (Vec<ast::ExprNode>, Vec<Type>) {
         let mut params = vec![];
         let mut typeparams = vec![];
         self.expect(T::LParen);
@@ -1191,7 +1173,7 @@ impl<'input> Parser<'input> {
     }
 
     /// let = "let" ident ":" typename "=" expr
-    fn parse_let(&mut self) -> ast::Expr {
+    fn parse_let(&mut self) -> ast::ExprNode {
         self.expect(T::Let);
         let mutable = if self.peek_expect(T::Mut.discr()) {
             true
@@ -1206,26 +1188,24 @@ impl<'input> Parser<'input> {
             self.expect(T::Equals);
             t
         };
-        let init = Box::new(
-            self.parse_expr(0)
-                .expect("Expected expression after `let ... =`, did not get one"),
-        );
-        ast::Expr::Let {
+        let init = self
+            .parse_expr(0)
+            .expect("Expected expression after `let ... =`, did not get one");
+        ExprNode::new(ast::Expr::Let {
             varname,
             typename,
             init,
             mutable,
-        }
+        })
     }
 
     /// return = "return" expr
-    fn parse_return(&mut self) -> ast::Expr {
+    fn parse_return(&mut self) -> ast::ExprNode {
         self.expect(T::Return);
-        let retval = Box::new(
-            self.parse_expr(0)
-                .expect("Expected expression after `let ... =`, did not get one"),
-        );
-        ast::Expr::Return { retval }
+        let retval = self
+            .parse_expr(0)
+            .expect("Expected expression after `let ... =`, did not get one");
+        ExprNode::new(ast::Expr::Return { retval })
     }
 
     /// {"elseif" expr "then" {expr}}
@@ -1236,15 +1216,12 @@ impl<'input> Parser<'input> {
                 .expect("TODO: be better; could not parse expr after elseif");
             self.expect(T::Then);
             let body = self.parse_exprs();
-            accm.push(ast::IfCase {
-                condition: Box::new(condition),
-                body,
-            });
+            accm.push(ast::IfCase { condition, body });
         }
     }
 
     /// if = "if" expr "then" {expr} {"elseif" expr "then" {expr}} ["else" {expr}] "end"
-    fn parse_if(&mut self) -> ast::Expr {
+    fn parse_if(&mut self) -> ast::ExprNode {
         self.expect(T::If);
         let condition = self
             .parse_expr(0)
@@ -1252,7 +1229,7 @@ impl<'input> Parser<'input> {
         self.expect(T::Then);
         let body = self.parse_exprs();
         let mut ifcases = vec![ast::IfCase {
-            condition: Box::new(condition),
+            condition: condition,
             body,
         }];
         // Parse 0 or more else if cases
@@ -1273,22 +1250,22 @@ impl<'input> Parser<'input> {
             }
             other => self.error("else, elseif block or end", other),
         };
-        ast::Expr::If {
+        ExprNode::new(ast::Expr::If {
             cases: ifcases,
             falseblock,
-        }
+        })
     }
 
     /// loop = "loop" {expr} "end"
-    fn parse_loop(&mut self) -> ast::Expr {
+    fn parse_loop(&mut self) -> ast::ExprNode {
         self.expect(T::Loop);
         let body = self.parse_exprs();
         self.expect(T::End);
-        ast::Expr::Loop { body }
+        ExprNode::new(ast::Expr::Loop { body })
     }
 
     /// while = "while" expr "do" {expr} "end"
-    fn parse_while_loop(&mut self) -> ast::Expr {
+    fn parse_while_loop(&mut self) -> ast::ExprNode {
         self.expect(T::While);
         let cond = self
             .parse_expr(0)
@@ -1296,34 +1273,31 @@ impl<'input> Parser<'input> {
         self.expect(T::Do);
         let body = self.parse_exprs();
         self.expect(T::End);
-        ast::Expr::While {
-            cond: Box::new(cond),
-            body,
-        }
+        ExprNode::new(ast::Expr::While { cond, body })
     }
 
     /// block = "do" {expr} "end"
-    fn parse_block(&mut self) -> ast::Expr {
+    fn parse_block(&mut self) -> ast::ExprNode {
         self.expect(T::Do);
         let body = self.parse_exprs();
         self.expect(T::End);
-        ast::Expr::Block { body }
+        ExprNode::new(ast::Expr::Block { body })
     }
 
     /// lambda = "fn" "(" ...args... ")" [typename] = {exprs} "end"
-    fn parse_lambda(&mut self) -> ast::Expr {
+    fn parse_lambda(&mut self) -> ast::ExprNode {
         self.expect(T::Fn);
         let signature = self.parse_fn_signature();
         self.expect(T::Equals);
         self.eat_delimiters();
         let body = self.parse_exprs();
         self.expect(T::End);
-        ast::Expr::Lambda { signature, body }
+        ExprNode::new(ast::Expr::Lambda { signature, body })
     }
 
     /// tuple constructor = "{" [expr {"," expr} [","] "}"
     /// struct constructor = "{" ["." id "=" expr {"," "." id "=" expr}]  [","] "}"
-    fn parse_constructor(&mut self) -> ast::Expr {
+    fn parse_constructor(&mut self) -> ast::ExprNode {
         self.expect(T::LBrace);
         if self.peek_is(T::Period.discr()) {
             self.parse_struct_literal()
@@ -1333,14 +1307,14 @@ impl<'input> Parser<'input> {
     }
 
     /// struct constructor = "{" "." ident "=" expr {"," ...} "}"
-    fn parse_struct_literal(&mut self) -> ast::Expr {
+    fn parse_struct_literal(&mut self) -> ast::ExprNode {
         let body = self.parse_struct_lit_fields();
         self.expect(T::RBrace);
-        ast::Expr::StructCtor { body }
+        ExprNode::new(ast::Expr::StructCtor { body })
     }
 
     /// tuple constructor = "{" [expr {"," expr} [","] "}"
-    fn parse_tuple_literal(&mut self) -> ast::Expr {
+    fn parse_tuple_literal(&mut self) -> ast::ExprNode {
         let mut body = vec![];
         parse_delimited!(self, T::Comma, {
             if let Some(expr) = self.parse_expr(0) {
@@ -1350,10 +1324,10 @@ impl<'input> Parser<'input> {
             }
         });
         self.expect(T::RBrace);
-        ast::Expr::TupleCtor { body }
+        ExprNode::new(ast::Expr::TupleCtor { body })
     }
 
-    fn parse_array_constructor(&mut self) -> ast::Expr {
+    fn parse_array_constructor(&mut self) -> ast::ExprNode {
         self.expect(T::LBracket);
         let mut body = vec![];
         parse_delimited!(self, T::Comma, {
@@ -1364,7 +1338,7 @@ impl<'input> Parser<'input> {
             }
         });
         self.expect(T::RBracket);
-        ast::Expr::ArrayCtor { body }
+        ExprNode::new(ast::Expr::ArrayCtor { body })
     }
 
     /// Types compose prefix.
@@ -1518,7 +1492,7 @@ mod tests {
         let ast = f();
         let mut p = Parser::new("unittest.gt", s);
         let parsed_expr = p.parse_expr(0).unwrap();
-        assert_eq!(&ast, &parsed_expr);
+        assert_eq!(&ast, &*parsed_expr.e);
         // Make sure we've parsed the whole string.
         assert_eq!(p.peek(), None);
     }
@@ -1548,10 +1522,10 @@ mod tests {
         test_decl_is("const foo I32 = -9", || ast::Decl::Const {
             name: Sym::new("foo"),
             typename: Type::i32(),
-            init: Expr::UniOp {
+            init: ExprNode::new(Expr::UniOp {
                 op: ast::UOp::Neg,
-                rhs: Box::new(Expr::int(9)),
-            },
+                rhs: ast::ExprNode::new(Expr::int(9)),
+            }),
             doc_comment: vec![],
         });
     }
@@ -1567,7 +1541,7 @@ mod tests {
                     rettype: i32_t,
                     typeparams: vec![],
                 },
-                body: vec![Expr::int(9)],
+                body: vec![ExprNode::new(Expr::int(9))],
                 doc_comment: vec![],
             }
         });
@@ -1622,22 +1596,22 @@ type blar = I8
                     ast::Decl::Const {
                         name: foosym,
                         typename: i32_t,
-                        init: Expr::UniOp {
+                        init: ExprNode::new(Expr::UniOp {
                             op: ast::UOp::Neg,
-                            rhs: Box::new(Expr::int(9)),
-                        },
+                            rhs: ExprNode::new(Expr::int(9)),
+                        }),
                         doc_comment: vec![],
                     },
                     ast::Decl::Const {
                         name: barsym,
                         typename: bool_t,
-                        init: Expr::int(4),
+                        init: ExprNode::new(Expr::int(4)),
                         doc_comment: vec![],
                     },
                     ast::Decl::Const {
                         name: bazsym,
                         typename: unit_t,
-                        init: Expr::unit(),
+                        init: ExprNode::new(Expr::unit()),
                         doc_comment: vec![String::from(" rawr!\n")],
                     },
                     ast::Decl::TypeDef {
@@ -1812,31 +1786,25 @@ end
     #[test]
     fn parse_funcall() {
         test_expr_is("y(1, 2, 3)", || Expr::Funcall {
-            func: Box::new(Expr::Var {
-                name: Sym::new("y"),
-            }),
-            params: vec![Expr::int(1), Expr::int(2), Expr::int(3)],
+            func: ExprNode::var("y"),
+            params: vec![ExprNode::int(1), ExprNode::int(2), ExprNode::int(3)],
             typeparams: vec![],
         });
 
         test_expr_is("foo(0, bar(1 * 2), 3)", || Expr::Funcall {
-            func: Box::new(Expr::Var {
-                name: Sym::new("foo"),
-            }),
+            func: ExprNode::var("foo"),
             params: vec![
-                Expr::int(0),
-                Expr::Funcall {
-                    func: Box::new(Expr::Var {
-                        name: Sym::new("bar"),
-                    }),
-                    params: vec![Expr::BinOp {
+                ExprNode::int(0),
+                ExprNode::new(Expr::Funcall {
+                    func: ExprNode::var("bar"),
+                    params: vec![ExprNode::new(Expr::BinOp {
                         op: ast::BOp::Mul,
-                        lhs: Box::new(Expr::int(1)),
-                        rhs: Box::new(Expr::int(2)),
-                    }],
+                        lhs: ExprNode::int(1),
+                        rhs: ExprNode::int(2),
+                    })],
                     typeparams: vec![],
-                },
-                Expr::int(3),
+                }),
+                ExprNode::int(3),
             ],
             typeparams: vec![],
         });
@@ -1845,10 +1813,8 @@ end
         test_expr_is("(((1)))", || Expr::int(1));
 
         test_expr_is("y(|I32| 1)", || Expr::Funcall {
-            func: Box::new(Expr::Var {
-                name: Sym::new("y"),
-            }),
-            params: vec![Expr::int(1)],
+            func: ExprNode::var("y"),
+            params: vec![ExprNode::int(1)],
             typeparams: vec![Type::i32()],
         });
     }
@@ -1867,15 +1833,15 @@ end
             || Expr::If {
                 cases: vec![
                     ast::IfCase {
-                        condition: Box::new(Expr::var("x")),
-                        body: vec![Expr::int(1)],
+                        condition: ExprNode::var("x"),
+                        body: vec![ExprNode::int(1)],
                     },
                     ast::IfCase {
-                        condition: Box::new(Expr::var("y")),
-                        body: vec![Expr::int(2)],
+                        condition: ExprNode::var("y"),
+                        body: vec![ExprNode::int(2)],
                     },
                 ],
-                falseblock: vec![Expr::int(3)],
+                falseblock: vec![ExprNode::int(3)],
             },
         );
 
@@ -1891,16 +1857,16 @@ end
             end"#,
             || Expr::If {
                 cases: vec![ast::IfCase {
-                    condition: Box::new(Expr::var("x")),
-                    body: vec![Expr::int(1)],
+                    condition: ExprNode::var("x"),
+                    body: vec![ExprNode::int(1)],
                 }],
-                falseblock: vec![Expr::If {
+                falseblock: vec![ExprNode::new(Expr::If {
                     cases: vec![ast::IfCase {
-                        condition: Box::new(Expr::var("y")),
-                        body: vec![Expr::int(2)],
+                        condition: ExprNode::var("y"),
+                        body: vec![ExprNode::int(2)],
                     }],
-                    falseblock: vec![Expr::int(3)],
-                }],
+                    falseblock: vec![ExprNode::int(3)],
+                })],
             },
         );
     }
@@ -1910,39 +1876,37 @@ end
     fn verify_precedence() {
         test_expr_is("1+2", || Expr::BinOp {
             op: ast::BOp::Add,
-            lhs: Box::new(Expr::int(1)),
-            rhs: Box::new(Expr::int(2)),
+            lhs: ExprNode::int(1),
+            rhs: ExprNode::int(2),
         });
 
         test_expr_is("1+2*3", || Expr::BinOp {
             op: ast::BOp::Add,
-            lhs: Box::new(Expr::int(1)),
-            rhs: Box::new(Expr::BinOp {
+            lhs: ExprNode::int(1),
+            rhs: ExprNode::new(Expr::BinOp {
                 op: ast::BOp::Mul,
-                lhs: Box::new(Expr::int(2)),
-                rhs: Box::new(Expr::int(3)),
+                lhs: ExprNode::int(2),
+                rhs: ExprNode::int(3),
             }),
         });
 
         test_expr_is("1*2+3", || Expr::BinOp {
             op: ast::BOp::Add,
-            lhs: Box::new(Expr::BinOp {
+            lhs: ExprNode::new(Expr::BinOp {
                 op: ast::BOp::Mul,
-                lhs: Box::new(Expr::int(1)),
-                rhs: Box::new(Expr::int(2)),
+                lhs: ExprNode::int(1),
+                rhs: ExprNode::int(2),
             }),
-            rhs: Box::new(Expr::int(3)),
+            rhs: ExprNode::int(3),
         });
 
         test_expr_is("x()", || Expr::Funcall {
-            func: Box::new(Expr::Var {
-                name: Sym::new("x"),
-            }),
+            func: ExprNode::var("x"),
             params: vec![],
             typeparams: vec![],
         });
         test_expr_is("(x())", || Expr::Funcall {
-            func: Box::new(Expr::Var {
+            func: ExprNode::new(Expr::Var {
                 name: Sym::new("x"),
             }),
             params: vec![],
@@ -1951,12 +1915,12 @@ end
 
         test_expr_is("(1+2)*3", || Expr::BinOp {
             op: ast::BOp::Mul,
-            lhs: Box::new(Expr::BinOp {
+            lhs: ExprNode::new(Expr::BinOp {
                 op: ast::BOp::Add,
-                lhs: Box::new(Expr::int(1)),
-                rhs: Box::new(Expr::int(2)),
+                lhs: ExprNode::int(1),
+                rhs: ExprNode::int(2),
             }),
-            rhs: Box::new(Expr::int(3)),
+            rhs: ExprNode::int(3),
         });
     }
 
@@ -2009,16 +1973,16 @@ end
         test_expr_is("43_I8", || Expr::sized_int(43, 1, true));
         /*
         test_expr_is("{1,2,3}", |_cx| Expr::TupleCtor {
-            body: vec![Expr::int(1), Expr::int(2), Expr::int(3)],
+            body: vec![ExprNode::int(1), ExprNode::int(2), ExprNode::int(3)],
         });
         test_expr_is("{1,2,{1,2,3},3}", |_cx| Expr::TupleCtor {
             body: vec![
-                Expr::int(1),
-                Expr::int(2),
+                ExprNode::int(1),
+                ExprNode::int(2),
                 Expr::TupleCtor {
-                    body: vec![Expr::int(1), Expr::int(2), Expr::int(3)],
+                    body: vec![ExprNode::int(1), ExprNode::int(2), ExprNode::int(3)],
                 },
-                Expr::int(3),
+                ExprNode::int(3),
             ],
         });
         */
@@ -2027,14 +1991,14 @@ end
     #[test]
     fn parse_array_constructor() {
         test_expr_is("[4, 3, 2]", || Expr::ArrayCtor {
-            body: vec![Expr::int(4), Expr::int(3), Expr::int(2)],
+            body: vec![ExprNode::int(4), ExprNode::int(3), ExprNode::int(2)],
         });
 
         // Nested arrays now
         test_expr_is("[[4, 3, 2], [4, 3, 2], [4, 3, 2]]", || {
-            let arr = Expr::ArrayCtor {
-                body: vec![Expr::int(4), Expr::int(3), Expr::int(2)],
-            };
+            let arr = ExprNode::new(Expr::ArrayCtor {
+                body: vec![ExprNode::int(4), ExprNode::int(3), ExprNode::int(2)],
+            });
             Expr::ArrayCtor {
                 body: vec![arr.clone(), arr.clone(), arr.clone()],
             }
@@ -2046,15 +2010,15 @@ end
         test_expr_is(
             "let x [3][3]I32 = [[4, 3, 2], [4, 3, 2], [4, 3, 2]]",
             || {
-                let arr = Expr::ArrayCtor {
-                    body: vec![Expr::int(4), Expr::int(3), Expr::int(2)],
-                };
+                let arr = ExprNode::new(Expr::ArrayCtor {
+                    body: vec![ExprNode::int(4), ExprNode::int(3), ExprNode::int(2)],
+                });
                 let ty = Type::array(&Type::array(&Type::i32(), 3), 3);
                 Expr::Let {
                     varname: Sym::new("x"),
                     typename: Some(ty),
                     mutable: false,
-                    init: Box::new(Expr::ArrayCtor {
+                    init: ExprNode::new(Expr::ArrayCtor {
                         body: vec![arr.clone(), arr.clone(), arr.clone()],
                     }),
                 }
@@ -2066,16 +2030,16 @@ end
     fn parse_tuple_values() {
         test_expr_is("{}", || Expr::unit());
         test_expr_is("{1,2,3}", || Expr::TupleCtor {
-            body: vec![Expr::int(1), Expr::int(2), Expr::int(3)],
+            body: vec![ExprNode::int(1), ExprNode::int(2), ExprNode::int(3)],
         });
         test_expr_is("{1,2,{1,2,3},3}", || Expr::TupleCtor {
             body: vec![
-                Expr::int(1),
-                Expr::int(2),
-                Expr::TupleCtor {
-                    body: vec![Expr::int(1), Expr::int(2), Expr::int(3)],
-                },
-                Expr::int(3),
+                ExprNode::int(1),
+                ExprNode::int(2),
+                ExprNode::new(Expr::TupleCtor {
+                    body: vec![ExprNode::int(1), ExprNode::int(2), ExprNode::int(3)],
+                }),
+                ExprNode::int(3),
             ],
         });
     }
