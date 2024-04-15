@@ -8,6 +8,8 @@
 //! Though code formatters have different constraints and priorities, if they have line wrapping
 //! and stuff at least.  So, it might not be a particularly great code formatter.
 
+use std::ops::Range;
+
 use crate::types::*;
 use crate::*;
 
@@ -225,15 +227,39 @@ impl Expr {
 }
 
 /// An expression node with source info
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct ExprNode {
     /// expression
     pub e: Box<Expr>,
+    /// origin span
+    /// We'll put files in someday but for now let's just see what life looks like
+    /// without them.  None means placeholder/invalid/unknown.
+    pub origin: Option<Range<usize>>,
+}
+
+/// ExprNode's are comparable but we ignore the origin info for them.
+/// Otherwise unit tests would require accurate range info to test against,
+/// which seems excessively fragile.
+impl PartialEq for ExprNode {
+    fn eq(&self, other: &Self) -> bool {
+        self.e == other.e
+    }
 }
 
 impl ExprNode {
     pub fn new(e: Expr) -> Self {
-        Self { e: Box::new(e) }
+        Self {
+            e: Box::new(e),
+            origin: None,
+        }
+    }
+
+    /// New with source range
+    pub fn new_r(e: Expr, range: Range<usize>) -> Self {
+        Self {
+            e: Box::new(e),
+            origin: Some(range),
+        }
     }
 
     /// Shortcut function for making literal bools

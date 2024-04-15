@@ -385,13 +385,45 @@ pub struct Parser<'input> {
     lex: logos::Lexer<'input, TokenKind>,
     source: &'input str,
     err: ErrorReporter,
+    /// Tracks the current location of the expr being parsed.
+    locations: Vec<usize>,
 }
 
 impl<'input> Parser<'input> {
     pub fn new(filename: &str, source: &'input str) -> Self {
         let lex = TokenKind::lexer(source);
         let err = ErrorReporter::new(filename, source);
-        Parser { lex, source, err }
+        let locations = vec![];
+        Parser {
+            lex,
+            source,
+            err,
+            locations,
+        }
+    }
+
+    /// Start tracking a new source file span at the lexer's current location.
+    /// Tracks internally with a stack, so they can nest, but every
+    /// start_loc() or start_loc_at() call must be paired with an end_loc().
+    pub fn start_loc(&mut self) {
+        self.locations.push(self.lex.span().start)
+    }
+
+    /// Start tracking a new source file span at the start of the given token.
+    /// Useful when you've already read the token.
+    pub fn start_loc_at(&mut self, token: Token) {
+        self.locations.push(token.span.start)
+    }
+
+    /// Stop tracking the most recent source file span, and return the range
+    /// from its start to the parser's current position.
+    pub fn end_loc(&mut self) -> Range<usize> {
+        let start = self
+            .locations
+            .pop()
+            .expect("Underflow in location stack!  This is a bug.");
+        let end = self.lex.span().end;
+        start..end
     }
 
     /// Read all its input and returns an Ast.
@@ -984,14 +1016,13 @@ impl<'input> Parser<'input> {
         let mut lhs: ExprNode = match token {
             T::Bool(b) => {
                 self.drop();
-                ExprNode::new(ast::Expr::bool(*b))
+                ExprNode::new_r(ast::Expr::bool(*b), t.span)
             }
-            T::Integer(_) => ExprNode::new(ast::Expr::int(self.expect_int() as i128)),
-            T::IntegerSize((_str, size, signed)) => ExprNode::new(ast::Expr::sized_int(
-                self.expect_int() as i128,
-                *size,
-                *signed,
-            )),
+            T::Integer(_) => ExprNode::new_r(ast::Expr::int(self.expect_int() as i128), t.span),
+            T::IntegerSize((_str, size, signed)) => ExprNode::new_r(
+                ast::Expr::sized_int(self.expect_int() as i128, *size, *signed),
+                t.span,
+            ),
             // Tuple/struct literal
             T::LBrace => self.parse_constructor(),
             // Array literal
@@ -999,7 +1030,7 @@ impl<'input> Parser<'input> {
             T::Struct => self.parse_struct_literal(),
             T::Ident(_) => {
                 let ident = self.expect_ident();
-                ExprNode::new(ast::Expr::Var { name: ident })
+                ExprNode::new_r(ast::Expr::Var { name: ident }, t.span)
             }
             T::Let => self.parse_let(),
             T::If => self.parse_if(),
@@ -1010,29 +1041,35 @@ impl<'input> Parser<'input> {
             T::Return => self.parse_return(),
             T::Break => {
                 self.expect(T::Break);
-                ExprNode::new(ast::Expr::Break)
+                ExprNode::new_r(ast::Expr::Break, t.span)
             }
             // Parenthesized expr's
             T::LParen => {
+                self.start_loc_at(t);
                 self.drop();
-                let lhs = self.parse_expr(0)?;
+                let mut inner = self.parse_expr(0)?;
                 self.expect(T::RParen);
-                lhs
+                let span = self.end_loc();
+                inner.origin = Some(span);
+                inner
             }
 
             // Unary prefix ops
             x if uop_for(&x).is_some() => {
+                self.start_loc_at(t.clone());
                 self.drop();
                 let ((), r_bp) = prefix_binding_power(&x);
                 let op = uop_for(&x).expect("Should never happen");
                 let rhs = self.parse_expr(r_bp)?;
-                ExprNode::new(ast::Expr::UniOp { op, rhs })
+                let span = self.end_loc();
+                ExprNode::new_r(ast::Expr::UniOp { op, rhs }, span)
             }
             // Something else not a valid expr
             _x => return None,
         };
         // Parse a postfix or infix expression with a given
-        // binding power or greater.
+        // binding power or greater.  This is the pratt bit of the pratt parser.
+        // TODO: Figure out how in the hickory smoked fuck to track origin info here.
         while let Some(op_token) = self.peek().clone() {
             // we only really care about the token kind
             let op_token = op_token.kind;
@@ -1041,7 +1078,6 @@ impl<'input> Parser<'input> {
                 if l_bp < min_bp {
                     break;
                 }
-                // TODO: Figure out some kind of turbofish for function calls???
                 lhs = ExprNode::new(match op_token {
                     T::LParen => {
                         let (params, typeparams) = self.parse_function_args();
@@ -1119,6 +1155,9 @@ impl<'input> Parser<'input> {
                     }
                     _ => return None,
                 });
+                // Update token's location info
+                let span = self.end_loc();
+                lhs.origin = Some(span);
                 continue;
             }
             // Is our token an infix op?
@@ -1174,6 +1213,7 @@ impl<'input> Parser<'input> {
 
     /// let = "let" ident ":" typename "=" expr
     fn parse_let(&mut self) -> ast::ExprNode {
+        self.start_loc();
         self.expect(T::Let);
         let mutable = if self.peek_expect(T::Mut.discr()) {
             true
@@ -1191,21 +1231,27 @@ impl<'input> Parser<'input> {
         let init = self
             .parse_expr(0)
             .expect("Expected expression after `let ... =`, did not get one");
-        ExprNode::new(ast::Expr::Let {
-            varname,
-            typename,
-            init,
-            mutable,
-        })
+        let span = self.end_loc();
+        ExprNode::new_r(
+            ast::Expr::Let {
+                varname,
+                typename,
+                init,
+                mutable,
+            },
+            span,
+        )
     }
 
     /// return = "return" expr
     fn parse_return(&mut self) -> ast::ExprNode {
+        self.start_loc();
         self.expect(T::Return);
         let retval = self
             .parse_expr(0)
             .expect("Expected expression after `let ... =`, did not get one");
-        ExprNode::new(ast::Expr::Return { retval })
+        let span = self.end_loc();
+        ExprNode::new_r(ast::Expr::Return { retval }, span)
     }
 
     /// {"elseif" expr "then" {expr}}
@@ -1222,6 +1268,7 @@ impl<'input> Parser<'input> {
 
     /// if = "if" expr "then" {expr} {"elseif" expr "then" {expr}} ["else" {expr}] "end"
     fn parse_if(&mut self) -> ast::ExprNode {
+        self.start_loc();
         self.expect(T::If);
         let condition = self
             .parse_expr(0)
@@ -1250,22 +1297,29 @@ impl<'input> Parser<'input> {
             }
             other => self.error("else, elseif block or end", other),
         };
-        ExprNode::new(ast::Expr::If {
-            cases: ifcases,
-            falseblock,
-        })
+        let span = self.end_loc();
+        ExprNode::new_r(
+            ast::Expr::If {
+                cases: ifcases,
+                falseblock,
+            },
+            span,
+        )
     }
 
     /// loop = "loop" {expr} "end"
     fn parse_loop(&mut self) -> ast::ExprNode {
+        self.start_loc();
         self.expect(T::Loop);
         let body = self.parse_exprs();
         self.expect(T::End);
-        ExprNode::new(ast::Expr::Loop { body })
+        let span = self.end_loc();
+        ExprNode::new_r(ast::Expr::Loop { body }, span)
     }
 
     /// while = "while" expr "do" {expr} "end"
     fn parse_while_loop(&mut self) -> ast::ExprNode {
+        self.start_loc();
         self.expect(T::While);
         let cond = self
             .parse_expr(0)
@@ -1273,31 +1327,37 @@ impl<'input> Parser<'input> {
         self.expect(T::Do);
         let body = self.parse_exprs();
         self.expect(T::End);
-        ExprNode::new(ast::Expr::While { cond, body })
+        let span = self.end_loc();
+        ExprNode::new_r(ast::Expr::While { cond, body }, span)
     }
 
     /// block = "do" {expr} "end"
     fn parse_block(&mut self) -> ast::ExprNode {
+        self.start_loc();
         self.expect(T::Do);
         let body = self.parse_exprs();
         self.expect(T::End);
-        ExprNode::new(ast::Expr::Block { body })
+        let span = self.end_loc();
+        ExprNode::new_r(ast::Expr::Block { body }, span)
     }
 
     /// lambda = "fn" "(" ...args... ")" [typename] = {exprs} "end"
     fn parse_lambda(&mut self) -> ast::ExprNode {
+        self.start_loc();
         self.expect(T::Fn);
         let signature = self.parse_fn_signature();
         self.expect(T::Equals);
         self.eat_delimiters();
         let body = self.parse_exprs();
         self.expect(T::End);
-        ExprNode::new(ast::Expr::Lambda { signature, body })
+        let span = self.end_loc();
+        ExprNode::new_r(ast::Expr::Lambda { signature, body }, span)
     }
 
     /// tuple constructor = "{" [expr {"," expr} [","] "}"
     /// struct constructor = "{" ["." id "=" expr {"," "." id "=" expr}]  [","] "}"
     fn parse_constructor(&mut self) -> ast::ExprNode {
+        self.start_loc(); // end_loc() is in parse_struct_literal or parse_tuple_literal
         self.expect(T::LBrace);
         if self.peek_is(T::Period.discr()) {
             self.parse_struct_literal()
@@ -1310,7 +1370,9 @@ impl<'input> Parser<'input> {
     fn parse_struct_literal(&mut self) -> ast::ExprNode {
         let body = self.parse_struct_lit_fields();
         self.expect(T::RBrace);
-        ExprNode::new(ast::Expr::StructCtor { body })
+        // start_loc is in parse_constructor()
+        let span = self.end_loc();
+        ExprNode::new_r(ast::Expr::StructCtor { body }, span)
     }
 
     /// tuple constructor = "{" [expr {"," expr} [","] "}"
@@ -1324,10 +1386,13 @@ impl<'input> Parser<'input> {
             }
         });
         self.expect(T::RBrace);
-        ExprNode::new(ast::Expr::TupleCtor { body })
+        // start_loc is in parse_constructor()
+        let span = self.end_loc();
+        ExprNode::new_r(ast::Expr::TupleCtor { body }, span)
     }
 
     fn parse_array_constructor(&mut self) -> ast::ExprNode {
+        self.start_loc();
         self.expect(T::LBracket);
         let mut body = vec![];
         parse_delimited!(self, T::Comma, {
@@ -1338,7 +1403,8 @@ impl<'input> Parser<'input> {
             }
         });
         self.expect(T::RBracket);
-        ExprNode::new(ast::Expr::ArrayCtor { body })
+        let span = self.end_loc();
+        ExprNode::new_r(ast::Expr::ArrayCtor { body }, span)
     }
 
     /// Types compose prefix.
