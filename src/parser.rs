@@ -886,6 +886,7 @@ impl<'input> Parser<'input> {
                     "Duplicate variant in enum: field {} and {} both have value {}",
                     &*name, &*other, *vl
                 );
+                self.error(&*name.val(), None);
             }
             seen.insert(*vl, *name);
         }
