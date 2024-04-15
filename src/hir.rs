@@ -651,10 +651,10 @@ fn lower_signature(sig: &Signature) -> Signature {
 }
 
 /// This is the biggie currently
-pub fn lower_expr(expr: &ast::Expr) -> ExprNode {
+pub fn lower_expr(expr: &ast::ExprNode) -> ExprNode {
     use ast::Expr as E;
     use Expr::*;
-    let new_exp = match expr {
+    let new_exp = match &*expr.e {
         E::Lit { val } => Lit {
             val: lower_lit(val),
         },
@@ -707,7 +707,7 @@ pub fn lower_expr(expr: &ast::Expr) -> ExprNode {
             let nelse_case = ExprNode::bool(true);
             // Empty false block becomes a false block that returns unit
             let false_exprs = if falseblock.is_empty() {
-                lower_exprs(&[ast::Expr::TupleCtor { body: vec![] }])
+                lower_exprs(&[ast::ExprNode::new(ast::Expr::TupleCtor { body: vec![] })])
             } else {
                 lower_exprs(falseblock)
             };
@@ -721,15 +721,16 @@ pub fn lower_expr(expr: &ast::Expr) -> ExprNode {
         E::While { cond, body } => {
             // While loops just get turned into a Loop containing
             // `if not cond then break end`
-            let inverted_cond = E::UniOp {
+            let inverted_cond = ast::ExprNode::new(E::UniOp {
                 op: UOp::Not,
                 rhs: cond.clone(),
-            };
+            });
             let test = lower_expr(&inverted_cond);
             let brk = vec![ExprNode::new(Break)];
             // As per above, we need to always have an "else" end case
             let else_case = ExprNode::bool(true);
-            let else_exprs = lower_exprs(&[ast::Expr::TupleCtor { body: vec![] }]);
+            let else_exprs =
+                lower_exprs(&[ast::ExprNode::new(ast::Expr::TupleCtor { body: vec![] })]);
             let if_expr = ExprNode::new(If {
                 cases: vec![(test, brk), (else_case, else_exprs)],
             });
@@ -815,7 +816,7 @@ pub fn lower_expr(expr: &ast::Expr) -> ExprNode {
 }
 
 /// handy shortcut to lower Vec<ast::Expr>
-pub fn lower_exprs(exprs: &[ast::Expr]) -> Vec<ExprNode> {
+pub fn lower_exprs(exprs: &[ast::ExprNode]) -> Vec<ExprNode> {
     exprs.iter().map(lower_expr).collect()
 }
 
@@ -1006,6 +1007,7 @@ fn lower_decl(accm: &mut Vec<Decl>, decl: &ast::Decl) {
 mod tests {
     use super::*;
     use crate::ast::Expr as A;
+    use crate::ast::ExprNode as AN;
     use crate::hir::Expr as I;
     use crate::hir::ExprNode as EN;
 
@@ -1014,9 +1016,7 @@ mod tests {
     /// actually have semicolons.
     #[test]
     fn test_return_none() {
-        let input = A::Return {
-            retval: Box::new(A::unit()),
-        };
+        let input = AN::new(A::Return { retval: AN::unit() });
         let output = EN::new(I::Return { retval: EN::unit() });
         let res = lower_expr(&input);
         assert_eq!(&res, &output);
@@ -1026,13 +1026,13 @@ mod tests {
     /// Single if.
     #[test]
     fn test_if_lowering_single() {
-        let input = A::If {
+        let input = AN::new(A::If {
             cases: vec![ast::IfCase {
-                condition: Box::new(A::bool(false)),
-                body: vec![A::int(1)],
+                condition: AN::bool(false),
+                body: vec![AN::int(1)],
             }],
-            falseblock: vec![A::int(2)],
-        };
+            falseblock: vec![AN::int(2)],
+        });
         let output = EN::new(I::If {
             cases: vec![
                 (EN::bool(false), vec![EN::int(1)]),
@@ -1047,19 +1047,19 @@ mod tests {
     /// Chained if/else's
     #[test]
     fn test_if_lowering_chained() {
-        let input = A::If {
+        let input = AN::new(A::If {
             cases: vec![
                 ast::IfCase {
-                    condition: Box::new(A::bool(false)),
-                    body: vec![A::int(1)],
+                    condition: AN::bool(false),
+                    body: vec![AN::int(1)],
                 },
                 ast::IfCase {
-                    condition: Box::new(A::bool(true)),
-                    body: vec![A::int(2)],
+                    condition: AN::bool(true),
+                    body: vec![AN::int(2)],
                 },
             ],
-            falseblock: vec![A::int(3)],
-        };
+            falseblock: vec![AN::int(3)],
+        });
         let output = EN::new(I::If {
             cases: vec![
                 (EN::bool(false), vec![EN::int(1)]),
@@ -1075,10 +1075,10 @@ mod tests {
     #[test]
     #[should_panic]
     fn test_if_nothing() {
-        let input = A::If {
+        let input = AN::new(A::If {
             cases: vec![],
             falseblock: vec![],
-        };
+        });
         let _ = lower_expr(&input);
     }
 }
