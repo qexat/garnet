@@ -1,4 +1,8 @@
-/* Not complete or authoratitive as of April 2024, just a WIP description.
+/* 
+Not complete or authoratitive, just a WIP description.  
+Doesn't try to handle precedence and probably gets lots of details wrong,
+especially around delimiters/significant newlines.  
+
 Designed to be visualized with https://rr.red-dove.com/ui 
 */
 
@@ -41,26 +45,76 @@ EnumType ::= 'enum' (EnumField (',' EnumField)* ','?)? 'end'
 
 EnumField ::= Ident ('=' Integer)?
 
-SumType ::= 'sum'
+SumType ::= 'sum' TypeParams? SumField 'end'
+
+SumField ::= Ident Type Delimiters
 
 ArrayType ::= '[' Integer ']' Type
 
 NamedType ::= Ident
 
-PrimitiveType ::= U8' | 'I8' | 'U16' | 'I16' |  'U32' | 'I32' |  'U64' | 'I64' | 'Bool' | 'Never'
+PrimitiveType ::= 'U8' | 'I8' | 'U16' | 'I16' |  'U32' | 'I32' |  'U64' | 'I64' | 'Bool' | 'Never'
 
-Expr ::= Integer
+Expr ::= Integer | Bool | StructConstructor | TupleConstructor | ArrayConstructor | Ident | LetExpr | IfExpr | LoopExpr | WhileExpr | BlockExpr | LambdaExpr | ReturnExpr | BreakExpr | ParenExpr | PrefixOpExpr | PostfixOpExpr | BinOpExpr
 
-Exprs ::= Expr+
+Exprs ::= (Expr Delimiters)+
+
+CommaSeparatedExprs ::= Expr? (',' Expr)* ','?
+
+StructLitField ::= '.' Ident '=' Expr Delimiters
+
+StructConstructor ::= '{' StructLitField? (',' StructLitField)* ','? '}'
+
+TupleConstructor ::= '{' Expr? (',' Expr)* ','? '}'
+
+ArrayConstructor ::= '[' Expr? (',' Expr)* ','? ']'
+
+LetExpr ::= 'let' 'mut'? Ident Type? '=' Expr Delimiters
+
+IfExpr ::= 'if' Expr 'then' Exprs ('elif' Expr 'then' Exprs)* ('else' Exprs)? 'end'
+
+LoopExpr ::= 'loop' Exprs 'end'
+
+WhileExpr ::= 'while' Expr 'do' Exprs 'end'
+
+BlockExpr ::= 'do' Exprs 'end'
+
+LambdaExpr ::= 'fn' Signature '=' Exprs 'end'
+
+// Doesn't exist yet but I'm thinking about it...
+ShortLambdaExpr ::= '\' Signature '->' Expr
+
+ReturnExpr ::= 'return' Expr
+
+BreakExpr ::= 'break'
+
+ParenExpr ::= '(' Expr ')'
+
+PrefixOpExpr ::= PrefixOp Expr
+
+PostfixOpExpr ::= Expr PostfixOp
+
+BinOpExpr ::= Expr BinOp Expr
+
+PrefixOp ::= '+' | '-' | 'not'
+
+PostfixOp ::= '.' Ident | '$' | '[' Expr ']' | '^' | '&' | Funcall
+
+BinOp ::= '+' | '-' | '/' | '*' | '%' | '<' | '>' | '<=' | '>=' | '==' | '!=' | 'and' | 'or' | 'not' | 'xor'
+
+Funcall ::=  '(' CommaSeparatedExprs ')' | StructConstructor | TupleConstructor
+
+BinOp ::=
 
 Ident ::= [a-zA-Z_][a-zA-Z_0-9]*
 
-Integer ::= [0-9]+ (SizeSpecifier)?
+Integer ::= [0-9][0-9_]* (SizeSpecifier)?
 
 SizeSpecifier ::= 'U8' | 'I8' | 'U16' | 'I16' |  'U32' | 'I32' |  'U64' | 'I64'
+
+Bool ::= 'true' | 'false'
 
 Newline ::= #x20
 
 Delimiters ::= (';' | Newline)*
-
 
