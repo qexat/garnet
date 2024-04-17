@@ -1,7 +1,8 @@
 //! Monomorphization
 //!
 //! From the Austral compiler docs:
-//!  > Monomorphization of generic types works recursively from the bottom up. To transform a type to a monomorphic type, [walk the expression tree and for each type encountered]:
+//!
+//! Monomorphization of generic types works recursively from the bottom up. To transform a type to a monomorphic type, [walk the expression tree and for each type encountered]:
 //!
 //!  * If encountering a type with no type arguments, leave it alone.
 //!  * If encountering a generic type with (monomorphic) type arguments applied to it, retrieve or add a monomorph for the given type and arguments, and replace this type with the monomorph.
@@ -40,7 +41,6 @@ fn mono_expr(expr: ExprNode, tck: &typeck::Tck) -> ExprNode {
             // Get the type of `func` and if it has generic parameters that are concrete, create a monomorph for it.
             let fn_typevar = tck.get_expr_type(&func);
             let concrete_type = tck.reconstruct(fn_typevar).unwrap();
-            // Hmmmm, this needs to be where we actually *use* Tck.instances I think
             trace!(
                 "mono_expr function call:\n  func {:?}\n  type {}\n  params {:?}\n  type_params {:?}",
                 func,
@@ -48,6 +48,23 @@ fn mono_expr(expr: ExprNode, tck: &typeck::Tck) -> ExprNode {
                 params,
                 type_params
             );
+            let declared_type_params = concrete_type.get_toplevel_type_params();
+            let given_type_params = type_params;
+            // Hmmmm, this needs to be where we actually *use* Tck.instances I think
+            if declared_type_params.is_empty() {
+                // Function is not polymorphic, we don't need to do anything.
+                trace!("Not polymorphic, don't need to do anything");
+                return e;
+            }
+            // Function is polymorphic
+            trace!("Need to monomorph {:?}", func.id);
+            // Get instantiated type of this particular expression
+            let instance = tck.instances_rev.get(&func.id).unwrap();
+            trace!(
+                " instantiated type {}",
+                tck.reconstruct(*instance).unwrap().get_name()
+            );
+
             e
         }
         E::Lambda { .. } => {

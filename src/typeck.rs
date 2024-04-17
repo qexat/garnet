@@ -347,6 +347,7 @@ pub struct Tck {
     /// This keeps track of what monomorphized function instances we need, and
     /// their values.
     instances: BTreeSet<(TypeId, hir::Eid)>,
+    pub instances_rev: BTreeMap<hir::Eid, TypeId>,
 }
 
 impl Tck {
@@ -1186,6 +1187,7 @@ fn typecheck_expr(
                 .collect();
             let heck = tck.instantiate(&actual_func_type, Some(input_type_params));
             tck.instances.insert((heck, func.id));
+            tck.instances_rev.insert(func.id, heck);
 
             // Does it match the real function type?
             // tck.unify(symtbl, func_type, funcall_typeinfo)?;
@@ -1403,6 +1405,7 @@ fn typecheck_expr(
             );
             let tid = tck.instantiate(&named_type, None);
             tck.instances.insert((tid, expr.id));
+            tck.instances_rev.insert(expr.id, tid);
             trace!("Instantiated {:?} into {:?}", named_type, tid);
 
             let body_type = typecheck_expr(tck, symtbl, func_rettype, body)?;
