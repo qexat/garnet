@@ -1532,7 +1532,7 @@ fn infix_binding_power(op: &TokenKind) -> Option<(usize, usize)> {
 
 #[cfg(test)]
 mod tests {
-    use crate::ast::{self, Expr};
+    use crate::ast::Expr;
     use crate::parser::*;
 
     /// Take a list of strings and try parsing them with the given function.

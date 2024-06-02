@@ -10,23 +10,23 @@
 //! Monomorphization of functions is analogous: starting from the main function (which has no generic type parameters), recur down the body.  If we encounter a call to a generic function f, look at the concrete type arguments the function is being called with. These define a mapping from the function’s type parameters ... to the type arguments [variables]...
 //!
 
-use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::collections::{BTreeSet, VecDeque};
 
 use crate::passes::*;
 use crate::*;
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
-struct Instance {
-    ty: typeck::TypeId,
-    referenced_from: hir::Eid,
-}
+// #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
+// struct Instance {
+//     ty: typeck::TypeId,
+//     referenced_from: hir::Eid,
+// }
 
-#[derive(Default, Debug)]
-struct MonoCtx {
-    instances: BTreeSet<Instance>,
-}
+// #[derive(Default, Debug)]
+// struct MonoCtx {
+//     instances: BTreeSet<Instance>,
+// }
 
-impl MonoCtx {}
+// impl MonoCtx {}
 
 /// Walk up every expression tree from leaf to root and, when encountering a call
 /// to a generic function, look at the concrete type arguments the function is being
@@ -49,7 +49,7 @@ fn mono_expr(expr: ExprNode, tck: &typeck::Tck) -> ExprNode {
                 type_params
             );
             let declared_type_params = concrete_type.get_toplevel_type_params();
-            let given_type_params = type_params;
+            let _given_type_params = type_params;
             // Hmmmm, this needs to be where we actually *use* Tck.instances I think
             if declared_type_params.is_empty() {
                 // Function is not polymorphic, we don't need to do anything.

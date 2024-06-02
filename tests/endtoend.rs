@@ -18,7 +18,7 @@ fn main() {
     LangTester::new()
         .test_dir("tests/programs/")
         // Only use files named `*.gt` as test files.
-        .test_file_filter(|p| {
+        .test_path_filter(|p| {
             p.extension()
                 .map(std::ffi::OsStr::to_str)
                 .unwrap_or(Some(""))
