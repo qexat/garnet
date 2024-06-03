@@ -321,7 +321,7 @@ impl Type {
                 let result = if tys.len() == 0 {
                     (&*nm.val()).clone()
                 } else {
-                    format!("{}({})", nm.val(), &join_types_with_commas(tys))
+                    format!("{}[{}]", nm.val(), &join_types_with_commas(tys))
                 };
                 Cow::Owned(result)
             }
@@ -347,9 +347,9 @@ impl Type {
                 if generics.is_empty() {
                     res += " "
                 } else {
-                    res += "(";
+                    res += "[";
                     res += &join_types_with_commas(generics);
-                    res += ") ";
+                    res += "] ";
                 }
                 res += &join_vars_with_commas(body, ":");
                 res += " end";
@@ -360,9 +360,9 @@ impl Type {
                 if generics.is_empty() {
                     res += " "
                 } else {
-                    res += "(";
+                    res += "[";
                     res += &join_types_with_commas(generics);
-                    res += ") ";
+                    res += "] ";
                 }
                 res += &join_vars_with_commas(body, "");
                 res += " end";

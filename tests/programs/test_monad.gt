@@ -43,8 +43,8 @@ end
 -- The bad news is, we don't seem to be able to implement real monads
 -- The good news is, we don't seem to be able to implement real monads
 -- I think if we had associated types?
-type Monad(A, M, B) = struct(A, M, B)
-   return_: fn(A) M(A),
-   bind: fn(M(A), fn(A) M(B)) M(B)
+type Monad[A, M, B] = struct[A, M, B]
+   return_: fn(A) M[A],
+   bind: fn(M[A], fn(A) M[B]) M[B]
 end
 

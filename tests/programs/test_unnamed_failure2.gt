@@ -7,17 +7,17 @@
 --     ...Could not find declared type Foo...
 --     ...
 
-type Idx(Self, Output) = struct(Self, Output)
+type Idx[Self, Output] = struct[Self, Output]
     idx: fn(Self, I32) Output,
 end
 
-type List(T) = struct(T)
+type List[T] = struct[T]
     dummy_data: T,
 end
 
 
 -- This correctly fails
-const BadIntListIdx Idx(I32) = Idx {
-    .idx = fn(self List(I32), i I32) Foo = true end
+const BadIntListIdx Idx[I32] = Idx {
+    .idx = fn(self List[I32], i I32) Foo = true end
 }
 

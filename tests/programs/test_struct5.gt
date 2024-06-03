@@ -3,7 +3,7 @@
 -- Compile:
 --   status: error
 
-type Foo(Thing) = struct
+type Foo[Thing] = struct
     a: Blarg,
     b: Bool
 end
@@ -14,12 +14,12 @@ end
 
 
 fn main() {} =
-    let f1 Foo(I32) = id(Foo {
+    let f1 Foo[I32] = id(Foo {
         .a = 3,
         .b = false
     })
 
-    let f1 Foo(Bool) = id(Foo {
+    let f1 Foo[Bool] = id(Foo {
         .a = true,
         .b = false
     })
