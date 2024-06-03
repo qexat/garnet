@@ -11,7 +11,7 @@
 
 -- Fine let's try something simpler.
 
-type Eq(Selff) = struct
+type Eq[Self] = struct
     eq: fn(Selff, Selff) Bool,
 end
 
@@ -22,71 +22,71 @@ end
 -- To ponder: What if we did attach names to types, or had
 -- specialization?  The latter evokes the Instance Problem, the former
 -- I suppose is a way around it.
-const IntEq Eq(I32) = Eq {
+const IntEq Eq[I32] = Eq {
     .eq = fn(lhs I32, rhs I32) Bool =
         true
     end,
 }
 
-type Ord(Selff) = struct
+type Ord[Self] = struct
     cmp: fn(Selff, Selff) I32,
 end
 
-const IntOrd Ord(I32) = Ord {
+const IntOrd Ord[I32] = Ord {
     .cmp = fn(lhs I32, rhs I32) I32 =
         0
     end,
 }
 
 
-type From(Selff, In) = struct
+type From[Selff, In] = struct
     from: fn(In) Selff
 end
 
-const BoolFromInt From(Bool, I32) = From {
+const BoolFromInt From[Bool, I32] = From {
     .from = fn(i I32) Bool = false end
 }
 
-type List(T) = struct
+type List[T] = struct
     dummy_data: T,
 end
 
 
-type Idx(Selff, Output) = struct
+type Idx[Selff, Output] = struct
     idx: fn(Selff, I32) Output,
 end
 
-type Len(Selff) = struct
-    len: fn(Selff) I32,
+type Len[Self] = struct
+    len: fn(Self) I32,
 end
 
-const ListLen Len(List(T)) = Len {
-    .len = fn(selff List(T)) I32 = 0 end
+const ListLen Len[List[T]] = Len {
+    .len = fn(selff List[T]) I32 = 0 end
 }
 
-fn module_len(impll Len(T), l T) I32 =
+fn module_len(impll Len[T], l T) I32 =
     let total I32 = 0
     impll$.len(l)
 end
 
 -- Specialize it just to make sure everything fits together...
-fn list_len(l List(T)) I32 =
+fn list_len(l List[T]) I32 =
     module_len(ListLen, l)
 end
 
-const ListIdx Idx(List(T), T) = Idx {
-    .idx = fn(selff List(T), i I32) T = selff$.dummy_data end
+const ListIdx Idx[List[T], T] = Idx {
+    .idx = fn(selff List[T], i I32) T = selff$.dummy_data end
 }
 
 -- Generalized thingy...
-fn idx(l List(T)) T =
+fn idx(l List[T]) T =
     let total I32 = 3
     ListIdx$.idx(l, total)
 end
 
 -- Can we make another instance for a more specialized type?
-const IntListIdx Idx(List(I32), I32) = Idx {
-    .idx = fn(selff List(I32), i I32) I32 = selff$.dummy_data end
+const IntListIdx Idx[List[I32], I32] = Idx {
+    .idx = fn(selff List[I32], i I32) I32 = selff$.dummy_data end
 }
 
 fn main() {} =

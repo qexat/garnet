@@ -3,15 +3,15 @@
 -- Compile:
 --   status: error
 
-type Idx(Self, Output) = struct
+type Idx[Self, Output] = struct
     idx: fn(Self, I32) Output,
 end
 
-type List(T) = struct
+type List[T] = struct
     dummy_data: T,
 end
 
-fn foo(self List(I32), i I32) Bar =
+fn foo(self List[I32], i I32) Bar =
   self$.dummy_data
 end
 

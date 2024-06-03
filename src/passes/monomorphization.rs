@@ -42,14 +42,14 @@ fn mono_expr(expr: ExprNode, tck: &typeck::Tck) -> ExprNode {
             let fn_typevar = tck.get_expr_type(&func);
             let concrete_type = tck.reconstruct(fn_typevar).unwrap();
             trace!(
-                "mono_expr function call:\n  func {:?}\n  type {}\n  params {:?}\n  type_params {:?}",
+                "mono_expr function call:\n  func {}\n  type {}\n  params {:?}\n  type_params {:?}",
                 func,
                 concrete_type,
                 params,
                 type_params
             );
             let declared_type_params = concrete_type.get_toplevel_type_params();
-            let given_type_params = type_params;
+            let _given_type_params = type_params;
             // Hmmmm, this needs to be where we actually *use* Tck.instances I think
             if declared_type_params.is_empty() {
                 // Function is not polymorphic, we don't need to do anything.
@@ -57,11 +57,11 @@ fn mono_expr(expr: ExprNode, tck: &typeck::Tck) -> ExprNode {
                 return e;
             }
             // Function is polymorphic
-            trace!("Need to monomorph {:?}", func.id);
+            trace!("Need to monomorph {}", func);
             // Get instantiated type of this particular expression
             let instance = tck.instances_rev.get(&func.id).unwrap();
             trace!(
-                " instantiated type {}",
+                "instantiating type {}",
                 tck.reconstruct(*instance).unwrap().get_name()
             );
 
