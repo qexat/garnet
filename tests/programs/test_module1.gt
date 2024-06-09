@@ -14,7 +14,7 @@
 --
 -- No associated types either, so we just make it a type param for now,
 -- which surprisingly appears to work.
-type Hasher(Self, Out) = struct(Self, Out)
+type Hasher[Self, Out] = struct[Self, Out]
     write: fn(Self, I32) Self,
     finish: fn(Self) Out,
 end
@@ -23,7 +23,7 @@ type DumbHashState = I32
 
 
 fn main() {} =
-    let dumbhasher Hasher(DumbHashState, I32) = Hasher {
+    let dumbhasher Hasher[DumbHashState, I32] = Hasher {
         .write = fn(s DumbHashState, i I32) DumbHashState = 
             DumbHashState(i)
         end,

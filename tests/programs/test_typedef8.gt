@@ -3,9 +3,9 @@
 -- Compile:
 --   status: error
 
-type Foo(T) = {I32, T}
+type Foo[T] = {I32, T}
 
-fn thing2(i I32, x Whatever) Foo(Whatever) =
+fn thing2(i I32, x Whatever) Foo[Whatever] =
     Foo{i, x}
 end
 

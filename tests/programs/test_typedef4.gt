@@ -4,9 +4,9 @@
 --   status: success
 
 
-type Foo(A) = {I32, A}
+type Foo[A] = {I32, A}
 
-fn thing(|A| i I32, x A) Foo(A) =
+fn thing(|A| i I32, x A) Foo[A] =
     Foo(|A| {i, x})
 end
 
@@ -15,7 +15,7 @@ fn thing2(|A| i I32, x A) {I32, A} =
 end
 
 fn main() {} =
-    let f1 Foo(I32) = thing(|I32| 4, 5)
-    let f2 Foo(Bool) = thing(|Bool| 4, true)
+    let f1 Foo[I32] = thing(|I32| 4, 5)
+    let f2 Foo[Bool] = thing(|Bool| 4, true)
     let f2 {I32, Bool} = thing2(|Bool| 4, true)
 end

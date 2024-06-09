@@ -10,18 +10,18 @@
 -- really didn't work too heckin' well, so we'll try monomorph.
 
 -- A generic functional map from a key to a value
-type Map(T, K, V) = struct(T, K, V)
+type Map[T, K, V] = struct[T, K, V]
     get: fn(T, K) V,
     --set: fn(T, K, V) T,
 end
 
 -- Implement Map for a cell type
-type Cell(K, V) = struct(K, V)
+type Cell[K, V] = struct[K, V]
     key: K,
     val: V
 end
 
-fn make_cell_map(|K, V| k K, v V) Map(Cell(K, V), K, V) =
+fn make_cell_map(|K, V| k K, v V) Map[Cell[K, V], K, V] =
 /-
     let module = Map {
         -- I guess we pretend this always succeeds,
@@ -39,7 +39,7 @@ fn make_cell_map(|K, V| k K, v V) Map(Cell(K, V), K, V) =
     }
 -/
     let module = Map {
-        .get = fn(t Cell(K, V), key K) V =
+        .get = fn(t Cell[K, V], key K) V =
             t$.val
         end,
     }

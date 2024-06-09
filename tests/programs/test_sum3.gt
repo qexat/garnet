@@ -8,7 +8,7 @@
 -- BUGGO: why tf does this not work?
 -- There's something cursed going on in alpha renaming
 -- related: test_result1.gt
-type Foo(A,B) = sum(A,B)
+type Foo[A,B] = sum[A,B]
     X A,
     Y B,
     Z struct
@@ -17,18 +17,15 @@ type Foo(A,B) = sum(A,B)
     end,
 end
 
-fn thing(|A,B| i Foo(A,B)) Foo(A,B) =
+fn thing(|A,B| i Foo[A,B]) Foo[A,B] =
     i
 end
 
 
 fn main() {} =
-/-
     let x Foo = Foo.X 3
     let y Foo = Foo.Y { 12, true, false }
     let z Foo = Foo.Z { .a = 12, .b = 40 }
     let a = thing(y)
-    -/
-    __println(42)
 end
 

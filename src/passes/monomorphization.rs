@@ -42,7 +42,7 @@ fn mono_expr(expr: ExprNode, tck: &typeck::Tck) -> ExprNode {
             let fn_typevar = tck.get_expr_type(&func);
             let concrete_type = tck.reconstruct(fn_typevar).unwrap();
             trace!(
-                "mono_expr function call:\n  func {:?}\n  type {}\n  params {:?}\n  type_params {:?}",
+                "mono_expr function call:\n  func {}\n  type {}\n  params {:?}\n  type_params {:?}",
                 func,
                 concrete_type,
                 params,
@@ -57,11 +57,11 @@ fn mono_expr(expr: ExprNode, tck: &typeck::Tck) -> ExprNode {
                 return e;
             }
             // Function is polymorphic
-            trace!("Need to monomorph {:?}", func.id);
+            trace!("Need to monomorph {}", func);
             // Get instantiated type of this particular expression
             let instance = tck.instances_rev.get(&func.id).unwrap();
             trace!(
-                " instantiated type {}",
+                "instantiating type {}",
                 tck.reconstruct(*instance).unwrap().get_name()
             );
 
