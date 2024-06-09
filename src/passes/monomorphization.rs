@@ -31,8 +31,28 @@ use crate::*;
 /// Walk up every expression tree from leaf to root and, when encountering a call
 /// to a generic function, look at the concrete type arguments the function is being
 /// called with.  
-fn mono_expr(expr: ExprNode, tck: &typeck::Tck) -> ExprNode {
+fn mono_expr(
+    expr: ExprNode,
+    tck: &typeck::Tck,
+    functions_to_mono: &mut VecDeque<(Sym, types::Signature)>,
+) -> ExprNode {
+    let heck = expr.clone();
     let f = &mut |e| match &e {
+        // Since lambda-lifting has happened,
+        // if we refer to another to another function anywhere, it has
+        // to terminate in a function name.
+        E::Var { name } => {
+            let fn_typevar = tck.get_expr_type(&heck);
+            let concrete_type = tck.reconstruct(fn_typevar).unwrap();
+            trace!("Concrete type of {} is {}", name, concrete_type);
+            if concrete_type.is_func() {
+                // ...but we need to know how the function is called
+                // to know its monomorph.  So what the hell do we do here?
+                // TODO: Worry about it later, I guess.  Let's just deal
+                // with the simplest case of direct function calls.
+            }
+            E::Var { name: *name }
+        }
         E::Funcall {
             func,
             params,
@@ -49,6 +69,7 @@ fn mono_expr(expr: ExprNode, tck: &typeck::Tck) -> ExprNode {
                 type_params
             );
             let declared_type_params = concrete_type.get_toplevel_type_params();
+            trace!("Declared: {:?}", declared_type_params);
             let _given_type_params = type_params;
             // Hmmmm, this needs to be where we actually *use* Tck.instances I think
             if declared_type_params.is_empty() {
@@ -59,11 +80,10 @@ fn mono_expr(expr: ExprNode, tck: &typeck::Tck) -> ExprNode {
             // Function is polymorphic
             trace!("Need to monomorph {}", func);
             // Get instantiated type of this particular expression
-            let instance = tck.instances_rev.get(&func.id).unwrap();
-            trace!(
-                "instantiating type {}",
-                tck.reconstruct(*instance).unwrap().get_name()
-            );
+            // let instance = tck.instances_rev.get(&func.id).unwrap();
+            // let instantiated_type = tck.reconstruct(*instance).unwrap();
+            // trace!("instantiating type {}", instantiated_type.get_name());
+            // functions_to_mono.push_back()
 
             e
         }
@@ -81,14 +101,23 @@ fn mono_expr(expr: ExprNode, tck: &typeck::Tck) -> ExprNode {
 /// I think this implies that the current function *must* not have type
 /// parameters, but since `main()` doesn't have type params and we start
 /// from there we basically always ensure this invariant is upheld.
-fn mono_function_decl(tck: &typeck::Tck, nm: Sym, sig: &Signature, body: &[ExprNode]) {
+///
+/// TODO: This needs to collect a list of functions that need to be mono'ed next...
+fn mono_function_decl(
+    tck: &typeck::Tck,
+    nm: Sym,
+    sig: &Signature,
+    body: &[ExprNode],
+    functions_to_mono: &mut VecDeque<(Sym, types::Signature)>,
+) {
+    trace!("Mono'ing function {}", nm);
     assert!(
         sig.typeparams.is_empty(),
         "Tried to monomorphize function that isn't itself monomorphic yet: {} {:?}",
         nm,
         sig
     );
-    let f = &mut |e| mono_expr(e, tck);
+    let f = &mut |e| mono_expr(e, tck, functions_to_mono);
     let _ = exprs_map_post(body.to_vec(), f);
 }
 
@@ -202,23 +231,27 @@ pub(super) fn monomorphize(ir: Ir, _symtbl: &symtbl::Symtbl, tck: &mut typeck::T
     // hmmm, we really need to start from `main()` and walk to the functions it calls.
     let sir = SplitIr::from(&ir);
     // We know the main function exists and has typechecked correctly
-    let entry = sir
+    let (entry_sig, _entry_body) = sir
         .functions
         .get(&Sym::new("main"))
         .expect("No main function found, should never happen");
     // Do a depth-first search through call graph
     let mut functions_to_mono = VecDeque::new();
-    functions_to_mono.push_back((Sym::new("main"), entry));
+    functions_to_mono.push_back((Sym::new("main"), entry_sig.clone()));
     let mut functions_monoed: BTreeSet<Sym> = BTreeSet::new();
     loop {
         // Get next function to mono
-        if let Some((nm, (sig, body))) = functions_to_mono.pop_front() {
+        if let Some((nm, sig)) = functions_to_mono.pop_front() {
             if functions_monoed.contains(&nm) {
                 // already did that func, carry on to next
                 continue;
             }
+            let (_entry_sig, body) = sir
+                .functions
+                .get(&nm)
+                .expect("No main function found, should never happen");
             // *do magic here*
-            mono_function_decl(tck, nm, sig, body);
+            mono_function_decl(tck, nm, &sig, body, &mut functions_to_mono);
 
             functions_monoed.insert(nm);
         } else {
@@ -226,6 +259,7 @@ pub(super) fn monomorphize(ir: Ir, _symtbl: &symtbl::Symtbl, tck: &mut typeck::T
             break;
         }
     }
+    trace!("Functions monoed: {:?}", functions_monoed);
     // let new_decls = ir
     //     .decls
     //     .into_iter()
