@@ -50,6 +50,12 @@ fn mono_expr(
                 // to know its monomorph.  So what the hell do we do here?
                 // TODO: Worry about it later, I guess.  Let's just deal
                 // with the simplest case of direct function calls.
+                let instance = tck.instances_rev.get(&heck.id).unwrap();
+                trace!(
+                    "instantiating variable {} with type {}",
+                    name,
+                    tck.reconstruct(*instance).unwrap().get_name()
+                );
             }
             E::Var { name: *name }
         }
@@ -83,7 +89,12 @@ fn mono_expr(
             // let instance = tck.instances_rev.get(&func.id).unwrap();
             // let instantiated_type = tck.reconstruct(*instance).unwrap();
             // trace!("instantiating type {}", instantiated_type.get_name());
-            // functions_to_mono.push_back()
+
+            let instance = tck.instances_rev.get(&func.id).unwrap();
+            trace!(
+                "instantiating type {}",
+                tck.reconstruct(*instance).unwrap().get_name()
+            );
 
             e
         }
