@@ -7,18 +7,18 @@
 --- module???
 
 --- Properties: Copy, Clone, Debug, Zero, Pod when T is Pod...
-type Option(T) = sum
+type Option[T] = sum
     Some T,
     None {},
 end
 
 --- Properties: Panics.
-fn unwrap(|T| self Option(T)) T =
+fn unwrap(|T| self Option[T]) T =
     expect(self, "Unwrap failed")
 end
 
 --- Properties: Panics.
-fn expect(|T| self Option(T), message Str) T =
+fn expect(|T| self Option[T], message Str) T =
     match self with
       | None {} -> panic(message)
       | Some val -> val
@@ -26,35 +26,35 @@ fn expect(|T| self Option(T), message Str) T =
 end
 
 
-fn unwrap_or(|T| self Option(T), val T) T =
+fn unwrap_or(|T| self Option[T], val T) T =
     match self with
       | None {} -> val
       | Some val -> val
     end
 end
 
-fn unwrap_or_else(|T| self Option(T), f fn() T) T =
+fn unwrap_or_else(|T| self Option[T], f fn() T) T =
     match self with
       | None {} -> f()
       | Some val -> val
     end
 end
 
-fn cloned(|T| self Option(Borrow(T)) Option(T) where T: Clone =
+fn cloned(|T| self Option[Borrow[T]] Option[T] where T: Clone =
     match self with
       | None {} -> None
       | Some val -> Some({T.clone(val)})
     end
 end
 
-fn is_some(|T| self Option(T)) Bool =
+fn is_some(|T| self Option[T]) Bool =
     match self with
       | None {} -> false
       | Some val -> true
 	end
 end
 
-fn is_none(|T| self Option(T)) Bool =
+fn is_none(|T| self Option[T]) Bool =
 	not is_some(self)
 end
 
@@ -62,8 +62,8 @@ end
 -- map, inspect, take, replace, 
 
 -- Hmm, what would this look like as a module?
-type Option(A) = struct(A)
-	type T(A) = sum(A)
+type Option[A] = struct[A]
+	type T[A] = sum[A]
 		Some A,
 		None {},
 	end

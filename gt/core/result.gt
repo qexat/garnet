@@ -5,7 +5,7 @@
 
 --- Our general-purpose Result type.
 --- Properties: Copy, Clone, Debug, Zero, Pod when T is Pod...
-type Result(T, E) = sum(T, E) 
+type Result[T, E] = sum[T, E]
 	Ok {T}, 
 	Err {E},
 end
@@ -14,7 +14,7 @@ end
 --- otherwise panics.
 ---
 --- Properties: Panics.
-fn unwrap(|T, E| self Result(T,E)) T =
+fn unwrap(|T, E| self Result[T, E]) T =
     expect(self, "Unwrap failed")
 end
 
@@ -27,7 +27,7 @@ end
 --- But that's a problem for Future Garnet.
 ---
 --- Properties: Panics.
-fn expect(|T, E| self Result(T, E), message Str) T =
+fn expect(|T, E| self Result[T, E], message Str) T =
     match self with
       | Err{_} -> panic(message)
       | Ok{val} -> val
@@ -35,41 +35,41 @@ fn expect(|T, E| self Result(T, E), message Str) T =
 end
 
 
-fn unwrap_or(|T, E| self Result(T, E), val T) T =
+fn unwrap_or(|T, E| self Result[T, E], val T) T =
     match self with
       | Err{_} -> val
       | Ok{val} -> val
     end
 end
 
-fn unwrap_or_else(|T, E| self Result(T, E), f fn() T) T =
+fn unwrap_or_else(|T, E| self Result[T, E], f fn() T) T =
     match self with
       | Err{_} -> f()
       | Ok{val} -> val
     end
 end
 
-fn is_ok(|T, E| self Result(T, E)) Bool =
+fn is_ok(|T, E| self Result[T, E]) Bool =
     match self with
       | Ok{_} -> true
       | Err{_} -> false
     end
 end
 
-fn is_err(|T, E| self Result(T, E)) Bool =
+fn is_err(|T, E| self Result[T, E]) Bool =
 	not is_ok(self)
 end
 
---- Transforms a `Result(T, E)` into an `Option(T)`
-fn ok(|T, E| self Result(T, E)) Option(T) =
+--- Transforms a `Result[T, E]` into an `Option[T]`
+fn ok(|T, E| self Result[T, E]) Option[T] =
     match self with
       | Ok{val} -> Some(val)
       | Err{_} -> None {}
     end
 end
 
---- Transforms a `Result(T, E)` into an `Option(E)`
-fn err(|T, E| self Result(T, E)) Option(T) =
+--- Transforms a `Result[T, E]` into an `Option(E)`
+fn err(|T, E| self Result[T, E]) Option[E] =
     match self with
       | Ok{_} -> None {}
       | Err{val} -> Some val
