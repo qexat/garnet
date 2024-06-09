@@ -401,6 +401,8 @@ pub struct Signature {
 
 impl Signature {
     /// Returns a lambda typedef representing the signature
+    ///
+    /// TODO: Type::from() ?
     pub fn to_type(&self) -> Type {
         let paramtypes = self.params.iter().map(|(_nm, ty)| ty.clone()).collect();
         let typeparams = self.typeparams.iter().map(|nm| Type::named0(*nm)).collect();
@@ -428,5 +430,28 @@ impl Signature {
             .collect();
         let typeargs = typenames.join(", ");
         format!("(|{}| {}) {}", typeargs, args, self.rettype.get_name())
+    }
+}
+
+impl std::convert::TryFrom<&Type> for Signature {
+    type Error = ();
+    /// If this is a function type, return its signature.
+    /// Otherwise return None.
+    ///
+    /// TODO: Signature::try_from
+    fn try_from(_: &Type) -> Result<Signature, Self::Error> {
+        todo!()
+        // match t {
+        //     Type::Func(params, rettype, typeparams) => {
+        // Hmm, we'd have to conjure up names for the type params
+        //         let sig = Signature {
+        //             params: params.clone(),
+        //             rettype,
+        //             typeparams,
+        //         };
+        //         Some(sig)
+        //     }
+        //     _ => None,
+        // }
     }
 }
