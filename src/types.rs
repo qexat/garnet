@@ -248,6 +248,10 @@ impl Type {
         }
     }
 
+    pub fn is_func(&self) -> bool {
+        matches!(self, Self::Func(_, _, _))
+    }
+
     /// Takes a string and matches it against the builtin/
     /// primitive types, returning the appropriate `TypeDef`
     ///
