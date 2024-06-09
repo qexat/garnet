@@ -3,13 +3,13 @@
 -- Compile:
 --   status: success
 
-type Foo(T) = {I32, T}
+type Foo[T] = {I32, T}
 
-fn thing(i I32, x Bool) Foo(Bool) =
+fn thing(i I32, x Bool) Foo[Bool] =
     Foo(|Bool| {i, x})
 end
 
 fn main() {} =
-    let f1 Foo(Bool) = thing(4, true)
+    let f1 Foo[Bool] = thing(4, true)
     let f2 {I32, Bool} = f1$
 end

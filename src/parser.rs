@@ -709,16 +709,16 @@ impl<'input> Parser<'input> {
     fn parse_typedef(&mut self, doc_comment: Vec<String>) -> ast::Decl {
         let name = self.expect_ident();
         let mut params = vec![];
-        if self.peek_expect(T::LParen.discr()) {
+        if self.peek_expect(T::LBracket.discr()) {
             parse_delimited!(self, T::Comma, {
-                if self.peek_is(T::RParen.discr()) {
+                if self.peek_is(T::RBracket.discr()) {
                     break;
                 } else {
                     let name = self.expect_ident();
                     params.push(name);
                 }
             });
-            self.expect(T::RParen);
+            self.expect(T::RBracket);
         }
 
         self.expect(T::Equals);
@@ -762,6 +762,7 @@ impl<'input> Parser<'input> {
         let mut args = vec![];
         let mut typeparams = vec![];
         self.expect(T::LParen);
+        // type params
         if self.peek_expect(T::Bar.discr()) {
             parse_delimited!(self, T::Comma, {
                 if !self.peek_is(T::Bar.discr()) {
@@ -774,6 +775,7 @@ impl<'input> Parser<'input> {
             self.peek_expect(T::Bar.discr());
         }
 
+        // Actual params
         parse_delimited!(self, T::Comma, {
             if self.peek_is(TokenKind::Ident("foo".into()).discr()) {
                 let name = self.expect_ident();
@@ -790,21 +792,21 @@ impl<'input> Parser<'input> {
     /// type_list = "(" [type {"," type} [","] ")"
     fn try_parse_type_list(&mut self) -> Option<Vec<Type>> {
         let mut args = vec![];
-        self.expect(T::LParen);
+        self.expect(T::LBracket);
 
         parse_delimited!(self, T::Comma, {
-            if !self.peek_is(T::RParen.discr()) {
+            if !self.peek_is(T::RBracket.discr()) {
                 let tname = self.try_parse_type()?;
                 args.push(tname);
             } else {
                 break;
             }
         });
-        self.expect(T::RParen);
+        self.expect(T::RBracket);
         Some(args)
     }
 
-    /// type_list_with_typeparams = "(" [types... "|"] [type {"," type} [","] ")"
+    /// type_list_with_typeparams = "(" ["|" types... "|"] [type {"," type} [","] ")"
     fn parse_type_list_with_typeparams(&mut self) -> (Vec<Type>, Vec<Type>) {
         let mut args = vec![];
         let mut typeparams = vec![];
@@ -814,7 +816,7 @@ impl<'input> Parser<'input> {
                 if self.peek_is(T::Bar.discr()) {
                     // Bit of a hack, but (||) is a valid sig
                     break;
-                } else if !self.peek_is(T::RParen.discr()) {
+                } else if !self.peek_is(T::RBracket.discr()) {
                     let tname = self.parse_type();
                     typeparams.push(tname);
                 } else {
@@ -846,18 +848,18 @@ impl<'input> Parser<'input> {
     fn parse_struct_fields(&mut self) -> (BTreeMap<Sym, Type>, Vec<Type>) {
         let mut fields = BTreeMap::new();
         let mut generics = vec![];
-        if self.peek_expect(T::LParen.discr()) {
+        if self.peek_expect(T::LBracket.discr()) {
             trace!("Parsing type params for struct type");
             // parse type params
             parse_delimited!(self, T::Comma, {
-                if !self.peek_expect(T::RParen.discr()) {
+                if !self.peek_expect(T::RBracket.discr()) {
                     let ty = self.parse_type();
                     generics.push(ty);
                 } else {
                     break;
                 }
             });
-            self.expect(T::RParen);
+            self.expect(T::RBracket);
         }
         self.eat_delimiters();
 
@@ -954,18 +956,18 @@ impl<'input> Parser<'input> {
     fn parse_sum_type(&mut self) -> Type {
         let mut fields = BTreeMap::default();
         let mut generics = vec![];
-        if self.peek_expect(T::LParen.discr()) {
+        if self.peek_expect(T::LBracket.discr()) {
             trace!("Parsing type params for sum type");
             // parse type params
             parse_delimited!(self, T::Comma, {
-                if !self.peek_expect(T::RParen.discr()) {
+                if !self.peek_expect(T::RBracket.discr()) {
                     let ty = self.parse_type();
                     generics.push(ty);
                 } else {
                     break;
                 }
             });
-            self.expect(T::RParen);
+            self.expect(T::RBracket);
             self.eat_delimiters();
         }
         parse_delimited!(self, T::Comma, {
@@ -1189,7 +1191,7 @@ impl<'input> Parser<'input> {
         self.expect(T::LParen);
         if self.peek_expect(T::Bar.discr()) {
             parse_delimited!(self, T::Comma, {
-                if !self.peek_is(T::RParen.discr()) {
+                if !self.peek_is(T::RBracket.discr()) {
                     let ty = self.parse_type();
                     typeparams.push(ty);
                 } else {
@@ -1425,7 +1427,7 @@ impl<'input> Parser<'input> {
                 if let Some(t) = Type::get_primitive_type(s) {
                     t
                 } else {
-                    let type_params = if self.peek_is(T::LParen.discr()) {
+                    let type_params = if self.peek_is(T::LBracket.discr()) {
                         self.try_parse_type_list()?
                     } else {
                         vec![]
@@ -1433,12 +1435,6 @@ impl<'input> Parser<'input> {
                     Type::Named(Sym::new(s), type_params)
                 }
             }
-            /*
-                    T::At => {
-                        let s = self.expect_ident();
-                        Type::Generic(s)
-                    }
-            */
             T::LBrace => self.try_parse_tuple_type()?,
             T::Fn => self.parse_fn_type(),
             T::Struct => self.try_parse_struct_type()?,
@@ -1623,7 +1619,7 @@ mod tests {
 
     #[test]
     fn test_typedef_generics() {
-        test_decl_is("type bop(T) = T", || ast::Decl::TypeDef {
+        test_decl_is("type bop[T] = T", || ast::Decl::TypeDef {
             name: Sym::new("bop"),
             typedecl: Type::Named(Sym::new("T"), vec![]),
             doc_comment: vec![],

@@ -3,7 +3,7 @@
 -- Compile:
 --   status: error
 
-type List(T) = struct
+type List[T] = struct
     dummy_data: T,
 end
 

@@ -3,6 +3,8 @@
 -- Compile:
 --   status: error
 
+-- TODO: Check for specific error output
+
 fn foo(x I32) I64 =
     x + 3
 end
@@ -11,4 +13,3 @@ fn main() {} =
     let x I64 = foo(9)
     __println(x)
 end
--- TODO: Check for specific error type

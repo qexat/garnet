@@ -8,18 +8,18 @@
 --     4
 
 
-type List(T) = struct(T)
+type List[T] = struct[T]
     dummy_data: T,
 end
 
 
-type Idx(Selff, Output) = struct(Selff, Output)
-    idx: fn(Selff, I32) Output,
+type Idx[Self, Output] = struct[Self, Output]
+    idx: fn(Self, I32) Output,
 end
 
 -- Can we make an instance for a specialization of List(T)?
-const IntListIdx Idx(List(I32), I32) = Idx {
-    .idx = fn(selff List(I32), i I32) I32 = selff$.dummy_data end
+const IntListIdx Idx[List[I32], I32] = Idx {
+    .idx = fn(selff List[I32], i I32) I32 = selff$.dummy_data end
 }
 
 fn main() {} =
