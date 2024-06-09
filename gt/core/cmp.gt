@@ -7,7 +7,7 @@
 --- should look into, and there's a broad design space of
 --- Rust crates for NaN-preventing floats and such.
 
-type Eq(T) = struct(T)
+type Eq[T] = struct[T]
   eq: fn(T, T) Bool,
 end
 
@@ -16,13 +16,13 @@ const EqI32 Eq(I32) = Eq {
   .eq = fn(lhs I32, rhs I32) Bool = lhs == rhs end,
 }
 
-const EqBool Eq(Bool) = Eq {
+const EqBool Eq[Bool] = Eq {
   .eq = fn(lhs Bool, rhs Bool) Bool = lhs == rhs end,
 }
 
 --- just for a specific length rn, can change once we have
 --- slices or const generics or such
-fn all(|T| eq_impl Eq(T), val T, array [3]T) Bool =
+fn all(|T| eq_impl Eq[T], val T, array [3]T) Bool =
   let mut i I32 = 0
   loop
     if i == 3 then break end
@@ -66,12 +66,12 @@ fn is_le(self Ordering) Bool =
 end
 
 --- A module that implements comparison for a particular type.
-type Ord(T) = struct
+type Ord[T] = struct[T]
   cmp: fn(T, T) Ordering,
 end
 
 --- Returns the maximum of the two values passed.
-fn max(|T| ord Ord(T), self T, other T) T =
+fn max(|T| ord Ord[T], self T, other T) T =
   if ord.cmp(self, other):is_lt() then
     self
   else
@@ -80,7 +80,7 @@ fn max(|T| ord Ord(T), self T, other T) T =
 end
 
 --- Returns the minimum of the two values passed.
-fn min(|T| ord Ord(T), self T, other T) T =
+fn min(|T| ord Ord[T], self T, other T) T =
   if ord.cmp(self, other):is_gt() then
     self
   else
@@ -90,7 +90,7 @@ end
 
 --- Returns the value if it is between the min and max values
 --- passed, or returns the min or max if it is beyond those bounds.
-fn clamp(|T| ord Ord(T), self T, min T, max T) T =
+fn clamp(|T| ord Ord[T], self T, min T, max T) T =
   assert!(ord.cmp(min, max) != Ordering.Greater)
   if ord.cmp(self, min).is_lt() then min
   elseif ord.cmp(self, max).is_gt() then max
@@ -99,7 +99,7 @@ fn clamp(|T| ord Ord(T), self T, min T, max T) T =
 end
 
 --- Implementation of `Ord` for I32
-const OrdI32 Ord(I32) = Ord {
+const OrdI32 Ord[I32] = Ord {
   .cmp = fn(x I32, y I32) Ordering =
     if x > y then Ordering.Greater
     elseif x < y then Ordering.Less
@@ -110,9 +110,9 @@ const OrdI32 Ord(I32) = Ord {
 
 --- A functor that implements "Ord(Option(T)) where T: Ord".
 --- `None` is always less than `Some(x)` for any `x`.
-fn option_ord(|T| ord Ord(T)) Ord(Option(T)) =
+fn option_ord(|T| ord Ord[T]) Ord[Option[T]] =
   Ord {
-    .cmp = fn(x Option(T), y Option(T)) Ordering =
+    .cmp = fn(x Option[T], y Option[T]) Ordering =
       -- There's probably some fancy Option combinator to use
       -- here but I can never keep em straight.
       match {x, y} with
@@ -125,13 +125,13 @@ fn option_ord(|T| ord Ord(T)) Ord(Option(T)) =
   }
 end
 
-const OrdOptionI32: Ord(Option(I32)) = option_ord(OrdI32)
+const OrdOptionI32: Ord[Option[I32]] = option_ord[OrdI32]
 
---- A functor that implements `Ord(Result(T, E)) where T, E: Ord`.
+--- A functor that implements `Ord[Result[T, E]] where T, E: Ord`.
 ---
 --- We take Rust's approch, ofc, any Ok is less than any Err
-fn result_ord(|T, E| ord_t Ord(T), ord_e Ord(E)) Ord(Result(T, E)) =
-  .cmp = fn(x Result(T, E), y Result(T, E)) Ordering =
+fn result_ord(|T, E| ord_t Ord[T], ord_e Ord[E]) Ord[Result[T, E]] =
+  .cmp = fn(x Result[T, E], y Result[T, E]) Ordering =
     match {x, y} with
       | {Ok xx, Ok yy} -> ord_t.cmp(xx, yy)
       | {Err xx, Err yy} -> ord_e.cmp(xx, yy)
@@ -146,7 +146,7 @@ end
 --- TODO: This is also kinda a classic coherence problem with modules
 --- iirc, so investigate further.  I thiiiiink we have to bundle
 --- the Ord impl into the Eq one?
-fn eq_from_ord(|T| ord Ord(T)) Eq(T) =
+fn eq_from_ord(|T| ord Ord[T]) Eq[T] =
   Ord {
     .eq = fn(x T, y T) Bool =
       ord.ord(x, y).is_eq()
